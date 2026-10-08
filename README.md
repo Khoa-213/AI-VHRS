@@ -1,5 +1,6 @@
 # Folder Structure
 ## FE Folder Structure
+```
 src/
 ├── assets/                          # Static assets (images, svg)
 ├── components/
@@ -27,9 +28,9 @@ src/
 ├── App.tsx
 ├── main.tsx
 └── index.css
-
+```
 ## Mobile Folder Structure
-
+```
 lib/
 ├── main.dart                          # App entry point, ProviderScope, auth check
 ├── core/
@@ -104,3 +105,4 @@ lib/
 │           └── track_status_screen.dart         # Vertical timeline + result viewer
 └── routing/
     └── app_router.dart                          # GoRouter + auth guards + 404 page
+```
