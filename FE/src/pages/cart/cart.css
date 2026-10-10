@@ -53,8 +53,8 @@
 
 .ct-pay{display:flex;flex-direction:column;align-items:center;gap:22px;text-align:center}
 .ct-pay h3{margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--t1)}
-.ct-badges{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:880px}
-.ct-badges span{display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:12px;background:var(--fx-05);border:1px solid var(--fx-1);font-size:13px;font-weight:800;color:var(--t1);white-space:nowrap}
-.ct-badges i{width:8px;height:8px;border-radius:2px}
+.ct-logos{display:flex;flex-wrap:wrap;justify-content:center;gap:14px 18px;max-width:880px;margin:0;padding:0;list-style:none}
+.ct-logos .pl-tile{width:72px;height:44px}
+
 .ct-help{display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--t4)}
 .ct-help a{color:var(--accent-text);text-decoration:underline;text-underline-offset:3px}

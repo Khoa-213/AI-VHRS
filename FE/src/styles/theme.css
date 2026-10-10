@@ -3,9 +3,10 @@
  * opt-in via <html data-theme="light">. Every colour in the app comes from
  * here, so the two themes cannot drift apart.
  *
- * Light palette notes: cool blue-grey neutrals (no warm cream), off-black
- * ink instead of pure black, off-white instead of pure white, one accent
- * (the brand orange) with a darker text variant that passes AA on light.
+ * Light palette notes: pure white page, cool blue-grey neutrals for the
+ * surfaces on top of it (no warm cream), off-black ink instead of pure
+ * black, one accent (the brand orange) with a darker text variant that
+ * passes AA on light.
  */
 
 :root {
@@ -27,6 +28,11 @@
   --rs-a: #3a3f4a;
   --rs-b: #22262e;
   --rs-c: #14171c;
+
+  /* borderless option cells fade from the page into these: resting, hovered, picked */
+  --tray: rgba(255, 255, 255, 0.09);
+  --tray-hover: rgba(255, 255, 255, 0.13);
+  --tray-on: rgba(255, 90, 60, 0.2);
 
   /* text, strongest to faintest */
   --t1: #ffffff;
@@ -123,11 +129,11 @@
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --bg: #f4f6fa;
+  --bg: #ffffff;
   --bg-2: #e8ecf3;
   --stage: #dde3ec;
   --pop: #fbfcfe;
-  --header-bg: rgba(244, 246, 250, 0.85);
+  --header-bg: rgba(255, 255, 255, 0.85);
   --header-line: #d5dbe5;
   --aside-bg: rgba(251, 252, 254, 0.88);
   --avatar-bg: #d5dbe5;
@@ -138,6 +144,10 @@
   --rs-a: #fbfcfe;
   --rs-b: #e6eaf2;
   --rs-c: #d3dae6;
+
+  --tray: #e8ecf2;
+  --tray-hover: #dce1ea;
+  --tray-on: rgba(255, 90, 60, 0.16);
 
   --t1: #0f1420;
   --t2: #1b2233;

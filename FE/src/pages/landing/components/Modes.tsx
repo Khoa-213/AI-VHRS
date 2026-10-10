@@ -3,22 +3,6 @@ import Reveal from '../../../components/ui/Reveal'
 
 const MODES = [
   {
-    n: '01',
-    mode: 'upload',
-    title: 'Upload Handwriting Photo',
-    copy: 'Snap or scan any handwritten page. We clean it up, trace each stroke, and turn it into a path the arm can follow.',
-    tags: ['AI Skeletonization', 'Vectorization'],
-    link: 'Start with a photo →',
-    icon: (
-      <>
-        <rect width="18" height="18" x="3" y="3" rx="2" />
-        <circle cx="9" cy="9" r="2" />
-        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-      </>
-    ),
-  },
-  {
-    n: '02',
     mode: 'text',
     title: 'Text + Single-Line Font',
     copy: 'Type your message, pick a digital calligraphy style, and preview the exact strokes before the pen touches paper.',
@@ -33,11 +17,22 @@ const MODES = [
     ),
   },
   {
-    n: '03',
+    mode: 'upload',
+    title: 'Upload Handwriting Photo',
+    copy: 'Snap or scan any handwritten page. We clean it up, trace each stroke, and turn it into a path the arm can follow.',
+    link: 'Start with a photo →',
+    icon: (
+      <>
+        <rect width="18" height="18" x="3" y="3" rx="2" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+      </>
+    ),
+  },
+  {
     mode: 'draw',
     title: 'iPad Live Canvas Drawing',
     copy: 'Write directly with Apple Pencil. Pressure, speed and stroke order are captured live and replayed by the arm.',
-    tags: ['Pointer Events', 'Pressure-aware'],
     link: 'Open the canvas →',
     icon: (
       <>
@@ -55,14 +50,7 @@ export default function Modes() {
     <section id="modes" className="lp-modes">
       <div className="lp-modes-inner">
         <Reveal className="lp-modes-head" dur=".8s">
-          <div className="lp-modes-title">
-            <span className="lp-eyebrow-orange">Penmanship · 3 input modes</span>
-            <h2 className="lp-h2-modes">
-              Bring your hand.
-              <br />
-              We bring the arm.
-            </h2>
-          </div>
+          <h2 className="lp-h2-modes">Bring your hand. We bring the arm.</h2>
           <p className="lp-modes-lede">
             Every mode ends the same way: a smooth, verified trajectory written in real ink.
           </p>
@@ -71,34 +59,23 @@ export default function Modes() {
         <div className="lp-mode-grid">
           {MODES.map((m, i) => (
             <Reveal
-              key={m.n}
+              key={m.mode}
               as="a"
               href={`${ORDER_HREF}#mode=${m.mode}`}
-              className="lp-mode-card"
+              className={`lp-mode-card${i === 0 ? ' lp-mode-card--lead' : ''}`}
               delay={i * 0.12}
               dur=".8s"
             >
-              <div className="lp-mode-top">
-                <span className="lp-mode-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" strokeWidth="1.8" {...svgProps}>
-                    {m.icon}
-                  </svg>
-                </span>
-                <span className="lp-mode-n">{m.n}</span>
-              </div>
+              <span className="lp-mode-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" strokeWidth="1.8" {...svgProps}>
+                  {m.icon}
+                </svg>
+              </span>
               <div className="lp-mode-body">
                 <h3>{m.title}</h3>
                 <p>{m.copy}</p>
               </div>
-              {'tags' in m ? (
-                <div className="lp-tags">
-                  {m.tags.map((t) => (
-                    <span key={t} className="lp-tag">{t}</span>
-                  ))}
-                </div>
-              ) : (
-                <div className="lp-sample">{m.sample}</div>
-              )}
+              {'sample' in m && <div className="lp-sample">{m.sample}</div>}
               <span className="lp-mode-link">{m.link}</span>
             </Reveal>
           ))}

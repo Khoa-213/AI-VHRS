@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
 import { ORDER_HREF } from '../../constants'
 import { PACKS, PAPERS, PAYMENT_BADGES, PRODUCTS } from '../../constants/catalog'
+import PaymentLogos from '../../components/ui/PaymentLogos'
 import { Link, navigate, orderPath } from '../../router/router'
 import { addToCart, checkoutCart, setCartQty, signIn, useCart, useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
@@ -173,11 +174,7 @@ export default function Cart() {
 
         <section className="ct-pay">
           <h3>Supported payment methods</h3>
-          <div className="ct-badges">
-            {PAYMENT_BADGES.map((pm) => (
-              <span key={pm.name}><i style={{ background: pm.dot }} />{pm.name}</span>
-            ))}
-          </div>
+          <PaymentLogos names={PAYMENT_BADGES.map((pm) => pm.name)} />
           <div className="ct-help">
             <span>Questions? <a href="#contact">Contact us</a> — we’re here 24/7.</span>
             <a href="#cancellation">Cancellation policy</a>

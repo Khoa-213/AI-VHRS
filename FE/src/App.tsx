@@ -1,6 +1,7 @@
 import PrototypeBar from './components/prototype/PrototypeBar'
 import Cart from './pages/cart/Cart'
 import CreateOrder from './pages/create-order/CreateOrder'
+import CreateOrderV2 from './pages/create-order/CreateOrderV2'
 import Landing from './pages/landing/Landing'
 import Deposit from './pages/order/Deposit'
 import FinalPayment from './pages/order/FinalPayment'
@@ -12,6 +13,7 @@ function Routes() {
   const path = usePath()
 
   if (path === '/create-order') return <CreateOrder />
+  if (path === '/create-order-v2') return <CreateOrderV2 />
   if (path === '/cart') return <Cart />
 
   const review = matchOrderRoute(path, 'review')

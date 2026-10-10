@@ -39,6 +39,7 @@ export default function SiteHeader() {
           <Link to="/#showcase">Robot Specs</Link>
           <Link to="/#modes">Penmanship</Link>
           <Link to="/#queue">Order Queue</Link>
+          <Link to="/create-order-v2">New order v2</Link>
         </nav>
         <div className="vh-actions">
           <button className="vh-icon-btn" aria-label="Search">
@@ -66,7 +67,7 @@ export default function SiteHeader() {
                 {user ? (
                   <div className="vh-dd-list">
                     {orders.slice(0, 4).map((o) => {
-                      const [color, bg] = STATUS_COLORS[o.status]
+                      const [color] = STATUS_COLORS[o.status]
                       return (
                         <Link key={o.id} to={orderHref(o)} className="vh-dd-item" onClick={() => setOpen(false)}>
                           <div className="vh-dd-item-text">
@@ -74,7 +75,7 @@ export default function SiteHeader() {
                             <span className="vh-dd-item-title">{o.title}</span>
                           </div>
                           <div className="vh-dd-item-side">
-                            <span className="vh-chip" style={{ color, background: bg }}>{o.status}</span>
+                            <span className="vh-chip" style={{ color }}>{o.status}</span>
                             <span className="vh-dd-item-total">{fmt(o.total)}</span>
                           </div>
                         </Link>

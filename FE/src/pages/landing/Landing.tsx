@@ -10,8 +10,8 @@ export default function Landing() {
     <>
       <Header />
       <Hero />
-      <Showcase />
       <Modes />
+      <Showcase />
       <Cta />
     </>
   )

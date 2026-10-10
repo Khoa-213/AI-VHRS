@@ -11,6 +11,7 @@ export default function Header() {
           <a href="#showcase">Robot Specs</a>
           <a href="#modes">Penmanship</a>
           <a href="#queue">Order Queue</a>
+          <a href="/create-order-v2">New order v2</a>
         </nav>
         <div className="lp-actions">
           <button className="lp-icon-btn" aria-label="Search">

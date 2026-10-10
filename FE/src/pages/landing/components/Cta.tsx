@@ -9,7 +9,7 @@ export default function Cta() {
           <h2>Ready to put ink on paper?</h2>
           <p>Submit a request and follow it live in your order queue, from trajectory check to final stroke.</p>
         </div>
-        <a href={ORDER_HREF} className="lp-cta-btn lp-cta-btn-sm">Start Writing →</a>
+        <a href={ORDER_HREF} className="lp-cta-btn">Start Writing</a>
       </Reveal>
     </section>
   )

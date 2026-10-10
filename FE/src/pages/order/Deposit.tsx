@@ -42,6 +42,7 @@ export default function Deposit({ id }: { id: string | null }) {
 
   return (
     <Page label="Deposit" width={1200}>
+      <div className="ov">
       <div className="vh-head-text">
         <span className="vh-eyebrow">Order {order.id} · Accepted by staff</span>
         <h1 className="vh-h1">{paid ? 'You’re in the queue.' : 'Pay your deposit.'}</h1>
@@ -76,7 +77,7 @@ export default function Deposit({ id }: { id: string | null }) {
               </span>
               <h2>Deposit received.</h2>
               <p>
-                {fmt(deposit)} paid via {m?.name ?? 'your chosen method'}. Order {order.id} is now queued for the FR3 — we’ll notify you when writing starts.
+                {fmt(deposit)} paid via {m?.name ?? 'your chosen method'}. Order {order.id} is now queued for the FR3. We’ll notify you when writing starts.
               </p>
               <div className="pay-done-actions">
                 <Link to={orderPath(order.id, 'review')} className="vh-btn vh-btn--white vh-btn--md">View order</Link>
@@ -86,11 +87,12 @@ export default function Deposit({ id }: { id: string | null }) {
           )}
         </section>
 
-        <aside className="vh-aside" style={{ flex: '1 1 320px', gap: 16 }}>
+        <aside className="vh-aside" style={{ flex: '1 1 320px' }}>
           <div className="pay-preview">
             <PaperSheet spec={order.spec} height={order.spec.land ? '50%' : '86%'} maxWidth="88%" shadow="0 14px 24px var(--sh-5)" />
           </div>
-          <span className="pay-order-title" style={{ fontSize: 15 }}>{order.title}</span>
+          <div className="ov-rail-body">
+          <span className="ov-rail-title">{order.title}</span>
           <div className="vh-rows">
             <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>Order total</span><span>{fmt(order.total)}</span></div>
             <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>Due on delivery</span><span>{fmt(order.total - deposit)}</span></div>
@@ -99,7 +101,9 @@ export default function Deposit({ id }: { id: string | null }) {
             <span>Deposit (30%)</span>
             <span>{fmt(deposit)}</span>
           </div>
+          </div>
         </aside>
+      </div>
       </div>
     </Page>
   )

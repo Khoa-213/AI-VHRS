@@ -87,7 +87,7 @@ export default function PrototypeBar() {
 
   const step = order ? STEPS[order.status] : undefined
   const stageIdx = order ? STAGES.indexOf(order.status === 'Rewriting' ? 'Written' : order.status) : -1
-  const [color, bg] = order ? STATUS_COLORS[order.status] : ['var(--t1)', 'transparent']
+  const [color] = order ? STATUS_COLORS[order.status] : ['var(--t1)']
 
   return (
     <aside className="vh-proto" aria-label="Prototype controls">
@@ -107,7 +107,7 @@ export default function PrototypeBar() {
         <div className="vh-proto-body">
           <div className="vh-proto-order">
             <span className="vh-mono">{order.id}</span>
-            <span className="vh-chip" style={{ color, background: bg }}>{order.status}</span>
+            <span className="vh-chip" style={{ color }}>{order.status}</span>
           </div>
           <ol className="vh-proto-stages" aria-label="Order progress">
             {STAGES.map((s, i) => (

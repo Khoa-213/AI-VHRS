@@ -14,12 +14,10 @@ export default function Showcase() {
   const { ref, p } = useScrollProgress<HTMLElement>()
   const e1 = ease(seg(p, 0, 0.35))
   const e2 = ease(seg(p, 0.38, 0.62))
-  const step = p < 0.36 ? 1 : p < 0.62 ? 2 : 3
 
   return (
     <section id="showcase" ref={ref} className="lp-showcase">
       <div className="lp-sticky">
-        <div className="lp-scanlines" style={{ opacity: 1 - e2 }} />
         <div
           className="lp-bigtext"
           style={{ opacity: 1 - e2, transform: `translate(-50%,-50%) scale(${(0.96 + e1 * 0.06).toFixed(3)})` }}
@@ -46,7 +44,6 @@ export default function Showcase() {
               pointerEvents: e2 > 0.5 ? 'auto' : 'none',
             }}
           >
-            <span className="lp-eyebrow-grey">Powered by Fairino</span>
             <h2 className="lp-h2-spec">
               AI-VHRS<span style={{ color: 'var(--accent)' }}>·FR3</span>
             </h2>
@@ -68,16 +65,12 @@ export default function Showcase() {
                 )
               })}
             </div>
-            <a href={ORDER_HREF} className="lp-text-link">Start a request ↗</a>
+            <a href={ORDER_HREF} className="lp-cta-btn">Start Writing</a>
           </div>
         </div>
 
-        <div className="lp-progress">
-          <span style={{ color: 'var(--t1)' }}>{'0' + step}</span>
-          <div className="lp-progress-track">
-            <div className="lp-progress-fill" style={{ width: `${(p * 100).toFixed(1)}%` }} />
-          </div>
-          <span>03</span>
+        <div className="lp-progress" aria-hidden="true">
+          <div className="lp-progress-fill" style={{ width: `${(p * 100).toFixed(1)}%` }} />
         </div>
       </div>
     </section>

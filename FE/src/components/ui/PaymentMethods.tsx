@@ -1,4 +1,5 @@
 import { PAY_METHODS } from '../../constants/catalog'
+import { MethodLogos } from './PaymentLogos'
 
 export interface CardFields {
   no: string
@@ -41,10 +42,8 @@ export default function PaymentMethods({ method, onPick, card, onCard, orderId, 
       <div className="vh-choice-grid vh-choice-grid--170">
         {PAY_METHODS.map((x) => (
           <button key={x.id} className={`vh-choice${x.id === method ? ' on' : ''}`} onClick={() => onPick(x.id)}>
-            <span className="vh-choice-name">
-              <span className="vh-dot" style={{ background: x.dot }} />
-              {x.name}
-            </span>
+            <MethodLogos id={x.id} />
+            <span className="vh-choice-name">{x.name}</span>
             <span className="vh-choice-sub">{x.spec}</span>
           </button>
         ))}
@@ -70,6 +69,7 @@ export default function PaymentMethods({ method, onPick, card, onCard, orderId, 
           <input
             className="vh-input vh-mono vh-span2"
             placeholder="Card number"
+            aria-label="Card number"
             inputMode="numeric"
             value={card.no}
             onChange={(e) => onCard({ ...card, no: e.target.value.replace(/[^\d ]/g, '').slice(0, 23) })}
@@ -77,12 +77,14 @@ export default function PaymentMethods({ method, onPick, card, onCard, orderId, 
           <input
             className="vh-input vh-mono"
             placeholder="MM / YY"
+            aria-label="Expiry date"
             value={card.exp}
             onChange={(e) => onCard({ ...card, exp: e.target.value.slice(0, 7) })}
           />
           <input
             className="vh-input vh-mono"
             placeholder="CVC"
+            aria-label="Security code"
             inputMode="numeric"
             value={card.cvc}
             onChange={(e) => onCard({ ...card, cvc: e.target.value.replace(/\D/g, '').slice(0, 4) })}

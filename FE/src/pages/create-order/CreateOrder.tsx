@@ -9,6 +9,7 @@ import type { InputMode, Order, OrderSpec } from '../../types'
 import { fmt, todayLabel } from '../../utils/format'
 import { quote } from '../../utils/pricing'
 import DrawPad from './DrawPad'
+import { MethodLogos } from '../../components/ui/PaymentLogos'
 import './create-order.css'
 
 interface Upload {
@@ -127,293 +128,308 @@ export default function CreateOrder() {
   const pvFont = previewText.length < 22 ? 24 : previewText.length < 60 ? 17 : 12
 
   const summary = [
-    { k: 'Type', v: q.T ? `${q.T.name} · ${q.T.size}` : '—', to: 0 },
+    { k: 'Type', v: q.T ? `${q.T.name}, ${q.T.size}` : 'Not chosen', to: 0 },
     {
       k: 'Content',
       v: mode === 'text'
-        ? `“${text.trim().slice(0, 48) || '—'}${text.trim().length > 48 ? '…' : ''}” · ${F.name}`
-        : mode === 'upload' ? (upload ? `Image · ${upload.name}` : '—') : `${strokes} hand-drawn strokes`,
+        ? `“${text.trim().slice(0, 48)}${text.trim().length > 48 ? '…' : ''}” in ${F.name}`
+        : mode === 'upload' ? (upload ? `Image: ${upload.name}` : 'No image') : `${strokes} hand-drawn strokes`,
       to: 1,
     },
-    { k: 'Materials', v: [q.P?.name, q.N?.name, q.I?.name].filter(Boolean).join(' · ') || '—', to: 2 },
+    { k: 'Materials', v: [q.P?.name, q.N?.name, q.I?.name].filter(Boolean).join(', ') || 'Not chosen', to: 2 },
     { k: 'Quantity', v: `${qty} ${qty > 1 ? 'pieces' : 'piece'}`, to: 2 },
   ]
 
   return (
     <Page label="Create Order">
-      <div className="vh-head-text">
-        <span className="vh-eyebrow">New order · Fairino FR3</span>
-        <h1 className="vh-h1 vh-h1--lg">Create your order.</h1>
-      </div>
+      <div className="co">
+        <div className="vh-head-text">
+          <span className="vh-eyebrow">New order · Fairino FR3</span>
+          <h1 className="vh-h1 vh-h1--lg">Create your order.</h1>
+        </div>
 
-      <div className="vh-cols">
-        <div className="vh-col" style={{ gap: 28 }}>
-          <div className="co-steps">
-            {STEP_LABELS.map((label, i) => {
-              const cur = i === step
-              const done = i <= maxStep && !cur
-              const locked = i > maxStep
-              return (
-                <button
-                  key={label}
-                  className={`co-step${cur ? ' cur' : done ? ' done' : ''}`}
-                  disabled={locked}
-                  onClick={() => goTo(i)}
-                >
-                  <span className="co-step-bar" />
-                  <span className="co-step-label">
-                    <span className="co-step-num">0{i + 1}</span>
-                    <span>{label}</span>
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+        <div className="co-shell">
+          <div className="co-main">
+            <div className="co-steps">
+              {STEP_LABELS.map((label, i) => {
+                const cur = i === step
+                const done = i <= maxStep && !cur
+                const locked = i > maxStep
+                return (
+                  <button
+                    key={label}
+                    className={`co-step${cur ? ' cur' : done ? ' done' : ''}`}
+                    disabled={locked}
+                    onClick={() => goTo(i)}
+                  >
+                    <span className="co-step-bar" />
+                    <span className="co-step-label">
+                      <span className="co-step-num">0{i + 1}</span>
+                      <span>{label}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
 
-          <div className="vh-panel" style={{ gap: 24 }}>
-            {step === 0 && (
-              <>
-                <div className="vh-stack">
-                  <h2 className="vh-h2" style={{ fontSize: 24 }}>What are we writing?</h2>
-                  <p className="vh-lede">Pick a format. Size sets the base price and robot time.</p>
-                </div>
-                <div className="vh-choice-grid vh-choice-grid--200">
-                  {TYPES.map((o) => (
-                    <button key={o.id} className={`vh-choice co-type${type === o.id ? ' on' : ''}`} onClick={() => setType(o.id)}>
-                      <div className="co-type-stage vh-stage-sm" style={{ height: 96, borderRadius: 12 }}>
-                        <div className="co-type-paper" style={{ width: o.w, height: o.h }} />
-                      </div>
-                      <div className="vh-stack" style={{ gap: 4 }}>
-                        <span className="co-type-name">{o.name}</span>
-                        <span className="co-type-size">{o.size}</span>
-                      </div>
-                      <span className="co-type-price">from {fmt(o.base)}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {step === 1 && (
-              <>
-                <div className="vh-stack">
-                  <h2 className="vh-h2" style={{ fontSize: 24 }}>Add your content</h2>
-                  <p className="vh-lede">Choose how you’ll provide it — the AI turns any of them into a pen trajectory.</p>
-                </div>
-
-                <div className="vh-choice-grid">
-                  {MODES.map((m, i) => (
-                    <button key={m.id} className={`vh-choice${mode === m.id ? ' on' : ''}`} style={{ gap: 6 }} onClick={() => setMode(m.id)}>
-                      <span className="co-mode-num">0{i + 1}</span>
-                      <span className="vh-choice-name">{m.label}</span>
-                      <span className="vh-choice-sub" style={{ lineHeight: 1.45 }}>{m.desc}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {mode === 'text' && (
-                  <>
-                    <div className="vh-stack" style={{ gap: 10 }}>
-                      <textarea
-                        className="vh-textarea co-text"
-                        rows={5}
-                        value={text}
-                        placeholder="Viết lời chúc của bạn… e.g. Chúc Mừng Năm Mới — An Khang Thịnh Vượng"
-                        onChange={(e) => setText(e.target.value)}
-                      />
-                      <div className="co-meta vh-mono">
-                        <span>{text.length} / 120 chars included</span>
-                        <span>+200₫ / char beyond 120</span>
-                      </div>
-                    </div>
-                    <div className="vh-stack" style={{ gap: 10 }}>
-                      <span className="vh-label">Single-line style</span>
-                      <div className="vh-choice-grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,150px),1fr))' }}>
-                        {FONT_STYLES.map((s) => (
-                          <button key={s.id} className={`vh-choice${fontStyle === s.id ? ' on' : ''}`} style={{ gap: 6 }} onClick={() => setFontStyle(s.id)}>
-                            <span className="co-font-sample" style={{ fontFamily: s.font }}>Chữ đẹp</span>
-                            <span className="co-font-name">{s.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {mode === 'upload' && (
-                  <>
-                    <label
-                      className="co-drop"
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault()
-                        setFile(e.dataTransfer.files[0])
-                      }}
-                    >
-                      <input type="file" accept="image/*,.pdf" className="co-file" onChange={(e) => setFile(e.target.files?.[0])} />
-                      <span className="co-drop-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <path d="m17 8-5-5-5 5" />
-                          <path d="M12 3v12" />
-                        </svg>
-                      </span>
-                      <span className="co-drop-title">Drop a handwriting photo or click to browse</span>
-                      <span className="co-meta vh-mono">PNG · JPG · PDF — up to 20 MB · AI vectorization +30.000₫</span>
-                    </label>
-                    {upload && (
-                      <div className="co-file-row">
-                        <div
-                          className="co-file-thumb"
-                          style={{ backgroundImage: upload.isImg ? `url("${upload.url}")` : 'none' }}
-                        />
-                        <div className="co-file-text">
-                          <span className="co-file-name">{upload.name}</span>
-                          <span className="co-file-ok vh-mono">Ready · strokes will be skeletonized</span>
+            <div className="co-body">
+              {step === 0 && (
+                <>
+                  <div className="vh-stack">
+                    <h2 className="co-h2">What are we writing?</h2>
+                    <p className="vh-lede">Pick a format. Size sets the base price and robot time.</p>
+                  </div>
+                  <div className="co-tray co-tray--4">
+                    {TYPES.map((o) => (
+                      <button key={o.id} className={`co-opt co-type${type === o.id ? ' on' : ''}`} onClick={() => setType(o.id)}>
+                        <div className="co-type-stage">
+                          <div className="co-type-paper" style={{ width: o.w, height: o.h }} />
                         </div>
+                        <div className="vh-stack" style={{ gap: 4 }}>
+                          <span className="co-type-name">{o.name}</span>
+                          <span className="co-type-size">{o.size}</span>
+                        </div>
+                        <span className="co-type-price">from {fmt(o.base)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {step === 1 && (
+                <>
+                  <div className="vh-stack">
+                    <h2 className="co-h2">Add your content</h2>
+                    <p className="vh-lede">Choose how you’ll provide it. The AI turns any of them into a pen trajectory.</p>
+                  </div>
+
+                  <div className="co-tray co-tray--3">
+                    {MODES.map((m) => (
+                      <button key={m.id} className={`co-opt${mode === m.id ? ' on' : ''}`} onClick={() => setMode(m.id)}>
+                        <span className="co-opt-name">{m.label}</span>
+                        <span className="co-opt-sub">{m.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {mode === 'text' && (
+                    <>
+                      <div className="co-field">
+                        <textarea
+                          className="co-text"
+                          rows={5}
+                          value={text}
+                          aria-label="Your message"
+                          placeholder="Viết lời chúc của bạn… e.g. Chúc Mừng Năm Mới, An Khang Thịnh Vượng"
+                          onChange={(e) => setText(e.target.value)}
+                        />
+                        <div className="co-meta vh-mono">
+                          <span>{text.length} / 120 chars included</span>
+                          <span>+200₫ / char beyond 120</span>
+                        </div>
+                      </div>
+                      <div className="co-group">
+                        <span className="co-group-label">Single-line style</span>
+                        <div className="co-tray co-tray--3 co-tray--keep">
+                          {FONT_STYLES.map((s) => (
+                            <button key={s.id} className={`co-opt co-font${fontStyle === s.id ? ' on' : ''}`} onClick={() => setFontStyle(s.id)}>
+                              <span className="co-font-sample" style={{ fontFamily: s.font }}>Chữ đẹp</span>
+                              <span className="co-font-name">{s.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {mode === 'upload' && (
+                    <>
+                      <label
+                        className="co-drop"
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          setFile(e.dataTransfer.files[0])
+                        }}
+                      >
+                        <input type="file" accept="image/*,.pdf" className="co-file" onChange={(e) => setFile(e.target.files?.[0])} />
+                        <span className="co-drop-icon">
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <path d="m17 8-5-5-5 5" />
+                            <path d="M12 3v12" />
+                          </svg>
+                        </span>
+                        <span className="co-drop-title">Drop a handwriting photo or click to browse</span>
+                        <span className="co-meta vh-mono">PNG, JPG or PDF up to 20 MB · AI vectorization +30.000₫</span>
+                      </label>
+                      {upload && (
+                        <div className="co-file-row">
+                          <div
+                            className="co-file-thumb"
+                            style={{ backgroundImage: upload.isImg ? `url("${upload.url}")` : 'none' }}
+                          />
+                          <div className="co-file-text">
+                            <span className="co-file-name">{upload.name}</span>
+                            <span className="co-file-ok vh-mono">Ready · strokes will be skeletonized</span>
+                          </div>
+                          <button
+                            className="vh-btn vh-btn--ghost vh-btn--sm"
+                            onClick={() => {
+                              URL.revokeObjectURL(upload.url)
+                              setUpload(null)
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {mode === 'draw' && (
+                    <div className="co-field">
+                      <DrawPad
+                        key={padKey}
+                        url={drawUrl}
+                        onStroke={(u) => {
+                          setStrokes((n) => n + 1)
+                          setDrawUrl(u)
+                        }}
+                      />
+                      <div className="co-draw-foot">
+                        <span className="co-meta vh-mono">
+                          {strokes} {strokes === 1 ? 'stroke' : 'strokes'} captured · write a few lines so the AI can learn your hand · +15.000₫
+                        </span>
                         <button
                           className="vh-btn vh-btn--ghost vh-btn--sm"
                           onClick={() => {
-                            URL.revokeObjectURL(upload.url)
-                            setUpload(null)
+                            setStrokes(0)
+                            setDrawUrl(null)
+                            setPadKey((k) => k + 1)
                           }}
                         >
-                          Remove
+                          Clear canvas
                         </button>
                       </div>
-                    )}
-                  </>
-                )}
-
-                {mode === 'draw' && (
-                  <>
-                    <DrawPad
-                      key={padKey}
-                      url={drawUrl}
-                      onStroke={(u) => {
-                        setStrokes((n) => n + 1)
-                        setDrawUrl(u)
-                      }}
-                    />
-                    <div className="co-draw-foot">
-                      <span className="co-meta vh-mono">
-                        {strokes} {strokes === 1 ? 'stroke' : 'strokes'} captured · write a few lines so the AI can learn your hand · +15.000₫
-                      </span>
-                      <button
-                        className="vh-btn vh-btn--ghost vh-btn--sm"
-                        onClick={() => {
-                          setStrokes(0)
-                          setDrawUrl(null)
-                          setPadKey((k) => k + 1)
-                        }}
-                      >
-                        Clear canvas
-                      </button>
                     </div>
-                  </>
-                )}
-              </>
-            )}
+                  )}
+                </>
+              )}
 
-            {step === 2 && (
-              <>
-                <div className="vh-stack">
-                  <h2 className="vh-h2" style={{ fontSize: 24 }}>Paper → pen → ink</h2>
-                  <p className="vh-lede">Each choice unlocks the next. Prices are per piece.</p>
-                </div>
-
-                <div className="co-group">
-                  <span className="co-group-label">A · PAPER</span>
-                  <div className="vh-choice-grid">
-                    {PAPERS.map((o) => (
-                      <button key={o.id} className={`vh-choice co-row-choice${paper === o.id ? ' on' : ''}`} onClick={() => setPaper(o.id)}>
-                        <span className="co-swatch" style={{ background: o.color }} />
-                        <span className="co-choice-text">
-                          <span className="vh-choice-name">{o.name}</span>
-                          <span className="vh-choice-sub">{o.spec}</span>
-                          <span className="co-price">{priceLabel(o.price)}</span>
-                        </span>
-                      </button>
-                    ))}
+              {step === 2 && (
+                <>
+                  <div className="vh-stack">
+                    <h2 className="co-h2">Paper → pen → ink</h2>
+                    <p className="vh-lede">Each choice unlocks the next. Prices are per piece.</p>
                   </div>
-                </div>
 
-                <div className={`co-group${paper ? '' : ' locked'}`}>
-                  <span className="co-group-label">B · PEN</span>
-                  <div className="vh-choice-grid">
-                    {PENS.map((o) => (
-                      <button key={o.id} className={`vh-choice${pen === o.id ? ' on' : ''}`} style={{ gap: 12 }} onClick={() => setPen(o.id)}>
-                        <span className="co-nib"><span style={{ height: o.w }} /></span>
-                        <span className="co-choice-text">
-                          <span className="vh-choice-name">{o.name}</span>
-                          <span className="vh-choice-sub">{o.spec}</span>
-                          <span className="co-price">{priceLabel(o.price)}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className={`co-group${pen ? '' : ' locked'}`}>
-                  <span className="co-group-label">C · INK</span>
-                  <div className="co-inks">
-                    {INKS.map((o) => (
-                      <button key={o.id} className={`co-ink${ink === o.id ? ' on' : ''}`} onClick={() => setInk(o.id)}>
-                        <span className="co-ink-dot" style={{ background: o.color }} />
-                        <span className="co-ink-name">{o.name}</span>
-                        <span className="co-price">{priceLabel(o.price)}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="co-qty">
-                  <div className="vh-stack" style={{ gap: 4 }}>
-                    <span className="co-qty-title">Quantity</span>
-                    <span className="co-qty-sub">10% off from 10 pcs · 20% off from 50 pcs</span>
-                  </div>
-                  <div className="co-stepper">
-                    <button aria-label="Decrease" onClick={() => clampQty(qty - 1)}>−</button>
-                    <input type="number" min={1} max={500} value={qty} onChange={(e) => clampQty(+e.target.value)} />
-                    <button aria-label="Increase" onClick={() => clampQty(qty + 1)}>+</button>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {step === 3 && (
-              <>
-                <div className="vh-stack">
-                  <h2 className="vh-h2" style={{ fontSize: 24 }}>Review &amp; submit</h2>
-                  <p className="vh-lede">Check the details, then tell us where to send it.</p>
-                </div>
-                <div className="vh-rows">
-                  {summary.map((r) => (
-                    <div key={r.k} className="co-sum-row">
-                      <span className="co-sum-k vh-mono">{r.k}</span>
-                      <span className="co-sum-v">{r.v}</span>
-                      <button className="vh-link" onClick={() => goTo(r.to)}>Edit</button>
+                  <div className="co-group">
+                    <span className="co-group-label">Paper</span>
+                    <div className="co-tray co-tray--4">
+                      {PAPERS.map((o) => (
+                        <button key={o.id} className={`co-opt co-opt--row${paper === o.id ? ' on' : ''}`} onClick={() => setPaper(o.id)}>
+                          <span className="co-swatch" style={{ background: o.color }} />
+                          <span className="co-choice-text">
+                            <span className="co-opt-name">{o.name}</span>
+                            <span className="co-opt-sub">{o.spec}</span>
+                            <span className="co-price">{priceLabel(o.price)}</span>
+                          </span>
+                        </button>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className="vh-form-grid">
-                  <input className="vh-input" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
-                  <input className="vh-input" placeholder="Phone (e.g. 0901 234 567)" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-                </div>
-                <input className="vh-input" placeholder="Delivery address" value={address} onChange={(e) => setAddress(e.target.value)} />
-                <div className="vh-stack" style={{ gap: 10 }}>
-                  <span className="vh-label">Payment</span>
-                  <div className="vh-choice-grid vh-choice-grid--170">
-                    {CREATE_PAYS.map((o) => (
-                      <button key={o.id} className={`vh-choice${pay === o.id ? ' on' : ''}`} style={{ gap: 3 }} onClick={() => setPay(o.id)}>
-                        <span className="vh-choice-name">{o.name}</span>
-                        <span className="vh-choice-sub">{o.spec}</span>
-                      </button>
+                  </div>
+
+                  <div className={`co-group${paper ? '' : ' locked'}`}>
+                    <span className="co-group-label">Pen</span>
+                    <div className="co-tray co-tray--4">
+                      {PENS.map((o) => (
+                        <button key={o.id} className={`co-opt co-opt--pen${pen === o.id ? ' on' : ''}`} onClick={() => setPen(o.id)}>
+                          <span className="co-nib"><span style={{ height: o.w }} /></span>
+                          <span className="co-choice-text">
+                            <span className="co-opt-name">{o.name}</span>
+                            <span className="co-opt-sub">{o.spec}</span>
+                            <span className="co-price">{priceLabel(o.price)}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={`co-group${pen ? '' : ' locked'}`}>
+                    <span className="co-group-label">Ink</span>
+                    <div className="co-inks">
+                      {INKS.map((o) => (
+                        <button key={o.id} className={`co-ink${ink === o.id ? ' on' : ''}`} onClick={() => setInk(o.id)}>
+                          <span className="co-ink-dot" style={{ background: o.color }} />
+                          <span className="co-ink-name">{o.name}</span>
+                          <span className="co-price">{priceLabel(o.price)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="co-qty">
+                    <div className="co-qty-text">
+                      <span className="co-qty-title">Quantity</span>
+                      <span className="co-qty-sub">10% off from 10 pcs · 20% off from 50 pcs</span>
+                    </div>
+                    <div className="co-stepper">
+                      <button aria-label="Decrease" onClick={() => clampQty(qty - 1)}>−</button>
+                      <input type="number" aria-label="Quantity" min={1} max={500} value={qty} onChange={(e) => clampQty(+e.target.value)} />
+                      <button aria-label="Increase" onClick={() => clampQty(qty + 1)}>+</button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {step === 3 && (
+                <>
+                  <div className="vh-stack">
+                    <h2 className="co-h2">Review &amp; submit</h2>
+                    <p className="vh-lede">Check the details, then tell us where to send it.</p>
+                  </div>
+                  <div className="co-sum">
+                    {summary.map((r) => (
+                      <div key={r.k} className="co-sum-row">
+                        <span className="co-sum-k">{r.k}</span>
+                        <span className="co-sum-v">{r.v}</span>
+                        <button className="vh-link" onClick={() => goTo(r.to)}>Edit</button>
+                      </div>
                     ))}
                   </div>
-                </div>
-              </>
-            )}
+                  <div className="co-group">
+                    <span className="co-group-label">Delivery</span>
+                    <div className="co-tray co-tray--2">
+                      <label className="co-cell">
+                        Full name
+                        <input autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
+                      </label>
+                      <label className="co-cell">
+                        Phone
+                        <input placeholder="0901 234 567" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                      </label>
+                      <label className="co-cell co-cell--wide">
+                        Delivery address
+                        <input autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="co-group">
+                    <span className="co-group-label">Payment</span>
+                    <div className="co-tray co-tray--3">
+                      {CREATE_PAYS.map((o) => (
+                        <button key={o.id} className={`co-opt${pay === o.id ? ' on' : ''}`} onClick={() => setPay(o.id)}>
+                          <MethodLogos id={o.id} />
+                          <span className="co-opt-name">{o.name}</span>
+                          <span className="co-opt-sub">{o.spec}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
 
             <div className="co-nav">
               <button className="vh-btn vh-btn--ghost vh-btn--md co-back" disabled={step === 0} onClick={() => step > 0 && goTo(step - 1)}>
@@ -431,51 +447,50 @@ export default function CreateOrder() {
               </div>
             </div>
           </div>
-        </div>
 
-        <aside className="vh-aside" style={{ boxShadow: '0 30px 60px var(--sh-35)' }}>
-          <div className="co-est-head">
-            <span>Instant estimate</span>
-            <span className="co-live vh-mono"><i />LIVE</span>
-          </div>
-          <div className="co-preview">
-            <div
-              className="co-preview-paper"
-              style={{
-                height: q.T?.land ? '58%' : '88%',
-                aspectRatio: q.T?.aspect ?? '105/148',
-                background: q.P?.color ?? '#f4eee0',
-              }}
-            >
-              {pvImg ? (
-                <div className="co-preview-img" style={{ backgroundImage: `url("${pvImg}")` }} />
-              ) : (
-                <span style={{ fontFamily: F.font, fontSize: pvFont, color: q.I?.color ?? '#1b2440' }}>{previewText}</span>
-              )}
+          <aside className="co-rail">
+            <div className="co-preview">
+              <div
+                className="co-preview-paper"
+                style={{
+                  height: q.T?.land ? '58%' : '88%',
+                  aspectRatio: q.T?.aspect ?? '105/148',
+                  background: q.P?.color ?? '#f4eee0',
+                }}
+              >
+                {pvImg ? (
+                  <div className="co-preview-img" style={{ backgroundImage: `url("${pvImg}")` }} />
+                ) : (
+                  <span style={{ fontFamily: F.font, fontSize: pvFont, color: q.I?.color ?? '#1b2440' }}>{previewText}</span>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="vh-rows">
-            {q.lines.length ? (
-              q.lines.map((l) => (
-                <div key={l.label} className="vh-row vh-row--mono">
-                  <span style={{ fontFamily: 'inherit' }}>{l.label}</span>
-                  <span style={l.good ? { color: 'var(--good)' } : undefined}>{l.value}</span>
-                </div>
-              ))
-            ) : (
-              <div className="vh-row"><span>Choose an order type to start</span><span>—</span></div>
-            )}
-          </div>
-          <div className="vh-total-row" style={{ alignItems: 'baseline' }}>
-            <span>Total</span>
-            <span style={{ fontSize: 30, letterSpacing: '-.03em' }}>{fmt(q.total)}</span>
-          </div>
-          <div className="co-eta">
-            <div><span className="vh-mono">ROBOT TIME</span><b>{q.robotTime}</b></div>
-            <div><span className="vh-mono">DELIVERY BY</span><b>{q.eta}</b></div>
-          </div>
-          <span className="co-fine">Estimate updates as you choose. Price locks at submit.</span>
-        </aside>
+            <div className="co-rail-body">
+              <span className="co-est-title">Instant estimate</span>
+              <div className="co-lines">
+                {q.lines.length ? (
+                  q.lines.map((l) => (
+                    <div key={l.label} className="co-line">
+                      <span>{l.label}</span>
+                      <span className={l.good ? 'good' : undefined}>{l.value}</span>
+                    </div>
+                  ))
+                ) : (
+                  <span className="co-hint">Choose an order type to start.</span>
+                )}
+              </div>
+              <div className="vh-total-row">
+                <span>Total</span>
+                <span className="co-total">{fmt(q.total)}</span>
+              </div>
+              <div className="co-eta">
+                <div><span>Robot time</span><b>{q.robotTime}</b></div>
+                <div><span>Delivery by</span><b>{q.eta}</b></div>
+              </div>
+              <span className="co-fine">Estimate updates as you choose. Price locks at submit.</span>
+            </div>
+          </aside>
+        </div>
       </div>
     </Page>
   )

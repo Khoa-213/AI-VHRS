@@ -18,7 +18,7 @@ const STATUS_LABEL: Record<Phase, string> = {
   gen: 'Generating sketch',
   review: 'Awaiting your review',
   pending: 'Pending',
-  accepted: 'Accepted — deposit due',
+  accepted: 'Accepted, deposit due',
   done: '',
 }
 const TITLE: Record<Phase, string> = {
@@ -67,7 +67,6 @@ export default function OrderReview({ id }: { id: string | null }) {
   const len = sp.text.length || 12
   const scale = 1 + ((seed % 3) - 1) * 0.06
   const fs = fontScale(len) * scale
-  const strokes = sp.img ? 140 + ((seed * 7) % 40) : Math.round(len * 2.6 + 12)
   const stage =
     progress < 0.25 ? 'Parsing content'
     : progress < 0.5 ? 'Fitting single-line font'
@@ -85,17 +84,19 @@ export default function OrderReview({ id }: { id: string | null }) {
   const approve = () => updateOrder(order.id, { status: 'Pending', layout: variant, note })
 
   const rows = [
-    { k: 'Format', v: `${sp.type} · ${sp.size}` },
+    { k: 'Format', v: `${sp.type}, ${sp.size}` },
     { k: 'Content', v: sp.img ? (sp.mode === 'draw' ? 'Hand-drawn' : 'Uploaded image') : `${sp.fontName} font` },
     { k: 'Paper', v: sp.paper },
     { k: 'Pen', v: sp.pen },
     { k: 'Ink', v: sp.ink },
     { k: 'Quantity', v: String(sp.qty) },
+    { k: 'Robot time', v: `${sp.mins || 4} min per piece` },
     { k: 'Total', v: fmt(order.total) },
   ]
 
   return (
     <Page label="Order Review">
+      <div className="ov">
       <div className="vh-head">
         <div className="vh-head-text">
           <span className="vh-eyebrow">Order {order.id} · {phase === 'done' ? order.status : STATUS_LABEL[phase]}</span>
@@ -105,9 +106,8 @@ export default function OrderReview({ id }: { id: string | null }) {
       </div>
 
       <div className="vh-cols">
-        <section className="vh-col" style={{ flex: '999 1 560px', gap: 16 }}>
+        <section className="vh-col" style={{ flex: '999 1 560px', gap: 20 }}>
           <div className="or-stage">
-            <div className="or-grid" />
             <PaperSheet
               spec={sp}
               layout={cur}
@@ -120,21 +120,18 @@ export default function OrderReview({ id }: { id: string | null }) {
             >
               {phase === 'gen' && <div className="or-nib" style={{ left: `${(g * 100).toFixed(1)}%` }} aria-hidden="true" />}
             </PaperSheet>
-            <div className="or-badge vh-mono">
-              <span style={{ background: phase === 'gen' ? 'var(--accent)' : 'var(--good-solid)' }} />
-              {phase === 'gen' ? 'AI SKETCH · RENDERING' : `AI SKETCH · ${cur.name.toUpperCase()}`}
-            </div>
-            {phase === 'gen' && (
-              <div className="or-progress">
-                <div><span>{stage}</span><span className="vh-mono">{pct}</span></div>
-                <div className="or-bar"><div style={{ width: pct }} /></div>
-              </div>
-            )}
           </div>
+
+          {phase === 'gen' && (
+            <div className="or-progress">
+              <div><span>{stage}</span><span className="vh-mono">{pct}</span></div>
+              <div className="or-bar"><div style={{ width: pct }} /></div>
+            </div>
+          )}
 
           {phase === 'review' && (
             <div className="vh-stack" style={{ gap: 10 }}>
-              <span className="vh-label">AI layout options</span>
+              <span className="vh-label">Layout</span>
               <div className="or-variants">
                 {LAYOUTS.map((v) => (
                   <button key={v.id} className={`or-variant${v.id === variant ? ' on' : ''}`} onClick={() => setVariant(v.id)}>
@@ -156,12 +153,9 @@ export default function OrderReview({ id }: { id: string | null }) {
         </section>
 
         <aside className="vh-aside">
+          <div className="ov-rail-body">
+          <span className="ov-rail-title">Order details</span>
           <SpecRows rows={rows} />
-          <div className="vh-metrics">
-            <div className="vh-metric"><b>{strokes}</b><span>Strokes</span></div>
-            <div className="vh-metric"><b>{Math.round(strokes * 0.32)}</b><span>Pen lifts</span></div>
-            <div className="vh-metric"><b>{sp.mins || 4} min</b><span>Per piece</span></div>
-          </div>
 
           {phase === 'gen' && (
             <p className="or-copy">
@@ -172,8 +166,9 @@ export default function OrderReview({ id }: { id: string | null }) {
           {phase === 'review' && (
             <>
               <div className="vh-stack" style={{ gap: 10 }}>
-                <span className="vh-label">Notes for revision (optional)</span>
+                <label className="vh-label" htmlFor="or-note">Notes for revision (optional)</label>
                 <textarea
+                  id="or-note"
                   className="vh-textarea"
                   rows={3}
                   value={note}
@@ -182,11 +177,11 @@ export default function OrderReview({ id }: { id: string | null }) {
                 />
               </div>
               <div className="or-actions">
-                <button className="vh-btn vh-btn--ghost vh-btn--md" style={{ flex: 1, height: 52 }} onClick={regenerate}>
+                <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={regenerate}>
                   Regenerate
                 </button>
-                <button className="vh-btn vh-btn--primary vh-btn--md" style={{ flex: 1.6, height: 52 }} onClick={approve}>
-                  Approve &amp; send to staff
+                <button className="vh-btn vh-btn--primary vh-btn--md" onClick={approve}>
+                  Send to staff
                 </button>
               </div>
             </>
@@ -194,8 +189,8 @@ export default function OrderReview({ id }: { id: string | null }) {
 
           {phase === 'pending' && (
             <div className="vh-callout vh-callout--amber">
-              <b><i className="vh-pulse" />Pending staff review</b>
-              <span>Our studio checks every sketch before the arm writes it. Staff usually respond within 2 hours (8:00–21:00).</span>
+              <b>Pending staff review</b>
+              <span>Our studio checks every sketch before the arm writes it. Staff usually respond within 2 hours, 8:00 to 21:00.</span>
             </div>
           )}
 
@@ -203,7 +198,8 @@ export default function OrderReview({ id }: { id: string | null }) {
             <>
               <div className="vh-callout vh-callout--teal">
                 <b>Accepted by staff</b>
-                <span>“Sketch looks great — ready for the FR3.” — {order.staff ?? 'AI-VHRS Studio'}</span>
+                <span>“Sketch looks great, ready for the FR3.”</span>
+                <span className="or-by">{order.staff ?? 'AI-VHRS Studio'}</span>
               </div>
               <div className="vh-total-row">
                 <span>Deposit due (30%)</span>
@@ -224,7 +220,9 @@ export default function OrderReview({ id }: { id: string | null }) {
               </Link>
             </>
           )}
+          </div>
         </aside>
+      </div>
       </div>
     </Page>
   )

@@ -118,7 +118,7 @@ export default function FinalPayment({ id }: { id: string | null }) {
                   <div className="pay-order-text">
                     <span className="pay-order-title">{order.title}</span>
                     <span className="pay-order-spec">{specLine}</span>
-                    <span className="pay-tag"><i />Written · approved by you</span>
+                    <span className="vh-chip vh-chip--good pay-tag">Written · approved by you</span>
                   </div>
                   <span className="pay-order-total">{fmt(total)}</span>
                 </div>
