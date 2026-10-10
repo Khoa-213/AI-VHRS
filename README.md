@@ -34,7 +34,7 @@ src/
 ├── App.tsx                          # Route table + PrototypeBar
 ├── main.tsx
 └── index.css
-
+```
 ### Order lifecycle (prototype)
 Sketching → Pending → Accepted → Queued → Written ⇄ Rewriting → Shipped → Delivered
 
@@ -117,4 +117,4 @@ lib/
 │           └── track_status_screen.dart         # Vertical timeline + result viewer
 └── routing/
     └── app_router.dart                          # GoRouter + auth guards + 404 page
-
+```
