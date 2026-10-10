@@ -37,7 +37,7 @@ src/
 ├── App.tsx                          # Route table + PrototypeBar
 ├── main.tsx
 └── index.css
-
+```
 ### Order lifecycle (prototype)
 Sketching → Pending → Accepted → Queued → Written ⇄ Rewriting → Shipped → Delivered
 
