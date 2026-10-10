@@ -84,7 +84,7 @@ export default function OrderResult({ id }: { id: string | null }) {
                 layout={layout}
                 height="100%"
                 maxWidth="none"
-                shadow="0 30px 50px rgba(0,0,0,.55), 0 2px 4px rgba(0,0,0,.3)"
+                shadow="0 30px 50px var(--sh-55), 0 2px 4px var(--sh-3)"
                 style={{ position: 'absolute', inset: 0, aspectRatio: 'auto', backfaceVisibility: 'hidden' }}
               >
                 <div className="rs-shine" />
@@ -137,14 +137,14 @@ export default function OrderResult({ id }: { id: string | null }) {
               </button>
               <button
                 className="vh-btn vh-btn--ghost vh-btn--md"
-                style={{ height: 52, color: used ? '#5f6775' : '#fff' }}
+                style={{ height: 52, color: used ? 'var(--t6)' : 'var(--t1)' }}
                 disabled={used}
                 onClick={() => setRewriteOpen(true)}
               >
                 Request rewrite
                 <span
                   className="rs-chip"
-                  style={{ color: used ? '#8a92a0' : '#0b0d13', background: used ? 'rgba(255,255,255,.08)' : '#4ade80' }}
+                  style={{ color: used ? 'var(--t5)' : 'var(--good-solid-fg)', background: used ? 'var(--fx-08)' : 'var(--good-solid)' }}
                 >
                   {used ? 'USED' : '1 FREE'}
                 </span>

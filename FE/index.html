@@ -5,6 +5,12 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI-VHRS</title>
+    <script>
+      // Apply the saved theme before first paint so there is no flash.
+      try {
+        if (localStorage.getItem('aivhrs-theme') === 'light') document.documentElement.setAttribute('data-theme', 'light')
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&family=Dancing+Script:wght@600&family=Great+Vibes&family=Caveat:wght@600&display=swap&subset=vietnamese" rel="stylesheet" />

@@ -1,0 +1,224 @@
+/*
+ * Theme tokens. Dark is the default (the brand is dark-first); light is an
+ * opt-in via <html data-theme="light">. Every colour in the app comes from
+ * here, so the two themes cannot drift apart.
+ *
+ * Light palette notes: cool blue-grey neutrals (no warm cream), off-black
+ * ink instead of pure black, off-white instead of pure white, one accent
+ * (the brand orange) with a darker text variant that passes AA on light.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* surfaces */
+  --bg: #0b0d13;
+  --bg-2: #161b24;
+  --stage: #0d1017;
+  --pop: #141922;
+  --header-bg: rgba(10, 10, 10, 0.8);
+  --header-line: #262626;
+  --aside-bg: rgba(15, 18, 26, 0.85);
+  --avatar-bg: #2a303c;
+  --line-strong: #2a2f3a;
+  --cta-a: #1c222e;
+  --cta-b: #12161e;
+  --or-a: #1e2531;
+  --rs-a: #3a3f4a;
+  --rs-b: #22262e;
+  --rs-c: #14171c;
+
+  /* text, strongest to faintest */
+  --t1: #ffffff;
+  --t2: #e6e8ec;
+  --t3: #d4d4d4;
+  --t4: #a4abb8;
+  --t5: #8a92a0;
+  --t6: #6b7280;
+
+  /* hero headline gradient */
+  --h1-a: #ffffff;
+  --h1-b: #d9dde4;
+  --h1-c: #7d8696;
+  --h1-d: #eef0f3;
+
+  /* brand accent */
+  --accent: #ff5a3c;
+  --accent-hover: #ff7357;
+  --accent-text: #ff7a5c;
+  --accent-text-hover: #ff9a80;
+  --on-accent: #0b0d13;
+
+  /* inverted button (white on dark, ink on light) */
+  --btn-inv-bg: #ffffff;
+  --btn-inv-fg: #0b0d13;
+  --btn-inv-hover: #e5e5e5;
+
+  /* status colours */
+  --good: #4ade80;
+  --good-solid: #4ade80;
+  --good-solid-fg: #0b0d13;
+  --good-08: rgba(74, 222, 128, 0.08);
+  --good-1: rgba(74, 222, 128, 0.1);
+  --good-3: rgba(74, 222, 128, 0.3);
+  --warn: #fcd34d;
+  --warn-08: rgba(251, 191, 36, 0.08);
+  --warn-3: rgba(251, 191, 36, 0.3);
+  --teal: #5eead4;
+  --teal-08: rgba(45, 212, 191, 0.08);
+  --teal-3: rgba(45, 212, 191, 0.3);
+  --danger: #f87171;
+  --st-sketch: #c4b5fd;
+  --st-sketch-bg: rgba(167, 139, 250, 0.14);
+  --st-pending: #fcd34d;
+  --st-pending-bg: rgba(251, 191, 36, 0.14);
+  --st-accepted: #5eead4;
+  --st-accepted-bg: rgba(45, 212, 191, 0.14);
+  --st-queued: #93c5fd;
+  --st-queued-bg: rgba(96, 165, 250, 0.14);
+  --st-written: #4ade80;
+  --st-written-bg: rgba(74, 222, 128, 0.12);
+  --st-rewriting: #ff7a5c;
+  --st-rewriting-bg: rgba(255, 90, 60, 0.14);
+
+  /* translucent overlays that sit on stages and photos */
+  --ov-92: rgba(11, 13, 19, 0.92);
+  --ov-8: rgba(11, 13, 19, 0.8);
+  --ov-78: rgba(11, 13, 19, 0.78);
+  --ov-75: rgba(11, 13, 19, 0.75);
+  --ov-72: rgba(11, 13, 19, 0.72);
+
+  /* ink-on-surface tints: white at N% on dark, ink at ~1.5N% on light */
+  --fx-012: rgba(255, 255, 255, 0.012);
+  --fx-015: rgba(255, 255, 255, 0.015);
+  --fx-025: rgba(255, 255, 255, 0.025);
+  --fx-03: rgba(255, 255, 255, 0.03);
+  --fx-035: rgba(255, 255, 255, 0.035);
+  --fx-04: rgba(255, 255, 255, 0.04);
+  --fx-045: rgba(255, 255, 255, 0.045);
+  --fx-05: rgba(255, 255, 255, 0.05);
+  --fx-06: rgba(255, 255, 255, 0.06);
+  --fx-07: rgba(255, 255, 255, 0.07);
+  --fx-08: rgba(255, 255, 255, 0.08);
+  --fx-09: rgba(255, 255, 255, 0.09);
+  --fx-1: rgba(255, 255, 255, 0.1);
+  --fx-12: rgba(255, 255, 255, 0.12);
+  --fx-14: rgba(255, 255, 255, 0.14);
+  --fx-15: rgba(255, 255, 255, 0.15);
+  --fx-16: rgba(255, 255, 255, 0.16);
+  --fx-18: rgba(255, 255, 255, 0.18);
+  --fx-2: rgba(255, 255, 255, 0.2);
+  --fx-22: rgba(255, 255, 255, 0.22);
+  --fx-55: rgba(255, 255, 255, 0.55);
+
+  /* shadows: black on dark, blue-grey tinted and softer on light */
+  --sh-3: rgba(0, 0, 0, 0.3);
+  --sh-35: rgba(0, 0, 0, 0.35);
+  --sh-4: rgba(0, 0, 0, 0.4);
+  --sh-45: rgba(0, 0, 0, 0.45);
+  --sh-5: rgba(0, 0, 0, 0.5);
+  --sh-55: rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f4f6fa;
+  --bg-2: #e8ecf3;
+  --stage: #dde3ec;
+  --pop: #fbfcfe;
+  --header-bg: rgba(244, 246, 250, 0.85);
+  --header-line: #d5dbe5;
+  --aside-bg: rgba(251, 252, 254, 0.88);
+  --avatar-bg: #d5dbe5;
+  --line-strong: #c6cedb;
+  --cta-a: #fbfcfe;
+  --cta-b: #e8ecf3;
+  --or-a: #eef1f7;
+  --rs-a: #fbfcfe;
+  --rs-b: #e6eaf2;
+  --rs-c: #d3dae6;
+
+  --t1: #0f1420;
+  --t2: #1b2233;
+  --t3: #2f384b;
+  --t4: #4a5368;
+  --t5: #596378;
+  --t6: #667086;
+
+  --h1-a: #0f1420;
+  --h1-b: #232b3d;
+  --h1-c: #5a6479;
+  --h1-d: #1b2233;
+
+  --accent: #ff5a3c;
+  --accent-hover: #ff7357;
+  --accent-text: #cf3516;
+  --accent-text-hover: #a82a10;
+  --on-accent: #0b0d13;
+
+  --btn-inv-bg: #0f1420;
+  --btn-inv-fg: #f4f6fa;
+  --btn-inv-hover: #262e42;
+
+  --good: #15803d;
+  --good-solid: #15803d;
+  --good-solid-fg: #f4f6fa;
+  --good-08: rgba(21, 128, 61, 0.09);
+  --good-1: rgba(21, 128, 61, 0.12);
+  --good-3: rgba(21, 128, 61, 0.35);
+  --warn: #a15c07;
+  --warn-08: rgba(180, 83, 9, 0.09);
+  --warn-3: rgba(180, 83, 9, 0.35);
+  --teal: #0f766e;
+  --teal-08: rgba(15, 118, 110, 0.09);
+  --teal-3: rgba(15, 118, 110, 0.35);
+  --danger: #c81e1e;
+  --st-sketch: #6d28d9;
+  --st-sketch-bg: rgba(109, 40, 217, 0.1);
+  --st-pending: #a15c07;
+  --st-pending-bg: rgba(180, 83, 9, 0.12);
+  --st-accepted: #0f766e;
+  --st-accepted-bg: rgba(15, 118, 110, 0.12);
+  --st-queued: #1d4ed8;
+  --st-queued-bg: rgba(29, 78, 216, 0.1);
+  --st-written: #15803d;
+  --st-written-bg: rgba(21, 128, 61, 0.12);
+  --st-rewriting: #cf3516;
+  --st-rewriting-bg: rgba(255, 90, 60, 0.14);
+
+  --ov-92: rgba(251, 252, 254, 0.94);
+  --ov-8: rgba(251, 252, 254, 0.86);
+  --ov-78: rgba(251, 252, 254, 0.84);
+  --ov-75: rgba(251, 252, 254, 0.82);
+  --ov-72: rgba(244, 246, 250, 0.8);
+
+  --fx-012: rgba(15, 20, 32, 0.018);
+  --fx-015: rgba(15, 20, 32, 0.022);
+  --fx-025: rgba(15, 20, 32, 0.038);
+  --fx-03: rgba(15, 20, 32, 0.045);
+  --fx-035: rgba(15, 20, 32, 0.053);
+  --fx-04: rgba(15, 20, 32, 0.06);
+  --fx-045: rgba(15, 20, 32, 0.068);
+  --fx-05: rgba(15, 20, 32, 0.075);
+  --fx-06: rgba(15, 20, 32, 0.09);
+  --fx-07: rgba(15, 20, 32, 0.105);
+  --fx-08: rgba(15, 20, 32, 0.12);
+  --fx-09: rgba(15, 20, 32, 0.135);
+  --fx-1: rgba(15, 20, 32, 0.15);
+  --fx-12: rgba(15, 20, 32, 0.18);
+  --fx-14: rgba(15, 20, 32, 0.21);
+  --fx-15: rgba(15, 20, 32, 0.225);
+  --fx-16: rgba(15, 20, 32, 0.24);
+  --fx-18: rgba(15, 20, 32, 0.27);
+  --fx-2: rgba(15, 20, 32, 0.3);
+  --fx-22: rgba(15, 20, 32, 0.33);
+  --fx-55: rgba(15, 20, 32, 0.6);
+
+  --sh-3: rgba(38, 50, 84, 0.1);
+  --sh-35: rgba(38, 50, 84, 0.12);
+  --sh-4: rgba(38, 50, 84, 0.14);
+  --sh-45: rgba(38, 50, 84, 0.16);
+  --sh-5: rgba(38, 50, 84, 0.18);
+  --sh-55: rgba(38, 50, 84, 0.22);
+}

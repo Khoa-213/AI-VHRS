@@ -1,6 +1,6 @@
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;background:#0b0d13;color:#e6e8ec;font-family:'Plus Jakarta Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-a{color:#e6e8ec;text-decoration:none}
-a:hover{color:#fff}
+body{margin:0;background:var(--bg);color:var(--t2);font-family:'Plus Jakarta Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--t2);text-decoration:none}
+a:hover{color:var(--t1)}
 button{font-family:inherit}

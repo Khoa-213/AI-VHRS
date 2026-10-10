@@ -433,7 +433,7 @@ export default function CreateOrder() {
           </div>
         </div>
 
-        <aside className="vh-aside" style={{ boxShadow: '0 30px 60px rgba(0,0,0,.35)' }}>
+        <aside className="vh-aside" style={{ boxShadow: '0 30px 60px var(--sh-35)' }}>
           <div className="co-est-head">
             <span>Instant estimate</span>
             <span className="co-live vh-mono"><i />LIVE</span>
@@ -459,7 +459,7 @@ export default function CreateOrder() {
               q.lines.map((l) => (
                 <div key={l.label} className="vh-row vh-row--mono">
                   <span style={{ fontFamily: 'inherit' }}>{l.label}</span>
-                  <span style={l.good ? { color: '#4ade80' } : undefined}>{l.value}</span>
+                  <span style={l.good ? { color: 'var(--good)' } : undefined}>{l.value}</span>
                 </div>
               ))
             ) : (

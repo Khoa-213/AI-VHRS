@@ -10,6 +10,7 @@ src/
 │   ├── prototype/
 │   │   └── PrototypeBar.tsx         # Prototype mode: stands in for staff, robot, courier
 │   └── ui/
+│       ├── ThemeToggle.tsx          # Dark / light switch in the top nav
 │       ├── OrderParts.tsx           # Timeline, spec rows, empty state
 │       ├── PaperSheet.tsx           # Paper with text/image, scaled by container units
 │       ├── PaymentMethods.tsx       # VietQR / wallet / card picker
@@ -26,8 +27,10 @@ src/
 ├── router/
 │   └── router.tsx                   # History-API router: Link, navigate, usePath
 ├── store/
-│   └── store.ts                     # localStorage "backend": orders, cart, user, prototype flag
+│   ├── store.ts                     # localStorage "backend": orders, cart, user, prototype flag
+│   └── theme.ts                     # dark/light theme, persisted, sets <html data-theme>
 ├── styles/
+│   ├── theme.css                    # Colour tokens for dark (default) and light
 │   └── shell.css                    # Shared styles for the order pages
 ├── types/index.ts                   # Order, OrderSpec, OrderStatus, CartItem
 ├── utils/                           # math, format (VND), pricing (live quote)

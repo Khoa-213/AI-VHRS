@@ -5,6 +5,7 @@ import { Link, orderPath } from '../../router/router'
 import { signIn, signOut, useCart, useOrders, useUser } from '../../store/store'
 import type { Order } from '../../types'
 import { fmt } from '../../utils/format'
+import ThemeToggle from '../ui/ThemeToggle'
 
 /** Where an order opens from the history list, by status. */
 function orderHref(o: Order) {
@@ -46,6 +47,7 @@ export default function SiteHeader() {
               <path d="m21 21-4.3-4.3" />
             </svg>
           </button>
+          <ThemeToggle className="vh-icon-btn" />
           <div className={`vh-dd${open ? ' open' : ''}`} onMouseEnter={enter} onMouseLeave={leave}>
             <Link to="/cart" className="vh-icon-btn" aria-label="Cart">
               <svg width="19" height="19" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>

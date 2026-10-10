@@ -43,7 +43,7 @@ export default function Cart() {
               Order <b className="vh-mono">{placed}</b> placed — it’s now in the FR3 queue.{' '}
               <Link to={orderPath(placed, 'review')} className="vh-link">Open order</Link>
             </span>
-            <button className="vh-link" style={{ color: '#a4abb8', fontSize: 14 }} onClick={() => setPlaced(null)}>Dismiss</button>
+            <button className="vh-link" style={{ color: 'var(--t4)', fontSize: 14 }} onClick={() => setPlaced(null)}>Dismiss</button>
           </div>
         )}
 
@@ -96,11 +96,11 @@ export default function Cart() {
                 ))}
               </div>
               <aside className="vh-aside ct-summary" style={{ gap: 12, padding: 22, borderRadius: 24 }}>
-                <span style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>Summary</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--t1)' }}>Summary</span>
                 <div className="ct-sum-row"><span>Subtotal</span><b className="vh-mono">{fmt(sub)}</b></div>
                 <div className="ct-sum-row"><span>Shipping</span><b className="vh-mono">{ship ? fmt(ship) : 'Free'}</b></div>
-                <span style={{ fontSize: 12, color: '#6b7280' }}>Free shipping from 500.000₫</span>
-                <div className="vh-total-row" style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,.08)' }}>
+                <span style={{ fontSize: 12, color: 'var(--t6)' }}>Free shipping from 500.000₫</span>
+                <div className="vh-total-row" style={{ paddingTop: 12, borderTop: '1px solid var(--fx-08)' }}>
                   <span>Total</span>
                   <span style={{ fontSize: 26 }}>{fmt(sub + ship)}</span>
                 </div>
@@ -146,7 +146,7 @@ export default function Cart() {
                         key={pp.id}
                         title={pp.name}
                         aria-label={pp.name}
-                        style={{ background: pp.color, borderColor: i === s.paper ? '#ff5a3c' : 'rgba(255,255,255,.2)' }}
+                        style={{ background: pp.color, borderColor: i === s.paper ? 'var(--accent)' : 'var(--fx-2)' }}
                         onClick={() => set({ paper: i })}
                       />
                     ))}
@@ -157,7 +157,7 @@ export default function Cart() {
                     ))}
                   </div>
                   <span className="vh-mono ct-card-price">{fmt((p.base + paper.price) * pack.mult)}</span>
-                  <button className="ct-add" style={{ background: flash ? '#4ade80' : '#fff' }} onClick={add}>
+                  <button className="ct-add" style={flash ? { background: 'var(--good-solid)', color: 'var(--good-solid-fg)' } : undefined} onClick={add}>
                     {flash ? 'Added ✓' : 'Add to cart'}
                   </button>
                 </div>

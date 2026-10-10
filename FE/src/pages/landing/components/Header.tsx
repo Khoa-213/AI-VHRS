@@ -1,4 +1,5 @@
 import { ORDER_HREF, svgProps } from '../../../constants'
+import ThemeToggle from '../../../components/ui/ThemeToggle'
 
 export default function Header() {
   return (
@@ -18,6 +19,7 @@ export default function Header() {
               <path d="m21 21-4.3-4.3" />
             </svg>
           </button>
+          <ThemeToggle className="lp-icon-btn" />
           <a href="/cart" className="lp-icon-btn" aria-label="Cart">
             <svg width="19" height="19" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
               <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />

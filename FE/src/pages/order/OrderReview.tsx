@@ -114,14 +114,14 @@ export default function OrderReview({ id }: { id: string | null }) {
               height={sp.land ? '48%' : '82%'}
               maxWidth="90%"
               fs={fs}
-              shadow="0 30px 60px rgba(0,0,0,.55)"
+              shadow="0 30px 60px var(--sh-55)"
               reveal={phase === 'gen' ? g : 1}
               style={{ position: 'relative' }}
             >
               {phase === 'gen' && <div className="or-nib" style={{ left: `${(g * 100).toFixed(1)}%` }} aria-hidden="true" />}
             </PaperSheet>
             <div className="or-badge vh-mono">
-              <span style={{ background: phase === 'gen' ? '#ff5a3c' : '#4ade80' }} />
+              <span style={{ background: phase === 'gen' ? 'var(--accent)' : 'var(--good-solid)' }} />
               {phase === 'gen' ? 'AI SKETCH · RENDERING' : `AI SKETCH · ${cur.name.toUpperCase()}`}
             </div>
             {phase === 'gen' && (

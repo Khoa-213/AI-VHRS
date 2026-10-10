@@ -87,7 +87,7 @@ export default function PrototypeBar() {
 
   const step = order ? STEPS[order.status] : undefined
   const stageIdx = order ? STAGES.indexOf(order.status === 'Rewriting' ? 'Written' : order.status) : -1
-  const [color, bg] = order ? STATUS_COLORS[order.status] : ['#fff', 'transparent']
+  const [color, bg] = order ? STATUS_COLORS[order.status] : ['var(--t1)', 'transparent']
 
   return (
     <aside className="vh-proto" aria-label="Prototype controls">

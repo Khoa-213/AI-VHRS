@@ -48,7 +48,7 @@ export default function Showcase() {
           >
             <span className="lp-eyebrow-grey">Powered by Fairino</span>
             <h2 className="lp-h2-spec">
-              AI-VHRS<span style={{ color: '#ff5a3c' }}>·FR3</span>
+              AI-VHRS<span style={{ color: 'var(--accent)' }}>·FR3</span>
             </h2>
             <p className="lp-spec-copy">
               A 6-axis collaborative arm, retuned for penmanship. Your strokes become smooth splines, then real ink on real paper.
@@ -73,7 +73,7 @@ export default function Showcase() {
         </div>
 
         <div className="lp-progress">
-          <span style={{ color: '#fff' }}>{'0' + step}</span>
+          <span style={{ color: 'var(--t1)' }}>{'0' + step}</span>
           <div className="lp-progress-track">
             <div className="lp-progress-fill" style={{ width: `${(p * 100).toFixed(1)}%` }} />
           </div>

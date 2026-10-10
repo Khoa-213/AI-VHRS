@@ -118,14 +118,14 @@ export const PAYMENT_BADGES = [
   { name: '0% installment', dot: '#4ade80' }, { name: 'Cash on delivery', dot: '#fbbf24' },
 ]
 
-/** Status chip colours: [text, background]. */
+/** Status chip colours: [text, background], as theme tokens. */
 export const STATUS_COLORS: Record<string, [string, string]> = {
-  Sketching: ['#c4b5fd', 'rgba(167,139,250,0.14)'],
-  Pending: ['#fcd34d', 'rgba(251,191,36,0.14)'],
-  Accepted: ['#5eead4', 'rgba(45,212,191,0.14)'],
-  Queued: ['#93c5fd', 'rgba(96,165,250,0.14)'],
-  Written: ['#4ade80', 'rgba(74,222,128,0.12)'],
-  Rewriting: ['#ff7a5c', 'rgba(255,90,60,0.14)'],
-  Shipped: ['#fcd34d', 'rgba(251,191,36,0.14)'],
-  Delivered: ['#4ade80', 'rgba(74,222,128,0.12)'],
+  Sketching: ['var(--st-sketch)', 'var(--st-sketch-bg)'],
+  Pending: ['var(--st-pending)', 'var(--st-pending-bg)'],
+  Accepted: ['var(--st-accepted)', 'var(--st-accepted-bg)'],
+  Queued: ['var(--st-queued)', 'var(--st-queued-bg)'],
+  Written: ['var(--st-written)', 'var(--st-written-bg)'],
+  Rewriting: ['var(--st-rewriting)', 'var(--st-rewriting-bg)'],
+  Shipped: ['var(--st-pending)', 'var(--st-pending-bg)'],
+  Delivered: ['var(--st-written)', 'var(--st-written-bg)'],
 }

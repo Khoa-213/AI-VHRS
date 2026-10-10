@@ -85,11 +85,11 @@ export default function FinalPayment({ id }: { id: string | null }) {
     : `Pay ${fmt(due)}${m.kind === 'wallet' ? ` with ${m.name}` : ''}`
 
   const lines = [
-    { k: 'Order subtotal', v: fmt(total), c: '#e6e8ec' },
-    { k: 'Incl. VAT (8%)', v: fmt(vat), c: '#8a92a0' },
-    { k: 'Deposit paid', v: '−' + fmt(deposit), c: '#4ade80' },
-    { k: 'Shipping', v: shipFee ? fmt(shipFee) : 'Free', c: '#e6e8ec' },
-    ...(disc ? [{ k: `Promo · ${applied}`, v: '−' + fmt(disc), c: '#4ade80' }] : []),
+    { k: 'Order subtotal', v: fmt(total), c: 'var(--t2)' },
+    { k: 'Incl. VAT (8%)', v: fmt(vat), c: 'var(--t5)' },
+    { k: 'Deposit paid', v: '−' + fmt(deposit), c: 'var(--good)' },
+    { k: 'Shipping', v: shipFee ? fmt(shipFee) : 'Free', c: 'var(--t2)' },
+    ...(disc ? [{ k: `Promo · ${applied}`, v: '−' + fmt(disc), c: 'var(--good)' }] : []),
   ]
 
   const addrShort = [ship.street, ship.ward, ship.city].filter((x) => x.trim()).join(', ')
@@ -113,7 +113,7 @@ export default function FinalPayment({ id }: { id: string | null }) {
                 </div>
                 <div className="pay-order">
                   <div className="pay-thumb">
-                    <PaperSheet spec={sp} height={sp.land ? '50%' : '86%'} maxWidth="84%" shadow="0 8px 14px rgba(0,0,0,.5)" />
+                    <PaperSheet spec={sp} height={sp.land ? '50%' : '86%'} maxWidth="84%" shadow="0 8px 14px var(--sh-5)" />
                   </div>
                   <div className="pay-order-text">
                     <span className="pay-order-title">{order.title}</span>
@@ -127,7 +127,7 @@ export default function FinalPayment({ id }: { id: string | null }) {
               <section className="vh-panel vh-panel--md">
                 <div className="vh-stack" style={{ gap: 4 }}>
                   <h2 className="vh-h2 vh-h2--sm">Delivery address</h2>
-                  <span style={{ fontSize: 14, color: '#8a92a0' }}>Where should we send your finished piece?</span>
+                  <span style={{ fontSize: 14, color: 'var(--t5)' }}>Where should we send your finished piece?</span>
                 </div>
                 <div className="vh-form-grid">
                   <label className="vh-label">Full name
@@ -158,7 +158,7 @@ export default function FinalPayment({ id }: { id: string | null }) {
               <section className="vh-panel vh-panel--md">
                 <div className="vh-stack" style={{ gap: 4 }}>
                   <h2 className="vh-h2 vh-h2--sm">Payment method</h2>
-                  <span style={{ fontSize: 14, color: '#8a92a0' }}>Pay the remaining balance — your 30% deposit is already applied.</span>
+                  <span style={{ fontSize: 14, color: 'var(--t5)' }}>Pay the remaining balance — your 30% deposit is already applied.</span>
                 </div>
                 <PaymentMethods
                   method={method}
@@ -193,15 +193,15 @@ export default function FinalPayment({ id }: { id: string | null }) {
           )}
         </div>
 
-        <aside className="vh-aside" style={{ flex: '1 1 340px', padding: 24, borderRadius: 24, boxShadow: '0 30px 60px rgba(0,0,0,.35)' }}>
+        <aside className="vh-aside" style={{ flex: '1 1 340px', padding: 24, borderRadius: 24, boxShadow: '0 30px 60px var(--sh-35)' }}>
           <div className="vh-stack" style={{ gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Promo code</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--t1)' }}>Promo code</span>
             <div className="pay-promo">
               <input
                 className="vh-input"
                 placeholder="Enter code"
                 value={promo}
-                style={promoErr ? { borderColor: '#f87171' } : undefined}
+                style={promoErr ? { borderColor: 'var(--danger)' } : undefined}
                 onChange={(e) => {
                   setPromo(e.target.value)
                   setPromoErr(false)
@@ -212,7 +212,7 @@ export default function FinalPayment({ id }: { id: string | null }) {
               </button>
             </div>
             {(promoErr || P) && (
-              <span className="pay-msg" style={{ color: promoErr ? '#f87171' : '#4ade80' }}>
+              <span className="pay-msg" style={{ color: promoErr ? 'var(--danger)' : 'var(--good)' }}>
                 {promoErr ? 'Code not valid. Try VHRS10 or FREESHIP.' : `${applied} applied · ${P?.label}`}
               </span>
             )}
@@ -224,7 +224,7 @@ export default function FinalPayment({ id }: { id: string | null }) {
             ))}
           </div>
           <div className="pay-due"><span>Total due</span><span>{fmt(due)}</span></div>
-          <span style={{ marginTop: -10, fontSize: 12, color: '#6b7280', textAlign: 'right' }}>VAT included</span>
+          <span style={{ marginTop: -10, fontSize: 12, color: 'var(--t6)', textAlign: 'right' }}>VAT included</span>
 
           {!paid && (
             <>

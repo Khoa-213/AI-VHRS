@@ -88,7 +88,7 @@ export default function Deposit({ id }: { id: string | null }) {
 
         <aside className="vh-aside" style={{ flex: '1 1 320px', gap: 16 }}>
           <div className="pay-preview">
-            <PaperSheet spec={order.spec} height={order.spec.land ? '50%' : '86%'} maxWidth="88%" shadow="0 14px 24px rgba(0,0,0,.5)" />
+            <PaperSheet spec={order.spec} height={order.spec.land ? '50%' : '86%'} maxWidth="88%" shadow="0 14px 24px var(--sh-5)" />
           </div>
           <span className="pay-order-title" style={{ fontSize: 15 }}>{order.title}</span>
           <div className="vh-rows">
