@@ -1,5 +1,6 @@
 # Folder Structure
 ## FE Folder Structure
+```
 src/
 ├── assets/                          # Static assets (images, svg)
 ├── components/
@@ -41,7 +42,7 @@ Staff accept, robot finished, new rewrite photos and courier have no customer sc
 In prototype mode the bar at the bottom of the page triggers them.
 
 ## Mobile Folder Structure
-
+```
 lib/
 ├── main.dart                          # App entry point, ProviderScope, auth check
 ├── core/
@@ -116,3 +117,4 @@ lib/
 │           └── track_status_screen.dart         # Vertical timeline + result viewer
 └── routing/
     └── app_router.dart                          # GoRouter + auth guards + 404 page
+```
