@@ -3,30 +3,42 @@
 src/
 ├── assets/                          # Static assets (images, svg)
 ├── components/
+│   ├── layout/
+│   │   ├── Page.tsx                 # Header + dark shell for order pages
+│   │   └── SiteHeader.tsx           # Cart badge, order-history dropdown, sign in/out
+│   ├── prototype/
+│   │   └── PrototypeBar.tsx         # Prototype mode: stands in for staff, robot, courier
 │   └── ui/
-│       └── Reveal.tsx               # ♻️ Shared animation component
+│       ├── OrderParts.tsx           # Timeline, spec rows, empty state
+│       ├── PaperSheet.tsx           # Paper with text/image, scaled by container units
+│       ├── PaymentMethods.tsx       # VietQR / wallet / card picker
+│       └── Reveal.tsx               # Shared animation component
 ├── constants/
+│   ├── catalog.ts                   # Order types, papers, pens, inks, products, promos
 │   └── index.ts                     # ORDER_HREF, svgProps
-├── hooks/
-│   ├── useReveal.ts                 # ♻️ IntersectionObserver hook
-│   └── useScrollProgress.ts         # ♻️ Scroll progress hook
+├── hooks/                           # useReveal, useScrollProgress
 ├── pages/
-│   └── landing/
-│       ├── components/
-│       │   ├── Header.tsx           # Sticky header + nav
-│       │   ├── Hero.tsx             # Hero section
-│       │   ├── Showcase.tsx         # Robot parallax showcase
-│       │   ├── Modes.tsx            # 3 input modes cards
-│       │   └── Cta.tsx              # Bottom CTA
-│       ├── Landing.tsx              # ✨ Clean composition (18 lines)
-│       └── landing.css              # Landing styles
-├── types/
-│   └── index.ts                     # Shared TS types
-├── utils/
-│   └── math.ts                      # clamp01, seg, ease
-├── App.tsx
+│   ├── landing/                     # Landing page (Header, Hero, Showcase, Modes, Cta)
+│   ├── create-order/                # /create-order (4 steps, live estimate, draw pad)
+│   ├── order/                       # /orders/:id/review | deposit | result | final-payment
+│   └── cart/                        # /cart
+├── router/
+│   └── router.tsx                   # History-API router: Link, navigate, usePath
+├── store/
+│   └── store.ts                     # localStorage "backend": orders, cart, user, prototype flag
+├── styles/
+│   └── shell.css                    # Shared styles for the order pages
+├── types/index.ts                   # Order, OrderSpec, OrderStatus, CartItem
+├── utils/                           # math, format (VND), pricing (live quote)
+├── App.tsx                          # Route table + PrototypeBar
 ├── main.tsx
 └── index.css
+
+### Order lifecycle (prototype)
+Sketching → Pending → Accepted → Queued → Written ⇄ Rewriting → Shipped → Delivered
+
+Staff accept, robot finished, new rewrite photos and courier have no customer screen.
+In prototype mode the bar at the bottom of the page triggers them.
 
 ## Mobile Folder Structure
 

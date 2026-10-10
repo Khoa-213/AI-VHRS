@@ -18,13 +18,13 @@ export default function Header() {
               <path d="m21 21-4.3-4.3" />
             </svg>
           </button>
-          <button className="lp-icon-btn" aria-label="Cart">
+          <a href="/cart" className="lp-icon-btn" aria-label="Cart">
             <svg width="19" height="19" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
               <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
               <path d="M3 6h18" />
               <path d="M16 10a4 4 0 0 1-8 0" />
             </svg>
-          </button>
+          </a>
           <button className="lp-icon-btn" aria-label="Profile">
             <svg width="20" height="20" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
               <circle cx="12" cy="12" r="10" />
