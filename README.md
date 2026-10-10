@@ -117,4 +117,4 @@ lib/
 │           └── track_status_screen.dart         # Vertical timeline + result viewer
 └── routing/
     └── app_router.dart                          # GoRouter + auth guards + 404 page
-```
+
