@@ -6,7 +6,7 @@ export default function Hero() {
     <section id="top" className="lp-hero">
       <Reveal className="lp-hero-inner" dur=".9s">
         <span className="lp-eyebrow">Robot-written Vietnamese calligraphy</span>
-        <h1 className="lp-h1">make your own style.</h1>
+        <h1 className="lp-h1">make your own style</h1>
         <p className="lp-hero-sub">
           Your words, traced by AI and written in real ink on real paper by a Fairino 6-axis robotic arm.
         </p>
