@@ -2,6 +2,7 @@
 export type OrderStatus =
   | 'Sketching'
   | 'Pending'
+  | 'Rejected'
   | 'Accepted'
   | 'Queued'
   | 'Written'
@@ -42,6 +43,9 @@ export interface OrderSpec {
   text: string
   img: string | null
   qty: number
+  /** Demo only: original file name and the text a photo or drawing reads as. */
+  fileName?: string
+  simText?: string
 }
 
 export interface ShipTo {
@@ -76,6 +80,52 @@ export interface Order {
   rewrites?: number
   rewriteReasons?: string[]
   rewriteNote?: string
+  /** Staff console: where the order is in staff review, plus what staff recorded. */
+  staffStage?: 'input' | 'sketch'
+  ocrText?: string
+  evalScore?: number
+  rejectReasons?: string[]
+  regen?: number
+  /** Technician and robot staff picked after accepting the order. */
+  assignment?: Assignment
+  /** Set when a technician starts the real robot. Cleared when the order is marked written. */
+  run?: RobotRun
+  /** Photo and QC result sent to the customer. */
+  qc?: QcReport
+  /** Set when QC failed and the order went back to the robot queue. */
+  qcFail?: { reasons: string[]; note: string; at: string }
+  /** True for the sample orders the staff console seeds for itself. */
+  demo?: boolean
+}
+
+export interface QcPhoto {
+  slot: string
+  /** Downscaled JPEG data URL. */
+  url: string
+}
+
+/** What the technician recorded at photo and QC, and what the customer is sent. */
+export interface QcReport {
+  checked: string[]
+  total: number
+  photos: QcPhoto[]
+  note: string
+  by: string
+  at: string
+}
+
+export interface RobotRun {
+  robotId: string
+  startedAt: number
+  /** Prototype only: how long the simulated run lasts. */
+  seconds: number
+}
+
+export interface Assignment {
+  techId: string
+  techName: string
+  robotId: string
+  at: string
 }
 
 export interface CartItem {
@@ -91,6 +141,11 @@ export interface CartItem {
   qty: number
 }
 
+export type Role = 'customer' | 'staff' | 'technician'
+
 export interface User {
   name: string
+  role: Role
+  /** Roster id of a technician account (T-01 ...). */
+  techId?: string
 }

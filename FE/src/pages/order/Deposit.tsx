@@ -19,7 +19,7 @@ export default function Deposit({ id }: { id: string | null }) {
 
   if (!order) return <NoOrder label="Deposit" />
 
-  const paid = !['Accepted', 'Pending', 'Sketching'].includes(order.status)
+  const paid = !['Accepted', 'Pending', 'Rejected', 'Sketching'].includes(order.status)
   const deposit = depositOf(order.total)
   const m = PAY_METHODS.find((x) => x.id === (paid ? order.depositMethod : method))
   const ready = methodReady(method, card)

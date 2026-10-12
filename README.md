@@ -23,7 +23,10 @@ src/
 │   ├── landing/                     # Landing page (Header, Hero, Showcase, Modes, Cta)
 │   ├── create-order/                # /create-order (4 steps, live estimate, draw pad)
 │   ├── order/                       # /orders/:id/review | deposit | result | final-payment
-│   └── cart/                        # /cart
+│   ├── cart/                        # /cart
+│   ├── tech/                        # /tech technician dashboard, /tech/preview/:id Isaac Sim style preview + start robot, /tech/qc[/:id] photo and QC checklist
+│   ├── login/                       # /login (mock role check: staff -> /staff)
+│   └── staff/                       # /staff dashboard, /staff/review[/:id] console, /staff/assign/:id technician assignment, RequireStaff guard (also gates /tech)
 ├── router/
 │   └── router.tsx                   # History-API router: Link, navigate, usePath
 ├── store/
@@ -40,9 +43,10 @@ src/
 ```
 ### Order lifecycle (prototype)
 Sketching → Pending → Accepted → Queued → Written ⇄ Rewriting → Shipped → Delivered
+                    ↘ Rejected (staff, with reasons)
 
-Staff accept, robot finished, new rewrite photos and courier have no customer screen.
-In prototype mode the bar at the bottom of the page triggers them.
+Staff accept and reject happen in the staff console at `/staff/review`; accepting opens `/staff/assign/:id` to pick a technician and one of their robots. Robot finished, new rewrite
+photos and courier have no screen yet; in prototype mode the bar at the bottom triggers them.
 
 ## Mobile Folder Structure
 ```

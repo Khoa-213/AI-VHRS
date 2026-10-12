@@ -21,14 +21,23 @@ const STEPS: Record<OrderStatus, Step> = {
     go: { label: 'Open sketch review', to: (o) => orderPath(o.id, 'review') },
   },
   Pending: {
-    hint: 'Waiting for staff to check the sketch.',
+    hint: 'Waiting for staff. Review it in the staff console, or accept it from here.',
     simulate: {
       label: 'Staff accepts sketch',
       run: (o) => setStatus(o.id, 'Accepted', { staff: 'Minh · AI-VHRS Studio' }),
     },
+    go: { label: 'Open staff console', to: (o) => `/staff/review/${encodeURIComponent(o.id)}` },
+  },
+  Rejected: {
+    hint: 'Staff rejected the input. The customer sees the reasons and can start again.',
+    go: { label: 'Open order', to: (o) => orderPath(o.id, 'review') },
   },
   Accepted: {
     hint: 'Customer: pay the 30% deposit.',
+    simulate: {
+      label: 'Customer pays deposit',
+      run: (o) => setStatus(o.id, 'Queued', { depositMethod: 'Prototype' }),
+    },
     go: { label: 'Open deposit', to: (o) => orderPath(o.id, 'deposit') },
   },
   Queued: {
@@ -36,7 +45,7 @@ const STEPS: Record<OrderStatus, Step> = {
     simulate: {
       label: 'Robot finished writing',
       run: (o) => {
-        setStatus(o.id, 'Written')
+        setStatus(o.id, 'Written', { run: undefined })
         navigate(orderPath(o.id, 'result'))
       },
     },
@@ -65,6 +74,9 @@ export default function PrototypeBar() {
   const orders = useOrders()
   const path = usePath()
   const [open, setOpen] = useState(true)
+
+  // Staff pages are the simulator for staff steps, so the bar would only get in the way there.
+  if (path === '/staff' || path.startsWith('/staff/') || path === '/tech' || path.startsWith('/tech/') || path === '/login') return null
 
   if (!on) {
     return (
@@ -97,6 +109,8 @@ export default function PrototypeBar() {
           <Link to="/" className="vh-proto-link">Landing</Link>
           <Link to={ORDER_HREF} className="vh-proto-link">New order</Link>
           <Link to="/cart" className="vh-proto-link">Cart</Link>
+          <Link to="/staff" className="vh-proto-link">Staff</Link>
+          <Link to="/tech" className="vh-proto-link">Technician</Link>
           <button className="vh-proto-link" onClick={resetDemo}>Reset data</button>
           <button className="vh-proto-link" onClick={() => setOpen(false)} aria-label="Collapse">Hide</button>
           <button className="vh-proto-link" onClick={() => setPrototypeMode(false)}>Turn off</button>

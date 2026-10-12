@@ -35,6 +35,7 @@
 .ov .vh-callout{border:none;border-radius:2px}
 .ov .vh-callout--amber{background:linear-gradient(135deg,transparent,var(--st-pending-bg))}
 .ov .vh-callout--teal{background:linear-gradient(135deg,transparent,var(--st-accepted-bg))}
+.ov .vh-callout--red{background:linear-gradient(135deg,transparent,color-mix(in srgb,var(--danger) 14%,transparent))}
 .ov .vh-callout--green{background:linear-gradient(135deg,transparent,var(--st-written-bg))}
 .ov .pay-preview{height:220px;border-radius:0}
 
@@ -117,3 +118,8 @@
   .ov .vh-timeline div:not(.now) span{display:none}
   .ov .vh-timeline .now span{overflow:visible}
 }
+
+/* Photos the technician sent after QC */
+.rs-qc{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:2px}
+.rs-qc li{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:var(--t4)}
+.rs-qc img{display:block;width:100%;height:110px;object-fit:cover;border-radius:2px;background:var(--fx-06)}

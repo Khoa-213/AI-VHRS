@@ -8,7 +8,8 @@ import { addOrder, createOrderId } from '../../store/store'
 import type { InputMode, Order, OrderSpec } from '../../types'
 import { fmt, todayLabel } from '../../utils/format'
 import { quote } from '../../utils/pricing'
-import DrawPad from './DrawPad'
+import { CANVAS_SIZES, DRAW_PATH, clearDraft, loadDraft, saveDraft } from './draft'
+import { inkMask } from '../../components/ui/PaperSheet'
 import { MethodLogos } from '../../components/ui/PaymentLogos'
 import './create-order.css'
 
@@ -19,24 +20,27 @@ interface Upload {
   dataUrl?: string
 }
 
-function initialMode(): InputMode {
+function initialMode(saved: InputMode): InputMode {
   const m = /mode=(text|upload|draw)/.exec(window.location.hash)
-  return (m?.[1] as InputMode | undefined) ?? 'text'
+  return (m?.[1] as InputMode | undefined) ?? saved
 }
 
 const priceLabel = (p: number) => (p ? '+' + fmt(p) : 'Included')
 
 export default function CreateOrder() {
-  const [step, setStep] = useState(0)
-  const [maxStep, setMaxStep] = useState(0)
-  const [type, setType] = useState<string | null>(null)
-  const [mode, setMode] = useState<InputMode>(initialMode)
-  const [text, setText] = useState('')
-  const [fontStyle, setFontStyle] = useState('script')
+  // Coming back from the full-screen canvas page restores what was filled in before.
+  const [saved] = useState(loadDraft)
+  const [step, setStep] = useState(saved.step)
+  const [maxStep, setMaxStep] = useState(saved.step)
+  const [type, setType] = useState<string | null>(saved.type)
+  const [mode, setMode] = useState<InputMode>(() => initialMode(saved.mode))
+  const [text, setText] = useState(saved.text)
+  const [fontStyle, setFontStyle] = useState(saved.fontStyle)
   const [upload, setUpload] = useState<Upload | null>(null)
-  const [strokes, setStrokes] = useState(0)
-  const [drawUrl, setDrawUrl] = useState<string | null>(null)
-  const [padKey, setPadKey] = useState(0)
+  const strokes = saved.strokes
+  const drawUrl = saved.drawUrl
+  const sheet = CANVAS_SIZES.find((s) => s.id === saved.sizeId) ?? CANVAS_SIZES[0]
+  const sheetLabel = `${sheet.label} ${saved.landscape ? 'landscape' : 'portrait'}`
   const [paper, setPaper] = useState<string | null>(null)
   const [pen, setPen] = useState<string | null>(null)
   const [ink, setInk] = useState<string | null>(null)
@@ -113,7 +117,13 @@ export default function CreateOrder() {
       spec, name: name.trim(), phone: phone.trim(), address: address.trim(), pay: pay ?? undefined,
     }
     addOrder(order)
+    clearDraft()
     navigate(orderPath(order.id, 'review'))
+  }
+
+  const openCanvas = () => {
+    saveDraft({ type, text, fontStyle, step, mode: 'draw' })
+    navigate(DRAW_PATH)
   }
 
   const next = () => {
@@ -133,7 +143,7 @@ export default function CreateOrder() {
       k: 'Content',
       v: mode === 'text'
         ? `“${text.trim().slice(0, 48)}${text.trim().length > 48 ? '…' : ''}” in ${F.name}`
-        : mode === 'upload' ? (upload ? `Image: ${upload.name}` : 'No image') : `${strokes} hand-drawn strokes`,
+        : mode === 'upload' ? (upload ? `Image: ${upload.name}` : 'No image') : `${strokes} hand-drawn strokes on ${sheetLabel}`,
       to: 1,
     },
     { k: 'Materials', v: [q.P?.name, q.N?.name, q.I?.name].filter(Boolean).join(', ') || 'Not chosen', to: 2 },
@@ -205,7 +215,7 @@ export default function CreateOrder() {
 
                   <div className="co-tray co-tray--3">
                     {MODES.map((m) => (
-                      <button key={m.id} className={`co-opt${mode === m.id ? ' on' : ''}`} onClick={() => setMode(m.id)}>
+                      <button key={m.id} className={`co-opt${mode === m.id ? ' on' : ''}`} onClick={() => (m.id === 'draw' ? openCanvas() : setMode(m.id))}>
                         <span className="co-opt-name">{m.label}</span>
                         <span className="co-opt-sub">{m.desc}</span>
                       </button>
@@ -288,28 +298,22 @@ export default function CreateOrder() {
                   )}
 
                   {mode === 'draw' && (
-                    <div className="co-field">
-                      <DrawPad
-                        key={padKey}
-                        url={drawUrl}
-                        onStroke={(u) => {
-                          setStrokes((n) => n + 1)
-                          setDrawUrl(u)
-                        }}
-                      />
-                      <div className="co-draw-foot">
-                        <span className="co-meta vh-mono">
-                          {strokes} {strokes === 1 ? 'stroke' : 'strokes'} captured · write a few lines so the AI can learn your hand · +15.000₫
+                    <div className="co-sheet">
+                      <div
+                        className="co-sheet-thumb"
+                        style={{ aspectRatio: saved.landscape ? `${sheet.h} / ${sheet.w}` : `${sheet.w} / ${sheet.h}` }}
+                      >
+                        {drawUrl ? <img src={drawUrl} alt="Your drawing" /> : <span className="vh-mono">Blank</span>}
+                      </div>
+                      <div className="co-sheet-text">
+                        <span className="co-sheet-title">
+                          {strokes > 0 ? 'Drawing ready' : 'Nothing drawn yet'}
                         </span>
-                        <button
-                          className="vh-btn vh-btn--ghost vh-btn--sm"
-                          onClick={() => {
-                            setStrokes(0)
-                            setDrawUrl(null)
-                            setPadKey((k) => k + 1)
-                          }}
-                        >
-                          Clear canvas
+                        <span className="co-meta vh-mono">
+                          {sheetLabel} · {strokes} {strokes === 1 ? 'stroke' : 'strokes'} · +15.000₫
+                        </span>
+                        <button className="vh-btn vh-btn--primary vh-btn--sm" onClick={openCanvas}>
+                          {strokes > 0 ? 'Edit on canvas' : 'Open canvas'}
                         </button>
                       </div>
                     </div>
@@ -459,7 +463,10 @@ export default function CreateOrder() {
                 }}
               >
                 {pvImg ? (
-                  <div className="co-preview-img" style={{ backgroundImage: `url("${pvImg}")` }} />
+                  <div
+                    className="co-preview-img"
+                    style={mode === 'draw' ? inkMask(pvImg, q.I?.color ?? '#1b2440') : { backgroundImage: `url("${pvImg}")` }}
+                  />
                 ) : (
                   <span style={{ fontFamily: F.font, fontSize: pvFont, color: q.I?.color ?? '#1b2440' }}>{previewText}</span>
                 )}

@@ -11,7 +11,7 @@ export default function Header() {
           <a href="#showcase">Robot Specs</a>
           <a href="#modes">Penmanship</a>
           <a href="#queue">Order Queue</a>
-          <a href="/create-order-v2">New order v2</a>
+          <a href="/create-order-v2">Learn Font</a>
         </nav>
         <div className="lp-actions">
           <button className="lp-icon-btn" aria-label="Search">
@@ -28,13 +28,13 @@ export default function Header() {
               <path d="M16 10a4 4 0 0 1-8 0" />
             </svg>
           </a>
-          <button className="lp-icon-btn" aria-label="Profile">
+          <a href="/login" className="lp-icon-btn" aria-label="Sign in">
             <svg width="20" height="20" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
               <circle cx="12" cy="12" r="10" />
               <circle cx="12" cy="10" r="3" />
               <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" />
             </svg>
-          </button>
+          </a>
           <a href={ORDER_HREF} className="lp-start-btn">Start Writing</a>
         </div>
       </div>

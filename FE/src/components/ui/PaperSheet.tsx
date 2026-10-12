@@ -4,7 +4,7 @@ import type { Layout, LayoutId, OrderSpec } from '../../types'
 import { fontScale } from '../../utils/format'
 
 interface PaperSheetProps {
-  spec: Pick<OrderSpec, 'aspect' | 'paperColor' | 'inkColor' | 'font' | 'text' | 'img'>
+  spec: Pick<OrderSpec, 'aspect' | 'paperColor' | 'inkColor' | 'font' | 'text' | 'img'> & { mode?: OrderSpec['mode'] }
   /** Height as a percentage of the parent (the parent needs a definite height). */
   height: string
   maxWidth?: string
@@ -19,6 +19,22 @@ interface PaperSheetProps {
 }
 
 /** A sheet of paper with the order's text or image on it, scaled with container query units. */
+/** Hand drawings are stored as light strokes on transparency; use them as a mask so they take the ink colour. */
+export function inkMask(url: string, color: string): CSSProperties {
+  return {
+    backgroundColor: color,
+    mixBlendMode: 'normal',
+    WebkitMaskImage: `url("${url}")`,
+    maskImage: `url("${url}")`,
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+  }
+}
+
 export default function PaperSheet({
   spec, height, maxWidth = '88%', layout, fs, shadow, reveal, style, children,
 }: PaperSheetProps) {
@@ -42,7 +58,14 @@ export default function PaperSheet({
         }}
       >
         {spec.img ? (
-          <div className="vh-sheet-img" style={{ backgroundImage: `url("${spec.img}")` }} />
+          <div
+            className="vh-sheet-img"
+            style={
+              spec.mode === 'draw'
+                ? inkMask(spec.img, spec.inkColor)
+                : { backgroundImage: `url("${spec.img}")` }
+            }
+          />
         ) : (
           <span
             className="vh-sheet-text"

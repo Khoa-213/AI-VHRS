@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { ORDER_HREF, svgProps } from '../../constants'
 import { STATUS_COLORS } from '../../constants/catalog'
-import { Link, orderPath } from '../../router/router'
+import { Link, navigate, orderPath } from '../../router/router'
 import { signIn, signOut, useCart, useOrders, useUser } from '../../store/store'
 import type { Order } from '../../types'
 import { fmt } from '../../utils/format'
@@ -39,7 +39,9 @@ export default function SiteHeader() {
           <Link to="/#showcase">Robot Specs</Link>
           <Link to="/#modes">Penmanship</Link>
           <Link to="/#queue">Order Queue</Link>
-          <Link to="/create-order-v2">New order v2</Link>
+          {user?.role === 'staff' && <Link to="/staff">Staff dashboard</Link>}
+          {user?.role === 'technician' && <Link to="/tech">Technician desk</Link>}
+          <Link to="/create-order-v2">Learn Font</Link>
         </nav>
         <div className="vh-actions">
           <button className="vh-icon-btn" aria-label="Search">
@@ -100,7 +102,7 @@ export default function SiteHeader() {
             className="vh-icon-btn"
             aria-label={user ? 'Sign out' : 'Sign in'}
             title={user ? `Signed in as ${user.name} · click to sign out` : 'Click to sign in'}
-            onClick={user ? signOut : signIn}
+            onClick={user ? signOut : () => navigate('/login')}
           >
             {user ? (
               <span className="vh-avatar">{user.name.trim().charAt(0).toUpperCase()}</span>

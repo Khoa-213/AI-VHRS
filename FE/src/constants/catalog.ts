@@ -22,7 +22,7 @@ export const TYPES: OrderType[] = [
 export const MODES: { id: InputMode; label: string; desc: string }[] = [
   { id: 'text', label: 'Type text', desc: 'Single-line calligraphy fonts' },
   { id: 'upload', label: 'Upload image', desc: 'Photo or scan · AI vectorization · +30.000₫' },
-  { id: 'draw', label: 'Write it yourself', desc: 'Live canvas · AI learns your style · +15.000₫' },
+  { id: 'draw', label: 'Write it yourself', desc: 'Full-screen canvas, A4 and smaller · +15.000₫' },
 ]
 
 export const FONT_STYLES = [
@@ -122,6 +122,7 @@ export const PAYMENT_BADGES = [
 export const STATUS_COLORS: Record<string, [string, string]> = {
   Sketching: ['var(--st-sketch)', 'var(--st-sketch-bg)'],
   Pending: ['var(--st-pending)', 'var(--st-pending-bg)'],
+  Rejected: ['var(--danger)', 'transparent'],
   Accepted: ['var(--st-accepted)', 'var(--st-accepted-bg)'],
   Queued: ['var(--st-queued)', 'var(--st-queued-bg)'],
   Written: ['var(--st-written)', 'var(--st-written-bg)'],

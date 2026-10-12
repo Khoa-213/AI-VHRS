@@ -1,0 +1,61 @@
+/* Polish pass from the redesign skill, shared by login, staff and technician pages.
+   Works on top of the existing tokens: typography, tinted depth, press feedback, motion, skip link. */
+
+.sd,.sc,.lg{
+  --shadow-tint:color-mix(in srgb,var(--accent) 20%,#000);
+  --ease:cubic-bezier(.2,.7,.2,1);
+  font-variant-numeric:tabular-nums;
+  scroll-behavior:smooth;
+}
+
+/* Typography: weight steps, balanced headings, readable measure */
+.sd h1,.sd h2,.sc h1,.sc h2,.lg h1,.sc-modal h2{text-wrap:balance}
+.sd p,.sc p,.lg p,.sc-modal p{text-wrap:pretty}
+.sd-top p{max-width:62ch;line-height:1.5}
+.sd-sub,.sd-note,.as-note,.as-lede,.sc-hint{font-weight:500}
+.sd-label{font-weight:600;letter-spacing:.02em}
+.sd-row-title,.sd-group-name{font-weight:700}
+.sd-card-head h2{font-weight:700}
+.sd-top h1{font-weight:700;letter-spacing:-.035em}
+.sd-group-note{font-weight:500}
+.sd-note,.as-note{max-width:60ch;line-height:1.55}
+
+/* Depth: only the floating login card and popup keep a tinted shadow */
+.lg-card,.sc-modal-card{box-shadow:0 30px 70px -28px var(--shadow-tint)}
+.sd .vh-avatar,.sc .vh-avatar{border-radius:2px}
+
+/* Empty states: composed cells, not just a grey line */
+.sd-none{list-style:none;padding:14px 16px;border-radius:2px;background:linear-gradient(135deg,transparent,var(--tray));font-size:13px;font-weight:500;color:var(--t5)}
+.sd-empty{display:flex;flex-direction:column;gap:6px;padding:18px;border-radius:2px;background:linear-gradient(135deg,transparent,var(--tray))}
+.sd-empty b{font-size:15px;font-weight:700;color:var(--t1)}
+.sd-empty span{font-size:13px;line-height:1.55;color:var(--t4);max-width:46ch}
+
+/* Interaction: smooth state changes and a physical press */
+.sd-btn,.sd-nav,.sd-row,.sd-group summary,.po-card,.as-tech,.as-robot,.sc-item,.sc-tabs button,.sc-reason,.tp-rates button,.sc-nav a,.vh-btn{
+  transition:background-color .2s var(--ease),color .2s var(--ease),transform .18s var(--ease),box-shadow .25s var(--ease),opacity .2s
+}
+.sd-btn:active,.sd-nav:active,.sd-row:active,.as-tech:active,.as-robot:not(:disabled):active,.sc-item:active,.sc-reason:active,.tp-rates button:active,
+.sd .vh-btn:not(:disabled):active,.sc .vh-btn:not(:disabled):active,.lg .vh-btn:not(:disabled):active,.sc-modal .vh-btn:not(:disabled):active{transform:scale(.98)}
+.po-card:active{transform:scale(.99)}
+.tp-range:focus-visible,.tp-flags input:focus-visible,.tp-checks input:focus-visible,.sc-modal .vh-btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+/* Entry: staggered fade and rise, once per mount */
+@keyframes sd-in{from{opacity:0;transform:translateY(6px)}}
+.sd-card,.sd-kpi,.po-grid>li,.as-techs>li{animation:sd-in .5s var(--ease) both}
+.sd-kpi:nth-child(2){animation-delay:40ms}.sd-kpi:nth-child(3){animation-delay:80ms}.sd-kpi:nth-child(4){animation-delay:120ms}
+.sd-stats>.sd-card{animation-delay:120ms}.sd-two>.sd-card:nth-child(2){animation-delay:200ms}
+.po-grid>li:nth-child(2),.as-techs>li:nth-child(2){animation-delay:50ms}
+.po-grid>li:nth-child(3),.as-techs>li:nth-child(3){animation-delay:100ms}
+.po-grid>li:nth-child(n+4),.as-techs>li:nth-child(n+4){animation-delay:150ms}
+@media (prefers-reduced-motion:reduce){
+  .sd-card,.sd-kpi,.po-grid>li,.as-techs>li{animation:none}
+  .sd,.sc,.lg{scroll-behavior:auto}
+}
+
+/* Skip link for keyboard users */
+.skip-link{position:absolute;left:12px;top:-64px;z-index:80;padding:10px 16px;border-radius:10px;background:var(--btn-inv-bg);color:var(--btn-inv-fg);font-size:14px;font-weight:700;transition:top .2s var(--ease)}
+.skip-link:focus{top:12px;outline:2px solid var(--accent);outline-offset:2px}
+
+/* Small utilities that replace inline styles */
+.sc-self-start{align-self:flex-start}
+.sc-modal-mark--accent{background:var(--accent)}

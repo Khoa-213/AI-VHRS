@@ -120,7 +120,7 @@ export default function OrderResult({ id }: { id: string | null }) {
             <span className="rs-who-av">M</span>
             <div>
               <b>Minh · AI-VHRS Studio</b>
-              <span>{used ? 'Rewrite photos' : 'Photos'} · {photoDate} · 3 shots</span>
+              <span>{used ? 'Rewrite photos' : 'Photos'} · {photoDate} · {order.qc?.photos.length || 3} shots</span>
             </div>
           </div>
           <p className="rs-note">
@@ -128,6 +128,17 @@ export default function OrderResult({ id }: { id: string | null }) {
               ? 'Here’s the rewritten copy with your notes applied. Take a look before we ship.'
               : 'Fresh off the FR3 — ink is dry and every piece passed QC. Check the close-up, then approve or request a rewrite.'}
           </p>
+          {!!order.qc?.photos.length && (
+            <ul className="rs-qc" aria-label="Photos from the studio">
+              {order.qc.photos.map((ph) => (
+                <li key={ph.slot}>
+                  <img src={ph.url} alt={`${ph.slot} of ${order.id}`} />
+                  <span>{ph.slot}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {order.qc?.note && <p className="rs-note">{order.qc.note}</p>}
           <SpecRows rows={rows} />
 
           {status === 'Written' && !rewriteOpen && (

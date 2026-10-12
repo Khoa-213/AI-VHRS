@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Page from '../../components/layout/Page'
 import { NoOrder, OrderTimeline, SpecRows } from '../../components/ui/OrderParts'
 import PaperSheet from '../../components/ui/PaperSheet'
+import { ORDER_HREF } from '../../constants'
 import { LAYOUTS, layoutById } from '../../constants/catalog'
 import { Link, orderPath } from '../../router/router'
 import { updateOrder, useOrder } from '../../store/store'
@@ -9,15 +10,16 @@ import type { LayoutId } from '../../types'
 import { depositOf, fmt, fontScale } from '../../utils/format'
 import './order.css'
 
-type Phase = 'gen' | 'review' | 'pending' | 'accepted' | 'done'
+type Phase = 'gen' | 'review' | 'pending' | 'rejected' | 'accepted' | 'done'
 
 const STEPS = ['Order placed', 'AI sketch', 'Staff review', 'Deposit', 'Writing', 'Delivered']
-const STEP_IDX: Record<Phase, number> = { gen: 1, review: 1, pending: 2, accepted: 3, done: 4 }
+const STEP_IDX: Record<Phase, number> = { gen: 1, review: 1, pending: 2, rejected: 2, accepted: 3, done: 4 }
 
 const STATUS_LABEL: Record<Phase, string> = {
   gen: 'Generating sketch',
   review: 'Awaiting your review',
   pending: 'Pending',
+  rejected: 'Rejected',
   accepted: 'Accepted, deposit due',
   done: '',
 }
@@ -25,6 +27,7 @@ const TITLE: Record<Phase, string> = {
   gen: 'Sketching your order…',
   review: 'Review your sketch.',
   pending: 'Waiting for staff.',
+  rejected: 'Staff could not accept this.',
   accepted: 'Approved. One step left.',
   done: 'You’re in the queue.',
 }
@@ -60,6 +63,7 @@ export default function OrderReview({ id }: { id: string | null }) {
   const phase: Phase =
     order.status === 'Sketching' ? (sketchDone ? 'review' : 'gen')
     : order.status === 'Pending' ? 'pending'
+    : order.status === 'Rejected' ? 'rejected'
     : order.status === 'Accepted' ? 'accepted'
     : 'done'
   const progress = phase === 'gen' ? g : 1
@@ -192,6 +196,17 @@ export default function OrderReview({ id }: { id: string | null }) {
               <b>Pending staff review</b>
               <span>Our studio checks every sketch before the arm writes it. Staff usually respond within 2 hours, 8:00 to 21:00.</span>
             </div>
+          )}
+
+          {phase === 'rejected' && (
+            <>
+              <div className="vh-callout vh-callout--red">
+                <b>Rejected by staff</b>
+                <span>{(order.rejectReasons ?? []).join(', ') || 'No reason was recorded.'}</span>
+                <span className="or-by">{order.staff ?? 'AI-VHRS Studio'}</span>
+              </div>
+              <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">Start a new order →</Link>
+            </>
           )}
 
           {phase === 'accepted' && (

@@ -71,6 +71,12 @@
 
 .co-draw{overflow:hidden;background:#f4eee0}
 .co-draw canvas{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair}
+.co-sheet{display:flex;align-items:center;gap:24px;padding:20px;background:linear-gradient(135deg,transparent,var(--tray))}
+.co-sheet-thumb{flex:none;height:160px;max-width:220px;display:grid;place-items:center;background:#0b0d13;color:#a4abb8;font-size:12px;box-shadow:0 8px 20px var(--sh-4);overflow:hidden}
+.co-sheet-thumb img{display:block;width:100%;height:100%;object-fit:contain}
+.co-sheet-text{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0}
+.co-sheet-title{font-size:18px;font-weight:800;color:var(--t1)}
+@media (max-width:640px){.co-sheet{flex-direction:column;align-items:flex-start}}
 .co-draw-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
 
 /* ---------- materials step ---------- */

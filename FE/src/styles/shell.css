@@ -128,6 +128,8 @@
 .vh-callout--teal b{color:var(--teal)}
 .vh-callout--green{background:var(--good-08);border:1px solid var(--good-3)}
 .vh-callout--green b{color:var(--good)}
+.vh-callout--red{background:color-mix(in srgb,var(--danger) 9%,transparent);border:1px solid color-mix(in srgb,var(--danger) 35%,transparent)}
+.vh-callout--red b{color:var(--danger)}
 .vh-callout--orange{background:rgba(255,90,60,.08);border:1px solid rgba(255,90,60,.3)}
 .vh-callout--orange b{color:var(--accent-text)}
 .vh-callout-plain{margin:0;padding:16px;border-radius:16px;background:var(--fx-03);border:1px solid var(--fx-08);font-size:14px;line-height:1.55;color:var(--t3)}
