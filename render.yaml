@@ -8,7 +8,7 @@ services:
     dockerContext: .
     region: singapore          # closest Render region to the Supabase Tokyo database
     plan: starter              # free plan sleeps and has no pre-deploy command: do not use for webhooks
-    branch: BE                 # change to main once the backend is merged
+    branch: main                 # change to main once the backend is merged
     autoDeploy: true
     healthCheckPath: /api/v1/health
     preDeployCommand: alembic upgrade head   # runs migrations before each new version goes live
