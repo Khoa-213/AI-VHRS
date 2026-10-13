@@ -29,12 +29,17 @@ TAGS = [
     {"name": "System", "description": "Kiểm tra sức khoẻ dịch vụ."},
 ]
 
+_settings = get_settings()
 app = FastAPI(
     title="AI-VHRS API", version="0.1.0", description=DESCRIPTION, openapi_tags=TAGS,
     swagger_ui_parameters={"persistAuthorization": True, "displayRequestDuration": True,
                            "tryItOutEnabled": True, "docExpansion": "list"},
+    docs_url="/docs" if _settings.enable_docs else None,
+    redoc_url="/redoc" if _settings.enable_docs else None,
+    openapi_url="/openapi.json" if _settings.enable_docs else None,
 )
-app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_origins,
+app.add_middleware(CORSMiddleware, allow_origins=_settings.cors_origins,
+                   allow_origin_regex=_settings.cors_origin_regex,
                    allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 register_error_handlers(app)
 
