@@ -210,6 +210,7 @@ export default function OrderResult({ id }: { id: string | null }) {
                 <b>Approved · shipping now</b>
                 <span>Remaining {remain} is due on delivery. Tracking will be sent to your phone.</span>
               </div>
+              <Link to={orderPath(order.id, 'tracking')} className="vh-btn vh-btn--primary vh-btn--md">Track delivery</Link>
               <Link to="/" className="vh-btn vh-btn--ghost vh-btn--md">Back to home</Link>
             </>
           )}

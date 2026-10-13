@@ -1,4 +1,4 @@
-import PrototypeBar from './components/prototype/PrototypeBar'
+import AssistiveTouch from './components/prototype/AssistiveTouch'
 import Cart from './pages/cart/Cart'
 import CreateOrder from './pages/create-order/CreateOrder'
 import DrawStudio from './pages/create-order/DrawStudio'
@@ -13,6 +13,9 @@ import PreviewOrders from './pages/tech/PreviewOrders'
 import QualityCheck from './pages/tech/QualityCheck'
 import RobotPreview from './pages/tech/RobotPreview'
 import RequireStaff from './pages/staff/RequireStaff'
+import ShippingBoard from './pages/staff/ShippingBoard'
+import ShippingDetail from './pages/staff/ShippingDetail'
+import Tracking from './pages/tracking/Tracking'
 import Deposit from './pages/order/Deposit'
 import FinalPayment from './pages/order/FinalPayment'
 import OrderResult from './pages/order/OrderResult'
@@ -28,6 +31,15 @@ function Routes() {
   if (path === '/cart') return <Cart />
   if (path === '/login') return <Login />
   if (path === '/staff') return <RequireStaff><StaffDashboard /></RequireStaff>
+  if (path === '/staff/shipping') return <RequireStaff><ShippingBoard /></RequireStaff>
+  const shipping = /^\/staff\/shipping\/([^/]+)\/?$/.exec(path)
+  if (shipping) {
+    return (
+      <RequireStaff>
+        <ShippingDetail key={shipping[1]} id={decodeURIComponent(shipping[1])} />
+      </RequireStaff>
+    )
+  }
   const staffReview = /^\/staff\/review(?:\/([^/]+))?\/?$/.exec(path)
   if (staffReview) {
     return (
@@ -73,6 +85,8 @@ function Routes() {
   if (result) return <OrderResult key={result} id={result} />
   const final = matchOrderRoute(path, 'final-payment')
   if (final) return <FinalPayment key={final} id={final} />
+  const tracking = matchOrderRoute(path, 'tracking')
+  if (tracking) return <Tracking key={tracking} id={tracking} />
 
   return <Landing />
 }
@@ -82,7 +96,7 @@ export default function App() {
   return (
     <>
       <Routes />
-      <PrototypeBar />
+      <AssistiveTouch />
     </>
   )
 }

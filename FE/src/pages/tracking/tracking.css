@@ -1,0 +1,18 @@
+/* Customer delivery tracking. Builds on the order page shell (.vh-*) and the shared timeline. */
+
+.tk-pack{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.tk-pack li{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:2px;background:linear-gradient(135deg,transparent,var(--tray));font-size:15px;font-weight:600;color:var(--t4)}
+.tk-pack li svg{flex:none;color:var(--t6)}
+.tk-pack li.done{color:var(--t1)}
+.tk-pack li.done svg{color:var(--good)}
+.tk-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.tk-code{display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:2px;background:linear-gradient(135deg,transparent,var(--tray-on))}
+.tk-code>span{font-size:12px;font-weight:600;color:var(--t4)}
+.tk-code>div{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tk-code b{font-size:24px;font-weight:800;letter-spacing:.04em;color:var(--t1)}
+.tk-code b.tk-wait{font-family:inherit;font-size:15px;font-weight:700;letter-spacing:0;color:var(--t3)}
+.tk-copy{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px solid var(--fx-16);border-radius:2px;background:transparent;color:var(--t1);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background-color .2s,transform .15s}
+.tk-copy:hover{background:var(--fx-06)}
+.tk-copy:active{transform:scale(.97)}
+.tk-copy:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

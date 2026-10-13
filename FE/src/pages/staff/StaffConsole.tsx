@@ -10,6 +10,8 @@ import {
   MODE_HEADING, MODE_LABEL, PASS_SCORE, REJECT_REASONS,
   checkTone, evaluate, recognitionRows, recognizedText,
 } from './evaluate'
+import StaffRail from './StaffRail'
+import './dashboard.css'
 import './staff.css'
 import './polish.css'
 
@@ -78,7 +80,9 @@ export default function StaffConsole({ id }: { id?: string }) {
   }
 
   return (
-    <div className="sc">
+    <div className="sd sd--sc">
+      <StaffRail active="review" />
+      <div className="sc">
       <SkipLink />
       <header className="vh-header sc-header">
         <div className="vh-header-inner">
@@ -86,10 +90,7 @@ export default function StaffConsole({ id }: { id?: string }) {
             <Link to="/" className="vh-logo">AI-VHRS</Link>
             <span className="sc-badge">STUDIO</span>
           </div>
-          <nav className="sc-nav" aria-label="Staff">
-            <Link to="/staff">Dashboard</Link>
-            <Link to="/staff/review" className="on" aria-current="page">Review</Link>
-          </nav>
+          <span className="sc-nav" />
           <div className="sc-head-right">
             <span className={`sc-robot${writing ? ' busy' : ''}`}>FR3 #01 · {writing ? 'WRITING' : 'IDLE'}</span>
             <ThemeToggle className="vh-icon-btn" />
@@ -195,6 +196,7 @@ export default function StaffConsole({ id }: { id?: string }) {
           onLater={closeAssign}
         />
       )}
+      </div>
     </div>
   )
 }

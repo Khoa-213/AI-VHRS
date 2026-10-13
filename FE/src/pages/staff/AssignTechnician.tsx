@@ -6,6 +6,8 @@ import { saveStaffOrder, useAllStaffOrders } from '../../store/store'
 import { depositOf, fmt } from '../../utils/format'
 import { MODE_LABEL } from './evaluate'
 import { STATE_LABEL, freeRobots, loadOf, recommend, roster, type Technician } from './technicians'
+import StaffRail from './StaffRail'
+import './dashboard.css'
 import './staff.css'
 import './assign.css'
 import './polish.css'
@@ -29,10 +31,7 @@ export default function AssignTechnician({ id }: { id: string }) {
           <Link to="/" className="vh-logo">AI-VHRS</Link>
           <span className="sc-badge">STUDIO</span>
         </div>
-        <nav className="sc-nav" aria-label="Staff">
-          <Link to="/staff">Dashboard</Link>
-          <Link to="/staff/review">Review</Link>
-        </nav>
+        <span className="sc-nav" />
         <div className="sc-head-right">
           <ThemeToggle className="vh-icon-btn" />
           <span className="sc-staff"><span className="vh-avatar">M</span>Minh · Staff</span>
@@ -43,6 +42,8 @@ export default function AssignTechnician({ id }: { id: string }) {
 
   if (!order || order.status !== 'Accepted') {
     return (
+      <div className="sd sd--sc">
+      <StaffRail active="review" />
       <div className="sc">
         <SkipLink />
         {header}
@@ -61,6 +62,7 @@ export default function AssignTechnician({ id }: { id: string }) {
             </div>
           </div>
         </main>
+      </div>
       </div>
     )
   }
@@ -88,7 +90,9 @@ export default function AssignTechnician({ id }: { id: string }) {
   }
 
   return (
-    <div className="sc">
+    <div className="sd sd--sc">
+      <StaffRail active="review" />
+      <div className="sc">
       <SkipLink />
       {header}
       <div className="sc-layout">
@@ -232,6 +236,7 @@ export default function AssignTechnician({ id }: { id: string }) {
             )}
           </div>
         </main>
+      </div>
       </div>
     </div>
   )

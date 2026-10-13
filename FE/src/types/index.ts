@@ -94,8 +94,55 @@ export interface Order {
   qc?: QcReport
   /** Set when QC failed and the order went back to the robot queue. */
   qcFail?: { reasons: string[]; note: string; at: string }
+  /** Packing and courier tracking, filled in once the customer has paid. */
+  shipment?: Shipment
   /** True for the sample orders the staff console seeds for itself. */
   demo?: boolean
+}
+
+/** Order statuses reported by GHN (order detail and webhook). */
+export type GhnStatus =
+  | 'ready_to_pick'
+  | 'picking'
+  | 'picked'
+  | 'storing'
+  | 'transporting'
+  | 'sorting'
+  | 'delivering'
+  | 'delivered'
+  | 'delivery_fail'
+  | 'waiting_to_return'
+  | 'return'
+  | 'return_transporting'
+  | 'return_sorting'
+  | 'returning'
+  | 'returned'
+  | 'cancel'
+  | 'exception'
+  | 'damage'
+  | 'lost'
+
+/** One scan from GHN. */
+export interface ShipLog {
+  status: GhnStatus
+  /** ISO time of the scan. */
+  at: string
+  place?: string
+}
+
+export interface Shipment {
+  /** Packing steps staff have ticked, with the time each was done. */
+  pack: { id: string; at: string }[]
+  weightG: number
+  /** Cash the courier collects on delivery. The prototype takes payment online, so this is 0. */
+  codAmount: number
+  /** GHN order code, set once staff books the courier. */
+  ghnCode?: string
+  bookedAt?: string
+  fee?: number
+  expectedAt?: string
+  /** Scans from GHN, oldest first. */
+  logs: ShipLog[]
 }
 
 export interface QcPhoto {

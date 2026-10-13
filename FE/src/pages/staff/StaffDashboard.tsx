@@ -1,12 +1,12 @@
 import SkipLink from '../../components/ui/SkipLink'
-import { ClipboardText, House, SignOut, SquaresFour } from '@phosphor-icons/react'
 import { STATUS_COLORS } from '../../constants/catalog'
 import ThemeToggle from '../../components/ui/ThemeToggle'
 import { Link } from '../../router/router'
-import { signOut, useAllStaffOrders, useUser } from '../../store/store'
+import { useAllStaffOrders, useUser } from '../../store/store'
 import type { Order } from '../../types'
 import { fmt } from '../../utils/format'
 import { Donut, Spark } from './charts'
+import StaffRail from './StaffRail'
 import { GROUPS, aiTelemetry, reviewTelemetry, robotTelemetry } from './telemetry'
 import './dashboard.css'
 import './polish.css'
@@ -41,28 +41,7 @@ export default function StaffDashboard() {
   return (
     <div className="sd">
       <SkipLink />
-      <nav className="sd-rail" aria-label="Staff navigation">
-        <Link to="/staff" className="sd-mark" aria-label="AI-VHRS studio">AV</Link>
-        <Link to="/staff" className="sd-nav on" aria-current="page">
-          <SquaresFour size={22} />
-          <span>Dashboard</span>
-        </Link>
-        <Link to="/staff/review" className="sd-nav">
-          <ClipboardText size={22} />
-          <span>Review</span>
-          {review.pending > 0 && <b className="sd-count">{review.pending}</b>}
-        </Link>
-        <div className="sd-rail-end">
-          <Link to="/" className="sd-nav">
-            <House size={22} />
-            <span>Site</span>
-          </Link>
-          <button type="button" className="sd-nav" onClick={() => signOut()}>
-            <SignOut size={22} />
-            <span>Sign out</span>
-          </button>
-        </div>
-      </nav>
+      <StaffRail active="dashboard" />
 
       <main className="sd-body" id="main">
         <header className="sd-top">

@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { INKS, PAPERS, PENS, PRODUCTS, TYPES, FONT_STYLES } from '../constants/catalog'
-import type { CartItem, Order, OrderSpec, OrderStatus, QcReport, User } from '../types'
+import { PACK_STEPS, emptyShipment, nextMockLog, scriptedLogs } from '../services/ghn'
+import type { CartItem, Order, OrderSpec, OrderStatus, QcReport, ShipLog, Shipment, User } from '../types'
 import { todayLabel } from '../utils/format'
 
 /**
@@ -68,6 +69,27 @@ function makeSpec(over: Partial<OrderSpec> = {}): OrderSpec {
   }
 }
 
+const SEED_SHIP_TO = {
+  name: 'Khang', phone: '0901234567', street: '12 Nguyễn Huệ', ward: 'Bến Nghé', city: 'TP. Hồ Chí Minh', note: '',
+}
+
+/** A sample order's shipment, scanned through `through`, finishing some days ago. */
+function seedShipment(code: string, through: ShipLog['status'], qty: number, daysAgo = 0): Shipment {
+  const end = new Date(Date.now() - daysAgo * 864e5 - 36e5)
+  const logs = scriptedLogs(through, end, SEED_SHIP_TO.city)
+  const first = new Date(logs[0].at)
+  return {
+    pack: PACK_STEPS.map((p, i) => ({ id: p.id, at: new Date(first.getTime() - (3 - i) * 36e5).toISOString() })),
+    weightG: Math.max(150, 120 + qty * 15),
+    codAmount: 0,
+    ghnCode: code,
+    bookedAt: new Date(first.getTime() - 36e5).toISOString(),
+    fee: 27000,
+    expectedAt: new Date(end.getTime() + (through === 'delivered' ? 0 : 864e5)).toISOString(),
+    logs,
+  }
+}
+
 function seedOrders(): Order[] {
   const wed = TYPES[3]
   return [
@@ -85,6 +107,8 @@ function seedOrders(): Order[] {
       id: 'VH-4710', title: 'Greeting card × 10', detail: 'Ivory · Midnight blue',
       status: 'Shipped', total: 405000, date: '28 Sep 2026', staff: 'Minh · AI-VHRS Studio',
       spec: makeSpec({ qty: 10 }),
+      shipTo: SEED_SHIP_TO,
+      shipment: seedShipment('LBX4K2TM', 'sorting', 10),
     },
     {
       id: 'VH-4532', title: 'Handwritten letter × 1', detail: 'Giấy dó · Sepia',
@@ -94,6 +118,8 @@ function seedOrders(): Order[] {
         paper: PAPERS[3].name, paperColor: PAPERS[3].color, ink: INKS[2].name, inkColor: INKS[2].color,
         font: FONT_STYLES[2].font, fontName: FONT_STYLES[2].name, text: 'Gửi em, người thương…', qty: 1,
       }),
+      shipTo: SEED_SHIP_TO,
+      shipment: seedShipment('GHNW7P9Q', 'delivered', 1, 21),
     },
   ]
 }
@@ -307,6 +333,79 @@ export function failQc(id: string, reasons: string[], note: string) {
     status: 'Queued', run: undefined, qc: undefined,
     qcFail: { reasons, note, at: new Date().toISOString() },
   })
+}
+
+// ---------- shipping ----------
+
+function findOrder(id: string): Order | undefined {
+  return [...ordersStore.get(), ...staffDemoStore.get()].find((o) => o.id === id)
+}
+
+function patchShipment(id: string, fn: (s: Shipment) => Shipment, status?: OrderStatus) {
+  const o = findOrder(id)
+  if (!o) return
+  updateOrder(id, { shipment: fn(o.shipment ?? emptyShipment(o)), ...(status ? { status } : {}) })
+}
+
+/** Staff ticks or unticks a packing step. Locked once the courier is booked. */
+export function togglePackStep(id: string, step: string) {
+  patchShipment(id, (s) => {
+    if (s.ghnCode) return s
+    const done = s.pack.some((m) => m.id === step)
+    return { ...s, pack: done ? s.pack.filter((m) => m.id !== step) : [...s.pack, { id: step, at: new Date().toISOString() }] }
+  })
+}
+
+export function setParcelWeight(id: string, weightG: number) {
+  patchShipment(id, (s) => (s.ghnCode ? s : { ...s, weightG: Math.max(1, Math.round(weightG) || 1) }))
+}
+
+/** Saves the GHN order that staff just booked. */
+export function saveBooking(id: string, b: { code: string; fee: number; expectedAt: string }) {
+  patchShipment(id, (s) => ({ ...s, ghnCode: b.code, fee: b.fee, expectedAt: b.expectedAt, bookedAt: new Date().toISOString() }))
+}
+
+/**
+ * Takes the scans GHN reports. An order moves to Delivered when GHN says so.
+ * Same-length input is ignored, so polling does not rewrite storage.
+ */
+export function applyShipLogs(id: string, logs: ShipLog[]) {
+  const o = findOrder(id)
+  const cur = o?.shipment?.logs ?? []
+  if (!o || !logs.length) return
+  const same = logs.length === cur.length && logs[logs.length - 1].status === cur[cur.length - 1]?.status
+  if (same) return
+  const delivered = logs[logs.length - 1].status === 'delivered'
+  patchShipment(id, (s) => ({ ...s, logs }), delivered ? 'Delivered' : undefined)
+}
+
+/** Prototype only: the scripted courier reports its next scan. */
+export function advanceCourier(id: string) {
+  const o = findOrder(id)
+  if (!o?.shipment?.ghnCode) return
+  const next = nextMockLog(o.shipment.logs, o.shipTo?.city ?? 'TP. Hồ Chí Minh')
+  if (next) applyShipLogs(id, [...o.shipment.logs, next])
+}
+
+/** Prototype only: packs, books and runs the scripted courier to the doorstep in one go. */
+export function fastForwardCourier(id: string) {
+  const o = findOrder(id)
+  if (!o) return
+  if (!o.shipment?.ghnCode) {
+    const at = new Date().toISOString()
+    patchShipment(id, (s) => ({
+      ...s,
+      pack: PACK_STEPS.map((p) => ({ id: p.id, at })),
+      ghnCode: 'DEMO' + id.replace(/\D/g, '').padStart(4, '0'),
+      bookedAt: at,
+      fee: 27000,
+      expectedAt: at,
+    }))
+  }
+  let logs = findOrder(id)?.shipment?.logs ?? []
+  const city = o.shipTo?.city ?? 'TP. Hồ Chí Minh'
+  for (let n = nextMockLog(logs, city); n; n = nextMockLog(logs, city)) logs = [...logs, n]
+  applyShipLogs(id, logs)
 }
 
 export function saveStaffOrder(order: Order) {

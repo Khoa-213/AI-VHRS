@@ -52,7 +52,7 @@
 }
 
 /* The prototype bar would cover the sheet; the canvas page is full screen. */
-.ds ~ .vh-proto{display:none}
+.ds ~ .at{display:none}
 @media (max-width:900px){
   .ds-tools{flex-wrap:wrap;overflow:visible;gap:8px 16px}
   .ds-group--end{margin-left:0}

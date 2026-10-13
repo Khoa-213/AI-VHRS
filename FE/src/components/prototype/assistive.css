@@ -1,0 +1,59 @@
+/* AssistiveTouch: draggable round button holding user switching and prototype tools. */
+
+.at-btn{position:fixed;z-index:100;width:56px;height:56px;padding:0;border:1px solid var(--fx-14);border-radius:18px;background:color-mix(in srgb,var(--pop) 78%,transparent);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px) saturate(160%);box-shadow:0 10px 28px -10px var(--sh-55);display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;transition:opacity .3s,transform .15s}
+.at-btn:active{transform:scale(.96)}
+.at-btn.idle{opacity:.5}
+.at-btn.dragging{cursor:grabbing;transition:none}
+.at-btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px;opacity:1}
+.at-btn:hover{opacity:1}
+.at-btn i{position:relative;width:36px;height:36px;border-radius:50%;background:color-mix(in srgb,var(--t1) 24%,transparent);display:block}
+.at-btn i::before{content:'';position:absolute;inset:6px;border-radius:50%;background:color-mix(in srgb,var(--t1) 50%,transparent)}
+.at-btn i::after{content:'';position:absolute;inset:12px;border-radius:50%;background:var(--t1);opacity:.92}
+.at-btn.open i::after{background:var(--accent);opacity:1}
+
+.at-backdrop{position:fixed;inset:0;z-index:99}
+.at-panel{position:fixed;z-index:101;width:min(340px,calc(100vw - 24px));max-height:min(78dvh,620px);overflow:auto;box-sizing:border-box;display:flex;flex-direction:column;gap:16px;padding:16px;border-radius:22px;background:var(--pop);border:1px solid var(--fx-1);box-shadow:0 30px 60px var(--sh-55);color:var(--t2);font-size:14px}
+.at-head{display:flex;align-items:center;justify-content:space-between}
+.at-head b{font-size:15px;font-weight:800;color:var(--t1)}
+.at-x{width:32px;height:32px;border:none;border-radius:999px;background:transparent;color:var(--t4);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.at-x:hover{background:var(--fx-08);color:var(--t1)}
+.at-panel h2{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--t5)}
+.at-panel section+section{padding-top:14px;border-top:1px solid var(--fx-08)}
+
+.at-users{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.at-users button{width:100%;display:flex;align-items:center;gap:12px;padding:8px 10px;border:none;border-radius:12px;background:transparent;color:inherit;font-family:inherit;text-align:left;cursor:pointer;transition:background-color .15s}
+.at-users button:hover{background:var(--fx-06)}
+.at-users button.on{background:var(--fx-08)}
+.at-av{width:32px;height:32px;flex:none;border-radius:50%;background:var(--avatar-bg);color:var(--t1);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+.at-users button.on .at-av{background:var(--accent);color:var(--on-accent)}
+.at-who{display:flex;flex-direction:column;min-width:0;flex:1}
+.at-who b{font-size:14px;font-weight:700;color:var(--t1)}
+.at-who span{font-size:12px;color:var(--t5)}
+.at-cur{font-size:11px;font-weight:700;color:var(--t4)}
+.at-row-btn{display:flex;align-items:center;gap:8px;margin-top:6px;padding:8px 10px;border:none;border-radius:12px;background:transparent;color:var(--t4);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.at-row-btn:hover{background:var(--fx-06);color:var(--t1)}
+
+.at-switch-row{display:flex;align-items:center;justify-content:space-between}
+.at-switch-row h2{margin:0}
+.at-switch{position:relative;width:44px;height:26px;padding:0;border:none;border-radius:999px;background:var(--fx-15);cursor:pointer;transition:background-color .2s}
+.at-switch i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--t1);transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.at-switch.on{background:var(--accent)}
+.at-switch.on i{transform:translateX(18px);background:var(--on-accent)}
+
+.at-flow{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.at-flow p{margin:0;line-height:1.5;color:var(--t4)}
+.at-order{display:flex;align-items:center;justify-content:space-between;font-weight:800;color:var(--t1)}
+.at-stages{display:flex;gap:4px;list-style:none;margin:0;padding:0}
+.at-stages li{flex:1;height:4px;border-radius:4px;background:var(--fx-14)}
+.at-stages li.done{background:var(--good-solid)}
+.at-stages li.now{background:var(--accent)}
+.at-actions{display:flex;flex-wrap:wrap;gap:8px}
+.at-links{display:flex;flex-wrap:wrap;gap:2px;margin-top:12px}
+.at-links a,.at-links button{border:none;background:transparent;color:var(--t4);font-family:inherit;font-size:12px;font-weight:700;padding:6px 10px;border-radius:999px;cursor:pointer}
+.at-links a:hover,.at-links button:hover{background:var(--fx-08);color:var(--t1)}
+
+.at-users button:focus-visible,.at-row-btn:focus-visible,.at-switch:focus-visible,.at-x:focus-visible,.at-links a:focus-visible,.at-links button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+@media (prefers-reduced-motion:reduce){
+  .at-btn,.at-switch,.at-switch i,.at-users button{transition:none}
+}

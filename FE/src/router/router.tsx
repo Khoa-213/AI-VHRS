@@ -77,5 +77,5 @@ export function matchOrderRoute(path: string, page: string): string | null {
   return m ? decodeURIComponent(m[1]) : null
 }
 
-export const orderPath = (id: string, page: 'review' | 'deposit' | 'result' | 'final-payment') =>
+export const orderPath = (id: string, page: 'review' | 'deposit' | 'result' | 'final-payment' | 'tracking') =>
   `/orders/${encodeURIComponent(id)}/${page}`

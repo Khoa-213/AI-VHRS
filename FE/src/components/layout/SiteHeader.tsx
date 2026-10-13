@@ -10,7 +10,8 @@ import ThemeToggle from '../ui/ThemeToggle'
 /** Where an order opens from the history list, by status. */
 function orderHref(o: Order) {
   if (o.status === 'Accepted') return orderPath(o.id, 'deposit')
-  if (['Written', 'Rewriting', 'Shipped', 'Delivered'].includes(o.status)) return orderPath(o.id, 'result')
+  if (['Shipped', 'Delivered'].includes(o.status)) return orderPath(o.id, 'tracking')
+  if (['Written', 'Rewriting'].includes(o.status)) return orderPath(o.id, 'result')
   return orderPath(o.id, 'review')
 }
 
