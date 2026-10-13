@@ -1172,4 +1172,5 @@ export const vi: Record<Key, string> = {
   "acct.pf.dark": "Tối",
   "acct.pf.language": "Ngôn ngữ",
   "acct.pf.languageHelp": "Toàn bộ trang web theo ngôn ngữ này.",
+  "lp.marquee": "Các tác phẩm do robot viết",
 }

@@ -1188,6 +1188,7 @@ export const en = {
   "acct.pf.dark": "Dark",
   "acct.pf.language": "Language",
   "acct.pf.languageHelp": "The whole site follows this language.",
+  "lp.marquee": "Pieces written by the robot",
 } as const
 
 export type Key = keyof typeof en

@@ -1,11 +1,13 @@
 import { ORDER_HREF } from '../../../constants'
 import Reveal from '../../../components/ui/Reveal'
 import { useT } from '../../../i18n'
+import Marquee from './Marquee'
 
 export default function Cta() {
   const t = useT()
   return (
     <section id="queue" className="lp-cta-section">
+      <Marquee />
       <Reveal className="lp-cta-card" dur=".8s">
         <div className="lp-cta-copy">
           <h2>{t('lp.cta.title')}</h2>

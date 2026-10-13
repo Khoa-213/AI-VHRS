@@ -1172,4 +1172,5 @@ export const ja: Record<Key, string> = {
   "acct.pf.dark": "ダーク",
   "acct.pf.language": "言語",
   "acct.pf.languageHelp": "サイト全体がこの言語で表示されます。",
+  "lp.marquee": "ロボットが書いた作品",
 }
