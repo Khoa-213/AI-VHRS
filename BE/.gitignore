@@ -129,3 +129,9 @@ Thumbs.db
 # Jupyter Notebooks
 # ==========================================
 .ipynb_checkpoints
+
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
