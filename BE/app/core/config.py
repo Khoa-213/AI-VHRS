@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     max_failed_logins: int = 5
     lockout_minutes: int = 15
     cors_origins: list[str] = ["http://localhost:5173"]
+    # Optional regex for dynamic origins such as Vercel preview URLs:
+    # https://ai-vhrs-fe-[a-z0-9-]+-<team>\.vercel\.app . Keep it as narrow as possible.
+    cors_origin_regex: str | None = None
+    # Swagger UI / ReDoc / openapi.json. Turn off in production.
+    enable_docs: bool = True
     rate_limit_enabled: bool = True
     # Trust X-Forwarded-For / -Proto only when the API sits behind our own reverse proxy.
     trust_proxy_headers: bool = False

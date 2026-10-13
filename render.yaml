@@ -1,0 +1,29 @@
+# Render Blueprint for the AI-VHRS backend (Dashboard -> New -> Blueprint, pick this repo).
+services:
+  - type: web
+    name: ai-vhrs-api
+    runtime: docker
+    rootDir: BE
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: singapore          # closest Render region to the Supabase Tokyo database
+    plan: starter              # free plan sleeps and has no pre-deploy command: do not use for webhooks
+    branch: BE                 # change to main once the backend is merged
+    autoDeploy: true
+    healthCheckPath: /api/v1/health
+    preDeployCommand: alembic upgrade head   # runs migrations before each new version goes live
+    envVars:
+      - key: DATABASE_URL      # Supabase *session pooler* string (port 5432). Set in the dashboard.
+        sync: false
+      - key: JWT_SECRET        # generated once by Render, then kept across deploys
+        generateValue: true
+      - key: CORS_ORIGINS      # JSON list, e.g. ["https://ai-vhrs.vercel.app"]
+        sync: false
+      - key: CORS_ORIGIN_REGEX # optional: Vercel preview URLs, e.g. https://ai-vhrs-[a-z0-9-]+\.vercel\.app
+        sync: false
+      - key: ENABLE_DOCS       # Swagger stays on so the FE team can explore the API
+        value: "true"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: TRUST_PROXY_HEADERS   # Render is the single reverse proxy in front of the container
+        value: "true"
