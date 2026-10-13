@@ -98,12 +98,12 @@ export const PROMOS: Record<string, { label: string; kind: 'pct' | 'ship'; v?: n
 export const REWRITE_REASONS = ['Ink smudge', 'Uneven spacing', 'Stroke quality', 'Wrong content', 'Other']
 
 export const PRODUCTS = [
-  { id: 'tet', name: 'Tết greeting card', text: 'Chúc Mừng Năm Mới', font: "'Dancing Script', cursive", size: 26, ink: '#9e2a1f', aspect: '105/148', base: 45000 },
-  { id: 'wed', name: 'Wedding invitation', text: 'Thu & Khang', font: "'Great Vibes', cursive", size: 30, ink: '#b08732', aspect: '127/178', base: 65000 },
-  { id: 'thanks', name: 'Thank-you card', text: 'Cảm ơn bạn!', font: "'Dancing Script', cursive", size: 28, ink: '#1b2440', aspect: '105/148', base: 45000 },
-  { id: 'print', name: 'Calligraphy print', text: 'An Khang Thịnh Vượng', font: "'Great Vibes', cursive", size: 26, ink: '#141414', aspect: '148/210', base: 95000 },
-  { id: 'letter', name: 'Love letter', text: 'Gửi em, người thương…', font: "'Caveat', cursive", size: 22, ink: '#1b2440', aspect: '148/210', base: 85000 },
-  { id: 'env', name: 'Addressed envelope', text: 'Cô Lan — 12 Lý Thường Kiệt', font: "'Caveat', cursive", size: 16, ink: '#141414', aspect: '220/110', base: 25000 },
+  { id: 'tet', type: 'card', name: 'Tết greeting card', text: 'Chúc Mừng Năm Mới', font: "'Dancing Script', cursive", size: 26, ink: '#9e2a1f', aspect: '105/148', base: 45000 },
+  { id: 'wed', type: 'invite', name: 'Wedding invitation', text: 'Thu & Khang', font: "'Great Vibes', cursive", size: 30, ink: '#b08732', aspect: '127/178', base: 65000 },
+  { id: 'thanks', type: 'card', name: 'Thank-you card', text: 'Cảm ơn bạn!', font: "'Dancing Script', cursive", size: 28, ink: '#1b2440', aspect: '105/148', base: 45000 },
+  { id: 'print', type: 'letter', name: 'Calligraphy print', text: 'An Khang Thịnh Vượng', font: "'Great Vibes', cursive", size: 26, ink: '#141414', aspect: '148/210', base: 95000 },
+  { id: 'letter', type: 'letter', name: 'Love letter', text: 'Gửi em, người thương…', font: "'Caveat', cursive", size: 22, ink: '#1b2440', aspect: '148/210', base: 85000 },
+  { id: 'env', type: 'envelope', name: 'Addressed envelope', text: 'Cô Lan — 12 Lý Thường Kiệt', font: "'Caveat', cursive", size: 16, ink: '#141414', aspect: '220/110', base: 25000 },
 ]
 
 export const PACKS = [

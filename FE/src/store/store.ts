@@ -1,8 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import { INKS, PAPERS, PENS, PRODUCTS, TYPES, FONT_STYLES } from '../constants/catalog'
+import { INKS, PAPERS, PENS, TYPES, FONT_STYLES } from '../constants/catalog'
 import { PACK_STEPS, emptyShipment, nextMockLog, scriptedLogs } from '../services/ghn'
-import type { CartItem, Order, OrderSpec, OrderStatus, QcReport, ShipLog, Shipment, User } from '../types'
-import { todayLabel } from '../utils/format'
+import type { Order, OrderDraft, OrderSpec, OrderStatus, QcReport, ShipLog, Shipment, User } from '../types'
 
 /**
  * Front-end-only "backend": orders, cart, user and prototype flag live in
@@ -12,7 +11,7 @@ import { todayLabel } from '../utils/format'
 
 const KEYS = {
   orders: 'aivhrs-orders',
-  cart: 'aivhrs-cart',
+  drafts: 'aivhrs-drafts',
   user: 'aivhrs-user',
   prototype: 'aivhrs-prototype',
   staffDemos: 'aivhrs-staff-demos',
@@ -204,12 +203,19 @@ const ordersStore = createStore<Order[]>(
   },
 )
 
-const cartStore = createStore<CartItem[]>(
+const draftsStore = createStore<OrderDraft[]>(
   () => {
-    const saved = read<CartItem[]>(KEYS.cart)
+    const saved = read<OrderDraft[]>(KEYS.drafts)
     return Array.isArray(saved) ? saved : []
   },
-  (c) => write(KEYS.cart, c),
+  (d) => {
+    try {
+      localStorage.setItem(KEYS.drafts, JSON.stringify(d))
+    } catch {
+      // Photos and drawings are big. Keep the drafts, drop their bitmaps.
+      write(KEYS.drafts, d.map((x) => ({ ...x, drawUrl: null, upload: x.upload ? { ...x.upload, dataUrl: undefined } : null })))
+    }
+  },
 )
 
 const userStore = createStore<User | null>(
@@ -241,8 +247,8 @@ const prototypeStore = createStore<boolean>(
 // ---------- hooks ----------
 
 export const useOrders = () => useSyncExternalStore(ordersStore.subscribe, ordersStore.get)
-export const useCart = () => useSyncExternalStore(cartStore.subscribe, cartStore.get)
 export const useUser = () => useSyncExternalStore(userStore.subscribe, userStore.get)
+export const useAllDrafts = () => useSyncExternalStore(draftsStore.subscribe, draftsStore.get)
 export const usePrototypeMode = () => useSyncExternalStore(prototypeStore.subscribe, prototypeStore.get)
 
 /** Orders staff can work on: the customer's real orders plus the console's own sample orders. */
@@ -271,10 +277,23 @@ export function useOrder(id: string | null): Order | null {
   return orders.find((o) => o.id === id) ?? orders[0] ?? null
 }
 
+/** Drafts of the signed-in user, newest first. */
+export function useDrafts(): OrderDraft[] {
+  const all = useAllDrafts()
+  const user = useUser()
+  return useMemo(
+    () => all.filter((d) => d.owner === (user?.name ?? 'guest')).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [all, user],
+  )
+}
+
 // ---------- actions ----------
 
 export const setPrototypeMode = (on: boolean) => prototypeStore.set(on)
-export const signIn = () => userStore.set(DEMO_USER)
+export const signIn = () => {
+  userStore.set(DEMO_USER)
+  adoptGuestDrafts(DEMO_USER.name)
+}
 
 /** Mock login: the email decides the role, the password is not checked. */
 export function login(email: string): User {
@@ -288,6 +307,7 @@ export function login(email: string): User {
       ? { name: tech.name, role: 'technician', techId: tech.techId }
       : { name: local.charAt(0).toUpperCase() + local.slice(1), role: 'customer' }
   userStore.set(user)
+  if (user.role === 'customer') adoptGuestDrafts(user.name)
   return user
 }
 export const signOut = () => userStore.set(null)
@@ -417,54 +437,35 @@ export function setStatus(id: string, status: OrderStatus, patch: Partial<Order>
   updateOrder(id, { ...patch, status })
 }
 
-export function addToCart(item: Omit<CartItem, 'qty'>) {
-  const cart = cartStore.get()
-  const ex = cart.find((c) => c.key === item.key)
-  cartStore.set(
-    ex ? cart.map((c) => (c.key === item.key ? { ...c, qty: c.qty + 1 } : c)) : [...cart, { ...item, qty: 1 }],
-  )
+// ---------- drafts ----------
+
+export const newDraftId = () => 'DR-' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 36 ** 2).toString(36).toUpperCase()
+
+export const getDraft = (id: string) => draftsStore.get().find((d) => d.id === id)
+
+/** Creates or replaces a draft. */
+export function saveDraft(d: OrderDraft) {
+  const all = draftsStore.get()
+  draftsStore.set(all.some((x) => x.id === d.id) ? all.map((x) => (x.id === d.id ? d : x)) : [d, ...all])
 }
 
-export function setCartQty(key: string, qty: number) {
-  const cart = cartStore.get()
-  cartStore.set(qty <= 0 ? cart.filter((c) => c.key !== key) : cart.map((c) => (c.key === key ? { ...c, qty } : c)))
+export const deleteDraft = (id: string) => draftsStore.set(draftsStore.get().filter((d) => d.id !== id))
+
+export function patchDraft(id: string, patch: Partial<OrderDraft>) {
+  const d = getDraft(id)
+  if (d) saveDraft({ ...d, ...patch, updatedAt: new Date().toISOString() })
 }
 
-export const clearCart = () => cartStore.set([])
-
-/** Cart checkout: turns the cart into one order that goes straight to the robot queue. */
-export function checkoutCart(): Order | null {
-  const cart = cartStore.get()
-  if (!cart.length) return null
-  const sub = cart.reduce((n, c) => n + c.unit * c.qty, 0)
-  const total = sub + (sub >= 500000 ? 0 : 30000)
-  const first = cart[0]
-  const product = PRODUCTS.find((p) => first.name === p.name)
-  const paper = PAPERS.find((p) => p.name === first.paperName) ?? PAPERS[0]
-  const order: Order = {
-    id: createOrderId(),
-    title: cart.length === 1 ? `${first.name} × ${first.qty * first.pack}` : `${cart.length} items`,
-    detail: cart.map((c) => c.paperName).join(' · '),
-    status: 'Queued',
-    total,
-    date: todayLabel(),
-    staff: 'Minh · AI-VHRS Studio',
-    spec: makeSpec({
-      type: first.name, aspect: first.aspect, land: first.aspect === '220/110',
-      paper: paper.name, paperColor: first.paperColor,
-      ink: INKS[0].name, inkColor: product?.ink ?? INKS[0].color,
-      font: first.font, fontName: 'Ready-made', text: first.text, qty: first.qty * first.pack,
-    }),
-  }
-  addOrder(order)
-  clearCart()
-  return order
+/** Drafts started before sign in move to the account that just signed in. */
+function adoptGuestDrafts(name: string) {
+  const all = draftsStore.get()
+  if (all.some((d) => d.owner === 'guest')) draftsStore.set(all.map((d) => (d.owner === 'guest' ? { ...d, owner: name } : d)))
 }
 
 /** Wipe everything and go back to the seeded demo data. */
 export function resetDemo() {
   ordersStore.set(seedOrders())
-  cartStore.set([])
+  draftsStore.set([])
   userStore.set(DEMO_USER)
   staffDemoStore.set(staffDemoSeeds())
 }

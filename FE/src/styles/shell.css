@@ -161,3 +161,6 @@
 @media (max-width:640px){
   .vh-nav{display:none}
 }
+
+/* Drafts tab in the top bar: count sits after the label */
+.vh-nav-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;margin-left:8px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:11px;font-weight:800;vertical-align:1px}

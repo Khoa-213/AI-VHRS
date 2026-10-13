@@ -71,3 +71,10 @@ Text that stays English is a bug unless it is in the exceptions list above.
 - Icons come from `@phosphor-icons/react`. Colours come from CSS variables in `src/styles/theme.css`.
 - Local data is a localStorage mock in `src/store/store.ts` (prototype). Keep FE-only; the GHN client in
   `src/services/ghn.ts` talks to a backend proxy, never directly to GHN with a token.
+
+## Order drafts
+
+The create-order form autosaves to a draft on every change (`saveDraft` in `src/store/store.ts`, localStorage key
+`aivhrs-drafts`). Drafts show under the **Drafts** tab in the top bar and on `/drafts`. When you add a field to the
+create-order flow, add it to `OrderDraft` (`src/types/index.ts`), to the `persist` snapshot in `CreateOrder.tsx` and to
+the restore in its initial state, or it will be lost when the user resumes. There is no cart.

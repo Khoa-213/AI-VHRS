@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
 import {
   CREATE_PAYS, FONT_STYLES, INKS, MODES, PAPERS, PENS, STEP_LABELS, TYPES,
 } from '../../constants/catalog'
 import { useLocale, useT, useTn } from '../../i18n'
 import { navigate, orderPath } from '../../router/router'
-import { addOrder, createOrderId } from '../../store/store'
+import { addOrder, createOrderId, deleteDraft, getDraft, newDraftId, saveDraft, useUser } from '../../store/store'
 import type { InputMode, Order, OrderSpec } from '../../types'
 import { fmt, todayLabel } from '../../utils/format'
 import { quote } from '../../utils/pricing'
-import { CANVAS_SIZES, DRAW_PATH, clearDraft, loadDraft, saveDraft } from './draft'
+import { CANVAS_SIZES, drawPathFor } from './draft'
 import { inkMask } from '../../components/ui/PaperSheet'
 import { MethodLogos } from '../../components/ui/PaymentLogos'
 import './create-order.css'
@@ -26,32 +26,78 @@ function initialMode(saved: InputMode): InputMode {
   return (m?.[1] as InputMode | undefined) ?? saved
 }
 
-export default function CreateOrder() {
+/** `draftId` opens a saved draft. Without it the form starts empty and becomes a draft once something is filled in. */
+export default function CreateOrder({ draftId: given = null }: { draftId?: string | null }) {
   const t = useT()
   const tn = useTn()
   const locale = useLocale()
+  const user = useUser()
   const priceLabel = (p: number) => (p ? '+' + fmt(p) : t('co.included'))
-  // Coming back from the full-screen canvas page restores what was filled in before.
-  const [saved] = useState(loadDraft)
-  const [step, setStep] = useState(saved.step)
-  const [maxStep, setMaxStep] = useState(saved.step)
-  const [type, setType] = useState<string | null>(saved.type)
-  const [mode, setMode] = useState<InputMode>(() => initialMode(saved.mode))
-  const [text, setText] = useState(saved.text)
-  const [fontStyle, setFontStyle] = useState(saved.fontStyle)
-  const [upload, setUpload] = useState<Upload | null>(null)
-  const strokes = saved.strokes
-  const drawUrl = saved.drawUrl
-  const sheet = CANVAS_SIZES.find((s) => s.id === saved.sizeId) ?? CANVAS_SIZES[0]
-  const sheetLabel = t('co.sheet', { label: sheet.label, orient: t(saved.landscape ? 'co.landscape' : 'co.portrait') })
-  const [paper, setPaper] = useState<string | null>(null)
-  const [pen, setPen] = useState<string | null>(null)
-  const [ink, setInk] = useState<string | null>(null)
-  const [qty, setQty] = useState(1)
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [address, setAddress] = useState('')
-  const [pay, setPay] = useState<string | null>(null)
+
+  // Every change is saved to a draft, so leaving at any point loses nothing.
+  const [draftId] = useState(() => given ?? newDraftId())
+  const [saved] = useState(() => getDraft(draftId))
+  const createdAt = useRef(saved?.createdAt ?? new Date().toISOString())
+  const submitted = useRef(false)
+
+  const [step, setStep] = useState(saved?.step ?? 0)
+  const [maxStep, setMaxStep] = useState(saved?.maxStep ?? saved?.step ?? 0)
+  const [type, setType] = useState<string | null>(saved?.type ?? null)
+  const [mode, setMode] = useState<InputMode>(() => initialMode(saved?.mode ?? 'text'))
+  const [text, setText] = useState(saved?.text ?? '')
+  const [fontStyle, setFontStyle] = useState(saved?.fontStyle ?? 'script')
+  const [upload, setUpload] = useState<Upload | null>(() => {
+    const u = saved?.upload
+    if (!u || (u.isImg && !u.dataUrl)) return null
+    return { name: u.name, url: u.dataUrl ?? '', isImg: u.isImg, dataUrl: u.dataUrl }
+  })
+  // The drawing comes from the full-screen canvas page, which writes it into the draft.
+  const strokes = saved?.strokes ?? 0
+  const drawUrl = saved?.drawUrl ?? null
+  const sizeId = saved?.sizeId ?? 'a4'
+  const landscape = saved?.landscape ?? false
+  const sheet = CANVAS_SIZES.find((s) => s.id === sizeId) ?? CANVAS_SIZES[0]
+  const sheetLabel = t('co.sheet', { label: sheet.label, orient: t(landscape ? 'co.landscape' : 'co.portrait') })
+  const [paper, setPaper] = useState<string | null>(saved?.paper ?? null)
+  const [pen, setPen] = useState<string | null>(saved?.pen ?? null)
+  const [ink, setInk] = useState<string | null>(saved?.ink ?? null)
+  const [qty, setQty] = useState(saved?.qty ?? 1)
+  const [name, setName] = useState(saved?.name ?? '')
+  const [phone, setPhone] = useState(saved?.phone ?? '')
+  const [address, setAddress] = useState(saved?.address ?? '')
+  const [pay, setPay] = useState<string | null>(saved?.pay ?? null)
+
+  const latest = useRef({ step, maxStep, type, mode, text, fontStyle, upload, paper, pen, ink, qty, name, phone, address, pay })
+  latest.current = { step, maxStep, type, mode, text, fontStyle, upload, paper, pen, ink, qty, name, phone, address, pay }
+
+  const persist = useCallback((force = false) => {
+    if (submitted.current) return
+    const s = latest.current
+    const filled = !!(s.type || s.text.trim() || s.upload || strokes > 0 || s.paper || s.pen || s.ink || s.qty > 1 || s.name || s.phone || s.address || s.pay)
+    if (!force && !filled && !getDraft(draftId)) return
+    saveDraft({
+      id: draftId,
+      owner: user?.name ?? 'guest',
+      createdAt: createdAt.current,
+      updatedAt: new Date().toISOString(),
+      step: s.step, maxStep: s.maxStep, type: s.type, mode: s.mode, text: s.text, fontStyle: s.fontStyle,
+      upload: s.upload ? { name: s.upload.name, isImg: s.upload.isImg, dataUrl: s.upload.dataUrl } : null,
+      strokes, drawUrl, sizeId, landscape,
+      paper: s.paper, pen: s.pen, ink: s.ink, qty: s.qty, name: s.name, phone: s.phone, address: s.address, pay: s.pay,
+    })
+  }, [draftId, user, strokes, drawUrl, sizeId, landscape])
+
+  // Save after each change. The short delay only batches keystrokes of a single burst.
+  const touched = useRef(false)
+  useEffect(() => {
+    if (!touched.current) {
+      touched.current = true
+      return
+    }
+    const h = window.setTimeout(() => persist(), 250)
+    return () => window.clearTimeout(h)
+  }, [step, maxStep, type, mode, text, fontStyle, upload, paper, pen, ink, qty, name, phone, address, pay, persist])
+  useEffect(() => () => persist(), [persist])
 
   // Release the blob URL when the upload is replaced or the page unmounts.
   const blobRef = useRef<string | null>(null)
@@ -119,14 +165,20 @@ export default function CreateOrder() {
       date: todayLabel(),
       spec, name: name.trim(), phone: phone.trim(), address: address.trim(), pay: pay ?? undefined,
     }
+    submitted.current = true
+    deleteDraft(draftId)
     addOrder(order)
-    clearDraft()
     navigate(orderPath(order.id, 'review'))
   }
 
   const openCanvas = () => {
-    saveDraft({ type, text, fontStyle, step, mode: 'draw' })
-    navigate(DRAW_PATH)
+    persist(true)
+    navigate(drawPathFor(draftId))
+  }
+
+  const saveAndExit = () => {
+    persist()
+    navigate(user ? '/drafts' : `/login?next=${encodeURIComponent('/drafts')}`)
   }
 
   const next = () => {
@@ -304,7 +356,7 @@ export default function CreateOrder() {
                     <div className="co-sheet">
                       <div
                         className="co-sheet-thumb"
-                        style={{ aspectRatio: saved.landscape ? `${sheet.h} / ${sheet.w}` : `${sheet.w} / ${sheet.h}` }}
+                        style={{ aspectRatio: landscape ? `${sheet.h} / ${sheet.w}` : `${sheet.w} / ${sheet.h}` }}
                       >
                         {drawUrl ? <img src={drawUrl} alt={t('co.yourDrawing')} /> : <span className="vh-mono">{t('co.blank')}</span>}
                       </div>
@@ -455,6 +507,7 @@ export default function CreateOrder() {
             </div>
           </div>
 
+          <div className="co-side">
           <aside className="co-rail">
             <div className="co-preview">
               <div
@@ -500,6 +553,10 @@ export default function CreateOrder() {
               <span className="co-fine">{t('co.fine')}</span>
             </div>
           </aside>
+          <button type="button" className="vh-btn vh-btn--md vh-btn--white co-save" onClick={saveAndExit}>
+            {t('co.saveExit')}
+          </button>
+          </div>
         </div>
       </div>
     </Page>

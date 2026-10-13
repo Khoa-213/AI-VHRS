@@ -1,38 +1,15 @@
-import { useRef, useState } from 'react'
-import { ORDER_HREF, svgProps } from '../../constants'
+import { svgProps } from '../../constants'
 import { useT } from '../../i18n'
-import { STATUS_COLORS } from '../../constants/catalog'
-import { Link, navigate, orderPath } from '../../router/router'
-import { signIn, signOut, useCart, useOrders, useUser } from '../../store/store'
-import type { Order } from '../../types'
-import { fmt } from '../../utils/format'
+import { Link, navigate } from '../../router/router'
+import { signOut, useDrafts, useUser } from '../../store/store'
+import OrderHistoryMenu from './OrderHistoryMenu'
 import ThemeToggle from '../ui/ThemeToggle'
 import LanguageToggle from '../ui/LanguageToggle'
-
-/** Where an order opens from the history list, by status. */
-function orderHref(o: Order) {
-  if (o.status === 'Accepted') return orderPath(o.id, 'deposit')
-  if (['Shipped', 'Delivered'].includes(o.status)) return orderPath(o.id, 'tracking')
-  if (['Written', 'Rewriting'].includes(o.status)) return orderPath(o.id, 'result')
-  return orderPath(o.id, 'review')
-}
 
 export default function SiteHeader() {
   const t = useT()
   const user = useUser()
-  const orders = useOrders()
-  const cartCount = useCart().reduce((n, c) => n + c.qty, 0)
-  const [open, setOpen] = useState(false)
-  const timer = useRef<number | undefined>(undefined)
-
-  const enter = () => {
-    window.clearTimeout(timer.current)
-    setOpen(true)
-  }
-  const leave = () => {
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setOpen(false), 160)
-  }
+  const drafts = useDrafts()
 
   return (
     <header className="vh-header">
@@ -45,7 +22,12 @@ export default function SiteHeader() {
           <Link to="/#queue">{t('nav.orderQueue')}</Link>
           {user?.role === 'staff' && <Link to="/staff">{t('nav.staffDash')}</Link>}
           {user?.role === 'technician' && <Link to="/tech">{t('nav.techDesk')}</Link>}
-          <Link to="/create-order-v2">{t('nav.learnFont')}</Link>
+          {user && (
+            <Link to="/drafts" className="vh-nav-tab">
+              {t('nav.drafts')}
+              {drafts.length > 0 && <span className="vh-nav-count">{drafts.length}</span>}
+            </Link>
+          )}
         </nav>
         <div className="vh-actions">
           <button className="vh-icon-btn" aria-label={t('nav.search')}>
@@ -56,53 +38,7 @@ export default function SiteHeader() {
           </button>
           <ThemeToggle className="vh-icon-btn" />
           <LanguageToggle className="vh-icon-btn" />
-          <div className={`vh-dd${open ? ' open' : ''}`} onMouseEnter={enter} onMouseLeave={leave}>
-            <Link to="/cart" className="vh-icon-btn" aria-label={t('nav.cart')}>
-              <svg width="19" height="19" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
-                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
-                <path d="M3 6h18" />
-                <path d="M16 10a4 4 0 0 1-8 0" />
-              </svg>
-              {cartCount > 0 && <span className="vh-badge">{cartCount}</span>}
-            </Link>
-            <div className="vh-dd-panel">
-              <div className="vh-dd-card">
-                <div className="vh-dd-head">
-                  <span>{t('hist.title')}</span>
-                  <span className="vh-dd-count">{user ? t('hist.count', { n: orders.length }) : ''}</span>
-                </div>
-                {user ? (
-                  <div className="vh-dd-list">
-                    {orders.slice(0, 4).map((o) => {
-                      const [color] = STATUS_COLORS[o.status]
-                      return (
-                        <Link key={o.id} to={orderHref(o)} className="vh-dd-item" onClick={() => setOpen(false)}>
-                          <div className="vh-dd-item-text">
-                            <span className="vh-dd-item-meta">{o.id} · {o.date}</span>
-                            <span className="vh-dd-item-title">{o.title}</span>
-                          </div>
-                          <div className="vh-dd-item-side">
-                            <span className="vh-chip" style={{ color }}>{t(`status.${o.status}`)}</span>
-                            <span className="vh-dd-item-total">{fmt(o.total)}</span>
-                          </div>
-                        </Link>
-                      )
-                    })}
-                    {!orders.length && <span className="vh-dd-empty">{t('hist.empty')}</span>}
-                  </div>
-                ) : (
-                  <div className="vh-dd-signin">
-                    <span>{t('hist.signInPrompt')}</span>
-                    <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={signIn}>{t('nav.signIn')}</button>
-                  </div>
-                )}
-                <div className="vh-dd-foot">
-                  <Link to="/cart" className="vh-btn vh-btn--ghost vh-btn--sm vh-grow">{t('hist.viewCart')}</Link>
-                  <Link to={ORDER_HREF} className="vh-btn vh-btn--primary vh-btn--sm vh-grow">{t('hist.create')}</Link>
-                </div>
-              </div>
-            </div>
-          </div>
+          <OrderHistoryMenu buttonClassName="vh-icon-btn" />
           <button
             className="vh-icon-btn"
             aria-label={t(user ? 'nav.signOut' : 'nav.signIn')}

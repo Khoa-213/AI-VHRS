@@ -2,9 +2,13 @@ import { ORDER_HREF, svgProps } from '../../../constants'
 import { useT } from '../../../i18n'
 import ThemeToggle from '../../../components/ui/ThemeToggle'
 import LanguageToggle from '../../../components/ui/LanguageToggle'
+import OrderHistoryMenu from '../../../components/layout/OrderHistoryMenu'
+import { useDrafts, useUser } from '../../../store/store'
 
 export default function Header() {
   const t = useT()
+  const user = useUser()
+  const drafts = useDrafts()
   return (
     <header className="lp-header">
       <div className="lp-header-inner">
@@ -14,7 +18,12 @@ export default function Header() {
           <a href="#showcase">{t('nav.robotSpecs')}</a>
           <a href="#modes">{t('nav.penmanship')}</a>
           <a href="#queue">{t('nav.orderQueue')}</a>
-          <a href="/create-order-v2">{t('nav.learnFont')}</a>
+          {user && (
+            <a href="/drafts">
+              {t('nav.drafts')}
+              {drafts.length > 0 && <span className="vh-nav-count">{drafts.length}</span>}
+            </a>
+          )}
         </nav>
         <div className="lp-actions">
           <button className="lp-icon-btn" aria-label={t('nav.search')}>
@@ -25,13 +34,7 @@ export default function Header() {
           </button>
           <ThemeToggle className="lp-icon-btn" />
           <LanguageToggle className="lp-icon-btn" />
-          <a href="/cart" className="lp-icon-btn" aria-label={t('nav.cart')}>
-            <svg width="19" height="19" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
-              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
-              <path d="M3 6h18" />
-              <path d="M16 10a4 4 0 0 1-8 0" />
-            </svg>
-          </a>
+          <OrderHistoryMenu buttonClassName="lp-icon-btn" />
           <a href="/login" className="lp-icon-btn" aria-label={t('nav.signIn')}>
             <svg width="20" height="20" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
               <circle cx="12" cy="12" r="10" />

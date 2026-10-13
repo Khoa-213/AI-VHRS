@@ -1,8 +1,7 @@
 import AssistiveTouch from './components/prototype/AssistiveTouch'
-import Cart from './pages/cart/Cart'
+import Drafts from './pages/drafts/Drafts'
 import CreateOrder from './pages/create-order/CreateOrder'
 import DrawStudio from './pages/create-order/DrawStudio'
-import CreateOrderV2 from './pages/create-order/CreateOrderV2'
 import Landing from './pages/landing/Landing'
 import Login from './pages/login/Login'
 import AssignTechnician from './pages/staff/AssignTechnician'
@@ -25,10 +24,13 @@ import { matchOrderRoute, useInterceptLinks, usePath } from './router/router'
 function Routes() {
   const path = usePath()
 
-  if (path === '/create-order/draw') return <DrawStudio />
-  if (path === '/create-order') return <CreateOrder />
-  if (path === '/create-order-v2') return <CreateOrderV2 />
-  if (path === '/cart') return <Cart />
+  if (path === '/create-order/draw') return <DrawStudio key="new" />
+  const draw = /^\/create-order\/draw\/([^/]+)\/?$/.exec(path)
+  if (draw) return <DrawStudio key={draw[1]} draftId={decodeURIComponent(draw[1])} />
+  const draft = /^\/create-order\/draft\/([^/]+)\/?$/.exec(path)
+  if (draft) return <CreateOrder key={draft[1]} draftId={decodeURIComponent(draft[1])} />
+  if (path === '/create-order') return <CreateOrder key="new" />
+  if (path === '/drafts') return <Drafts />
   if (path === '/login') return <Login />
   if (path === '/staff') return <RequireStaff><StaffDashboard /></RequireStaff>
   if (path === '/staff/shipping') return <RequireStaff><ShippingBoard /></RequireStaff>

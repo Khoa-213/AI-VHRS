@@ -175,17 +175,34 @@ export interface Assignment {
   at: string
 }
 
-export interface CartItem {
-  key: string
-  name: string
+/** A create-order form saved part way. Kept per user and updated on every change. */
+export interface OrderDraft {
+  id: string
+  /** Name of the user it belongs to. Drafts started signed out use "guest" until sign in. */
+  owner: string
+  createdAt: string
+  updatedAt: string
+  /** Step the user is on (0 to 3) and the furthest step they have reached. */
+  step: number
+  maxStep: number
+  type: string | null
+  mode: InputMode
   text: string
-  font: string
-  aspect: string
-  paperName: string
-  paperColor: string
-  pack: number
-  unit: number
+  fontStyle: string
+  /** Uploaded handwriting photo. Only the data URL survives a reload. */
+  upload: { name: string; isImg: boolean; dataUrl?: string } | null
+  strokes: number
+  drawUrl: string | null
+  sizeId: string
+  landscape: boolean
+  paper: string | null
+  pen: string | null
+  ink: string | null
   qty: number
+  name: string
+  phone: string
+  address: string
+  pay: string | null
 }
 
 export type Role = 'customer' | 'staff' | 'technician'

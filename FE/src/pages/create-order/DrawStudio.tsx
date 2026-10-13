@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { useT } from '../../i18n'
 import { navigate } from '../../router/router'
-import { CANVAS_SIZES, loadDraft, saveDraft } from './draft'
+import { getDraft, newDraftId, saveDraft, useUser } from '../../store/store'
+import { CANVAS_SIZES, draftPathFor } from './draft'
 import './draw-studio.css'
 
 /** The whole page is a dark dotted surface you can write on; the frame marks the sheet that is actually produced. Strokes are light and the bitmap stays transparent, so the dots are pure CSS. */
@@ -24,9 +25,11 @@ type Pt = [number, number]
 /** Fountain nib: a thin ellipse held at a fixed angle, so strokes across it come out thick and along it hairline. */
 const NIB_ANGLE = -Math.PI / 4
 
-export default function DrawStudio() {
+export default function DrawStudio({ draftId: given = null }: { draftId?: string | null }) {
   const t = useT()
-  const [initial] = useState(loadDraft)
+  const user = useUser()
+  const [draftId] = useState(() => given ?? newDraftId())
+  const [initial] = useState(() => ({ sizeId: 'a4', landscape: false, strokes: 0, drawUrl: null as string | null, ...getDraft(draftId) }))
   const [sizeId, setSizeId] = useState(initial.sizeId)
   const [landscape, setLandscape] = useState(initial.landscape)
   const [strokes, setStrokes] = useState(initial.strokes)
@@ -273,8 +276,19 @@ export default function DrawStudio() {
       // Transparent PNG with light strokes: the order recolours it with the chosen ink on the chosen paper.
       drawUrl = out.toDataURL('image/png')
     }
-    saveDraft({ mode: 'draw', step: 1, strokes, sizeId, landscape, drawUrl })
-    navigate('/create-order')
+    // The drawing is written into the draft, then the form reopens it.
+    const now = new Date().toISOString()
+    const base = getDraft(draftId) ?? {
+      id: draftId, owner: user?.name ?? 'guest', createdAt: now, updatedAt: now, step: 1, maxStep: 1,
+      type: null, mode: 'draw' as const, text: '', fontStyle: 'script', upload: null,
+      strokes: 0, drawUrl: null, sizeId: 'a4', landscape: false,
+      paper: null, pen: null, ink: null, qty: 1, name: '', phone: '', address: '', pay: null,
+    }
+    saveDraft({
+      ...base, mode: 'draw', step: Math.max(1, base.step), maxStep: Math.max(1, base.maxStep),
+      strokes, sizeId, landscape, drawUrl, updatedAt: now,
+    })
+    navigate(draftPathFor(draftId))
   }
 
   return (
