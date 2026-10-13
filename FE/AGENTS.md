@@ -75,6 +75,13 @@ Text that stays English is a bug unless it is in the exceptions list above.
 ## Order drafts
 
 The create-order form autosaves to a draft on every change (`saveDraft` in `src/store/store.ts`, localStorage key
-`aivhrs-drafts`). Drafts show under the **Drafts** tab in the top bar and on `/drafts`. When you add a field to the
+`aivhrs-drafts`). Drafts show under **Account > Drafts** (`/account/drafts`). When you add a field to the
 create-order flow, add it to `OrderDraft` (`src/types/index.ts`), to the `persist` snapshot in `CreateOrder.tsx` and to
 the restore in its initial state, or it will be lost when the user resumes. There is no cart.
+
+## Account area
+
+Everything that belongs to the signed-in user lives under `/account` (`src/pages/account/`): profile, preferences
+(theme, language), order history, drafts, payment methods. The top bar and the landing page are for browsing only:
+no order history, drafts or cart there. A new user-owned feature gets a section in `Account.tsx`, not a new top bar item.
+The avatar in the top bar opens `/account`; sign out lives in the account navigation.

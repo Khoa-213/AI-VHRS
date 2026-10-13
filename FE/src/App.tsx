@@ -1,5 +1,5 @@
 import AssistiveTouch from './components/prototype/AssistiveTouch'
-import Drafts from './pages/drafts/Drafts'
+import Account, { type Section } from './pages/account/Account'
 import CreateOrder from './pages/create-order/CreateOrder'
 import DrawStudio from './pages/create-order/DrawStudio'
 import Landing from './pages/landing/Landing'
@@ -30,7 +30,12 @@ function Routes() {
   const draft = /^\/create-order\/draft\/([^/]+)\/?$/.exec(path)
   if (draft) return <CreateOrder key={draft[1]} draftId={decodeURIComponent(draft[1])} />
   if (path === '/create-order') return <CreateOrder key="new" />
-  if (path === '/drafts') return <Drafts />
+  const account = /^\/account(?:\/([^/]+))?\/?$/.exec(path)
+  if (account) {
+    const known: Section[] = ['orders', 'drafts', 'payment', 'preferences']
+    const section = known.find((s) => s === account[1]) ?? 'profile'
+    return <Account section={section} />
+  }
   if (path === '/login') return <Login />
   if (path === '/staff') return <RequireStaff><StaffDashboard /></RequireStaff>
   if (path === '/staff/shipping') return <RequireStaff><ShippingBoard /></RequireStaff>

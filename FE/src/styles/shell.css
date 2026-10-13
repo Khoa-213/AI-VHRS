@@ -164,3 +164,8 @@
 
 /* Drafts tab in the top bar: count sits after the label */
 .vh-nav-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;margin-left:8px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:11px;font-weight:800;vertical-align:1px}
+
+/* Slogan typeface. English Towne is a licensed font: drop EnglishTowne.woff2 into public/fonts/ and it is used;
+   until then the page falls back to a free blackletter. */
+@font-face{font-family:'English Towne';src:local('English Towne'),local('EnglishTowne'),url('/fonts/EnglishTowne.woff2') format('woff2');font-display:swap}
+.vh-start{white-space:nowrap}

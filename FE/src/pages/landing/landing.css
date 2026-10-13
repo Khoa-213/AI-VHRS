@@ -15,7 +15,7 @@
 .lp-hero{background:var(--bg);padding:clamp(80px,12vw,150px) clamp(16px,3vw,32px) clamp(80px,10vw,120px)}
 .lp-hero-inner{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;align-items:center;text-align:center;gap:26px;transition:opacity var(--dur) ease,transform var(--dur) cubic-bezier(.2,.7,.2,1)}
 .lp-eyebrow{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-text)}
-.lp-h1{margin:0;font-weight:800;font-size:clamp(56px,10vw,148px);line-height:.95;letter-spacing:-.05em;background:linear-gradient(180deg,var(--h1-a) 0%,var(--h1-b) 38%,var(--h1-c) 68%,var(--h1-d) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-wrap:balance}
+.lp-h1{margin:0;font-family:'English Towne','English Text','Old English Text MT','UnifrakturCook',serif;font-weight:400;font-size:clamp(52px,9vw,132px);line-height:1.08;letter-spacing:0;padding-bottom:.08em;background:linear-gradient(180deg,var(--h1-a) 0%,var(--h1-b) 38%,var(--h1-c) 68%,var(--h1-d) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-wrap:balance}
 .lp-hero-sub{margin:0;max-width:640px;font-size:clamp(16px,1.5vw,19px);line-height:1.6;color:var(--t4);text-wrap:pretty}
 .lp-hero-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:8px}
 .lp-cta-btn{display:inline-flex;align-items:center;gap:10px;background:var(--btn-inv-bg);color:var(--btn-inv-fg);font-weight:700;font-size:16px;padding:16px 28px;border-radius:999px;white-space:nowrap;transition:transform .15s,background .2s}

@@ -6,7 +6,7 @@ import PaymentMethods, { EMPTY_CARD, methodReady, type CardFields } from '../../
 import { PAY_METHODS } from '../../constants/catalog'
 import { useT, useTn } from '../../i18n'
 import { Link, orderPath } from '../../router/router'
-import { setStatus, useOrder } from '../../store/store'
+import { setStatus, useOrder, useProfile } from '../../store/store'
 import { depositOf, fmt } from '../../utils/format'
 import './order.css'
 
@@ -14,7 +14,8 @@ export default function Deposit({ id }: { id: string | null }) {
   const t = useT()
   const tn = useTn()
   const order = useOrder(id)
-  const [method, setMethod] = useState<string | null>(null)
+  const profile = useProfile()
+  const [method, setMethod] = useState<string | null>(profile.payMethod)
   const [card, setCard] = useState<CardFields>(EMPTY_CARD)
   const [busy, setBusy] = useState(false)
   const timer = useRef<number | undefined>(undefined)

@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { INKS, PAPERS, PENS, TYPES, FONT_STYLES } from '../constants/catalog'
 import { PACK_STEPS, emptyShipment, nextMockLog, scriptedLogs } from '../services/ghn'
-import type { Order, OrderDraft, OrderSpec, OrderStatus, QcReport, ShipLog, Shipment, User } from '../types'
+import type { Order, OrderDraft, OrderSpec, Profile, OrderStatus, QcReport, ShipLog, Shipment, User } from '../types'
 
 /**
  * Front-end-only "backend": orders, cart, user and prototype flag live in
@@ -12,6 +12,7 @@ import type { Order, OrderDraft, OrderSpec, OrderStatus, QcReport, ShipLog, Ship
 const KEYS = {
   orders: 'aivhrs-orders',
   drafts: 'aivhrs-drafts',
+  profiles: 'aivhrs-profiles',
   user: 'aivhrs-user',
   prototype: 'aivhrs-prototype',
   staffDemos: 'aivhrs-staff-demos',
@@ -218,6 +219,11 @@ const draftsStore = createStore<OrderDraft[]>(
   },
 )
 
+const profilesStore = createStore<Record<string, Partial<Profile>>>(
+  () => read<Record<string, Partial<Profile>>>(KEYS.profiles) ?? {},
+  (p) => write(KEYS.profiles, p),
+)
+
 const userStore = createStore<User | null>(
   () => {
     const raw = localStorage.getItem(KEYS.user)
@@ -248,6 +254,24 @@ const prototypeStore = createStore<boolean>(
 
 export const useOrders = () => useSyncExternalStore(ordersStore.subscribe, ordersStore.get)
 export const useUser = () => useSyncExternalStore(userStore.subscribe, userStore.get)
+/** Profile of the signed-in user. Missing fields fall back to the account name. */
+export function useProfile(): Profile {
+  const all = useSyncExternalStore(profilesStore.subscribe, profilesStore.get)
+  const user = useUser()
+  return useMemo(() => {
+    const p = (user && all[user.name]) || {}
+    return {
+      fullName: p.fullName ?? user?.name ?? '',
+      email: p.email ?? '',
+      phone: p.phone ?? '',
+      address: p.address ?? '',
+      bio: p.bio ?? '',
+      avatar: p.avatar ?? null,
+      payMethod: p.payMethod ?? null,
+    }
+  }, [all, user])
+}
+
 export const useAllDrafts = () => useSyncExternalStore(draftsStore.subscribe, draftsStore.get)
 export const usePrototypeMode = () => useSyncExternalStore(prototypeStore.subscribe, prototypeStore.get)
 
@@ -435,6 +459,15 @@ export function saveStaffOrder(order: Order) {
 
 export function setStatus(id: string, status: OrderStatus, patch: Partial<Order> = {}) {
   updateOrder(id, { ...patch, status })
+}
+
+// ---------- profile ----------
+
+export function updateProfile(patch: Partial<Profile>) {
+  const u = userStore.get()
+  if (!u) return
+  const all = profilesStore.get()
+  profilesStore.set({ ...all, [u.name]: { ...all[u.name], ...patch } })
 }
 
 // ---------- drafts ----------

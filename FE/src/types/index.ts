@@ -175,6 +175,19 @@ export interface Assignment {
   at: string
 }
 
+/** Account details a customer keeps on their profile page. */
+export interface Profile {
+  fullName: string
+  email: string
+  phone: string
+  address: string
+  bio: string
+  /** Small JPEG data URL. */
+  avatar: string | null
+  /** Payment method id from PAY_METHODS that checkout preselects. */
+  payMethod: string | null
+}
+
 /** A create-order form saved part way. Kept per user and updated on every change. */
 export interface OrderDraft {
   id: string

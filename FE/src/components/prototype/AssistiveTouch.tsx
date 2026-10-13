@@ -278,7 +278,7 @@ export default function AssistiveTouch() {
             <div className="at-links">
               <Link to="/" onClick={() => setOpen(false)}>{t('at.landing')}</Link>
               <Link to={ORDER_HREF} onClick={() => setOpen(false)}>{t('at.newOrder')}</Link>
-              <Link to="/drafts" onClick={() => setOpen(false)}>{t('nav.drafts')}</Link>
+              <Link to="/account/drafts" onClick={() => setOpen(false)}>{t('nav.drafts')}</Link>
               <button type="button" onClick={resetDemo}>{t('at.reset')}</button>
             </div>
           </section>

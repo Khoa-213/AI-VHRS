@@ -5,7 +5,7 @@ import {
 } from '../../constants/catalog'
 import { useLocale, useT, useTn } from '../../i18n'
 import { navigate, orderPath } from '../../router/router'
-import { addOrder, createOrderId, deleteDraft, getDraft, newDraftId, saveDraft, useUser } from '../../store/store'
+import { addOrder, createOrderId, deleteDraft, getDraft, newDraftId, saveDraft, useProfile, useUser } from '../../store/store'
 import type { InputMode, Order, OrderSpec } from '../../types'
 import { fmt, todayLabel } from '../../utils/format'
 import { quote } from '../../utils/pricing'
@@ -32,6 +32,7 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
   const tn = useTn()
   const locale = useLocale()
   const user = useUser()
+  const profile = useProfile()
   const priceLabel = (p: number) => (p ? '+' + fmt(p) : t('co.included'))
 
   // Every change is saved to a draft, so leaving at any point loses nothing.
@@ -62,9 +63,10 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
   const [pen, setPen] = useState<string | null>(saved?.pen ?? null)
   const [ink, setInk] = useState<string | null>(saved?.ink ?? null)
   const [qty, setQty] = useState(saved?.qty ?? 1)
-  const [name, setName] = useState(saved?.name ?? '')
-  const [phone, setPhone] = useState(saved?.phone ?? '')
-  const [address, setAddress] = useState(saved?.address ?? '')
+  // Contact details start from the profile, so a new order only needs them once.
+  const [name, setName] = useState(saved?.name ?? profile.fullName)
+  const [phone, setPhone] = useState(saved?.phone ?? profile.phone)
+  const [address, setAddress] = useState(saved?.address ?? profile.address)
   const [pay, setPay] = useState<string | null>(saved?.pay ?? null)
 
   const latest = useRef({ step, maxStep, type, mode, text, fontStyle, upload, paper, pen, ink, qty, name, phone, address, pay })
@@ -73,7 +75,7 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
   const persist = useCallback((force = false) => {
     if (submitted.current) return
     const s = latest.current
-    const filled = !!(s.type || s.text.trim() || s.upload || strokes > 0 || s.paper || s.pen || s.ink || s.qty > 1 || s.name || s.phone || s.address || s.pay)
+    const filled = !!(s.type || s.text.trim() || s.upload || strokes > 0 || s.paper || s.pen || s.ink || s.qty > 1 || (s.name && s.name !== profile.fullName) || (s.phone && s.phone !== profile.phone) || (s.address && s.address !== profile.address) || s.pay)
     if (!force && !filled && !getDraft(draftId)) return
     saveDraft({
       id: draftId,
@@ -85,7 +87,7 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
       strokes, drawUrl, sizeId, landscape,
       paper: s.paper, pen: s.pen, ink: s.ink, qty: s.qty, name: s.name, phone: s.phone, address: s.address, pay: s.pay,
     })
-  }, [draftId, user, strokes, drawUrl, sizeId, landscape])
+  }, [draftId, user, profile, strokes, drawUrl, sizeId, landscape])
 
   // Save after each change. The short delay only batches keystrokes of a single burst.
   const touched = useRef(false)
@@ -178,7 +180,7 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
 
   const saveAndExit = () => {
     persist()
-    navigate(user ? '/drafts' : `/login?next=${encodeURIComponent('/drafts')}`)
+    navigate(user ? '/account/drafts' : `/login?next=${encodeURIComponent('/account/drafts')}`)
   }
 
   const next = () => {
