@@ -4,6 +4,7 @@ import { NoOrder, OrderTimeline, SpecRows } from '../../components/ui/OrderParts
 import PaperSheet from '../../components/ui/PaperSheet'
 import { ORDER_HREF } from '../../constants'
 import { LAYOUTS, layoutById } from '../../constants/catalog'
+import { useT, useTn } from '../../i18n'
 import { Link, orderPath } from '../../router/router'
 import { updateOrder, useOrder } from '../../store/store'
 import type { LayoutId } from '../../types'
@@ -12,27 +13,21 @@ import './order.css'
 
 type Phase = 'gen' | 'review' | 'pending' | 'rejected' | 'accepted' | 'done'
 
-const STEPS = ['Order placed', 'AI sketch', 'Staff review', 'Deposit', 'Writing', 'Delivered']
+const STEP_KEYS = ['steps.placed', 'steps.sketch', 'steps.review', 'steps.deposit', 'steps.writing', 'steps.delivered']
 const STEP_IDX: Record<Phase, number> = { gen: 1, review: 1, pending: 2, rejected: 2, accepted: 3, done: 4 }
 
-const STATUS_LABEL: Record<Phase, string> = {
-  gen: 'Generating sketch',
-  review: 'Awaiting your review',
-  pending: 'Pending',
-  rejected: 'Rejected',
-  accepted: 'Accepted, deposit due',
+const STATUS_KEY: Record<Phase, string> = {
+  gen: 'or.status.gen',
+  review: 'or.status.review',
+  pending: 'status.Pending',
+  rejected: 'status.Rejected',
+  accepted: 'or.status.accepted',
   done: '',
-}
-const TITLE: Record<Phase, string> = {
-  gen: 'Sketching your order…',
-  review: 'Review your sketch.',
-  pending: 'Waiting for staff.',
-  rejected: 'Staff could not accept this.',
-  accepted: 'Approved. One step left.',
-  done: 'You’re in the queue.',
 }
 
 export default function OrderReview({ id }: { id: string | null }) {
+  const t = useT()
+  const tn = useTn()
   const order = useOrder(id)
   const status = order?.status
   const [sketchDone, setSketchDone] = useState(false)
@@ -72,10 +67,10 @@ export default function OrderReview({ id }: { id: string | null }) {
   const scale = 1 + ((seed % 3) - 1) * 0.06
   const fs = fontScale(len) * scale
   const stage =
-    progress < 0.25 ? 'Parsing content'
-    : progress < 0.5 ? 'Fitting single-line font'
-    : progress < 0.75 ? 'Planning 6-DoF pen trajectory'
-    : 'Rendering sketch on paper'
+    progress < 0.25 ? t('or.parsing')
+    : progress < 0.5 ? t('or.fitting')
+    : progress < 0.75 ? t('or.planning')
+    : t('or.rendering')
   const pct = `${Math.round(progress * 100)}%`
   const deposit = depositOf(order.total)
 
@@ -88,14 +83,14 @@ export default function OrderReview({ id }: { id: string | null }) {
   const approve = () => updateOrder(order.id, { status: 'Pending', layout: variant, note })
 
   const rows = [
-    { k: 'Format', v: `${sp.type}, ${sp.size}` },
-    { k: 'Content', v: sp.img ? (sp.mode === 'draw' ? 'Hand-drawn' : 'Uploaded image') : `${sp.fontName} font` },
-    { k: 'Paper', v: sp.paper },
-    { k: 'Pen', v: sp.pen },
-    { k: 'Ink', v: sp.ink },
-    { k: 'Quantity', v: String(sp.qty) },
-    { k: 'Robot time', v: `${sp.mins || 4} min per piece` },
-    { k: 'Total', v: fmt(order.total) },
+    { k: t('or.format'), v: `${tn(sp.type)}, ${sp.size}` },
+    { k: t('or.contentRow'), v: sp.img ? t(sp.mode === 'draw' ? 'or.handDrawn' : 'or.uploaded') : t('or.fontSuffix', { name: tn(sp.fontName) }) },
+    { k: t('or.paper'), v: tn(sp.paper) },
+    { k: t('or.pen'), v: tn(sp.pen) },
+    { k: t('or.ink'), v: tn(sp.ink) },
+    { k: t('or.qty'), v: String(sp.qty) },
+    { k: t('or.robotTime'), v: t('or.perPiece', { n: sp.mins || 4 }) },
+    { k: t('or.total'), v: fmt(order.total) },
   ]
 
   return (
@@ -103,10 +98,10 @@ export default function OrderReview({ id }: { id: string | null }) {
       <div className="ov">
       <div className="vh-head">
         <div className="vh-head-text">
-          <span className="vh-eyebrow">Order {order.id} · {phase === 'done' ? order.status : STATUS_LABEL[phase]}</span>
-          <h1 className="vh-h1">{TITLE[phase]}</h1>
+          <span className="vh-eyebrow">{t('tk.order', { id: order.id })} · {phase === 'done' ? t(`status.${order.status}`) : t(STATUS_KEY[phase])}</span>
+          <h1 className="vh-h1">{t(`or.title.${phase}`)}</h1>
         </div>
-        <OrderTimeline labels={STEPS} idx={STEP_IDX[phase]} />
+        <OrderTimeline labels={STEP_KEYS.map((k) => t(k))} idx={STEP_IDX[phase]} />
       </div>
 
       <div className="vh-cols">
@@ -135,7 +130,7 @@ export default function OrderReview({ id }: { id: string | null }) {
 
           {phase === 'review' && (
             <div className="vh-stack" style={{ gap: 10 }}>
-              <span className="vh-label">Layout</span>
+              <span className="vh-label">{t('or.layout')}</span>
               <div className="or-variants">
                 {LAYOUTS.map((v) => (
                   <button key={v.id} className={`or-variant${v.id === variant ? ' on' : ''}`} onClick={() => setVariant(v.id)}>
@@ -148,7 +143,7 @@ export default function OrderReview({ id }: { id: string | null }) {
                         fs={fs}
                       />
                     </div>
-                    <span>{v.name}</span>
+                    <span>{tn(v.name)}</span>
                   </button>
                 ))}
               </div>
@@ -158,34 +153,34 @@ export default function OrderReview({ id }: { id: string | null }) {
 
         <aside className="vh-aside">
           <div className="ov-rail-body">
-          <span className="ov-rail-title">Order details</span>
+          <span className="ov-rail-title">{t('or.details')}</span>
           <SpecRows rows={rows} />
 
           {phase === 'gen' && (
             <p className="or-copy">
-              The AI is fitting your content to the {sp.fontName} single-line font, {sp.pen} and {sp.paper}, then planning the robot’s pen path.
+              {t('or.genCopy', { font: tn(sp.fontName), pen: tn(sp.pen), paper: tn(sp.paper) })}
             </p>
           )}
 
           {phase === 'review' && (
             <>
               <div className="vh-stack" style={{ gap: 10 }}>
-                <label className="vh-label" htmlFor="or-note">Notes for revision (optional)</label>
+                <label className="vh-label" htmlFor="or-note">{t('or.noteLabel')}</label>
                 <textarea
                   id="or-note"
                   className="vh-textarea"
                   rows={3}
                   value={note}
-                  placeholder="e.g. Make the text slightly larger, add more space at the top"
+                  placeholder={t('or.notePh')}
                   onChange={(e) => setNote(e.target.value)}
                 />
               </div>
               <div className="or-actions">
                 <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={regenerate}>
-                  Regenerate
+                  {t('or.regen')}
                 </button>
                 <button className="vh-btn vh-btn--primary vh-btn--md" onClick={approve}>
-                  Send to staff
+                  {t('or.send')}
                 </button>
               </div>
             </>
@@ -193,45 +188,45 @@ export default function OrderReview({ id }: { id: string | null }) {
 
           {phase === 'pending' && (
             <div className="vh-callout vh-callout--amber">
-              <b>Pending staff review</b>
-              <span>Our studio checks every sketch before the arm writes it. Staff usually respond within 2 hours, 8:00 to 21:00.</span>
+              <b>{t('or.pendingTitle')}</b>
+              <span>{t('or.pendingBody')}</span>
             </div>
           )}
 
           {phase === 'rejected' && (
             <>
               <div className="vh-callout vh-callout--red">
-                <b>Rejected by staff</b>
-                <span>{(order.rejectReasons ?? []).join(', ') || 'No reason was recorded.'}</span>
-                <span className="or-by">{order.staff ?? 'AI-VHRS Studio'}</span>
+                <b>{t('or.rejectedTitle')}</b>
+                <span>{(order.rejectReasons ?? []).map((r) => tn(r)).join(', ') || t('or.noReason')}</span>
+                <span className="or-by">{order.staff ?? t('or.studio')}</span>
               </div>
-              <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">Start a new order →</Link>
+              <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('or.newOrder')}</Link>
             </>
           )}
 
           {phase === 'accepted' && (
             <>
               <div className="vh-callout vh-callout--teal">
-                <b>Accepted by staff</b>
-                <span>“Sketch looks great, ready for the FR3.”</span>
-                <span className="or-by">{order.staff ?? 'AI-VHRS Studio'}</span>
+                <b>{t('or.acceptedTitle')}</b>
+                <span>{t('or.acceptedNote')}</span>
+                <span className="or-by">{order.staff ?? t('or.studio')}</span>
               </div>
               <div className="vh-total-row">
-                <span>Deposit due (30%)</span>
+                <span>{t('or.depositDue')}</span>
                 <span style={{ fontSize: 24 }}>{fmt(deposit)}</span>
               </div>
-              <Link to={orderPath(order.id, 'deposit')} className="vh-btn vh-btn--primary">Pay deposit →</Link>
+              <Link to={orderPath(order.id, 'deposit')} className="vh-btn vh-btn--primary">{t('or.payDeposit')}</Link>
             </>
           )}
 
           {phase === 'done' && (
             <>
               <div className="vh-callout vh-callout--green">
-                <b>Deposit paid · {order.status}</b>
-                <span>Your order is in the robot queue. We’ll notify you when writing starts.</span>
+                <b>{t('or.depositPaid', { status: t(`status.${order.status}`) })}</b>
+                <span>{t('or.inQueue')}</span>
               </div>
               <Link to={orderPath(order.id, 'result')} className="vh-btn vh-btn--white vh-btn--md">
-                {['Written', 'Rewriting', 'Shipped', 'Delivered'].includes(order.status) ? 'View finished photos →' : 'Preview result page'}
+                {['Written', 'Rewriting', 'Shipped', 'Delivered'].includes(order.status) ? t('or.viewPhotos') : t('or.preview')}
               </Link>
             </>
           )}

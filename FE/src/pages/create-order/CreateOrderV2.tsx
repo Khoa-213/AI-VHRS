@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Page from '../../components/layout/Page'
 import { MethodLogos } from '../../components/ui/PaymentLogos'
 import { CREATE_PAYS, FONT_STYLES, INKS, MODES, PAPERS, PENS, TYPES } from '../../constants/catalog'
+import { useLocale, useT, useTn } from '../../i18n'
 import { navigate, orderPath } from '../../router/router'
 import { addOrder, createOrderId } from '../../store/store'
 import type { InputMode, Order, OrderSpec } from '../../types'
@@ -19,8 +20,6 @@ interface Upload {
   isImg: boolean
   dataUrl?: string
 }
-
-const priceLabel = (p: number) => (p ? '+' + fmt(p) : 'Included')
 
 function Section({ n, title, hint, state, children }: {
   n: string
@@ -66,6 +65,10 @@ function Row({ on, onPick, lead, name, sub, meta }: RowProps) {
 }
 
 export default function CreateOrderV2() {
+  const t = useT()
+  const tn = useTn()
+  const locale = useLocale()
+  const priceLabel = (p: number) => (p ? '+' + fmt(p) : t('co.included'))
   const [type, setType] = useState<string | null>(null)
   const [mode, setMode] = useState<InputMode>('text')
   const [text, setText] = useState('')
@@ -91,7 +94,7 @@ export default function CreateOrderV2() {
     if (blobRef.current) URL.revokeObjectURL(blobRef.current)
   }, [])
 
-  const q = quote({ type, paper, pen, ink, qty, mode, text, hasUpload: !!upload, strokes })
+  const q = quote({ type, paper, pen, ink, qty, mode, text, hasUpload: !!upload, strokes }, t, tn, locale)
   const F = FONT_STYLES.find((f) => f.id === fontStyle)!
 
   const done = [
@@ -106,7 +109,7 @@ export default function CreateOrderV2() {
     return done[i] ? 'done' : 'open'
   }
   const allDone = done.every(Boolean)
-  const missing = ['Pick a format', 'Add your content', 'Choose paper, pen and ink', 'Fill in delivery and payment'][done.indexOf(false)]
+  const missing = [t('co.hint0'), t('co.hint1.content'), t('co.hint2.all'), t('co.hint3.all')][done.indexOf(false)]
 
   const clampQty = (n: number) => setQty(Math.max(1, Math.min(500, Math.round(n) || 1)))
 
@@ -155,14 +158,14 @@ export default function CreateOrderV2() {
     <Page label="Create Order">
       <div className="cv">
         <header className="cv-head">
-          <span className="vh-eyebrow">New order · Fairino FR3</span>
-          <h1 className="cv-title">Write it once.<br />The robot does the rest.</h1>
+          <span className="vh-eyebrow">{t('co.eyebrow')}</span>
+          <h1 className="cv-title">{t('co.v2.h1a')}<br />{t('co.v2.h1b')}</h1>
         </header>
 
         <div className="cv-shell">
           <form className="cv-form" onSubmit={(e) => { e.preventDefault(); submit() }}>
-            <Section n="01" title="Format" hint="Size sets the base price and robot time." state={stateOf(0)}>
-              <div className="cv-list" role="radiogroup" aria-label="Format">
+            <Section n="01" title={t('co.format')} hint={t('co.s0.lede')} state={stateOf(0)}>
+              <div className="cv-list" role="radiogroup" aria-label={t('co.format')}>
                 {TYPES.map((o) => (
                   <Row
                     key={o.id}
@@ -172,16 +175,16 @@ export default function CreateOrderV2() {
                       const s = Math.min(44 / o.w, 32 / o.h)
                       return <span className="cv-paper" style={{ width: Math.round(o.w * s), height: Math.round(o.h * s) }} />
                     })()}
-                    name={o.name}
+                    name={tn(o.name)}
                     sub={o.size}
-                    meta={`from ${fmt(o.base)}`}
+                    meta={t('co.from', { price: fmt(o.base) })}
                   />
                 ))}
               </div>
             </Section>
 
-            <Section n="02" title="Content" hint="Type it, upload it, or draw it. The AI turns any of them into a pen path." state={stateOf(1)}>
-              <div className="cv-tabs" role="tablist" aria-label="Input method">
+            <Section n="02" title={t('co.content2')} hint={t('co.s1.lede')} state={stateOf(1)}>
+              <div className="cv-tabs" role="tablist" aria-label={t('co.inputMethod')}>
                 {MODES.map((m) => (
                   <button
                     key={m.id}
@@ -191,8 +194,8 @@ export default function CreateOrderV2() {
                     className={`cv-tab${mode === m.id ? ' on' : ''}`}
                     onClick={() => setMode(m.id)}
                   >
-                    {m.label}
-                    <span>{m.desc}</span>
+                    {tn(m.label)}
+                    <span>{tn(m.desc)}</span>
                   </button>
                 ))}
               </div>
@@ -203,12 +206,12 @@ export default function CreateOrderV2() {
                     className="cv-text"
                     rows={4}
                     value={text}
-                    aria-label="Your message"
-                    placeholder="Viết lời chúc của bạn… e.g. Chúc Mừng Năm Mới, An Khang Thịnh Vượng"
+                    aria-label={t('co.message')}
+                    placeholder={t('co.placeholder')}
                     onChange={(e) => setText(e.target.value)}
                   />
-                  <p className="cv-note">{text.length} / 120 characters included · +200₫ per extra character</p>
-                  <div className="cv-fonts" role="radiogroup" aria-label="Single-line style">
+                  <p className="cv-note">{t('co.charsLine', { n: text.length })}</p>
+                  <div className="cv-fonts" role="radiogroup" aria-label={t('co.styleLabel')}>
                     {FONT_STYLES.map((s) => (
                       <button
                         key={s.id}
@@ -218,8 +221,8 @@ export default function CreateOrderV2() {
                         className={`cv-font${fontStyle === s.id ? ' on' : ''}`}
                         onClick={() => setFontStyle(s.id)}
                       >
-                        <span style={{ fontFamily: s.font }}>Chữ đẹp</span>
-                        <small>{s.name}</small>
+                        <span style={{ fontFamily: s.font }}>{t('co.fontSample')}</span>
+                        <small>{tn(s.name)}</small>
                       </button>
                     ))}
                   </div>
@@ -237,8 +240,8 @@ export default function CreateOrderV2() {
                     }}
                   >
                     <input type="file" accept="image/*,.pdf" className="cv-file" onChange={(e) => setFile(e.target.files?.[0])} />
-                    <b>{upload ? upload.name : 'Drop a handwriting photo, or click to browse'}</b>
-                    <span>PNG, JPG or PDF up to 20 MB · AI vectorization +30.000₫</span>
+                    <b>{upload ? upload.name : t('co.dropPhoto2')}</b>
+                    <span>{t('co.dropMeta')}</span>
                   </label>
                   {upload && (
                     <button
@@ -249,7 +252,7 @@ export default function CreateOrderV2() {
                         setUpload(null)
                       }}
                     >
-                      Remove file
+                      {t('co.removeFile')}
                     </button>
                   )}
                 </>
@@ -267,7 +270,7 @@ export default function CreateOrderV2() {
                   />
                   <div className="cv-draw-foot">
                     <p className="cv-note">
-                      {strokes} {strokes === 1 ? 'stroke' : 'strokes'} captured · write a few lines so the AI can learn your hand · +15.000₫
+                      {t('co.drawFoot', { n: t(strokes === 1 ? 'co.stroke' : 'co.strokes', { n: strokes }) })}
                     </p>
                     <button
                       type="button"
@@ -278,25 +281,25 @@ export default function CreateOrderV2() {
                         setPadKey((k) => k + 1)
                       }}
                     >
-                      Clear canvas
+                      {t('co.clearCanvas')}
                     </button>
                   </div>
                 </>
               )}
             </Section>
 
-            <Section n="03" title="Materials" hint="Paper, pen, ink. Prices are per piece." state={stateOf(2)}>
+            <Section n="03" title={t('co.materials2')} hint={t('co.s2.lede2')} state={stateOf(2)}>
               <div className="cv-group">
-                <span className="cv-label">Paper</span>
-                <div className="cv-list" role="radiogroup" aria-label="Paper">
+                <span className="cv-label">{t('co.paper')}</span>
+                <div className="cv-list" role="radiogroup" aria-label={t('co.paper')}>
                   {PAPERS.map((o) => (
                     <Row
                       key={o.id}
                       on={paper === o.id}
                       onPick={() => setPaper(o.id)}
                       lead={<span className="cv-swatch" style={{ background: o.color }} />}
-                      name={o.name}
-                      sub={o.spec}
+                      name={tn(o.name)}
+                      sub={tn(o.spec)}
                       meta={priceLabel(o.price)}
                     />
                   ))}
@@ -304,16 +307,16 @@ export default function CreateOrderV2() {
               </div>
 
               <div className={`cv-group${paper ? '' : ' cv-group--wait'}`}>
-                <span className="cv-label">Pen</span>
-                <div className="cv-list" role="radiogroup" aria-label="Pen">
+                <span className="cv-label">{t('co.pen')}</span>
+                <div className="cv-list" role="radiogroup" aria-label={t('co.pen')}>
                   {PENS.map((o) => (
                     <Row
                       key={o.id}
                       on={pen === o.id}
                       onPick={() => setPen(o.id)}
                       lead={<span className="cv-nib"><span style={{ height: o.w }} /></span>}
-                      name={o.name}
-                      sub={o.spec}
+                      name={tn(o.name)}
+                      sub={tn(o.spec)}
                       meta={priceLabel(o.price)}
                     />
                   ))}
@@ -321,15 +324,15 @@ export default function CreateOrderV2() {
               </div>
 
               <div className={`cv-group${pen ? '' : ' cv-group--wait'}`}>
-                <span className="cv-label">Ink</span>
-                <div className="cv-list" role="radiogroup" aria-label="Ink">
+                <span className="cv-label">{t('co.ink')}</span>
+                <div className="cv-list" role="radiogroup" aria-label={t('co.ink')}>
                   {INKS.map((o) => (
                     <Row
                       key={o.id}
                       on={ink === o.id}
                       onPick={() => setInk(o.id)}
                       lead={<span className="cv-swatch cv-swatch--ink" style={{ background: o.color }} />}
-                      name={o.name}
+                      name={tn(o.name)}
                       meta={priceLabel(o.price)}
                     />
                   ))}
@@ -338,43 +341,43 @@ export default function CreateOrderV2() {
 
               <div className="cv-qty">
                 <div>
-                  <span className="cv-label">Quantity</span>
-                  <p className="cv-note">10% off from 10 pcs · 20% off from 50 pcs</p>
+                  <span className="cv-label">{t('co.qty')}</span>
+                  <p className="cv-note">{t('co.qtyHint')}</p>
                 </div>
                 <div className="cv-stepper">
-                  <button type="button" aria-label="Decrease" onClick={() => clampQty(qty - 1)}>−</button>
-                  <input type="number" aria-label="Quantity" min={1} max={500} value={qty} onChange={(e) => clampQty(+e.target.value)} />
-                  <button type="button" aria-label="Increase" onClick={() => clampQty(qty + 1)}>+</button>
+                  <button type="button" aria-label={t('co.dec')} onClick={() => clampQty(qty - 1)}>−</button>
+                  <input type="number" aria-label={t('co.qty')} min={1} max={500} value={qty} onChange={(e) => clampQty(+e.target.value)} />
+                  <button type="button" aria-label={t('co.inc')} onClick={() => clampQty(qty + 1)}>+</button>
                 </div>
               </div>
             </Section>
 
-            <Section n="04" title="Delivery and payment" hint="Where it goes, and how you pay the deposit." state={stateOf(3)}>
+            <Section n="04" title={t('co.s4.title')} hint={t('co.s4.hint')} state={stateOf(3)}>
               <div className="cv-fields">
                 <label className="cv-field">
-                  <span>Full name</span>
+                  <span>{t('co.fullName')}</span>
                   <input autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
                 </label>
                 <label className="cv-field">
-                  <span>Phone</span>
+                  <span>{t('co.phone')}</span>
                   <input placeholder="0901 234 567" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
                 </label>
                 <label className="cv-field cv-field--wide">
-                  <span>Delivery address</span>
+                  <span>{t('co.address')}</span>
                   <input autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} />
                 </label>
               </div>
               <div className="cv-group">
-                <span className="cv-label">Payment</span>
-                <div className="cv-list" role="radiogroup" aria-label="Payment">
+                <span className="cv-label">{t('co.payment')}</span>
+                <div className="cv-list" role="radiogroup" aria-label={t('co.payment')}>
                   {CREATE_PAYS.map((o) => (
                     <Row
                       key={o.id}
                       on={pay === o.id}
                       onPick={() => setPay(o.id)}
                       lead={<MethodLogos id={o.id} />}
-                      name={o.name}
-                      sub={o.spec}
+                      name={tn(o.name)}
+                      sub={tn(o.spec)}
                     />
                   ))}
                 </div>
@@ -382,14 +385,14 @@ export default function CreateOrderV2() {
             </Section>
 
             <div className="cv-submit">
-              <p className="cv-note">{allDone ? 'Everything is set. Price locks when you submit.' : missing}</p>
+              <p className="cv-note">{allDone ? t('co.ready') : missing}</p>
               <button type="submit" className="vh-btn vh-btn--md vh-btn--primary" disabled={!allDone}>
-                Submit and generate sketch →
+                {t('co.submit2')}
               </button>
             </div>
           </form>
 
-          <aside className="cv-rail" aria-label="Estimate">
+          <aside className="cv-rail" aria-label={t('co.estimate2')}>
             <div className="cv-stage">
               <div
                 className="cv-sheet"
@@ -408,7 +411,7 @@ export default function CreateOrderV2() {
             </div>
 
             <div className="cv-receipt">
-              <h2 className="cv-receipt-title">Estimate</h2>
+              <h2 className="cv-receipt-title">{t('co.estimate2')}</h2>
               {q.lines.length ? (
                 <dl className="cv-lines">
                   {q.lines.map((l) => (
@@ -419,15 +422,15 @@ export default function CreateOrderV2() {
                   ))}
                 </dl>
               ) : (
-                <p className="cv-note">Choose a format to start.</p>
+                <p className="cv-note">{t('co.chooseFormat')}</p>
               )}
               <div className="cv-total">
-                <span>Total</span>
+                <span>{t('co.total')}</span>
                 <b>{fmt(q.total)}</b>
               </div>
               <dl className="cv-eta">
-                <div><dt>Robot time</dt><dd>{q.robotTime}</dd></div>
-                <div><dt>Delivery by</dt><dd>{q.eta}</dd></div>
+                <div><dt>{t('co.robotTime')}</dt><dd>{q.robotTime}</dd></div>
+                <div><dt>{t('co.deliveryBy')}</dt><dd>{q.eta}</dd></div>
               </dl>
             </div>
           </aside>

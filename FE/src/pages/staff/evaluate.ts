@@ -1,3 +1,4 @@
+import type { TFn } from '../../i18n'
 import type { InputMode, Order } from '../../types'
 
 /**
@@ -39,44 +40,44 @@ export const REJECT_REASONS: Record<InputMode, string[]> = {
 }
 
 /** Text staff are looking at: typed text, or what the photo or strokes were read as. */
-export function recognizedText(order: Order, edited: string | undefined): string {
+export function recognizedText(order: Order, edited: string | undefined, t: TFn): string {
   const sp = order.spec
   if (sp.mode === 'text') return sp.text
   if (edited !== undefined) return edited
   if (order.ocrText !== undefined) return order.ocrText
-  if (sp.mode === 'upload') return sp.simText ?? (sp.text || 'Could not read this, please type it in')
+  if (sp.mode === 'upload') return sp.simText ?? (sp.text || t('rec.unreadable'))
   return sp.simText ?? ''
 }
 
-export function recognitionRows(order: Order, text: string): Row[] {
+export function recognitionRows(order: Order, text: string, t: TFn, tn: (s: string) => string): Row[] {
   const sp = order.spec
   const h = hashOf(order.id + (order.regen ?? 0))
   if (sp.mode === 'text') {
     const diacritics = (text.normalize('NFD').match(/[̀-ͯ]/g) ?? []).length
     const unsupported = (text.match(/[^\p{L}\p{N}\s.,!?&'"()\-:;/@#%+]/gu) ?? []).length
     return [
-      { k: 'Detected type', v: 'Typed text', tone: 'mode' },
-      { k: 'Language', v: diacritics ? 'Vietnamese' : 'Latin', tone: 'plain' },
-      { k: 'Characters', v: String(text.length), tone: 'plain' },
-      { k: 'Diacritics', v: String(diacritics), tone: 'plain' },
-      { k: 'Unsupported glyphs', v: unsupported ? String(unsupported) : 'None', tone: unsupported ? 'warn' : 'good' },
-      { k: 'Font', v: `${sp.fontName} single-line`, tone: 'plain' },
+      { k: t('rec.detected'), v: t('rec.typed'), tone: 'mode' },
+      { k: t('rec.language'), v: t(diacritics ? 'rec.vi' : 'rec.latin'), tone: 'plain' },
+      { k: t('rec.characters'), v: String(text.length), tone: 'plain' },
+      { k: t('rec.diacritics'), v: String(diacritics), tone: 'plain' },
+      { k: t('rec.unsupported'), v: unsupported ? String(unsupported) : t('rec.none'), tone: unsupported ? 'warn' : 'good' },
+      { k: t('rec.font'), v: t('rec.fontSingle', { name: tn(sp.fontName) }), tone: 'plain' },
     ]
   }
   if (sp.mode === 'upload') {
     return [
-      { k: 'Detected type', v: 'Handwriting photo', tone: 'mode' },
-      { k: 'File', v: sp.fileName ?? 'customer-upload.jpg', tone: 'plain' },
-      { k: 'Resolution', v: sp.img ? 'Original' : '3024 × 4032', tone: 'plain' },
-      { k: 'Sharpness', v: `${78 + (h % 18)} / 100`, tone: 'good' },
-      { k: 'OCR confidence', v: `${86 + (h % 12)}%`, tone: 'good' },
+      { k: t('rec.detected'), v: t('rec.photo'), tone: 'mode' },
+      { k: t('rec.file'), v: sp.fileName ?? 'customer-upload.jpg', tone: 'plain' },
+      { k: t('rec.resolution'), v: sp.img ? t('rec.original') : '3024 × 4032', tone: 'plain' },
+      { k: t('rec.sharpness'), v: `${78 + (h % 18)} / 100`, tone: 'good' },
+      { k: t('rec.ocrConf'), v: `${86 + (h % 12)}%`, tone: 'good' },
     ]
   }
   return [
-    { k: 'Detected type', v: 'Live canvas strokes', tone: 'mode' },
-    { k: 'Strokes captured', v: String(40 + (h % 60)), tone: 'plain' },
-    { k: 'Pressure data', v: 'Yes, Apple Pencil', tone: 'good' },
-    { k: 'Style samples', v: h % 3 ? 'Sufficient' : 'Borderline', tone: h % 3 ? 'good' : 'warn' },
+    { k: t('rec.detected'), v: t('rec.canvas'), tone: 'mode' },
+    { k: t('rec.strokes'), v: String(40 + (h % 60)), tone: 'plain' },
+    { k: t('rec.pressure'), v: t('rec.pencil'), tone: 'good' },
+    { k: t('rec.samples'), v: t(h % 3 ? 'rec.sufficient' : 'rec.borderline'), tone: h % 3 ? 'good' : 'warn' },
   ]
 }
 

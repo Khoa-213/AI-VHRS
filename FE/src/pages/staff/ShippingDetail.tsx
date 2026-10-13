@@ -3,6 +3,8 @@ import { useState } from 'react'
 import SkipLink from '../../components/ui/SkipLink'
 import ShipmentTimeline from '../../components/ui/ShipmentTimeline'
 import ThemeToggle from '../../components/ui/ThemeToggle'
+import LanguageToggle from '../../components/ui/LanguageToggle'
+import { useLocale, useT } from '../../i18n'
 import { useShipmentSync } from '../../hooks/useShipmentSync'
 import {
   GHN_LIVE, PACK_STEPS, bookShipment, isFinal, lastLog, packed, shipmentOf, stageChip, stageOf, trackingUrl,
@@ -17,11 +19,12 @@ import './dashboard.css'
 import './polish.css'
 import './shipping.css'
 
-const when = (iso?: string) =>
-  iso ? new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Not set'
-
 export default function ShippingDetail({ id }: { id: string }) {
   const order = useAllStaffOrders().find((o) => o.id === id)
+  const t = useT()
+  const locale = useLocale()
+  const when = (iso?: string) =>
+    iso ? new Date(iso).toLocaleString(locale, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : t('sp.notSet')
   const sync = useShipmentSync(order ?? null)
   const proto = usePrototypeMode()
   const [busy, setBusy] = useState(false)
@@ -39,13 +42,13 @@ export default function ShippingDetail({ id }: { id: string }) {
     return shell(
       <div className="sp-body">
         <div className="sd-empty">
-          <b>{order ? 'This order is not ready to ship' : 'Order not found'}</b>
+          <b>{t(order ? 'sp.notReady' : 'sp.notFound')}</b>
           <span>
             {order
-              ? `${order.id} is ${order.status}. Shipping opens after the customer pays the final amount.`
-              : `There is no order ${id}.`}
+              ? t('sp.notReadyBody', { id: order.id, status: t(`status.${order.status}`) })
+              : t('sp.notFoundBody', { id })}
           </span>
-          <Link to="/staff/shipping" className="sd-btn sp-self-start">Back to shipping</Link>
+          <Link to="/staff/shipping" className="sd-btn sp-self-start">{t('sp.backToBoard')}</Link>
         </div>
       </div>,
     )
@@ -59,7 +62,7 @@ export default function ShippingDetail({ id }: { id: string }) {
   const ready = packed(s)
   const finished = !!last && isFinal(last.status)
   const to = order.shipTo
-  const address = [to?.street, to?.ward, to?.city].filter(Boolean).join(', ') || order.address || 'No address recorded'
+  const address = [to?.street, to?.ward, to?.city].filter(Boolean).join(', ') || order.address || t('sp.noAddress')
 
   const book = async () => {
     if (busy || !ready || booked) return
@@ -70,7 +73,7 @@ export default function ShippingDetail({ id }: { id: string }) {
       saveBooking(order.id, b)
       if (!GHN_LIVE) advanceCourier(order.id)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not book GHN. Try again.')
+      setErr(e instanceof Error ? e.message : t('sp.bookErr'))
     } finally {
       setBusy(false)
     }
@@ -80,13 +83,14 @@ export default function ShippingDetail({ id }: { id: string }) {
     <>
       <header className="sd-top">
         <div>
-          <Link to="/staff/shipping" className="sp-back"><ArrowLeft size={16} aria-hidden /> Shipping</Link>
+          <Link to="/staff/shipping" className="sp-back"><ArrowLeft size={16} aria-hidden /> {t('sp.back')}</Link>
           <h1>{order.title}</h1>
-          <p>{order.id} · {to?.name || order.name || 'Customer'} · {to?.phone || order.phone || 'No phone'}</p>
+          <p>{order.id} · {to?.name || order.name || t('sp.customer')} · {to?.phone || order.phone || t('sp.noPhone')}</p>
         </div>
         <div className="sd-top-right">
-          <span className="vh-chip" style={{ color: chip.color }}>{chip.label}</span>
+          <span className="vh-chip" style={{ color: chip.color }}>{t(chip.key)}</span>
           <ThemeToggle className="vh-icon-btn" />
+          <LanguageToggle className="vh-icon-btn" />
         </div>
       </header>
 
@@ -94,8 +98,8 @@ export default function ShippingDetail({ id }: { id: string }) {
         <div className="sp-col">
           <section className="sd-card" aria-labelledby="sp-pack">
             <div className="sd-card-head">
-              <h2 id="sp-pack">Packing</h2>
-              <span className="sd-tag">{s.pack.length} of {PACK_STEPS.length} done</span>
+              <h2 id="sp-pack">{t('sp.packing')}</h2>
+              <span className="sd-tag">{t('sp.nOfTotal', { n: s.pack.length, total: PACK_STEPS.length })}</span>
             </div>
             <ul className="sp-checks">
               {PACK_STEPS.map((p) => {
@@ -109,7 +113,7 @@ export default function ShippingDetail({ id }: { id: string }) {
                         disabled={booked || order.status === 'Delivered'}
                         onChange={() => togglePackStep(order.id, p.id)}
                       />
-                      <span>{p.label}</span>
+                      <span>{t(`pack.${p.id}`)}</span>
                     </label>
                   </li>
                 )
@@ -119,22 +123,22 @@ export default function ShippingDetail({ id }: { id: string }) {
 
           <section className="sd-card" aria-labelledby="sp-courier">
             <div className="sd-card-head">
-              <h2 id="sp-courier">GHN courier</h2>
+              <h2 id="sp-courier">{t('sp.courier')}</h2>
               {booked && <span className="sd-tag vh-mono">{s.ghnCode}</span>}
             </div>
 
             <dl className="sp-facts">
-              <div><dt>Deliver to</dt><dd>{to?.name || order.name || 'Customer'}</dd></div>
-              <div><dt>Address</dt><dd>{address}</dd></div>
-              {to?.note && <div><dt>Courier note</dt><dd>{to.note}</dd></div>}
-              <div><dt>Cash on delivery</dt><dd className="vh-mono">{fmt(s.codAmount)}</dd></div>
-              {booked && <div><dt>GHN fee</dt><dd className="vh-mono">{fmt(s.fee ?? 0)}</dd></div>}
-              {booked && <div><dt>Booked</dt><dd>{when(s.bookedAt)}</dd></div>}
-              {booked && <div><dt>Expected</dt><dd>{when(s.expectedAt)}</dd></div>}
+              <div><dt>{t('sp.deliverTo')}</dt><dd>{to?.name || order.name || t('sp.customer')}</dd></div>
+              <div><dt>{t('sp.address')}</dt><dd>{address}</dd></div>
+              {to?.note && <div><dt>{t('sp.courierNote')}</dt><dd>{to.note}</dd></div>}
+              <div><dt>{t('sp.cod')}</dt><dd className="vh-mono">{fmt(s.codAmount)}</dd></div>
+              {booked && <div><dt>{t('sp.fee')}</dt><dd className="vh-mono">{fmt(s.fee ?? 0)}</dd></div>}
+              {booked && <div><dt>{t('sp.booked')}</dt><dd>{when(s.bookedAt)}</dd></div>}
+              {booked && <div><dt>{t('sp.expected')}</dt><dd>{when(s.expectedAt)}</dd></div>}
             </dl>
 
             <div className="sp-weight">
-              <label htmlFor="sp-w">Parcel weight (g)</label>
+              <label htmlFor="sp-w">{t('sp.weight')}</label>
               <input
                 id="sp-w"
                 className="vh-input"
@@ -150,16 +154,16 @@ export default function ShippingDetail({ id }: { id: string }) {
             {!booked && order.status === 'Shipped' && (
               <>
                 <button type="button" className="sd-btn sp-primary" disabled={!ready || busy} onClick={book}>
-                  {busy ? 'Booking with GHN' : 'Book GHN courier'}
+                  {t(busy ? 'sp.booking' : 'sp.book')}
                 </button>
-                {!ready && <p className="sd-note">Finish the packing steps first.</p>}
+                {!ready && <p className="sd-note">{t('sp.finishPack')}</p>}
                 {err && <p className="sp-error" role="alert">{err}</p>}
               </>
             )}
 
             {booked && (
               <a className="sd-btn sp-self-start" href={trackingUrl(s.ghnCode!)} target="_blank" rel="noreferrer">
-                Open on GHN <ArrowUpRight size={16} aria-hidden />
+                {t('sp.openGhn')} <ArrowUpRight size={16} aria-hidden />
               </a>
             )}
           </section>
@@ -167,31 +171,31 @@ export default function ShippingDetail({ id }: { id: string }) {
 
         <section className="sd-card" aria-labelledby="sp-log">
           <div className="sd-card-head">
-            <h2 id="sp-log">Activity</h2>
+            <h2 id="sp-log">{t('sp.activity')}</h2>
             {GHN_LIVE ? (
               <button type="button" className="sp-ghost" onClick={() => void sync.refresh()} disabled={!booked || sync.busy}>
-                <ArrowsClockwise size={16} aria-hidden /> {sync.busy ? 'Refreshing' : 'Refresh'}
+                <ArrowsClockwise size={16} aria-hidden /> {t(sync.busy ? 'sp.refreshing' : 'sp.refresh')}
               </button>
             ) : (
-              <span className="sd-tag">Simulated courier</span>
+              <span className="sd-tag">{t('sp.simCourier')}</span>
             )}
           </div>
 
           <ShipmentTimeline shipment={s} audience="staff" />
 
-          {GHN_LIVE && sync.syncedAt && <p className="sd-note">Last sync {sync.syncedAt.toLocaleTimeString('en-GB')}.</p>}
-          {sync.error && <p className="sp-error" role="alert">{sync.error}. Showing the last known status.</p>}
+          {GHN_LIVE && sync.syncedAt && <p className="sd-note">{t('sp.lastSync', { time: sync.syncedAt.toLocaleTimeString(locale) })}</p>}
+          {sync.error && <p className="sp-error" role="alert">{t('sp.syncErr', { msg: sync.error })}</p>}
 
           {!GHN_LIVE && proto && booked && order.status === 'Shipped' && (
             <div className="sp-sim">
               <button type="button" className="sp-ghost" disabled={finished} onClick={() => advanceCourier(order.id)}>
-                <FastForward size={16} aria-hidden /> Simulate next GHN scan
+                <FastForward size={16} aria-hidden /> {t('sp.simNext')}
               </button>
-              <span className="sd-note">Prototype only. In production GHN pushes these scans to the backend by webhook.</span>
+              <span className="sd-note">{t('sp.simNote')}</span>
             </div>
           )}
           {stage === 'problem' && (
-            <p className="sd-note">Contact the customer. The tracking page already tells them the studio will be in touch.</p>
+            <p className="sd-note">{t('sp.problemNote')}</p>
           )}
         </section>
       </div>

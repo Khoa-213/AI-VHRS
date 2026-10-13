@@ -1,4 +1,5 @@
 import { ClipboardText, House, SignOut, SquaresFour, Truck } from '@phosphor-icons/react'
+import { useT } from '../../i18n'
 import { stageOf } from '../../services/ghn'
 import { Link } from '../../router/router'
 import { signOut, useAllStaffOrders } from '../../store/store'
@@ -7,6 +8,7 @@ type Tab = 'dashboard' | 'review' | 'shipping'
 
 /** Icon rail shared by the staff dashboard and the shipping desk. */
 export default function StaffRail({ active }: { active: Tab }) {
+  const t = useT()
   const orders = useAllStaffOrders()
   const pending = orders.filter((o) => o.status === 'Pending').length
   const toPack = orders.filter((o) => o.status === 'Shipped' && ['pack', 'book'].includes(stageOf(o))).length
@@ -20,19 +22,19 @@ export default function StaffRail({ active }: { active: Tab }) {
   )
 
   return (
-    <nav className="sd-rail" aria-label="Staff navigation">
-      <Link to="/staff" className="sd-mark" aria-label="AI-VHRS studio">AV</Link>
-      {item('dashboard', '/staff', 'Dashboard', <SquaresFour size={22} />)}
-      {item('review', '/staff/review', 'Review', <ClipboardText size={22} />, pending)}
-      {item('shipping', '/staff/shipping', 'Shipping', <Truck size={22} />, toPack)}
+    <nav className="sd-rail" aria-label={t('rail.staff')}>
+      <Link to="/staff" className="sd-mark" aria-label={t('rail.staffMark')}>AV</Link>
+      {item('dashboard', '/staff', t('rail.dashboard'), <SquaresFour size={22} />)}
+      {item('review', '/staff/review', t('rail.review'), <ClipboardText size={22} />, pending)}
+      {item('shipping', '/staff/shipping', t('rail.shipping'), <Truck size={22} />, toPack)}
       <div className="sd-rail-end">
         <Link to="/" className="sd-nav">
           <House size={22} />
-          <span>Site</span>
+          <span>{t('rail.site')}</span>
         </Link>
         <button type="button" className="sd-nav" onClick={() => signOut()}>
           <SignOut size={22} />
-          <span>Sign out</span>
+          <span>{t('rail.signOut')}</span>
         </button>
       </div>
     </nav>

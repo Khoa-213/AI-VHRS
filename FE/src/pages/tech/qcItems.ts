@@ -1,3 +1,4 @@
+import type { TFn } from '../../i18n'
 import { layoutById } from '../../constants/catalog'
 import type { Order } from '../../types'
 
@@ -14,38 +15,38 @@ export interface QcGroup {
 }
 
 /** Everything the technician checks before the customer sees the result, grouped by where they look. */
-export function qcGroups(o: Order): QcGroup[] {
+export function qcGroups(o: Order, t: TFn, tn: (s: string) => string): QcGroup[] {
   const sp = o.spec
   const pieces = sp.qty || 1
-  const layout = layoutById(o.layout).name
+  const layout = tn(layoutById(o.layout).name)
   return [
     {
       id: 'sheet',
-      title: 'Paper and layout',
+      title: t('qc.sheet'),
       items: [
-        { id: 'paper', title: `Paper is ${sp.paper}`, detail: `${sp.type}${sp.land ? ', landscape' : ''}, no creases or tears` },
-        { id: 'layout', title: `Layout is ${layout}`, detail: 'Margins even, text sits where the preview showed' },
-        { id: 'bleed', title: 'No ink bleeding through', detail: 'Turn the sheet over and look at the back' },
+        { id: 'paper', title: t('qc.paper', { name: tn(sp.paper) }), detail: t('qc.paperDetail', { type: tn(sp.type), land: sp.land ? t('qc.landscape') : '' }) },
+        { id: 'layout', title: t('qc.layout', { name: layout }), detail: t('qc.layoutDetail') },
+        { id: 'bleed', title: t('qc.bleed'), detail: t('qc.bleedDetail') },
       ],
     },
     {
       id: 'writing',
-      title: 'The writing',
+      title: t('qc.writing'),
       items: [
-        { id: 'text', title: 'Text matches the order', detail: 'Read it against the text on the right, word by word' },
-        { id: 'marks', title: 'Diacritics and punctuation present', detail: 'Every accent, dot and comma is there' },
-        { id: 'strokes', title: 'Strokes are unbroken', detail: 'No skipped segments or gaps inside letters' },
-        { id: 'ink', title: `${sp.ink} is even`, detail: `${sp.pen}, same weight and shade across the line` },
-        { id: 'marksout', title: 'No smudges or stray marks', detail: 'Check around the edges and under the last line' },
+        { id: 'text', title: t('qc.text'), detail: t('qc.textDetail') },
+        { id: 'marks', title: t('qc.marks'), detail: t('qc.marksDetail') },
+        { id: 'strokes', title: t('qc.strokes'), detail: t('qc.strokesDetail') },
+        { id: 'ink', title: t('qc.ink', { name: tn(sp.ink) }), detail: t('qc.inkDetail', { pen: tn(sp.pen) }) },
+        { id: 'marksout', title: t('qc.marksOut'), detail: t('qc.marksOutDetail') },
       ],
     },
     {
       id: 'pieces',
-      title: 'Pieces and packing',
+      title: t('qc.pieces'),
       items: [
-        { id: 'count', title: pieces > 1 ? `All ${pieces} pieces counted` : 'The piece is accounted for', detail: pieces > 1 ? 'Sample the first, middle and last piece' : 'One sheet, nothing missing' },
-        { id: 'dry', title: 'Ink is dry', detail: 'Touch a margin, never the writing' },
-        { id: 'pack', title: 'Packed flat with a protective sheet', detail: 'Ready for courier pickup' },
+        { id: 'count', title: pieces > 1 ? t('qc.countMany', { n: pieces }) : t('qc.countOne'), detail: t(pieces > 1 ? 'qc.countManyDetail' : 'qc.countOneDetail') },
+        { id: 'dry', title: t('qc.dry'), detail: t('qc.dryDetail') },
+        { id: 'pack', title: t('qc.pack'), detail: t('qc.packDetail') },
       ],
     },
   ]

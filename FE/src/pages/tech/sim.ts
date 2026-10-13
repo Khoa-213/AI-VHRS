@@ -49,7 +49,7 @@ export interface Viewport {
   base: { x: number; y: number }
 }
 
-export const planText = (order: Order) => recognizedText(order, undefined).trim() || 'Xin chào'
+export const planText = (order: Order) => recognizedText(order, undefined, () => '').trim() || 'Xin chào'
 
 /** Paper footprint in mm. Aspect already includes orientation. */
 export function paperMm(aspect: string) {

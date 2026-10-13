@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
+import { useT } from '../../i18n'
 import { navigate } from '../../router/router'
 import { CANVAS_SIZES, loadDraft, saveDraft } from './draft'
 import './draw-studio.css'
@@ -13,12 +14,7 @@ const MARGIN = 48
 
 type PenId = 'pen' | 'monoline' | 'pencil' | 'fountain'
 
-const PENS: { id: PenId; name: string }[] = [
-  { id: 'pen', name: 'Pen' },
-  { id: 'monoline', name: 'Monoline' },
-  { id: 'pencil', name: 'Pencil' },
-  { id: 'fountain', name: 'Fountain Pen' },
-]
+const PENS: { id: PenId }[] = [{ id: 'pen' }, { id: 'monoline' }, { id: 'pencil' }, { id: 'fountain' }]
 
 /** Five nib sizes, in millimetres on the sheet. */
 const NIB_MM = [0.5, 0.8, 1.2, 2, 3]
@@ -29,6 +25,7 @@ type Pt = [number, number]
 const NIB_ANGLE = -Math.PI / 4
 
 export default function DrawStudio() {
+  const t = useT()
   const [initial] = useState(loadDraft)
   const [sizeId, setSizeId] = useState(initial.sizeId)
   const [landscape, setLandscape] = useState(initial.landscape)
@@ -283,18 +280,18 @@ export default function DrawStudio() {
   return (
     <div className="ds" data-screen-label="Canvas">
       <header className="ds-bar">
-        <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={finish}>Back to order</button>
+        <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={finish}>{t('ds.back')}</button>
         <div className="ds-title">
-          <span className="ds-title-main">Write it yourself</span>
-          <span className="ds-title-sub vh-mono">{mmW} × {mmH} mm · {strokes} {strokes === 1 ? 'stroke' : 'strokes'}</span>
+          <span className="ds-title-main">{t('ds.title')}</span>
+          <span className="ds-title-sub vh-mono">{mmW} × {mmH} mm · {t(strokes === 1 ? 'co.stroke' : 'co.strokes', { n: strokes })}</span>
         </div>
         <button className="vh-btn vh-btn--primary vh-btn--sm" onClick={finish} disabled={strokes === 0}>
-          Use this drawing
+          {t('ds.use')}
         </button>
       </header>
 
-      <div className="ds-tools" role="toolbar" aria-label="Canvas tools">
-        <div className="ds-group" role="radiogroup" aria-label="Paper size">
+      <div className="ds-tools" role="toolbar" aria-label={t('ds.tools')}>
+        <div className="ds-group" role="radiogroup" aria-label={t('ds.paperSize')}>
           {CANVAS_SIZES.map((s) => (
             <button
               key={s.id}
@@ -309,18 +306,18 @@ export default function DrawStudio() {
           ))}
         </div>
 
-        <div className="ds-group" role="radiogroup" aria-label="Orientation">
+        <div className="ds-group" role="radiogroup" aria-label={t('ds.orientation')}>
           <button role="radio" aria-checked={!landscape} className={`ds-chip${!landscape ? ' on' : ''}`} onClick={() => setLandscape(false)}>
-            <span className="ds-chip-name">Portrait</span>
+            <span className="ds-chip-name">{t('ds.portrait')}</span>
           </button>
           <button role="radio" aria-checked={landscape} className={`ds-chip${landscape ? ' on' : ''}`} onClick={() => setLandscape(true)}>
-            <span className="ds-chip-name">Landscape</span>
+            <span className="ds-chip-name">{t('ds.landscape')}</span>
           </button>
         </div>
 
         <div className="ds-group ds-group--end">
-          <button className="ds-act" onClick={undo} disabled={!canUndo}>Undo</button>
-          <button className="ds-act" onClick={clear} disabled={strokes === 0}>Clear</button>
+          <button className="ds-act" onClick={undo} disabled={!canUndo}>{t('ds.undo')}</button>
+          <button className="ds-act" onClick={clear} disabled={strokes === 0}>{t('ds.clear')}</button>
         </div>
       </div>
 
@@ -332,7 +329,7 @@ export default function DrawStudio() {
         <canvas
           ref={cvRef}
           className="ds-canvas"
-          aria-label={`Drawing surface. The frame is ${mmW} by ${mmH} millimetres.`}
+          aria-label={t('ds.surface', { w: mmW, h: mmH })}
           onPointerDown={down}
           onPointerMove={move}
           onPointerUp={up}
@@ -352,8 +349,8 @@ export default function DrawStudio() {
 
         <div className="ds-dock" ref={dockRef}>
           {menu && (
-            <div className="ds-pop" role="dialog" aria-label="Pen">
-              <div className="ds-nibs" role="radiogroup" aria-label="Nib size">
+            <div className="ds-pop" role="dialog" aria-label={t('ds.penDialog')}>
+              <div className="ds-nibs" role="radiogroup" aria-label={t('ds.nibSize')}>
                 {NIB_MM.map((mm, i) => (
                   <button
                     key={mm}
@@ -373,7 +370,7 @@ export default function DrawStudio() {
                     <button className={`ds-pen-row${p.id === pen ? ' on' : ''}`} onClick={() => { setPen(p.id); setMenu(false) }}>
                       <span className="ds-pen-check" aria-hidden>{p.id === pen ? '✓' : ''}</span>
                       <span className={`ds-pen-swatch ds-pen-swatch--${p.id}`} aria-hidden />
-                      <span>{p.name}</span>
+                      <span>{t(`ds.pen.${p.id}`)}</span>
                     </button>
                   </li>
                 ))}
@@ -382,7 +379,7 @@ export default function DrawStudio() {
           )}
           <button className="ds-dock-btn" aria-haspopup="dialog" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
             <span className={`ds-pen-swatch ds-pen-swatch--${pen}`} aria-hidden />
-            <span className="ds-dock-name">{PENS.find((p) => p.id === pen)!.name}</span>
+            <span className="ds-dock-name">{t(`ds.pen.${pen}`)}</span>
             <span className="ds-dock-size vh-mono">{NIB_MM[nib]} mm</span>
           </button>
         </div>

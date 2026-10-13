@@ -61,7 +61,7 @@ export function shrinkImage(file: File, max = 1100, quality = 0.72): Promise<str
       const g = c.getContext('2d')
       URL.revokeObjectURL(url)
       if (!g) {
-        reject(new Error('Could not process that photo. Try a JPEG or PNG.'))
+        reject(new Error('qc.err.process'))
         return
       }
       g.drawImage(img, 0, 0, c.width, c.height)
@@ -69,7 +69,7 @@ export function shrinkImage(file: File, max = 1100, quality = 0.72): Promise<str
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)
-      reject(new Error('This browser cannot open that photo format. Use a JPEG or PNG.'))
+      reject(new Error('qc.err.format'))
     }
     img.src = url
   })

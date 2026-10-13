@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
+import { useT } from '../../i18n'
 import SkipLink from '../../components/ui/SkipLink'
 import ThemeToggle from '../../components/ui/ThemeToggle'
+import LanguageToggle from '../../components/ui/LanguageToggle'
 import { Link, navigate } from '../../router/router'
 import { STAFF_ACCOUNTS, TECH_ACCOUNTS, login, useUser } from '../../store/store'
 import type { Role } from '../../types'
@@ -25,6 +27,7 @@ function destination(role: Role): string {
 }
 
 export default function Login() {
+  const t = useT()
   const user = useUser()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -33,11 +36,11 @@ export default function Login() {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      setError('Enter a valid email address.')
+      setError(t('login.errEmail'))
       return
     }
     if (!password) {
-      setError('Enter your password.')
+      setError(t('login.errPassword'))
       return
     }
     setError('')
@@ -51,24 +54,25 @@ export default function Login() {
       <header className="lg-top">
         <Link to="/" className="vh-logo">AI-VHRS</Link>
         <ThemeToggle className="vh-icon-btn" />
+        <LanguageToggle className="vh-icon-btn" />
       </header>
 
       <main className="lg-main" id="main">
         <form className="lg-card" onSubmit={submit} noValidate>
           <div className="lg-head">
-            <h1>Sign in</h1>
-            <p>Staff and technicians go straight to their dashboard. Customers return to the site.</p>
+            <h1>{t('login.title')}</h1>
+            <p>{t('login.lede')}</p>
           </div>
 
           {user && (
             <p className="lg-already">
-              Signed in as <b>{user.name}</b> ({user.role}).{' '}
-              <Link to={HOME[user.role]} className="vh-link">Continue</Link>
+              {t('login.signedInAs', { name: user.name, role: t(`role.${user.role}`) })}{' '}
+              <Link to={HOME[user.role]} className="vh-link">{t('login.continue')}</Link>
             </p>
           )}
 
           <label className="vh-label" htmlFor="lg-email">
-            Email
+            {t('login.email')}
             <input
               id="lg-email"
               className="vh-input"
@@ -80,7 +84,7 @@ export default function Login() {
             />
           </label>
           <label className="vh-label" htmlFor="lg-pass">
-            Password
+            {t('login.password')}
             <input
               id="lg-pass"
               className="vh-input"
@@ -93,10 +97,10 @@ export default function Login() {
 
           {error && <p className="lg-error" role="alert">{error}</p>}
 
-          <button type="submit" className="vh-btn vh-btn--primary">Sign in</button>
+          <button type="submit" className="vh-btn vh-btn--primary">{t('login.title')}</button>
 
           <div className="lg-demo">
-            <span>Prototype accounts. Any password works.</span>
+            <span>{t('login.demo')}</span>
             <div>
               <button
                 type="button"
@@ -107,7 +111,7 @@ export default function Login() {
                   setError('')
                 }}
               >
-                Fill staff account
+                {t('login.fillStaff')}
               </button>
               <button
                 type="button"
@@ -118,7 +122,7 @@ export default function Login() {
                   setError('')
                 }}
               >
-                Fill technician account
+                {t('login.fillTech')}
               </button>
               <button
                 type="button"
@@ -129,7 +133,7 @@ export default function Login() {
                   setError('')
                 }}
               >
-                Fill customer account
+                {t('login.fillCustomer')}
               </button>
             </div>
           </div>

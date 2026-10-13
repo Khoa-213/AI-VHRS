@@ -1,4 +1,5 @@
 import { ORDER_HREF } from '../../constants'
+import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import Page from '../layout/Page'
 
@@ -31,13 +32,14 @@ export function SpecRows({ rows }: { rows: { k: string; v: string }[] }) {
 
 /** Shown when the order list is empty (for example after clearing storage by hand). */
 export function NoOrder({ label }: { label: string }) {
+  const t = useT()
   return (
     <Page label={label} width={720}>
       <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
-        <span className="vh-eyebrow">No order yet</span>
-        <h1 className="vh-h1">Nothing to show here.</h1>
-        <p className="vh-lede">Create an order first, then this page follows it through the flow.</p>
-        <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">Create an order →</Link>
+        <span className="vh-eyebrow">{t('np.eyebrow')}</span>
+        <h1 className="vh-h1">{t('np.title')}</h1>
+        <p className="vh-lede">{t('np.lede')}</p>
+        <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('np.cta')}</Link>
       </div>
     </Page>
   )

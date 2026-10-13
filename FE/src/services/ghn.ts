@@ -19,49 +19,41 @@ export const GHN_LIVE = !!BASE
 
 // ---------- packing ----------
 
-export const PACK_STEPS = [
-  { id: 'wrap', label: 'Piece wrapped in tissue and card backing' },
-  { id: 'box', label: 'Boxed and sealed' },
-  { id: 'label', label: 'Shipping label printed and attached' },
-] as const
+export const PACK_STEPS = [{ id: 'wrap' }, { id: 'box' }, { id: 'label' }] as const
 
 // ---------- status table ----------
 
-/** Customer-facing stepper. Packing happens before GHN, the rest follows GHN scans. */
-export const PHASES = ['Packing', 'Pickup', 'In transit', 'Out for delivery', 'Delivered'] as const
+/** Customer-facing stepper. Packing happens before GHN, the rest follows GHN scans. Labels are `phase.<i>`. */
+export const PHASES = [0, 1, 2, 3, 4] as const
 
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad'
 
 interface StatusMeta {
-  /** GHN wording, for staff. */
-  staff: string
-  /** Plain wording, for the customer. */
-  customer: string
   /** Index into PHASES this status belongs to. */
   phase: number
   tone: Tone
 }
 
 export const GHN_STATUS: Record<GhnStatus, StatusMeta> = {
-  ready_to_pick: { staff: 'Waiting for pickup', customer: 'GHN has your parcel booked and will collect it from the studio', phase: 1, tone: 'neutral' },
-  picking: { staff: 'Courier is picking up', customer: 'A GHN courier is on the way to the studio', phase: 1, tone: 'neutral' },
-  picked: { staff: 'Picked up', customer: 'Collected from the studio by GHN', phase: 2, tone: 'good' },
-  storing: { staff: 'Stored at hub', customer: 'Arrived at a GHN hub', phase: 2, tone: 'neutral' },
-  transporting: { staff: 'In transit', customer: 'On its way between GHN hubs', phase: 2, tone: 'neutral' },
-  sorting: { staff: 'Sorting', customer: 'Being sorted at the hub nearest you', phase: 2, tone: 'neutral' },
-  delivering: { staff: 'Out for delivery', customer: 'Out for delivery today. Keep your phone close', phase: 3, tone: 'good' },
-  delivered: { staff: 'Delivered', customer: 'Delivered to you', phase: 4, tone: 'good' },
-  delivery_fail: { staff: 'Delivery failed', customer: 'The courier could not reach you. GHN will try again', phase: 3, tone: 'bad' },
-  waiting_to_return: { staff: 'Waiting to return', customer: 'Delivery was not possible. The parcel is waiting to go back to the studio', phase: 3, tone: 'bad' },
-  return: { staff: 'Return started', customer: 'The parcel is being sent back to the studio', phase: 3, tone: 'bad' },
-  return_transporting: { staff: 'Return in transit', customer: 'The parcel is on its way back to the studio', phase: 3, tone: 'bad' },
-  return_sorting: { staff: 'Return sorting', customer: 'The parcel is being sorted for return', phase: 3, tone: 'bad' },
-  returning: { staff: 'Returning', customer: 'The parcel is almost back at the studio', phase: 3, tone: 'bad' },
-  returned: { staff: 'Returned to studio', customer: 'The parcel is back at the studio. We will contact you', phase: 3, tone: 'bad' },
-  cancel: { staff: 'Cancelled', customer: 'This shipment was cancelled. The studio will contact you', phase: 1, tone: 'bad' },
-  exception: { staff: 'Exception', customer: 'GHN reported a problem with this parcel. The studio is looking into it', phase: 2, tone: 'warn' },
-  damage: { staff: 'Damaged', customer: 'The parcel was damaged on the way. The studio will contact you', phase: 2, tone: 'bad' },
-  lost: { staff: 'Lost', customer: 'GHN lost this parcel. The studio will contact you', phase: 2, tone: 'bad' },
+  ready_to_pick: { phase: 1, tone: 'neutral' },
+  picking: { phase: 1, tone: 'neutral' },
+  picked: { phase: 2, tone: 'good' },
+  storing: { phase: 2, tone: 'neutral' },
+  transporting: { phase: 2, tone: 'neutral' },
+  sorting: { phase: 2, tone: 'neutral' },
+  delivering: { phase: 3, tone: 'good' },
+  delivered: { phase: 4, tone: 'good' },
+  delivery_fail: { phase: 3, tone: 'bad' },
+  waiting_to_return: { phase: 3, tone: 'bad' },
+  return: { phase: 3, tone: 'bad' },
+  return_transporting: { phase: 3, tone: 'bad' },
+  return_sorting: { phase: 3, tone: 'bad' },
+  returning: { phase: 3, tone: 'bad' },
+  returned: { phase: 3, tone: 'bad' },
+  cancel: { phase: 1, tone: 'bad' },
+  exception: { phase: 2, tone: 'warn' },
+  damage: { phase: 2, tone: 'bad' },
+  lost: { phase: 2, tone: 'bad' },
 }
 
 export const toneColor: Record<Tone, string> = {
@@ -101,15 +93,15 @@ export function stageOf(order: Order): Stage {
   return packed(s) ? 'book' : 'pack'
 }
 
-/** Label and colour for an order's shipping state, as staff read it. */
-export function stageChip(order: Order): { label: string; color: string } {
+/** Translation key and colour for an order's shipping state, as staff read it. */
+export function stageChip(order: Order): { key: string; color: string } {
   const stage = stageOf(order)
   const last = lastLog(shipmentOf(order))
-  if (stage === 'pack') return { label: 'Needs packing', color: 'var(--warn)' }
-  if (stage === 'book') return { label: 'Ready to book', color: 'var(--accent-text)' }
-  if (stage === 'done') return { label: 'Delivered', color: 'var(--good)' }
-  if (last) return { label: GHN_STATUS[last.status].staff, color: toneColor[GHN_STATUS[last.status].tone] }
-  return { label: 'Booked', color: 'var(--t3)' }
+  if (stage === 'pack') return { key: 'stage.pack', color: 'var(--warn)' }
+  if (stage === 'book') return { key: 'stage.book', color: 'var(--accent-text)' }
+  if (stage === 'done') return { key: 'stage.done', color: 'var(--good)' }
+  if (last) return { key: `ghn.${last.status}.staff`, color: toneColor[GHN_STATUS[last.status].tone] }
+  return { key: 'stage.booked', color: 'var(--t3)' }
 }
 
 /** Index into PHASES for the stepper. */

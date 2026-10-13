@@ -3,12 +3,15 @@ import Page from '../../components/layout/Page'
 import { ORDER_HREF } from '../../constants'
 import { PACKS, PAPERS, PAYMENT_BADGES, PRODUCTS } from '../../constants/catalog'
 import PaymentLogos from '../../components/ui/PaymentLogos'
+import { useT, useTn } from '../../i18n'
 import { Link, navigate, orderPath } from '../../router/router'
 import { addToCart, checkoutCart, setCartQty, signIn, useCart, useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
 import './cart.css'
 
 export default function Cart() {
+  const t = useT()
+  const tn = useTn()
   const user = useUser()
   const cart = useCart()
   const [sel, setSel] = useState<Record<string, { paper: number; pack: number }>>({})
@@ -41,10 +44,10 @@ export default function Cart() {
         {placed && (
           <div className="ct-banner">
             <span>
-              Order <b className="vh-mono">{placed}</b> placed — it’s now in the FR3 queue.{' '}
-              <Link to={orderPath(placed, 'review')} className="vh-link">Open order</Link>
+              {t('ct.placed', { id: placed })}{' '}
+              <Link to={orderPath(placed, 'review')} className="vh-link">{t('ct.openOrder')}</Link>
             </span>
-            <button className="vh-link" style={{ color: 'var(--t4)', fontSize: 14 }} onClick={() => setPlaced(null)}>Dismiss</button>
+            <button className="vh-link" style={{ color: 'var(--t4)', fontSize: 14 }} onClick={() => setPlaced(null)}>{t('ct.dismiss')}</button>
           </div>
         )}
 
@@ -57,20 +60,20 @@ export default function Cart() {
                 <path d="M16 10a4 4 0 0 1-8 0" />
               </svg>
             </span>
-            <h1>Your cart is empty</h1>
-            <p>{user ? 'Start a custom order, or add a ready-made design below.' : 'Sign in to see saved items and your order history, or keep exploring.'}</p>
+            <h1>{t('ct.emptyTitle')}</h1>
+            <p>{t(user ? 'ct.emptyUser' : 'ct.emptyGuest')}</p>
             <div className="ct-empty-actions">
-              <Link to="/" className="vh-btn vh-btn--ghost vh-btn--md ct-wide">Continue browsing</Link>
+              <Link to="/" className="vh-btn vh-btn--ghost vh-btn--md ct-wide">{t('ct.browse')}</Link>
               {user ? (
-                <Link to={ORDER_HREF} className="vh-btn vh-btn--primary vh-btn--md ct-wide">Create new order</Link>
+                <Link to={ORDER_HREF} className="vh-btn vh-btn--primary vh-btn--md ct-wide">{t('ct.create')}</Link>
               ) : (
-                <button className="vh-btn vh-btn--primary vh-btn--md ct-wide" onClick={signIn}>Sign in</button>
+                <button className="vh-btn vh-btn--primary vh-btn--md ct-wide" onClick={signIn}>{t('nav.signIn')}</button>
               )}
             </div>
           </section>
         ) : (
           <section className="ct-cart">
-            <h1 className="ct-title">Your cart</h1>
+            <h1 className="ct-title">{t('ct.title')}</h1>
             <div className="vh-cols" style={{ gap: 24 }}>
               <div className="ct-items">
                 {cart.map((it) => (
@@ -81,32 +84,32 @@ export default function Cart() {
                       </div>
                     </div>
                     <div className="ct-item-text">
-                      <span className="ct-item-name">{it.name}</span>
-                      <span className="ct-item-variant">{it.paperName} · {it.pack > 1 ? `pack of ${it.pack}` : 'single'}</span>
-                      <button className="ct-remove" onClick={() => setCartQty(it.key, 0)}>Remove</button>
+                      <span className="ct-item-name">{tn(it.name)}</span>
+                      <span className="ct-item-variant">{tn(it.paperName)} · {it.pack > 1 ? t('ct.pack', { n: it.pack }) : t('ct.single')}</span>
+                      <button className="ct-remove" onClick={() => setCartQty(it.key, 0)}>{t('ct.remove')}</button>
                     </div>
                     <div className="ct-item-side">
                       <span className="vh-mono ct-item-line">{fmt(it.unit * it.qty)}</span>
                       <div className="ct-qty">
-                        <button aria-label="Decrease" onClick={() => setCartQty(it.key, it.qty - 1)}>−</button>
+                        <button aria-label={t('co.dec')} onClick={() => setCartQty(it.key, it.qty - 1)}>−</button>
                         <span className="vh-mono">{it.qty}</span>
-                        <button aria-label="Increase" onClick={() => setCartQty(it.key, it.qty + 1)}>+</button>
+                        <button aria-label={t('co.inc')} onClick={() => setCartQty(it.key, it.qty + 1)}>+</button>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
               <aside className="vh-aside ct-summary" style={{ gap: 12, padding: 22, borderRadius: 24 }}>
-                <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--t1)' }}>Summary</span>
-                <div className="ct-sum-row"><span>Subtotal</span><b className="vh-mono">{fmt(sub)}</b></div>
-                <div className="ct-sum-row"><span>Shipping</span><b className="vh-mono">{ship ? fmt(ship) : 'Free'}</b></div>
-                <span style={{ fontSize: 12, color: 'var(--t6)' }}>Free shipping from 500.000₫</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--t1)' }}>{t('ct.summary')}</span>
+                <div className="ct-sum-row"><span>{t('ct.subtotal')}</span><b className="vh-mono">{fmt(sub)}</b></div>
+                <div className="ct-sum-row"><span>{t('ct.shipping')}</span><b className="vh-mono">{ship ? fmt(ship) : t('ct.free')}</b></div>
+                <span style={{ fontSize: 12, color: 'var(--t6)' }}>{t('ct.freeFrom')}</span>
                 <div className="vh-total-row" style={{ paddingTop: 12, borderTop: '1px solid var(--fx-08)' }}>
-                  <span>Total</span>
+                  <span>{t('ct.total')}</span>
                   <span style={{ fontSize: 26 }}>{fmt(sub + ship)}</span>
                 </div>
                 <button className="vh-btn vh-btn--primary" style={{ marginTop: 6 }} onClick={checkout}>
-                  {user ? 'Checkout' : 'Sign in to checkout'}
+                  {t(user ? 'ct.checkout' : 'ct.signInCheckout')}
                 </button>
               </aside>
             </div>
@@ -114,7 +117,7 @@ export default function Cart() {
         )}
 
         <section className="ct-more">
-          <h2>You might also like</h2>
+          <h2>{t('ct.more')}</h2>
           <div className="ct-carousel" ref={carousel}>
             {PRODUCTS.map((p) => {
               const s = sel[p.id] ?? { paper: 0, pack: 0 }
@@ -140,13 +143,13 @@ export default function Cart() {
                       <span style={{ fontFamily: p.font, fontSize: p.size, color: p.ink }}>{p.text}</span>
                     </div>
                   </div>
-                  <span className="ct-card-name">{p.name}</span>
+                  <span className="ct-card-name">{tn(p.name)}</span>
                   <div className="ct-dots">
                     {PAPERS.map((pp, i) => (
                       <button
                         key={pp.id}
-                        title={pp.name}
-                        aria-label={pp.name}
+                        title={tn(pp.name)}
+                        aria-label={tn(pp.name)}
                         style={{ background: pp.color, borderColor: i === s.paper ? 'var(--accent)' : 'var(--fx-2)' }}
                         onClick={() => set({ paper: i })}
                       />
@@ -154,31 +157,31 @@ export default function Cart() {
                   </div>
                   <div className="ct-packs">
                     {PACKS.map((pk, i) => (
-                      <button key={pk.n} className={i === s.pack ? 'on' : ''} onClick={() => set({ pack: i })}>{pk.label}</button>
+                      <button key={pk.n} className={i === s.pack ? 'on' : ''} onClick={() => set({ pack: i })}>{tn(pk.label)}</button>
                     ))}
                   </div>
                   <span className="vh-mono ct-card-price">{fmt((p.base + paper.price) * pack.mult)}</span>
                   <button className="ct-add" style={flash ? { background: 'var(--good-solid)', color: 'var(--good-solid-fg)' } : undefined} onClick={add}>
-                    {flash ? 'Added ✓' : 'Add to cart'}
+                    {t(flash ? 'ct.added' : 'ct.add')}
                   </button>
                 </div>
               )
             })}
           </div>
           <div className="ct-arrows">
-            <button aria-label="Previous" onClick={() => scrollCarousel(-1)}>←</button>
-            <button aria-label="Next" onClick={() => scrollCarousel(1)}>→</button>
+            <button aria-label={t('ct.prev')} onClick={() => scrollCarousel(-1)}>←</button>
+            <button aria-label={t('ct.next')} onClick={() => scrollCarousel(1)}>→</button>
           </div>
-          <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={() => navigate(ORDER_HREF)}>Start a custom order</button>
+          <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={() => navigate(ORDER_HREF)}>{t('ct.custom')}</button>
         </section>
 
         <section className="ct-pay">
-          <h3>Supported payment methods</h3>
+          <h3>{t('ct.payTitle')}</h3>
           <PaymentLogos names={PAYMENT_BADGES.map((pm) => pm.name)} />
           <div className="ct-help">
-            <span>Questions? <a href="#contact">Contact us</a> — we’re here 24/7.</span>
-            <a href="#cancellation">Cancellation policy</a>
-            <a href="#delivery">Estimated delivery times</a>
+            <span>{t('ct.help', { link: t('ct.contact') })}</span>
+            <a href="#cancellation">{t('ct.cancel')}</a>
+            <a href="#delivery">{t('ct.delivery')}</a>
           </div>
         </section>
       </div>

@@ -1,4 +1,5 @@
 import { ClipboardText, House, PlayCircle, SignOut, SquaresFour } from '@phosphor-icons/react'
+import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { signOut, useAllStaffOrders, useUser } from '../../store/store'
 import { phaseOf, useNow } from './phase'
@@ -7,6 +8,7 @@ type Tab = 'dashboard' | 'preview' | 'qc'
 
 /** Icon rail for the technician pages. Same shape as the staff rail. */
 export default function TechRail({ active }: { active: Tab }) {
+  const t = useT()
   const user = useUser()
   const orders = useAllStaffOrders()
   const now = useNow(1000)
@@ -21,19 +23,19 @@ export default function TechRail({ active }: { active: Tab }) {
   )
 
   return (
-    <nav className="sd-rail" aria-label="Technician navigation">
-      <Link to="/tech" className="sd-mark" aria-label="AI-VHRS technician desk">AV</Link>
-      {item('dashboard', '/tech', 'Dashboard', <SquaresFour size={22} />)}
-      {item('preview', '/tech/preview', 'Preview', <PlayCircle size={22} />)}
-      {item('qc', '/tech/qc', 'QC', <ClipboardText size={22} />, waiting)}
+    <nav className="sd-rail" aria-label={t('rail.tech')}>
+      <Link to="/tech" className="sd-mark" aria-label={t('rail.techMark')}>AV</Link>
+      {item('dashboard', '/tech', t('rail.dashboard'), <SquaresFour size={22} />)}
+      {item('preview', '/tech/preview', t('rail.preview'), <PlayCircle size={22} />)}
+      {item('qc', '/tech/qc', t('rail.qc'), <ClipboardText size={22} />, waiting)}
       <div className="sd-rail-end">
         <Link to="/" className="sd-nav">
           <House size={22} />
-          <span>Site</span>
+          <span>{t('rail.site')}</span>
         </Link>
         <button type="button" className="sd-nav" onClick={() => signOut()}>
           <SignOut size={22} />
-          <span>Sign out</span>
+          <span>{t('rail.signOut')}</span>
         </button>
       </div>
     </nav>

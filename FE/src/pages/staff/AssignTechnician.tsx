@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import { useT, useTn } from '../../i18n'
 import SkipLink from '../../components/ui/SkipLink'
 import ThemeToggle from '../../components/ui/ThemeToggle'
+import LanguageToggle from '../../components/ui/LanguageToggle'
 import { Link } from '../../router/router'
 import { saveStaffOrder, useAllStaffOrders } from '../../store/store'
 import { depositOf, fmt } from '../../utils/format'
@@ -13,6 +15,8 @@ import './assign.css'
 import './polish.css'
 
 export default function AssignTechnician({ id }: { id: string }) {
+  const t = useT()
+  const tn = useTn()
   const orders = useAllStaffOrders()
   const order = orders.find((o) => o.id === id)
   const techs = useMemo(() => roster(), [])
@@ -29,12 +33,13 @@ export default function AssignTechnician({ id }: { id: string }) {
       <div className="vh-header-inner">
         <div className="sc-brand">
           <Link to="/" className="vh-logo">AI-VHRS</Link>
-          <span className="sc-badge">STUDIO</span>
+          <span className="sc-badge">{t('sc.badge')}</span>
         </div>
         <span className="sc-nav" />
         <div className="sc-head-right">
           <ThemeToggle className="vh-icon-btn" />
-          <span className="sc-staff"><span className="vh-avatar">M</span>Minh · Staff</span>
+          <LanguageToggle className="vh-icon-btn" />
+          <span className="sc-staff"><span className="vh-avatar">M</span>{t('sc.staffName')}</span>
         </div>
       </div>
     </header>
@@ -50,14 +55,14 @@ export default function AssignTechnician({ id }: { id: string }) {
         <main className="sc-main" id="main">
           <div className="sc-detail">
             <div className="sc-done bad">
-              <h2>{order ? 'This order is not ready to assign' : 'Order not found'}</h2>
+              <h2>{t(order ? 'as.notReady' : 'as.notFound')}</h2>
               <p>
                 {order
-                  ? `${order.id} is ${order.status}. Only accepted orders can be given to a technician.`
-                  : `There is no order ${id}.`}
+                  ? t('as.notReadyBody', { id: order.id, status: t(`status.${order.status}`) })
+                  : t('as.notFoundBody', { id })}
               </p>
               <Link to="/staff" className="vh-btn vh-btn--ghost vh-btn--md sc-self-start">
-                Back to dashboard
+                {t('as.backDash')}
               </Link>
             </div>
           </div>
@@ -96,77 +101,74 @@ export default function AssignTechnician({ id }: { id: string }) {
       <SkipLink />
       {header}
       <div className="sc-layout">
-        <aside className="sc-rail as-rail" aria-label="Order summary">
-          <span className="sc-eyebrow">ACCEPTED ORDER</span>
-          <h1 className="as-order-title">{order.title}</h1>
-          <span className="vh-mono as-order-id">{order.id} · {order.name || 'Customer'}</span>
+        <aside className="sc-rail as-rail" aria-label={t('as.accepted')}>
+          <span className="sc-eyebrow">{t('as.accepted')}</span>
+          <h1 className="as-order-title">{tn(order.title)}</h1>
+          <span className="vh-mono as-order-id">{order.id} · {order.name || t('common.customer')}</span>
           <ul className="as-facts">
             {[
-              ['Input', MODE_LABEL[sp.mode]],
-              ['Format', sp.type],
-              ['Pen', sp.pen],
-              ['Ink', sp.ink],
-              ['Paper', sp.paper],
-              ['Pieces', String(pieces)],
-              ['Writing time', `about ${minutes} min`],
-              ['AI score', order.evalScore !== undefined ? `${order.evalScore} / 100` : 'n/a'],
-              ['Deposit', fmt(depositOf(order.total))],
+              [t('as.f.input'), tn(MODE_LABEL[sp.mode])],
+              [t('as.f.format'), tn(sp.type)],
+              [t('as.f.pen'), tn(sp.pen)],
+              [t('as.f.ink'), tn(sp.ink)],
+              [t('as.f.paper'), tn(sp.paper)],
+              [t('as.f.pieces'), String(pieces)],
+              [t('as.f.time'), t('as.f.timeVal', { n: minutes })],
+              [t('as.f.score'), order.evalScore !== undefined ? `${order.evalScore} / 100` : t('sc.na')],
+              [t('as.f.deposit'), fmt(depositOf(order.total))],
             ].map(([k, v]) => (
               <li key={k}><span>{k}</span><b>{v}</b></li>
             ))}
           </ul>
           <p className="as-note">
-            The customer pays the deposit separately. You can assign now, and the robot starts once the deposit arrives.
+            {t('as.sideNote')}
           </p>
         </aside>
 
         <main className="sc-main" id="main">
           <div className="sc-detail">
             <div className="sc-title">
-              <span className="sc-eyebrow">STEP 2 OF 2 · ASSIGN</span>
-              <h1>Choose a technician</h1>
-              <p className="as-lede">
-                Each technician looks after several robots. Pick who takes this order, then confirm which of their robots writes it.
-              </p>
+              <span className="sc-eyebrow">{t('as.step')}</span>
+              <h1>{t('as.title')}</h1>
+              <p className="as-lede">{t('as.lede')}</p>
             </div>
 
             {assigned && (
               <div className="as-current" role="status">
                 <span className="as-current-mark" aria-hidden="true" />
                 <span>
-                  <b>Already assigned</b> to {assigned.techName} on <span className="vh-mono">{assigned.robotId}</span>.
-                  Pick someone else only to reassign.
+                  <b>{t('as.already')}</b> {t('as.alreadyBody', { name: assigned.techName, robot: assigned.robotId })}
                 </span>
               </div>
             )}
 
-            <ul className="as-techs" aria-label="Technicians">
-              {techs.map((t) => {
-                const free = freeRobots(t).length
-                const load = loadOf(t.id, orders)
-                const on = t.id === tech.id
+            <ul className="as-techs" aria-label={t('as.techs')}>
+              {techs.map((tc) => {
+                const free = freeRobots(tc).length
+                const load = loadOf(tc.id, orders)
+                const on = tc.id === tech.id
                 return (
-                  <li key={t.id}>
-                    <button className={`as-tech${on ? ' on' : ''}${assigned?.techId === t.id ? ' current' : ''}`} aria-pressed={on} onClick={() => pickTech(t)}>
+                  <li key={tc.id}>
+                    <button className={`as-tech${on ? ' on' : ''}${assigned?.techId === tc.id ? ' current' : ''}`} aria-pressed={on} onClick={() => pickTech(tc)}>
                       <span className="as-tech-top">
-                        <span className="vh-avatar">{t.initials}</span>
+                        <span className="vh-avatar">{tc.initials}</span>
                         <span className="as-tech-name">
-                          {t.name}
-                          {assigned?.techId === t.id
-                            ? <em className="as-rec as-rec--current">Assigned to this order</em>
-                            : best?.id === t.id && !assigned && <em className="as-rec">Recommended</em>}
+                          {tc.name}
+                          {assigned?.techId === tc.id
+                            ? <em className="as-rec as-rec--current">{t('as.thisOrder')}</em>
+                            : best?.id === tc.id && !assigned && <em className="as-rec">{t('as.recommended')}</em>}
                         </span>
-                        <span className="vh-mono as-tech-id">{t.id}</span>
+                        <span className="vh-mono as-tech-id">{tc.id}</span>
                       </span>
-                      <span className="as-tech-shift">{t.shift}</span>
-                      <span className="as-tech-skills">{t.skills.join(' · ')}</span>
+                      <span className="as-tech-shift">{tn(tc.shift)}</span>
+                      <span className="as-tech-skills">{tc.skills.map((k) => tn(k)).join(' · ')}</span>
                       <span className="as-tech-stats">
-                        <span><b className="vh-mono">{t.robots.length}</b> robots</span>
-                        <span className={free ? 'ok' : 'none'}><b className="vh-mono">{free}</b> idle</span>
-                        <span><b className="vh-mono">{load}</b> in queue</span>
+                        <span><b className="vh-mono">{tc.robots.length}</b> {t('as.robots')}</span>
+                        <span className={free ? 'ok' : 'none'}><b className="vh-mono">{free}</b> {t('as.idle')}</span>
+                        <span><b className="vh-mono">{load}</b> {t('as.inQueue')}</span>
                       </span>
                       <span className="as-dots" aria-hidden="true">
-                        {t.robots.map((r) => <i key={r.id} className={`as-dot as-dot--${r.state}`} title={`${r.id} ${STATE_LABEL[r.state]}`} />)}
+                        {tc.robots.map((r) => <i key={r.id} className={`as-dot as-dot--${r.state}`} title={`${r.id} ${tn(STATE_LABEL[r.state])}`} />)}
                       </span>
                     </button>
                   </li>
@@ -174,10 +176,10 @@ export default function AssignTechnician({ id }: { id: string }) {
               })}
             </ul>
 
-            <section className="sc-block as-robots" aria-label={`${tech.name}'s robots`}>
+            <section className="sc-block as-robots" aria-label={t('as.robotsOf', { name: tech.name })}>
               <div className="sc-block-head">
-                <h2>{tech.name}'s robots</h2>
-                <span className="sc-hint">{freeRobots(tech).length ? 'Pick one that is idle' : 'No idle robot right now'}</span>
+                <h2>{t('as.robotsOf', { name: tech.name })}</h2>
+                <span className="sc-hint">{t(freeRobots(tech).length ? 'as.pickIdle' : 'as.noIdle')}</span>
               </div>
               <ul className="as-robot-list">
                 {tech.robots.map((r) => {
@@ -191,9 +193,9 @@ export default function AssignTechnician({ id }: { id: string }) {
                         aria-pressed={on}
                         onClick={() => { setRobotId(r.id); setJustSaved(false) }}
                       >
-                        <span className="vh-mono as-robot-id">{r.id}{assigned?.robotId === r.id && <em className="as-rec as-rec--current"> · this order</em>}</span>
-                        <span className={`as-state as-state--${r.state}`}>{STATE_LABEL[r.state]}</span>
-                        <span className="as-ink" title={`Ink ${r.ink}%`}>
+                        <span className="vh-mono as-robot-id">{r.id}{assigned?.robotId === r.id && <em className="as-rec as-rec--current"> · {t('as.thisOrderShort')}</em>}</span>
+                        <span className={`as-state as-state--${r.state}`}>{tn(STATE_LABEL[r.state])}</span>
+                        <span className="as-ink" title={t('as.ink', { n: r.ink })}>
                           <i><b style={{ width: `${r.ink}%` }} /></i>
                           <span className="vh-mono">{r.ink}%</span>
                         </span>
@@ -206,15 +208,13 @@ export default function AssignTechnician({ id }: { id: string }) {
 
             {justSaved && assigned ? (
               <section className="sc-done ok" role="status">
-                <h2>Assigned to {assigned.techName}</h2>
-                <p>
-                  {order.id} will be written on {assigned.robotId}. {assigned.techName} sees it in their queue as soon as the deposit is paid.
-                </p>
+                <h2>{t('as.savedTitle', { name: assigned.techName })}</h2>
+                <p>{t('as.savedBody', { id: order.id, robot: assigned.robotId, name: assigned.techName })}</p>
                 <div className="sc-row">
-                  <Link to="/staff" className="vh-btn vh-btn--primary vh-btn--md">Back to dashboard</Link>
+                  <Link to="/staff" className="vh-btn vh-btn--primary vh-btn--md">{t('as.backDash')}</Link>
                   {nextReview && (
                     <Link to={`/staff/review/${encodeURIComponent(nextReview.id)}`} className="vh-btn vh-btn--ghost vh-btn--md">
-                      Review next order
+                      {t('as.nextReview')}
                     </Link>
                   )}
                 </div>
@@ -223,14 +223,14 @@ export default function AssignTechnician({ id }: { id: string }) {
               <div className="as-confirm">
                 <p>
                   {robot
-                    ? <>Assign <b>{order.id}</b> to <b>{tech.name}</b> on <b className="vh-mono">{robot.id}</b></>
-                    : <>{tech.name} has no idle robot. Pick another technician.</>}
+                    ? t('as.confirmAssign', { id: order.id, name: tech.name, robot: robot.id })
+                    : t('as.noIdleTech', { name: tech.name })}
                 </p>
                 <div className="sc-row">
                   <button className={`vh-btn vh-btn--md ${assigned && !dirty ? 'vh-btn--ghost' : 'vh-btn--primary'}`} disabled={!robot || !dirty} onClick={assign}>
-                    {assigned ? (dirty ? 'Reassign order' : 'Already assigned') : 'Assign technician'}
+                    {assigned ? t(dirty ? 'as.reassign' : 'as.alreadyBtn') : t('as.assignBtn')}
                   </button>
-                  <Link to="/staff" className="vh-btn vh-btn--ghost vh-btn--md">Decide later</Link>
+                  <Link to="/staff" className="vh-btn vh-btn--ghost vh-btn--md">{t('as.later')}</Link>
                 </div>
               </div>
             )}

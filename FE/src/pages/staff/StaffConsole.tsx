@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { useT, useTn } from '../../i18n'
 import SkipLink from '../../components/ui/SkipLink'
 import PaperSheet from '../../components/ui/PaperSheet'
 import ThemeToggle from '../../components/ui/ThemeToggle'
+import LanguageToggle from '../../components/ui/LanguageToggle'
 import { fontScale, fmt, depositOf } from '../../utils/format'
 import { Link, navigate } from '../../router/router'
 import { saveStaffOrder, useOrders, useStaffQueue } from '../../store/store'
@@ -16,18 +18,20 @@ import './staff.css'
 import './polish.css'
 
 type Tab = 'pending' | 'accepted' | 'rejected'
-const TABS: { id: Tab; label: string; status: Order['status'] }[] = [
-  { id: 'pending', label: 'Pending', status: 'Pending' },
-  { id: 'accepted', label: 'Accepted', status: 'Accepted' },
-  { id: 'rejected', label: 'Rejected', status: 'Rejected' },
+const TABS: { id: Tab; status: Order['status'] }[] = [
+  { id: 'pending', status: 'Pending' },
+  { id: 'accepted', status: 'Accepted' },
+  { id: 'rejected', status: 'Rejected' },
 ]
 const STAFF = 'Minh · AI-VHRS Studio'
-const STEPS = ['Input review', 'AI sketch and evaluation', 'Accepted']
+const STEP_KEYS = ['sc.step.input', 'sc.step.sketch', 'sc.step.done']
 
 type Stage = 'input' | 'sketch' | 'done'
 const stageOf = (o: Order): Stage => (o.status === 'Pending' ? o.staffStage ?? 'input' : 'done')
 
 export default function StaffConsole({ id }: { id?: string }) {
+  const t = useT()
+  const tn = useTn()
   const queue = useStaffQueue()
   const allOrders = useOrders()
   const [tab, setTab] = useState<Tab>('pending')
@@ -88,29 +92,30 @@ export default function StaffConsole({ id }: { id?: string }) {
         <div className="vh-header-inner">
           <div className="sc-brand">
             <Link to="/" className="vh-logo">AI-VHRS</Link>
-            <span className="sc-badge">STUDIO</span>
+            <span className="sc-badge">{t('sc.badge')}</span>
           </div>
           <span className="sc-nav" />
           <div className="sc-head-right">
-            <span className={`sc-robot${writing ? ' busy' : ''}`}>FR3 #01 · {writing ? 'WRITING' : 'IDLE'}</span>
+            <span className={`sc-robot${writing ? ' busy' : ''}`}>{t(writing ? 'sc.robotBusy' : 'sc.robotIdle')}</span>
             <ThemeToggle className="vh-icon-btn" />
-            <span className="sc-staff"><span className="vh-avatar">M</span>Minh · Staff</span>
+            <LanguageToggle className="vh-icon-btn" />
+            <span className="sc-staff"><span className="vh-avatar">M</span>{t('sc.staffName')}</span>
           </div>
         </div>
       </header>
 
       <div className="sc-layout">
-        <aside className="sc-rail" aria-label="Order queue">
+        <aside className="sc-rail" aria-label={t('sc.queue')}>
           <div className="sc-tabs" role="tablist">
-            {TABS.map((t) => (
+            {TABS.map((tb) => (
               <button
-                key={t.id}
+                key={tb.id}
                 role="tab"
-                aria-selected={tab === t.id}
-                className={tab === t.id ? 'on' : ''}
-                onClick={() => setTab(t.id)}
+                aria-selected={tab === tb.id}
+                className={tab === tb.id ? 'on' : ''}
+                onClick={() => setTab(tb.id)}
               >
-                {t.label} <span className="vh-mono">{queue.filter((o) => o.status === t.status).length}</span>
+                {t(`sc.tab.${tb.id}`)} <span className="vh-mono">{queue.filter((o) => o.status === tb.status).length}</span>
               </button>
             ))}
           </div>
@@ -121,23 +126,23 @@ export default function StaffConsole({ id }: { id?: string }) {
                 <button key={o.id} className={`sc-item${o.id === sel?.id ? ' on' : ''}`} onClick={() => pick(o.id)}>
                   <span className="sc-item-top">
                     <span className="vh-mono sc-item-id">{o.id}</span>
-                    <span className={`sc-mode sc-mode--${o.spec.mode}`}>{MODE_LABEL[o.spec.mode]}</span>
+                    <span className={`sc-mode sc-mode--${o.spec.mode}`}>{tn(MODE_LABEL[o.spec.mode])}</span>
                   </span>
-                  <span className="sc-item-title">{o.title}</span>
+                  <span className="sc-item-title">{tn(o.title)}</span>
                   <span className="sc-item-bottom">
-                    <span>{o.name || 'Customer'}</span>
+                    <span>{o.name || t('common.customer')}</span>
                     <span className={`sc-state sc-state--${o.status === 'Accepted' ? (o.assignment ? 'assigned' : 'needs') : o.status.toLowerCase()}`}>
                       {o.status === 'Pending'
-                        ? st === 'sketch' ? 'AI sketch' : 'Input review'
+                        ? t(st === 'sketch' ? 'sc.aiSketch' : 'sc.inputReview')
                         : o.status === 'Accepted'
-                          ? o.assignment ? `Assigned · ${o.assignment.techName}` : 'Needs technician'
-                          : o.status}
+                          ? o.assignment ? t('sc.assignedTo', { name: o.assignment.techName }) : t('sc.needsTech')
+                          : t(`status.${o.status}`)}
                     </span>
                   </span>
                 </button>
               )
             })}
-            {!list.length && <span className="sc-empty">Nothing here.</span>}
+            {!list.length && <span className="sc-empty">{t('sc.empty')}</span>}
           </div>
         </aside>
 
@@ -184,7 +189,7 @@ export default function StaffConsole({ id }: { id?: string }) {
               }}
             />
           ) : (
-            <div className="sc-none">Select an order from the queue.</div>
+            <div className="sc-none">{t('sc.select')}</div>
           )}
         </main>
       </div>
@@ -202,6 +207,8 @@ export default function StaffConsole({ id }: { id?: string }) {
 }
 
 function AssignPrompt({ order, onChoose, onLater }: { order: Order; onChoose: () => void; onLater: () => void }) {
+  const t = useT()
+  const tn = useTn()
   const btn = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     btn.current?.focus()
@@ -221,19 +228,16 @@ function AssignPrompt({ order, onChoose, onLater }: { order: Order; onChoose: ()
       >
         <span className="sc-modal-mark" aria-hidden="true" />
         <div className="sc-modal-head">
-          <h2 id="sc-modal-title">Order accepted</h2>
-          <p>
-            {order.id} is accepted and the customer has been asked for the {fmt(depositOf(order.total))} deposit.
-            Choose a technician and one of their robots to write it.
-          </p>
+          <h2 id="sc-modal-title">{t('sc.modalTitle')}</h2>
+          <p>{t('sc.modalBody', { id: order.id, deposit: fmt(depositOf(order.total)) })}</p>
         </div>
         <ul className="sc-modal-facts">
-          <li><span>Order</span><b>{order.title}</b></li>
-          <li><span>AI score</span><b>{order.evalScore !== undefined ? `${order.evalScore} / 100` : 'n/a'}</b></li>
+          <li><span>{t('sc.modalOrder')}</span><b>{tn(order.title)}</b></li>
+          <li><span>{t('sc.modalScore')}</span><b>{order.evalScore !== undefined ? `${order.evalScore} / 100` : t('sc.na')}</b></li>
         </ul>
         <div className="sc-modal-actions">
-          <button ref={btn} className="vh-btn vh-btn--primary" onClick={onChoose}>Choose technician</button>
-          <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={onLater}>Later</button>
+          <button ref={btn} className="vh-btn vh-btn--primary" onClick={onChoose}>{t('sc.choose')}</button>
+          <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={onLater}>{t('sc.later')}</button>
         </div>
       </div>
     </div>
@@ -260,24 +264,26 @@ interface DetailProps {
 }
 
 function Detail(p: DetailProps) {
+  const t = useT()
+  const tn = useTn()
   const { order: o, g } = p
   const sp = o.spec
   const mode = sp.mode
   const stage = stageOf(o)
-  const text = recognizedText(o, p.ocr)
-  const rows = recognitionRows(o, text)
+  const text = recognizedText(o, p.ocr, t)
+  const rows = recognitionRows(o, text, t, tn)
   const ev = evaluate(o, text)
   const stepIdx = { input: 0, sketch: 1, done: 2 }[stage]
   const accepted = o.status === 'Accepted'
   const chips = [
-    ['Format', sp.type], ['Paper', sp.paper], ['Pen', sp.pen], ['Ink', sp.ink],
-    ['Qty', String(sp.qty || 1)], ['Total', fmt(o.total)],
+    [t('sc.chip.format'), tn(sp.type)], [t('sc.chip.paper'), tn(sp.paper)], [t('sc.chip.pen'), tn(sp.pen)], [t('sc.chip.ink'), tn(sp.ink)],
+    [t('sc.chip.qty'), String(sp.qty || 1)], [t('sc.chip.total'), fmt(o.total)],
   ]
   const genStage =
-    g < 0.3 ? 'Vectorizing input'
-    : g < 0.6 ? 'Fitting single-line font'
-    : g < 0.85 ? 'Planning 6-DoF trajectory'
-    : 'Scoring with evaluation service'
+    g < 0.3 ? t('sc.gen.vec')
+    : g < 0.6 ? t('sc.gen.font')
+    : g < 0.85 ? t('sc.gen.plan')
+    : t('sc.gen.score')
   const pct = `${Math.round(g * 100)}%`
   const sketchHasImg = !!sp.img && mode !== 'text' && !text
   const sketchSpec = {
@@ -292,14 +298,14 @@ function Detail(p: DetailProps) {
     <div className="sc-detail">
       <div className="sc-title-row">
         <div className="sc-title">
-          <span className="sc-eyebrow">{o.id} · {o.name || 'Customer'} · {o.date}</span>
-          <h1>{o.title}</h1>
+          <span className="sc-eyebrow">{o.id} · {o.name || t('common.customer')} · {o.date}</span>
+          <h1>{tn(o.title)}</h1>
         </div>
-        <ol className="sc-steps" aria-label="Review progress">
-          {STEPS.map((label, i) => (
-            <li key={label} className={i < stepIdx ? 'done' : i === stepIdx ? 'now' : ''}>
+        <ol className="sc-steps" aria-label={t('sc.reviewProgress')}>
+          {STEP_KEYS.map((k, i) => (
+            <li key={k} className={i < stepIdx ? 'done' : i === stepIdx ? 'now' : ''}>
               <i />
-              <span>{label}</span>
+              <span>{t(k)}</span>
             </li>
           ))}
         </ol>
@@ -315,8 +321,8 @@ function Detail(p: DetailProps) {
         <div className="sc-cols">
           <section className="sc-block sc-block--wide">
             <div className="sc-block-head">
-              <h2>{MODE_HEADING[mode]}</h2>
-              <span className={`sc-mode sc-mode--${mode}`}>{MODE_LABEL[mode]}</span>
+              <h2>{tn(MODE_HEADING[mode])}</h2>
+              <span className={`sc-mode sc-mode--${mode}`}>{tn(MODE_LABEL[mode])}</span>
             </div>
 
             {mode === 'text' ? (
@@ -327,7 +333,7 @@ function Detail(p: DetailProps) {
                 </div>
               </>
             ) : (
-              <button type="button" className="sc-photo" onClick={p.onZoom} aria-label="Toggle zoom">
+              <button type="button" className="sc-photo" onClick={p.onZoom} aria-label={t('sc.toggleZoom')}>
                 {sp.img ? (
                   <div
                     className="sc-photo-img"
@@ -347,15 +353,15 @@ function Detail(p: DetailProps) {
                   </div>
                 )}
                 <span className="sc-photo-tag sc-photo-tag--tl">
-                  {mode === 'upload' ? `CUSTOMER PHOTO · ${sp.fileName ?? 'upload'}` : 'CANVAS EXPORT · PNG'}
+                  {mode === 'upload' ? t('sc.customerPhoto', { name: sp.fileName ?? t('sc.upload') }) : t('sc.canvasExport')}
                 </span>
-                <span className="sc-photo-tag sc-photo-tag--br">{p.zoom > 1 ? '200% · click to fit' : 'Fit · click to zoom'}</span>
+                <span className="sc-photo-tag sc-photo-tag--br">{t(p.zoom > 1 ? 'sc.zoomFit' : 'sc.zoomIn')}</span>
               </button>
             )}
           </section>
 
           <section className="sc-block sc-block--rail">
-            <h2>Input recognition</h2>
+            <h2>{t('sc.recognition')}</h2>
             <div className="vh-rows sc-rows">
               {rows.map((r) => (
                 <div key={r.k} className="vh-row">
@@ -368,7 +374,7 @@ function Detail(p: DetailProps) {
             {mode !== 'text' && (
               <div className="vh-stack" style={{ gap: 8 }}>
                 <label className="vh-label" htmlFor="sc-ocr">
-                  {mode === 'upload' ? 'Recognized text (OCR)' : 'Recognized text (from strokes)'}
+                  {t(mode === 'upload' ? 'sc.ocr' : 'sc.ocrStrokes')}
                 </label>
                 <textarea
                   id="sc-ocr"
@@ -377,22 +383,22 @@ function Detail(p: DetailProps) {
                   value={text}
                   onChange={(e) => p.onOcr(e.target.value)}
                 />
-                <span className="sc-hint">Correct the recognized text if needed. It guides the sketch.</span>
+                <span className="sc-hint">{t('sc.ocrHint')}</span>
               </div>
             )}
 
             {!p.rejecting ? (
               <div className="sc-actions">
                 <button className="vh-btn vh-btn--primary vh-btn--md" onClick={() => p.onApproveInput(text)}>
-                  Approve input, generate sketch
+                  {t('sc.approveInput')}
                 </button>
                 <button className="vh-btn vh-btn--ghost vh-btn--md sc-danger" onClick={p.onStartReject}>
-                  Reject
+                  {t('sc.reject')}
                 </button>
               </div>
             ) : (
               <div className="sc-actions">
-                <div className="sc-reasons" role="group" aria-label="Reject reasons">
+                <div className="sc-reasons" role="group" aria-label={t('sc.rejectReasons')}>
                   {REJECT_REASONS[mode].map((r) => (
                     <button
                       key={r}
@@ -400,13 +406,13 @@ function Detail(p: DetailProps) {
                       aria-pressed={p.reasons.includes(r)}
                       onClick={() => p.onToggleReason(r)}
                     >
-                      {r}
+                      {tn(r)}
                     </button>
                   ))}
                 </div>
                 <div className="sc-row">
                   <button className="vh-btn vh-btn--ghost vh-btn--md" style={{ flex: 1 }} onClick={p.onCancelReject}>
-                    Cancel
+                    {t('sc.cancel')}
                   </button>
                   <button
                     className="vh-btn vh-btn--md sc-reject-confirm"
@@ -414,7 +420,7 @@ function Detail(p: DetailProps) {
                     disabled={!p.reasons.length}
                     onClick={p.onConfirmReject}
                   >
-                    Reject and notify
+                    {t('sc.rejectNotify')}
                   </button>
                 </div>
               </div>
@@ -449,8 +455,8 @@ function Detail(p: DetailProps) {
 
           <section className="sc-block sc-block--rail">
             <div className="sc-block-head">
-              <h2>System evaluation</h2>
-              <span className="sc-hint">Evaluation service</span>
+              <h2>{t('sc.systemEval')}</h2>
+              <span className="sc-hint">{t('sd.evalSvc')}</span>
             </div>
 
             {g < 1 ? (
@@ -462,36 +468,36 @@ function Detail(p: DetailProps) {
                 <div className={`sc-verdict ${verdictOk ? 'ok' : 'warn'}`}>
                   <span className="vh-mono">{ev.overall}</span>
                   <div>
-                    <b>{verdictOk ? 'Ready to write' : 'Review recommended'}</b>
-                    <small>Overall score out of 100, threshold {PASS_SCORE}</small>
+                    <b>{t(verdictOk ? 'sc.ready' : 'sc.recommend')}</b>
+                    <small>{t('sc.overall', { n: PASS_SCORE })}</small>
                   </div>
                 </div>
 
                 <div className="sc-checks">
                   {ev.checks.map((c) => (
                     <div key={c.k} className={`sc-check sc-check--${checkTone(c.value)}`}>
-                      <div><span>{c.k}</span><span className="vh-mono">{c.value}%</span></div>
+                      <div><span>{tn(c.k)}</span><span className="vh-mono">{c.value}%</span></div>
                       <i><b style={{ width: `${c.value}%` }} /></i>
                     </div>
                   ))}
                 </div>
 
                 <div className="vh-metrics">
-                  <div className="vh-metric"><b>{ev.strokes}</b><span>Strokes</span></div>
-                  <div className="vh-metric"><b>{ev.penLifts}</b><span>Pen lifts</span></div>
-                  <div className="vh-metric"><b>{sp.mins || 4} min</b><span>Per piece</span></div>
+                  <div className="vh-metric"><b>{ev.strokes}</b><span>{t('sc.strokes')}</span></div>
+                  <div className="vh-metric"><b>{ev.penLifts}</b><span>{t('sc.penLifts')}</span></div>
+                  <div className="vh-metric"><b>{t('sc.minutes', { n: sp.mins || 4 })}</b><span>{t('sc.perPiece')}</span></div>
                 </div>
 
                 <div className="sc-actions">
                   <button className="vh-btn vh-btn--primary vh-btn--md" onClick={() => p.onAccept(ev.overall)}>
-                    Accept order, request deposit
+                    {t('sc.accept')}
                   </button>
                   <div className="sc-row">
                     <button className="vh-btn vh-btn--ghost vh-btn--md" style={{ flex: 1 }} onClick={p.onRegen}>
-                      Regenerate
+                      {t('sc.regen')}
                     </button>
                     <button className="vh-btn vh-btn--ghost vh-btn--md" style={{ flex: 1 }} onClick={p.onBack}>
-                      Back to input
+                      {t('sc.back')}
                     </button>
                   </div>
                 </div>
@@ -505,17 +511,17 @@ function Detail(p: DetailProps) {
         <section className={`sc-done ${accepted ? (o.assignment ? 'assigned' : 'needs') : 'bad'}`}>
           <h2>
             {accepted
-              ? o.assignment ? `Assigned to ${o.assignment.techName} on ${o.assignment.robotId}` : 'Accepted, needs a technician'
-              : 'Rejected'}
+              ? o.assignment ? t('sc.assignedHeading', { name: o.assignment.techName, robot: o.assignment.robotId }) : t('sc.acceptedNeeds')
+              : t('sc.rejectedHeading')}
           </h2>
           <p>
             {accepted
-              ? `Score ${o.evalScore ?? 'n/a'} out of 100. The customer has been asked for the 30% deposit (${fmt(depositOf(o.total))}).${o.assignment ? '' : ' Choose who writes it.'}`
-              : `Reasons: ${(o.rejectReasons ?? []).join(', ') || 'none recorded'}. The customer has been notified.`}
+              ? `${t('sc.acceptedBody', { score: o.evalScore ?? t('sc.na'), deposit: fmt(depositOf(o.total)) })}${o.assignment ? '' : ' ' + t('sc.chooseWho')}`
+              : t('sc.rejectedBody', { reasons: (o.rejectReasons ?? []).map((r) => tn(r)).join(', ') || t('sc.noReasons') })}
           </p>
           {accepted && (
             <Link to={`/staff/assign/${encodeURIComponent(o.id)}`} className={`vh-btn vh-btn--md sc-self-start ${o.assignment ? 'vh-btn--ghost' : 'vh-btn--primary'}`}>
-              {o.assignment ? 'Change technician' : 'Assign a technician'}
+              {t(o.assignment ? 'sc.changeTech' : 'sc.assignTech')}
             </Link>
           )}
         </section>

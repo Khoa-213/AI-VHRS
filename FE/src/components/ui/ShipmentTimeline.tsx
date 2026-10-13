@@ -1,4 +1,5 @@
-import { GHN_STATUS, PACK_STEPS, toneColor, type Tone } from '../../services/ghn'
+import { useLocale, useT } from '../../i18n'
+import { GHN_STATUS, toneColor, type Tone } from '../../services/ghn'
 import type { Shipment } from '../../types'
 import './shipment.css'
 
@@ -11,25 +12,27 @@ interface Event {
   tone: Tone
 }
 
-const dayOf = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })
-const timeOf = (iso: string) =>
-  new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+const dayOf = (iso: string, locale: string) =>
+  new Date(iso).toLocaleDateString(locale, { weekday: 'short', day: '2-digit', month: 'short' })
+const timeOf = (iso: string, locale: string) =>
+  new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 
 /** Packing marks and GHN scans in one list, newest first, grouped by day. */
 export default function ShipmentTimeline({ shipment, audience }: { shipment: Shipment; audience: 'customer' | 'staff' }) {
   const staff = audience === 'staff'
+  const t = useT()
+  const locale = useLocale()
   const events: Event[] = [
     ...shipment.pack.map((m) => ({
       key: 'pack-' + m.id,
       at: m.at,
-      title: PACK_STEPS.find((p) => p.id === m.id)?.label ?? m.id,
+      title: t(`pack.${m.id}`),
       tone: 'neutral' as Tone,
     })),
     ...shipment.logs.map((l, i) => ({
       key: `log-${i}-${l.status}`,
       at: l.at,
-      title: staff ? GHN_STATUS[l.status].staff : GHN_STATUS[l.status].customer,
+      title: t(`ghn.${l.status}.${staff ? 'staff' : 'customer'}`),
       place: l.place,
       code: staff ? l.status : undefined,
       tone: GHN_STATUS[l.status].tone,
@@ -39,29 +42,29 @@ export default function ShipmentTimeline({ shipment, audience }: { shipment: Shi
   if (!events.length) {
     return (
       <div className="tl-empty">
-        <b>No updates yet</b>
-        <span>{staff ? 'Tick the packing steps below, then book the courier.' : 'Packing updates and courier scans will appear here.'}</span>
+        <b>{t('tl.emptyTitle')}</b>
+        <span>{t(staff ? 'tl.emptyStaff' : 'tl.emptyCustomer')}</span>
       </div>
     )
   }
 
   const days: { day: string; items: Event[] }[] = []
   for (const e of events) {
-    const d = dayOf(e.at)
+    const d = dayOf(e.at, locale)
     const g = days[days.length - 1]
     if (g?.day === d) g.items.push(e)
     else days.push({ day: d, items: [e] })
   }
 
   return (
-    <div className="tl" role="list" aria-label="Shipment updates">
+    <div className="tl" role="list" aria-label={t('tl.aria')}>
       {days.map((g, gi) => (
         <section key={g.day} className="tl-day" role="listitem">
           <h3>{g.day}</h3>
           <ol>
             {g.items.map((e, i) => (
               <li key={e.key} className={gi === 0 && i === 0 ? 'on' : ''} style={{ ['--tone' as string]: toneColor[e.tone] }}>
-                <time className="vh-mono" dateTime={e.at}>{timeOf(e.at)}</time>
+                <time className="vh-mono" dateTime={e.at}>{timeOf(e.at, locale)}</time>
                 <div>
                   <b>{e.title}</b>
                   {e.place && <span>{e.place}</span>}
