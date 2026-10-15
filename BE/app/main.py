@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
-from app.api.v1 import admin, auth, me
+from app.api.v1 import admin, auth, catalog, me, orders, pricing
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 
@@ -25,6 +25,9 @@ Backend của **AI-VHRS – Xưởng Nét Việt** (đơn đặt viết tay bằ
 TAGS = [
     {"name": "Auth", "description": "FR-01 · UC-01..03, UC-05. Đăng ký, đăng nhập, làm mới / thu hồi phiên, quên mật khẩu."},
     {"name": "Profile", "description": "FR-02 · UC-04. Hồ sơ cá nhân và nhiều địa chỉ giao hàng."},
+    {"name": "Catalog", "description": "FR-04, FR-09 · UC-06, UC-11. Giấy, bút (lọc theo giấy), mực, mẫu chữ."},
+    {"name": "Pricing", "description": "FR-10, FR-29 · UC-12. Giá ước tính tức thời."},
+    {"name": "Orders", "description": "FR-05..11, FR-55/56 · UC-07..14. Customer tạo, lưu nháp, gửi đơn."},
     {"name": "Admin", "description": "FR-51 · UC-48, UC-51. Chỉ vai trò ADMIN."},
     {"name": "System", "description": "Kiểm tra sức khoẻ dịch vụ."},
 ]
@@ -66,6 +69,9 @@ async def security_headers(request: Request, call_next):
 v1 = APIRouter(prefix="/api/v1")
 v1.include_router(auth.router)
 v1.include_router(me.router)
+v1.include_router(catalog.router)
+v1.include_router(pricing.router)
+v1.include_router(orders.router)
 v1.include_router(admin.router)
 
 

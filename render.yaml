@@ -17,6 +17,10 @@ services:
         sync: false
       - key: JWT_SECRET        # generated once by Render, then kept across deploys
         generateValue: true
+      - key: SUPABASE_URL      # Storage for customer uploads (Project URL)
+        sync: false
+      - key: SUPABASE_SERVICE_KEY  # service_role key: secret, set in the dashboard only
+        sync: false
       - key: CORS_ORIGINS      # JSON list, e.g. ["https://ai-vhrs.vercel.app"]
         sync: false
       - key: CORS_ORIGIN_REGEX # optional: Vercel preview URLs, e.g. https://ai-vhrs-[a-z0-9-]+\.vercel\.app
