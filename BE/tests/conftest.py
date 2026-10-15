@@ -18,6 +18,14 @@ _TEST_IDS = "(select id from accounts where email like 'pytest\\_%@example.com')
 
 def _cleanup() -> None:
     with get_engine().begin() as c:
+        # orders (cascade: inputs, status_histories) before accounts; test catalog rows after the orders
+        c.execute(text(f"delete from orders where customer_id in {_TEST_IDS}"))
+        c.execute(text("delete from paper_pen_compats where paper_type_id in "
+                       "(select id from paper_types where code like 'pytest\_%')"))
+        c.execute(text("delete from ink_colors where pen_type_id in (select id from pen_types where code like 'pytest\_%')"))
+        c.execute(text("delete from pen_types where code like 'pytest\_%'"))
+        c.execute(text("delete from paper_types where code like 'pytest\_%'"))
+        c.execute(text("delete from templates where code like 'pytest\_%'"))
         c.execute(text(f"delete from audit_logs where actor_id in {_TEST_IDS} "
                        f"or (entity_type = 'account' and entity_id in {_TEST_IDS})"))
         c.execute(text(f"update accounts set created_by = null where created_by in {_TEST_IDS}"))
