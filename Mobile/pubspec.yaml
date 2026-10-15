@@ -81,3 +81,13 @@ flutter:
           weight: 600
         - asset: assets/fonts/BeVietnamPro-Bold.ttf
           weight: 700
+    # Script faces the robot writes with (OFL, same as the FE catalog).
+    - family: DancingScript
+      fonts:
+        - asset: assets/fonts/script/DancingScript.ttf
+    - family: GreatVibes
+      fonts:
+        - asset: assets/fonts/script/GreatVibes-Regular.ttf
+    - family: Caveat
+      fonts:
+        - asset: assets/fonts/script/Caveat.ttf

@@ -87,6 +87,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+# The Python rule above must not hide the Flutter sources.
+!Mobile/lib/
 lib64/
 parts/
 sdist/

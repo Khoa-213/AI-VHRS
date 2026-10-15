@@ -15,6 +15,13 @@ analyzer:
     unused_import: ignore
     prefer_initializing_formals: ignore
     use_null_aware_elements: ignore
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
 
 linter:
   rules:
