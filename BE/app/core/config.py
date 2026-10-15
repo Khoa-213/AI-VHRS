@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     # Trust X-Forwarded-For / -Proto only when the API sits behind our own reverse proxy.
     trust_proxy_headers: bool = False
+    # Object storage for customer uploads (Supabase Storage). Server-side only: the service key
+    # must never reach a client. Leave empty to disable uploads (endpoints answer 503).
+    supabase_url: str | None = None
+    supabase_service_key: str | None = None
+    storage_bucket: str = "order-inputs"
+    upload_url_ttl_seconds: int = 7200
 
     @property
     def sqlalchemy_url(self) -> str:
