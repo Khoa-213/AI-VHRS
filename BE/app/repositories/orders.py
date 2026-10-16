@@ -5,7 +5,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models.account import Account
-from app.models.order import HandwritingStyle, Order, OrderInput, OrderStatus
+from app.models.order import HandwritingStyle, Order, OrderInput, OrderStatus, ProductionStatus
 
 
 class OrderRepository:
@@ -100,3 +100,13 @@ class OrderRepository:
             Order.order_status.not_in([OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.REJECTED]))
             .group_by(Order.assigned_staff_id))
         return {sid: n for sid, n in rows}
+
+    def production_queue(self, *, production_statuses: list[ProductionStatus], offset: int,
+                         limit: int) -> tuple[list[tuple[Order, str]], int]:
+        """Confirmed orders waiting for the Manager to put them on the schedule (FR-37)."""
+        stmt = select(Order, Account.full_name).join(Account, Account.id == Order.customer_id).where(
+            Order.order_status == OrderStatus.CONFIRMED, Order.production_status.in_(production_statuses))
+        total = self.s.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        rows = self.s.execute(stmt.order_by(Order.eta.asc().nulls_last(), Order.confirmed_at.asc().nulls_last(),
+                                            Order.id).offset(offset).limit(limit))
+        return [(o, name) for o, name in rows], total

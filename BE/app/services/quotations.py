@@ -62,6 +62,15 @@ def expire_if_overdue(session: Session, order: Order) -> bool:
     return False
 
 
+def expire_and_persist(session: Session, order: Order) -> bool:
+    """Same as expire_if_overdue, but commits straight away. A request that then fails (409 ...) rolls its own
+    transaction back; without this the expiry it just detected would be lost and found again next time."""
+    if expire_if_overdue(session, order):
+        session.commit()
+        return True
+    return False
+
+
 def expire_all(session: Session, now: datetime | None = None) -> int:
     repo, orders = QuotationRepository(session), OrderRepository(session)
     count = 0
@@ -409,7 +418,8 @@ class CustomerQuoteService:
             raise AppError(404, "ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.")
         if lock:
             order = self.orders.get(order.id, lock=True)
-        expire_if_overdue(self.session, order)
+        if expire_and_persist(self.session, order) and lock:
+            order = self.orders.get(order.id, lock=True)           # the commit released the row lock
         return order
 
     def policy(self) -> dict[str, Any]:

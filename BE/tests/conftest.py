@@ -23,15 +23,27 @@ def _cleanup() -> None:
     with get_engine().begin() as c:
         # audit rows about test orders / their quotations / sketches (written by the system or by staff)
         c.execute(text(f"""delete from audit_logs where
-            (entity_type = 'order' and entity_id in {_TEST_ORDERS})
+            (entity_type = 'payment' and entity_id in (select id from payments where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'production_job' and entity_id in (select id from production_jobs where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'order' and entity_id in {_TEST_ORDERS})
             or (entity_type = 'quotation' and entity_id in (select id from quotations where order_id in {_TEST_ORDERS}))
             or (entity_type = 'sketch' and entity_id in (select id from sketches where order_id in {_TEST_ORDERS}))"""))
         # orders (cascade: inputs, sketches, quotations, messages, status_histories) before accounts;
         # test catalog rows after the orders
+        # payments / production jobs do not cascade from orders; jobs must go before the test robots
+        c.execute(text(f"delete from payments where order_id in {_TEST_ORDERS}"))
+        c.execute(text(f"delete from production_jobs where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from orders where customer_id in {_TEST_IDS}"))
+        c.execute(text("delete from production_jobs where robot_id in (select id from robots where code like 'pytest\\_%')"))
+        c.execute(text("delete from robots where code like 'pytest\\_%'"))
+        c.execute(text(f"delete from handwriting_styles where owner_id in {_TEST_IDS}"))
+        # a test may have saved a new PricingConfig version: drop those and re-activate the last real one
+        c.execute(text(f"delete from pricing_configs where created_by in {_TEST_IDS}"))
+        c.execute(text("update pricing_configs set is_active = true where version = (select max(version) from pricing_configs) "
+                       "and not exists (select 1 from pricing_configs where is_active)"))
         c.execute(text("delete from paper_pen_compats where paper_type_id in "
                        "(select id from paper_types where code like 'pytest\_%')"))
-        c.execute(text("delete from ink_colors where pen_type_id in (select id from pen_types where code like 'pytest\_%')"))
+        c.execute(text("delete from ink_colors where pen_type_id in (select id from pen_types where code like 'pytest\\_%')"))
         c.execute(text("delete from pen_types where code like 'pytest\_%'"))
         c.execute(text("delete from paper_types where code like 'pytest\_%'"))
         c.execute(text("delete from templates where code like 'pytest\_%'"))

@@ -17,15 +17,20 @@ from app.db.session import set_actor
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account
 from app.models.catalog import PricingConfig
+from app.models.ops import PaymentStatus, PaymentType
 from app.models.order import (Order, OrderInput, OrderInputKind, OrderStatus, OrderType, StyleStatus)
 from app.repositories.catalog import CatalogRepository
+from app.models.sketch import QuotationStatus
+from app.repositories.ops import PaymentRepository
 from app.repositories.orders import OrderRepository
+from app.repositories.workshop import QuotationRepository
 from app.services import audit
 from app.services.handwriting_image import analyze_image, sniff_mime
 from app.services.pricing import (MaterialPrices, PricingParams, canvas_chars, compute_price, count_text_chars,
                                   parse_tiers)
 
 EDITABLE = {OrderStatus.DRAFT, OrderStatus.NEED_INFO}
+CANCELLABLE_ONLINE = {OrderStatus.SUBMITTED, OrderStatus.NEED_INFO, OrderStatus.QUOTED, OrderStatus.AWAITING_DEPOSIT}
 ALLOWED_INPUTS: dict[OrderType, set[OrderInputKind]] = {  # BR-03: one order type per order
     OrderType.OT1_COPY_RESTORE: {OrderInputKind.ORIGINAL_IMAGE},
     OrderType.OT2_LEARNED_STYLE: {OrderInputKind.HANDWRITING_SAMPLE, OrderInputKind.TEXT_CONTENT},
@@ -233,13 +238,21 @@ class OrderService:
         order.paper_type_id, order.pen_type_id, order.ink_color_id = paper_id, pen_id, ink_id
 
     def cancel(self, order_id: int, reason: str) -> Order:
-        """UC-21 for the part that needs no money handling: SUBMITTED / NEED_INFO (nothing paid yet).
-        Later states involve quotation + refund policy (BR-14/16) and are handled in a later phase."""
+        """UC-21 for the part that needs no refund: SUBMITTED / NEED_INFO, and QUOTED / AWAITING_DEPOSIT where the
+        customer declines the quotation or abandons the deposit (nothing paid yet). Cancelling after the deposit
+        involves the refund policy (BR-14/16) and is handled in the production phase."""
         order = self._get(order_id)
         if order.order_status == OrderStatus.DRAFT:
             raise AppError(409, "ORDER_IS_DRAFT", "Bản nháp không cần hủy, hãy xóa bản nháp.")
-        if order.order_status not in {OrderStatus.SUBMITTED, OrderStatus.NEED_INFO}:
+        if order.order_status not in CANCELLABLE_ONLINE:
             raise AppError(409, "ORDER_CANCEL_UNSUPPORTED", "Đơn ở trạng thái này chưa thể hủy trực tuyến.")
+        order = self.orders.get(order.id, lock=True)
+        if order.order_status in (OrderStatus.QUOTED, OrderStatus.AWAITING_DEPOSIT):
+            live = QuotationRepository(self.session).latest(order.id, (QuotationStatus.SENT,))
+            if live is not None:
+                live.status, live.customer_responded_at = QuotationStatus.CANCELLED, datetime.now(timezone.utc)
+            for pay in PaymentRepository(self.session).pending(order.id, PaymentType.DEPOSIT):
+                pay.status = PaymentStatus.CANCELLED
         set_actor(self.session, self.customer.id, reason)
         order.order_status = OrderStatus.CANCELLED
         order.cancel_reason = reason

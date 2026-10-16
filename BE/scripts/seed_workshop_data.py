@@ -72,6 +72,19 @@ SETTINGS = {
 }
 
 
+# Phase 3. ASSUMPTION: one Fairino FR3 at one writing station (the project's robot); the Manager edits or adds robots.
+# This is only a database row: nothing here talks to the robot.
+ROBOTS = [("FR3-01", "FAIRINO_FR3", "Bàn viết 1")]
+SETTINGS.update({
+    "working_hours": ({"days": [1, 2, 3, 4, 5, 6], "start": "08:00", "end": "17:00", "utc_offset_min": 420},
+                      "Giờ làm việc của xưởng cho lập lịch sản xuất (ISO weekday 1=T2; giờ địa phương = UTC + utc_offset_min). "
+                      "GIẢ ĐỊNH: T2–T7, 08:00–17:00; Manager cần xác nhận."),
+    "schedule_params": ({"prep_min": 15, "photo_min": 5, "lead_min": 60, "eta_buffer_days": 2},
+                        "Tham số lập lịch: chuẩn bị 15', chụp ảnh 5' (FR-40); bắt đầu sớm nhất sau lead_min phút; "
+                        "ETA = ngày viết xong + eta_buffer_days. GIẢ ĐỊNH, cần xác nhận."),
+})
+
+
 def compatible(gsm: int, surface: str, pen_category: str) -> tuple[bool, str | None]:
     """BR-06 default compatibility rules."""
     if gsm <= 80 and pen_category in ("BRUSH", "MARKER"):
@@ -108,6 +121,10 @@ def run(dry: bool) -> None:
         for code, name, uri in TEMPLATES:
             exec_count("templates", """insert into templates (code,name,kind,font_uri)
                 values (:c,:n,'SINGLE_LINE_FONT',:u) on conflict (code) do nothing""", dict(c=code, n=name, u=uri))
+
+        for code, robot_type, station in ROBOTS:
+            exec_count("robots", """insert into robots (code,robot_type,station,status,is_simulated)
+                values (:c,:t,:s,'AVAILABLE',false) on conflict (code) do nothing""", dict(c=code, t=robot_type, s=station))
 
         papers = c.execute(text("select id,gsm,surface::text from paper_types where code = any(:codes)"),
                            {"codes": [p[0] for p in PAPERS]}).all()
