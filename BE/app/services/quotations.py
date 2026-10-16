@@ -16,7 +16,7 @@ from app.core.errors import AppError
 from app.db.session import set_actor
 from app.domain import quotation_rules as rules
 from app.integrations.storage import ObjectStorage
-from app.models.account import Account, RoleCode
+from app.models.account import Account
 from app.models.order import ComplexityLevel, Order, OrderStatus
 from app.models.sketch import AdjustmentStatus, Quotation, QuotationStatus
 from app.repositories.accounts import AccountRepository

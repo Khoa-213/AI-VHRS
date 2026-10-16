@@ -18,7 +18,6 @@ pixel IoU, not the stroke-aligned IoU against ground-truth pen trajectories.
 """
 import math
 from dataclasses import dataclass, field
-from statistics import median
 from typing import Any
 
 import cv2

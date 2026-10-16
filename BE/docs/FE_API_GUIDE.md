@@ -87,7 +87,8 @@ stateDiagram-v2
   CONFIRMED --> AWAITING_ACCEPTANCE: (Phase 4) viết xong + ảnh QC
   AWAITING_ACCEPTANCE --> AWAITING_FINAL_PAYMENT: (Phase 4) nghiệm thu
   AWAITING_FINAL_PAYMENT --> READY_TO_DELIVER: (Phase 4)
-  READY_TO_DELIVER --> DELIVERING --> COMPLETED: (Phase 4)
+  READY_TO_DELIVER --> DELIVERING: (Phase 4)
+  DELIVERING --> COMPLETED: (Phase 4)
 ```
 
 `production_status`: `NOT_STARTED → PENDING_SCHEDULE (sau khi cọc xong) → SCHEDULED (Manager xếp lịch) → PREPARING → WRITING ⇄ PAUSED → WRITTEN → PHOTO_UPLOADED → FINISHED`; nhánh lỗi `FAILED`, `REWRITE_REQUIRED` quay lại `PENDING_SCHEDULE`. Hai bước đầu do Phase 3 làm; từ `PREPARING` trở đi là Phase 4.
@@ -264,7 +265,7 @@ GET  /manager/technicians                          kỹ thuật viên + số job
 | `RATE_LIMITED` | 429 | Gọi quá nhanh | chờ `Retry-After` giây |
 | `STORAGE_NOT_CONFIGURED`, `STORAGE_UNAVAILABLE` | 503 | Chưa/không có kho file | báo lỗi tạm thời |
 
-Danh sách đầy đủ nằm trong Swagger (mục `responses` của từng endpoint) và `../PROJECT_STATUS.md` (mục mã lỗi).
+Danh sách đầy đủ nằm trong Swagger (mục `responses` của từng endpoint) và lệnh liệt kê trong `../PROJECT_STATUS.md` (mục 5).
 
 ## 9. Webhook thanh toán (tham khảo, FE không gọi)
 

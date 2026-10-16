@@ -42,11 +42,11 @@ def _cleanup() -> None:
         c.execute(text("update pricing_configs set is_active = true where version = (select max(version) from pricing_configs) "
                        "and not exists (select 1 from pricing_configs where is_active)"))
         c.execute(text("delete from paper_pen_compats where paper_type_id in "
-                       "(select id from paper_types where code like 'pytest\_%')"))
+                       "(select id from paper_types where code like 'pytest\\_%')"))
         c.execute(text("delete from ink_colors where pen_type_id in (select id from pen_types where code like 'pytest\\_%')"))
-        c.execute(text("delete from pen_types where code like 'pytest\_%'"))
-        c.execute(text("delete from paper_types where code like 'pytest\_%'"))
-        c.execute(text("delete from templates where code like 'pytest\_%'"))
+        c.execute(text("delete from pen_types where code like 'pytest\\_%'"))
+        c.execute(text("delete from paper_types where code like 'pytest\\_%'"))
+        c.execute(text("delete from templates where code like 'pytest\\_%'"))
         c.execute(text(f"delete from audit_logs where actor_id in {_TEST_IDS} "
                        f"or (entity_type = 'account' and entity_id in {_TEST_IDS})"))
         c.execute(text(f"update accounts set created_by = null where created_by in {_TEST_IDS}"))
