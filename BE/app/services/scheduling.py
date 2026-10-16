@@ -15,7 +15,7 @@ from app.core.errors import AppError
 from app.db.session import set_actor
 from app.domain import scheduling_rules as sr
 from app.models.account import Account, AccountStatus, RoleCode
-from app.models.ops import ACTIVE_JOB_STATUSES, JobStatus, ProductionJob, Robot, RobotStatus
+from app.models.ops import JobStatus, ProductionJob, Robot, RobotStatus
 from app.models.order import Order, OrderStatus, ProductionStatus
 from app.repositories.accounts import AccountRepository
 from app.repositories.catalog import CatalogRepository

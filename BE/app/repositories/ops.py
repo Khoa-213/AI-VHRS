@@ -3,7 +3,7 @@ from __future__ import annotations  # methods named `list` would otherwise shado
 
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.ops import (ACTIVE_JOB_STATUSES, JobStatus, Payment, PaymentGateway, PaymentStatus, PaymentType,
