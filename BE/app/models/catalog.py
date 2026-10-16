@@ -43,6 +43,11 @@ class PenType(Base):
     name: Mapped[str] = mapped_column(String(120))
     category: Mapped[str] = mapped_column(String)
     stroke_width_mm: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    f_target_n: Mapped[Decimal] = mapped_column(Numeric(4, 2))     # force profile (BR-20), used by the robot phase
+    f_min_n: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    f_max_n: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    f_hard_n: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    v_max_mm_s: Mapped[Decimal] = mapped_column(Numeric(5, 1))
     surcharge: Mapped[Decimal] = mapped_column(Numeric(14, 0))
     stock_qty: Mapped[int] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean)
@@ -73,6 +78,7 @@ class Template(Base):
     code: Mapped[str] = mapped_column(String(40))
     name: Mapped[str] = mapped_column(String(150))
     kind: Mapped[TemplateKind] = mapped_column(Enum(TemplateKind, name="template_kind", create_type=False))
+    font_uri: Mapped[str] = mapped_column(Text)          # "hershey:<font>" for single-line fonts
     preview_url: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean)
 
@@ -94,6 +100,7 @@ class PricingConfig(Base):
     k_complex: Mapped[Decimal] = mapped_column(Numeric(4, 2))
     discount_tiers: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     p_min_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+    adjust_threshold_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2))   # BR-09
     canvas_mm_per_char: Mapped[Decimal] = mapped_column(Numeric(6, 2))
 
 

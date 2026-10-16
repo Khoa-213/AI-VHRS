@@ -21,6 +21,7 @@ class UploadTarget:
 
 class ObjectStorage(Protocol):
     def create_upload_target(self, path: str) -> UploadTarget: ...
+    def write(self, path: str, data: bytes, content_type: str) -> None: ...
     def read(self, path: str) -> bytes | None: ...
     def delete(self, path: str) -> None: ...
     def create_download_url(self, path: str, ttl_seconds: int = 600) -> str: ...
@@ -48,6 +49,14 @@ class SupabaseStorage:
         if r.status_code >= 400:
             raise AppError(503, "STORAGE_UNAVAILABLE", "Không tạo được liên kết tải lên.")
         return UploadTarget(url=f"{self.base}{r.json()['url']}", method="PUT", expires_in=self.ttl)
+
+    def write(self, path: str, data: bytes, content_type: str) -> None:
+        """Server-side upload (generated sketches, quotation PDFs); overwrites an existing object."""
+        self._ensure_bucket()
+        r = httpx.post(f"{self.base}/object/{self.bucket}/{path}", content=data, timeout=60,
+                       headers={**self._headers, "Content-Type": content_type, "x-upsert": "true"})
+        if r.status_code >= 400:
+            raise AppError(503, "STORAGE_UNAVAILABLE", "Không lưu được file lên dịch vụ lưu trữ.")
 
     def read(self, path: str) -> bytes | None:
         r = httpx.get(f"{self.base}/object/{self.bucket}/{path}", headers=self._headers, timeout=60)
@@ -78,6 +87,9 @@ class InMemoryStorage:
         return UploadTarget(url=f"memory://{path}", method="PUT", expires_in=60)
 
     def put(self, path: str, data: bytes) -> None:
+        self.objects[path] = data
+
+    def write(self, path: str, data: bytes, content_type: str) -> None:
         self.objects[path] = data
 
     def read(self, path: str) -> bytes | None:

@@ -51,3 +51,45 @@ Pure business rules go to `domain/` (from Phase 2). Errors use one envelope:
 | Database | RLS enabled on all tables; `anon` / `authenticated` have no grants |
 
 HTTPS termination itself is the deployment's job (reverse proxy / host).
+
+## Phase 2: workshop intake, AI sketches, quotations
+
+Roles: `STAFF` and `MANAGER` share `/api/v1/workshop/*`; `/api/v1/manager/*` is Manager-only; the customer side is
+`/orders/{id}/privacy`, `/orders/{id}/quotation[/request-changes]`, `/orders/{id}/messages`, `/privacy-policy`.
+Admin has **no** access to orders (system administration only). Staff see assigned orders plus the unassigned
+`SUBMITTED` pool (read-only until they claim one); another Staff's order answers `404`.
+
+Flow: `SUBMITTED` → accept / reject / request-info → `ACCEPTED` → sketch (AI or hand-made, one `final` version)
+→ quotation (Pricing Engine, ±15% adjustment, Manager approval beyond it) → send (PDF, valid 7 days) →
+`AWAITING_PRIVACY` → customer accepts the privacy policy → `QUOTED` (or cancels). State changes are plain
+UPDATEs judged by the DB trigger `fn_order_state_guard` (`409 STATE_CONFLICT`); quotation statuses have no trigger
+and are enforced in `services/quotations.py`.
+
+### AI pipelines (`app/services/stroke_ai/`, no external service, no model weights)
+
+| Order type | Pipeline |
+|---|---|
+| OT-1 copy / restore | illumination flattening, Otsu, deskew, **Zhang-Suen thinning**, skeleton graph, stroke pairing by direction continuity at junctions, spur pruning, reading-order + diacritic-after-word ordering, fit on paper. Similarity = pixel IoU of the original ink vs the redrawn strokes |
+| OT-3 template | Hershey single-line fonts (`font_uri = hershey:<name>`), Vietnamese letters composed from base + modifier + tone mark (NFD), word wrap, alignment, pagination, seeded natural variation |
+| OT-2 learned style | not generated (R&D, LI-10); Staff upload a hand-made trajectory. Customers cannot order it while `system_settings.order_types_enabled` omits it (the seed does) |
+
+Not validated yet: OT-1 accuracy on real Vietnamese handwriting (NFR-02 needs a benchmark set; the ~82% IoU figures in
+the tests are on synthetic images), stroke order/direction are heuristics, the writing-time estimate uses assumed speed
+factors (`trajectory.py`), complexity (K_cx) thresholds are assumptions that Staff confirm. Trajectory format:
+`vhrs-trajectory/1` (mm, origin top-left); motion planning for the FR3 is a later phase.
+
+### Seed and tests
+
+```bash
+.venv/bin/python scripts/seed_workshop_data.py --dry-run   # papers, inks, compatibility (BR-06), single-line fonts,
+.venv/bin/python scripts/seed_workshop_data.py             # privacy policy, order_types_enabled; idempotent, never overwrites
+```
+Prices and stock in the seed are **starting values** (the Manager must set the real ones); the privacy policy text is a
+draft to be approved by the workshop. `scripts/seed_workshop_data.py` does not touch accounts or the pricing config.
+
+`pytest` runs on whatever `DATABASE_URL` points to (it creates and removes `pytest_*` rows and temporarily lifts the
+`order_types_enabled` restriction). For a throwaway local database:
+`docker run -d -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=vhrs -p 55432:5432 postgres:16`, then
+`DATABASE_URL=postgresql://postgres:pw@localhost:55432/vhrs JWT_SECRET=x alembic upgrade head` and run the seed + tests.
+The quotation PDF uses the bundled DejaVu Sans (licence in `app/assets/fonts/`); put the workshop logo at
+`app/assets/logo.png` to have it printed in the header.

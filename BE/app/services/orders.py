@@ -81,6 +81,15 @@ class PricingService:
             discount_tiers=parse_tiers(cfg.discount_tiers), p_min_pct=cfg.p_min_pct,
             canvas_mm_per_char=cfg.canvas_mm_per_char)
 
+    def params_for(self, cfg: PricingConfig, order_type: OrderType) -> PricingParams:
+        return self._params(cfg, order_type)
+
+    def exact_chars(self, order_type: OrderType, inputs: list[OrderInput], mm_per_char: Decimal) -> int:
+        """N from typed text and canvas strokes (OT-2/OT-3); 0 when the order has none of them."""
+        canvas = sum(canvas_chars(_stroke_length_mm(r.canvas_data), mm_per_char)
+                     for r in inputs if r.kind == OrderInputKind.CANVAS)
+        return _text_chars(inputs) + canvas
+
     def estimate(self, *, order_type: OrderType, quantity: int, paper_id: int | None, pen_id: int | None,
                  ink_id: int | None, inputs: list[OrderInput]) -> Estimate:
         cfg = self.catalog.active_pricing()
