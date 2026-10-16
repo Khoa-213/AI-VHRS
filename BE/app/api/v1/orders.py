@@ -137,7 +137,7 @@ def provide_info(order_id: int, body: SubmitIn, svc: Svc) -> OrderDetailOut:
 
 
 @router.post("/{order_id}/cancel", response_model=OrderDetailOut,
-             summary="UC-21 Hủy đơn đã gửi chưa được tiếp nhận (SUBMITTED / NEED_INFO)")
+             summary="UC-21 Hủy đơn khi chưa cọc: SUBMITTED, NEED_INFO, QUOTED, AWAITING_DEPOSIT (sau cọc: Phase 4)")
 def cancel(order_id: int, body: CancelIn, svc: Svc) -> OrderDetailOut:
     return _detail(svc, svc.cancel(order_id, body.reason))
 

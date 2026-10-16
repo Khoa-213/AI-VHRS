@@ -78,6 +78,37 @@ the tests are on synthetic images), stroke order/direction are heuristics, the w
 factors (`trajectory.py`), complexity (K_cx) thresholds are assumptions that Staff confirm. Trajectory format:
 `vhrs-trajectory/1` (mm, origin top-left); motion planning for the FR3 is a later phase.
 
+## Phase 3: deposit and Manager operations
+
+**Customer.** `POST /orders/{id}/quotation/approve` (pick the material option when there are several, and a deposit
+percentage from the quote's minimum up to 100) moves `QUOTED → AWAITING_DEPOSIT` and writes `total_amount`,
+`deposit_pct`, `deposit_amount` on the order. `POST /orders/{id}/payments/deposit` starts a payment; a customer may also
+decline a quoted order or abandon the deposit with `POST /orders/{id}/cancel` (nothing paid yet).
+
+**Payments are MOCK only.** The `payment_gateway` enum has `VNPAY` / `MOMO` and no real sandbox is connected, so the
+adapter (`integrations/payment_gateway.py`) simulates them: every payment carries `mode = "MOCK"` in its API output and in
+`payments.gateway_payload`, and no money moves. The result reaches the system only through the **signed webhook**
+`POST /webhooks/payments/{gateway}` (`X-Signature` = HMAC-SHA256 of the raw body, key derived from `JWT_SECRET`),
+idempotent on `(gateway, gateway_txn_id)`; the mock "checkout" button (`POST /payments/{id}/mock-checkout`) just posts that
+same signed webhook, so the real code path is exercised. A successful webhook sets the order `CONFIRMED` and production
+`PENDING_SCHEDULE` in one UPDATE (what the trigger requires). Money that arrives for an order already closed is kept and
+flagged `needs_refund` (refunds come with the cancellation flow in Phase 4).
+
+**Manager** (`/manager/*`, MANAGER only; Admin has no access): papers / pens / inks with stock (`/stock` adds or sets a level,
+reason required, audited), paper-pen compatibility, templates (`font_uri` must be `hershey:<supported font>`), handwriting
+style review (needs the customer's right-to-use confirmation), robots (`BROKEN` / `MAINTENANCE` answers with the planned
+jobs that must be moved), and the **versioned price list**: `POST /manager/pricing-config` sends only the changed fields,
+creates version N+1 and activates it (previous versions stay; every quotation keeps its own snapshot). It includes the BR-09
+adjustment threshold (`adjust_threshold_pct`) and the minimum deposit (`p_min_pct`). `system_settings.price_adjust_threshold_pct`
+from migration 0002 is **not read**; `pricing_configs` is the single source.
+
+**Scheduling** (`/manager/schedule/queue`, `/orders/{id}/schedule-suggestion`, `/orders/{id}/schedule`, `/jobs/*`): job length
+= estimated writing time x quantity + 15 min preparation + 5 min photographing (FR-40); one job per robot at a time and the
+robot must support the order's pen category (BR-18; the DB also enforces the overlap with an EXCLUDE constraint); a
+technician cannot hold two overlapping jobs. Slots follow `system_settings.working_hours` (default Mon-Sat 08:00-17:00 UTC+7,
+a job that does not fit in a day continues the next working day) and `schedule_params`. A `FAILED` or `REWRITE_REQUIRED`
+order is scheduled again through the same endpoint. This only writes the schedule: nothing contacts a robot.
+
 ### Seed and tests
 
 ```bash
@@ -85,7 +116,8 @@ factors (`trajectory.py`), complexity (K_cx) thresholds are assumptions that Sta
 .venv/bin/python scripts/seed_workshop_data.py             # privacy policy, order_types_enabled; idempotent, never overwrites
 ```
 Prices and stock in the seed are **starting values** (the Manager must set the real ones); the privacy policy text is a
-draft to be approved by the workshop. `scripts/seed_workshop_data.py` does not touch accounts or the pricing config.
+draft to be approved by the workshop. The seed also adds one robot row (`FR3-01`) and the `working_hours` / `schedule_params` settings (assumptions to confirm).
+`scripts/seed_workshop_data.py` does not touch accounts or the pricing config.
 
 `pytest` runs on whatever `DATABASE_URL` points to (it creates and removes `pytest_*` rows and temporarily lifts the
 `order_types_enabled` restriction). For a throwaway local database:

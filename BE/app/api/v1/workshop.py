@@ -10,8 +10,9 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.order_schemas import InputOut
+from app.api.ops_schemas import JobOut, PaymentOut
 from app.api.schemas import Page
-from app.api.staff_schemas import (AcceptIn, AdjustIn, FileLinkOut, QuotationCreateIn, QuotationOut, RejectIn,
+from app.api.staff_schemas import (AcceptIn, AdjustIn, FileLinkOut, OptionSummary, QuotationCreateIn, QuotationOut, RejectIn,
                                    RequestInfoIn, SketchDetailOut, SketchGenerateIn, SketchManualIn, SketchOut,
                                    SketchPatchIn, WorkshopInputOut, WorkshopOrderDetail, WorkshopOrderRow)
 from app.api.v1.orders import optional_storage
@@ -20,7 +21,10 @@ from app.models.account import Account, RoleCode
 from app.models.order import Order, OrderInput, OrderStatus
 from app.models.sketch import Quotation, Sketch
 from app.repositories.workshop import QuotationRepository, SketchRepository
+from app.repositories.ops import JobRepository
 from app.services import quotations as qsvc
+from app.services.payments import PaymentService
+from app.services.workshop_access import WorkshopAccess
 from app.services.quotations import QuotationService, option_summaries
 from app.services.sketches import SketchService
 from app.services.staff_orders import StaffOrderService
@@ -62,7 +66,7 @@ def sketch_out(row: Sketch, previews: list[str] | None = None, warnings: list[st
 
 def quotation_out(q: Quotation) -> QuotationOut:
     out = QuotationOut.model_validate(q)
-    out.options = option_summaries(q)
+    out.options = [OptionSummary(**o) for o in option_summaries(q)]
     out.has_pdf = bool(q.file_url)
     return out
 
@@ -206,3 +210,18 @@ def cancel(quotation_id: int, svc: Quotes) -> QuotationOut:
 @router.get("/quotations/{quotation_id}/pdf", response_model=FileLinkOut, summary="FR-32 Liên kết tải PDF báo giá")
 def pdf(quotation_id: int, svc: Quotes) -> FileLinkOut:
     return FileLinkOut(url=svc.pdf_url(quotation_id))
+
+
+# ---- money and schedule of an order (read-only for the workshop) ----------------------------------------
+@router.get("/orders/{order_id}/payments", response_model=list[PaymentOut], summary="Các giao dịch thanh toán của đơn")
+def order_payments(order_id: int, session: SessionDep, actor: WorkshopDep) -> list[PaymentOut]:
+    from app.api.v1.payments import payment_out
+    order = WorkshopAccess(session, actor).order(order_id)
+    return [payment_out(p) for p in PaymentService(session).for_workshop(order.id)]
+
+
+@router.get("/orders/{order_id}/jobs", response_model=list[JobOut], summary="Các job sản xuất đã xếp cho đơn")
+def order_jobs(order_id: int, session: SessionDep, actor: WorkshopDep) -> list[JobOut]:
+    order = WorkshopAccess(session, actor).order(order_id)
+    return [JobOut.model_validate(j).model_copy(update={"order_code": order.code})
+            for j in JobRepository(session).for_order(order.id)]
