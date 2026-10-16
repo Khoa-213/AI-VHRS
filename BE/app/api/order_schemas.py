@@ -102,6 +102,9 @@ class OrderOut(_ORM):
     char_count: int | None
     estimated_price_min: Decimal | None
     estimated_price_max: Decimal | None
+    total_amount: Decimal | None = None
+    deposit_pct: Decimal | None = None
+    deposit_amount: Decimal | None = None
     customer_note: str | None
     info_request_note: str | None
     reject_reason: str | None

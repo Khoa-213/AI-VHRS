@@ -68,6 +68,12 @@ class StyleStatus(str, enum.Enum):
     DELETED = "DELETED"
 
 
+class ComplexityLevel(str, enum.Enum):
+    SIMPLE = "SIMPLE"
+    MEDIUM = "MEDIUM"
+    COMPLEX = "COMPLEX"
+
+
 class Order(Base):
     __tablename__ = "orders"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -84,18 +90,28 @@ class Order(Base):
     workshop_suggest_materials: Mapped[bool] = mapped_column(Boolean, default=False)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     char_count: Mapped[int | None] = mapped_column(Integer)
+    complexity: Mapped[ComplexityLevel | None] = mapped_column(
+        Enum(ComplexityLevel, name="complexity_level", create_type=False))
     estimated_price_min: Mapped[Decimal | None] = mapped_column(Numeric(14, 0))
     estimated_price_max: Mapped[Decimal | None] = mapped_column(Numeric(14, 0))
+    total_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 0))       # G of the approved quotation
+    deposit_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    deposit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 0))     # D
     customer_note: Mapped[str | None] = mapped_column(Text)
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     assigned_staff_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    assigned_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     reject_reason: Mapped[str | None] = mapped_column(ENUM(
         "TOO_OLD", "DAMAGED", "MISSING_CONTENT", "PROHIBITED_CONTENT", "OTHER", name="reject_reason",
         create_type=False))
     reject_note: Mapped[str | None] = mapped_column(Text)
     info_request_note: Mapped[str | None] = mapped_column(Text)
     cancel_reason: Mapped[str | None] = mapped_column(Text)
+    privacy_policy_version: Mapped[str | None] = mapped_column(String(20))
+    privacy_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    privacy_declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     eta: Mapped[date | None] = mapped_column(Date)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
@@ -108,6 +124,13 @@ class HandwritingStyle(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     name: Mapped[str] = mapped_column(String(150))
     status: Mapped[StyleStatus] = mapped_column(Enum(StyleStatus, name="style_status", create_type=False))
+    glyph_set_uri: Mapped[str | None] = mapped_column(Text)
+    coverage_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    right_to_use_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    keep_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    approved_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
 
 
 class OrderInput(Base):

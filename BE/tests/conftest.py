@@ -16,16 +16,37 @@ ROLE_ID = {"CUSTOMER": 1, "STAFF": 2, "TECHNICAL_STAFF": 3, "MANAGER": 4, "ADMIN
 _TEST_IDS = "(select id from accounts where email like 'pytest\\_%@example.com')"
 
 
+_TEST_ORDERS = f"(select id from orders where customer_id in {_TEST_IDS})"
+
+
 def _cleanup() -> None:
     with get_engine().begin() as c:
-        # orders (cascade: inputs, status_histories) before accounts; test catalog rows after the orders
+        # audit rows about test orders / their quotations / sketches (written by the system or by staff)
+        c.execute(text(f"""delete from audit_logs where
+            (entity_type = 'payment' and entity_id in (select id from payments where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'production_job' and entity_id in (select id from production_jobs where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'order' and entity_id in {_TEST_ORDERS})
+            or (entity_type = 'quotation' and entity_id in (select id from quotations where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'sketch' and entity_id in (select id from sketches where order_id in {_TEST_ORDERS}))"""))
+        # orders (cascade: inputs, sketches, quotations, messages, status_histories) before accounts;
+        # test catalog rows after the orders
+        # payments / production jobs do not cascade from orders; jobs must go before the test robots
+        c.execute(text(f"delete from payments where order_id in {_TEST_ORDERS}"))
+        c.execute(text(f"delete from production_jobs where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from orders where customer_id in {_TEST_IDS}"))
+        c.execute(text("delete from production_jobs where robot_id in (select id from robots where code like 'pytest\\_%')"))
+        c.execute(text("delete from robots where code like 'pytest\\_%'"))
+        c.execute(text(f"delete from handwriting_styles where owner_id in {_TEST_IDS}"))
+        # a test may have saved a new PricingConfig version: drop those and re-activate the last real one
+        c.execute(text(f"delete from pricing_configs where created_by in {_TEST_IDS}"))
+        c.execute(text("update pricing_configs set is_active = true where version = (select max(version) from pricing_configs) "
+                       "and not exists (select 1 from pricing_configs where is_active)"))
         c.execute(text("delete from paper_pen_compats where paper_type_id in "
-                       "(select id from paper_types where code like 'pytest\_%')"))
-        c.execute(text("delete from ink_colors where pen_type_id in (select id from pen_types where code like 'pytest\_%')"))
-        c.execute(text("delete from pen_types where code like 'pytest\_%'"))
-        c.execute(text("delete from paper_types where code like 'pytest\_%'"))
-        c.execute(text("delete from templates where code like 'pytest\_%'"))
+                       "(select id from paper_types where code like 'pytest\\_%')"))
+        c.execute(text("delete from ink_colors where pen_type_id in (select id from pen_types where code like 'pytest\\_%')"))
+        c.execute(text("delete from pen_types where code like 'pytest\\_%'"))
+        c.execute(text("delete from paper_types where code like 'pytest\\_%'"))
+        c.execute(text("delete from templates where code like 'pytest\\_%'"))
         c.execute(text(f"delete from audit_logs where actor_id in {_TEST_IDS} "
                        f"or (entity_type = 'account' and entity_id in {_TEST_IDS})"))
         c.execute(text(f"update accounts set created_by = null where created_by in {_TEST_IDS}"))
@@ -37,6 +58,21 @@ def _db_clean():
     _cleanup()
     yield
     _cleanup()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _all_order_types_open(_db_clean):
+    """The seed restricts customers to OT-1/OT-3 (LI-10); tests exercise every type, so the restriction is
+    lifted while the suite runs and put back afterwards."""
+    with get_engine().begin() as c:
+        row = c.execute(text("select value::text, description from system_settings where key='order_types_enabled'")).first()
+        c.execute(text("delete from system_settings where key='order_types_enabled'"))
+    yield
+    if row:
+        with get_engine().begin() as c:
+            c.execute(text("insert into system_settings (key, value, description) values "
+                           "('order_types_enabled', cast(:v as jsonb), :d) on conflict (key) do nothing"),
+                      {"v": row[0], "d": row[1]})
 
 
 @pytest.fixture(autouse=True)
