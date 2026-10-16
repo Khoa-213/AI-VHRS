@@ -68,6 +68,12 @@ class StyleStatus(str, enum.Enum):
     DELETED = "DELETED"
 
 
+class ComplexityLevel(str, enum.Enum):
+    SIMPLE = "SIMPLE"
+    MEDIUM = "MEDIUM"
+    COMPLEX = "COMPLEX"
+
+
 class Order(Base):
     __tablename__ = "orders"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -84,17 +90,23 @@ class Order(Base):
     workshop_suggest_materials: Mapped[bool] = mapped_column(Boolean, default=False)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     char_count: Mapped[int | None] = mapped_column(Integer)
+    complexity: Mapped[ComplexityLevel | None] = mapped_column(
+        Enum(ComplexityLevel, name="complexity_level", create_type=False))
     estimated_price_min: Mapped[Decimal | None] = mapped_column(Numeric(14, 0))
     estimated_price_max: Mapped[Decimal | None] = mapped_column(Numeric(14, 0))
     customer_note: Mapped[str | None] = mapped_column(Text)
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     assigned_staff_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    assigned_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     reject_reason: Mapped[str | None] = mapped_column(ENUM(
         "TOO_OLD", "DAMAGED", "MISSING_CONTENT", "PROHIBITED_CONTENT", "OTHER", name="reject_reason",
         create_type=False))
     reject_note: Mapped[str | None] = mapped_column(Text)
     info_request_note: Mapped[str | None] = mapped_column(Text)
     cancel_reason: Mapped[str | None] = mapped_column(Text)
+    privacy_policy_version: Mapped[str | None] = mapped_column(String(20))
+    privacy_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    privacy_declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     eta: Mapped[date | None] = mapped_column(Date)
     last_saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

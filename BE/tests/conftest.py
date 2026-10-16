@@ -16,9 +16,18 @@ ROLE_ID = {"CUSTOMER": 1, "STAFF": 2, "TECHNICAL_STAFF": 3, "MANAGER": 4, "ADMIN
 _TEST_IDS = "(select id from accounts where email like 'pytest\\_%@example.com')"
 
 
+_TEST_ORDERS = f"(select id from orders where customer_id in {_TEST_IDS})"
+
+
 def _cleanup() -> None:
     with get_engine().begin() as c:
-        # orders (cascade: inputs, status_histories) before accounts; test catalog rows after the orders
+        # audit rows about test orders / their quotations / sketches (written by the system or by staff)
+        c.execute(text(f"""delete from audit_logs where
+            (entity_type = 'order' and entity_id in {_TEST_ORDERS})
+            or (entity_type = 'quotation' and entity_id in (select id from quotations where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'sketch' and entity_id in (select id from sketches where order_id in {_TEST_ORDERS}))"""))
+        # orders (cascade: inputs, sketches, quotations, messages, status_histories) before accounts;
+        # test catalog rows after the orders
         c.execute(text(f"delete from orders where customer_id in {_TEST_IDS}"))
         c.execute(text("delete from paper_pen_compats where paper_type_id in "
                        "(select id from paper_types where code like 'pytest\_%')"))
@@ -37,6 +46,21 @@ def _db_clean():
     _cleanup()
     yield
     _cleanup()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _all_order_types_open(_db_clean):
+    """The seed restricts customers to OT-1/OT-3 (LI-10); tests exercise every type, so the restriction is
+    lifted while the suite runs and put back afterwards."""
+    with get_engine().begin() as c:
+        row = c.execute(text("select value::text, description from system_settings where key='order_types_enabled'")).first()
+        c.execute(text("delete from system_settings where key='order_types_enabled'"))
+    yield
+    if row:
+        with get_engine().begin() as c:
+            c.execute(text("insert into system_settings (key, value, description) values "
+                           "('order_types_enabled', cast(:v as jsonb), :d) on conflict (key) do nothing"),
+                      {"v": row[0], "d": row[1]})
 
 
 @pytest.fixture(autouse=True)
