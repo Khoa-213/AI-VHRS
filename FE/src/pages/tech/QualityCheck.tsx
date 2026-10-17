@@ -5,11 +5,11 @@ import SkipLink from '../../components/ui/SkipLink'
 import ThemeToggle from '../../components/ui/ThemeToggle'
 import LanguageToggle from '../../components/ui/LanguageToggle'
 import { Link } from '../../router/router'
-import { failQc, finishRobotRun, submitQc, useAllStaffOrders, usePrototypeMode, useUser } from '../../store/store'
+import { failQc, submitQc, useAllStaffOrders, useUser } from '../../store/store'
 import type { QcPhoto } from '../../types'
 import { MODE_LABEL } from '../staff/evaluate'
 import { PHOTO_SLOTS, QC_FAIL_REASONS, qcGroups } from './qcItems'
-import { runDone, samplePhoto, shrinkImage, useNow } from './phase'
+import { runDone, shrinkImage, useNow } from './phase'
 import TechRail from './TechRail'
 import '../staff/dashboard.css'
 import '../staff/staff.css'
@@ -23,7 +23,6 @@ export default function QualityCheck({ id }: { id: string }) {
   const user = useUser()
   const orders = useAllStaffOrders()
   const now = useNow(1000)
-  const prototype = usePrototypeMode()
   const order = orders.find((o) => o.id === id)
 
   const [ticked, setTicked] = useState<Record<string, boolean>>({})
@@ -86,11 +85,6 @@ export default function QualityCheck({ id }: { id: string }) {
           <b>{t(order.run ? 'qc.stillWriting' : 'qc.notWritten')}</b>
           <span>{t('qc.opensAfter')}</span>
           <Link to={`/tech/preview/${encodeURIComponent(order.id)}`} className="vh-link">{t('qc.openSim')}</Link>
-          {prototype && order.run && (
-            <button className="vh-btn vh-btn--ghost vh-btn--sm sc-self-start" onClick={() => finishRobotRun(order.id)}>
-              {t('qc.protoFinish')}
-            </button>
-          )}
         </div>
       </section>,
     )
@@ -175,7 +169,7 @@ export default function QualityCheck({ id }: { id: string }) {
   const reference = (
     <section className="qc-ref">
       <h2 className="tp-h">{t('qc.compare')}</h2>
-      <p className="qc-text-ref">{(sp.mode === 'text' ? sp.text : order.ocrText ?? sp.simText ?? sp.text) || t('qc.noText')}</p>
+      <p className="qc-text-ref">{(sp.mode === 'text' ? sp.text : order.ocrText ?? sp.text) || t('qc.noText')}</p>
       <dl className="tp-opts">
         <div><dt>{t('qc.input')}</dt><dd>{tn(MODE_LABEL[sp.mode])}</dd></div>
         <div><dt>{t('qc.paperRow')}</dt><dd><i className="tp-sw" style={{ background: sp.paperColor }} />{tn(sp.paper)}</dd></div>
@@ -287,17 +281,6 @@ export default function QualityCheck({ id }: { id: string }) {
 
           <aside className="tp-side" aria-label={t('qc.reference')}>
             {reference}
-            {prototype && !qcDone && (
-              <button
-                className="vh-btn vh-btn--ghost vh-btn--sm qc-proto"
-                onClick={() => {
-                  setTicked(Object.fromEntries(all.map((i) => [i.id, true])))
-                  setTab('photos')
-                }}
-              >
-                {t('qc.protoTick')}
-              </button>
-            )}
           </aside>
         </div>
       ) : (
@@ -385,21 +368,6 @@ export default function QualityCheck({ id }: { id: string }) {
               <button className="vh-btn vh-btn--primary vh-btn--md qc-send" disabled={!ready} onClick={() => setConfirm(true)}>
                 <PaperPlaneTilt size={18} weight="bold" /> {t('qc.sendCustomer')}
               </button>
-              {prototype && !ready && (
-                <button
-                  className="vh-btn vh-btn--ghost vh-btn--sm qc-proto"
-                  onClick={() =>
-                    setPhotos((p) => ({
-                      ...p,
-                      ...Object.fromEntries(
-                        PHOTO_SLOTS.filter((s) => s.required && !p[s.id]).map((s) => [s.id, samplePhoto(s.label, sp.paperColor, sp.inkColor)]),
-                      ),
-                    }))
-                  }
-                >
-                  {t('qc.protoPhotos')}
-                </button>
-              )}
             </section>
           </aside>
         </div>

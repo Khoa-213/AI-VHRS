@@ -1,238 +1,328 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Page from '../../components/layout/Page'
-import { NoOrder, OrderTimeline, SpecRows } from '../../components/ui/OrderParts'
-import PaperSheet from '../../components/ui/PaperSheet'
+import OrderPreview from '../../components/ui/OrderPreview'
+import { OrderTimeline, SpecRows } from '../../components/ui/OrderParts'
 import { ORDER_HREF } from '../../constants'
-import { LAYOUTS, layoutById } from '../../constants/catalog'
-import { useT, useTn } from '../../i18n'
-import { Link, orderPath } from '../../router/router'
-import { updateOrder, useOrder } from '../../store/store'
-import type { LayoutId } from '../../types'
-import { depositOf, fmt, fontScale } from '../../utils/format'
+import { STATUS_COLOR, STATUS_STEP, STEP_KEYS } from '../../constants/orderStatus'
+import { useAsync } from '../../hooks/useAsync'
+import { useLocale, useT } from '../../i18n'
+import { Link, navigate, orderPath } from '../../router/router'
+import {
+  WAITING, approveQuotation, cancelOrder, decidePrivacy, getInks, getOrder, getPapers, getPens, getPrivacyPolicy, getQuotation,
+  orderErrorKey, requestChanges, type Order,
+} from '../../services/orders'
+import type { Job } from '../../services/async'
+import { fmt } from '../../utils/format'
 import './order.css'
 
-type Phase = 'gen' | 'review' | 'pending' | 'rejected' | 'accepted' | 'done'
-
-const STEP_KEYS = ['steps.placed', 'steps.sketch', 'steps.review', 'steps.deposit', 'steps.writing', 'steps.delivered']
-const STEP_IDX: Record<Phase, number> = { gen: 1, review: 1, pending: 2, rejected: 2, accepted: 3, done: 4 }
-
-const STATUS_KEY: Record<Phase, string> = {
-  gen: 'or.status.gen',
-  review: 'or.status.review',
-  pending: 'status.Pending',
-  rejected: 'status.Rejected',
-  accepted: 'or.status.accepted',
-  done: '',
-}
+const HAS_QUOTE = ['QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED']
 
 export default function OrderReview({ id }: { id: string | null }) {
   const t = useT()
-  const tn = useTn()
-  const order = useOrder(id)
+  const locale = useLocale()
+  const orderId = Number(id)
+  // Statuses that move on their own (the workshop works, the payment lands) are checked every 20 seconds.
+  const q = useAsync(() => getOrder(orderId), [orderId], (o) => (o && WAITING.includes(o.status) ? 20000 : undefined))
+  const order = q.data
   const status = order?.status
-  const [sketchDone, setSketchDone] = useState(false)
-  const [g, setG] = useState(0)
-  const [run, setRun] = useState(0)
-  const [seed, setSeed] = useState(0)
-  const [variant, setVariant] = useState<LayoutId>(order?.layout ?? 'classic')
-  const [note, setNote] = useState('')
 
-  // The AI sketch "renders" for a few seconds, then waits for the customer.
-  useEffect(() => {
-    if (status !== 'Sketching' || sketchDone) return
-    const t0 = Date.now()
-    const iv = window.setInterval(() => {
-      const p = Math.min(1, (Date.now() - t0) / 3600)
-      setG(p)
-      if (p >= 1) {
-        window.clearInterval(iv)
-        setSketchDone(true)
-      }
-    }, 50)
-    return () => window.clearInterval(iv)
-  }, [run, status, sketchDone])
+  const papers = useAsync(getPapers, [])
+  const pens = useAsync(() => getPens(), [])
+  const inks = useAsync(() => (order?.penId ? getInks(order.penId) : Promise.resolve([])), [order?.penId])
+  const quote = useAsync(() => (status && HAS_QUOTE.includes(status) ? getQuotation(orderId) : Promise.resolve(null)), [orderId, status])
+  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy() : Promise.resolve(null)), [status])
 
-  if (!order) return <NoOrder label="Order Review" />
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [panel, setPanel] = useState<'' | 'changes' | 'cancel' | 'decline'>('')
+  const [text, setText] = useState('')
+  const [option, setOption] = useState<number | null>(null)
+  const [pct, setPct] = useState<number | null>(null)
 
-  const sp = order.spec
-  const phase: Phase =
-    order.status === 'Sketching' ? (sketchDone ? 'review' : 'gen')
-    : order.status === 'Pending' ? 'pending'
-    : order.status === 'Rejected' ? 'rejected'
-    : order.status === 'Accepted' ? 'accepted'
-    : 'done'
-  const progress = phase === 'gen' ? g : 1
-  const cur = layoutById(variant)
-  const len = sp.text.length || 12
-  const scale = 1 + ((seed % 3) - 1) * 0.06
-  const fs = fontScale(len) * scale
-  const stage =
-    progress < 0.25 ? t('or.parsing')
-    : progress < 0.5 ? t('or.fitting')
-    : progress < 0.75 ? t('or.planning')
-    : t('or.rendering')
-  const pct = `${Math.round(progress * 100)}%`
-  const deposit = depositOf(order.total)
-
-  const regenerate = () => {
-    setSeed((s) => s + 1)
-    setG(0)
-    setSketchDone(false)
-    setRun((r) => r + 1)
+  const run = async (job: Job, after?: () => void) => {
+    if (busy) return
+    setBusy(true)
+    setErr('')
+    try {
+      await job()
+      setPanel('')
+      setText('')
+      after?.()
+      await q.reload()
+    } catch (e) {
+      setErr(orderErrorKey(e))
+      if ((e as { code?: string }).code === 'STATE_CONFLICT') await q.reload()
+    } finally {
+      setBusy(false)
+    }
   }
-  const approve = () => updateOrder(order.id, { status: 'Pending', layout: variant, note })
+
+  if (!id || Number.isNaN(orderId) || (q.error && !order)) {
+    return (
+      <Page label="Order" width={720}>
+        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
+          <span className="vh-eyebrow">{t('np.eyebrow')}</span>
+          <h1 className="vh-h1">{t('np.title')}</h1>
+          <p className="vh-lede">{q.error ? t(orderErrorKey(q.error)) : t('np.lede')}</p>
+          <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('np.cta')}</Link>
+        </div>
+      </Page>
+    )
+  }
+  if (!order || !status) {
+    return (
+      <Page label="Order" width={720}>
+        <p className="vh-lede" role="status">{t('co.loading')}</p>
+      </Page>
+    )
+  }
+
+  const quotation = quote.data
+  const multi = (quotation?.options.length ?? 0) > 1
+  const chosen = multi ? (option ?? quotation?.chosenOption ?? quotation?.options[0]?.option ?? null) : null
+  const quoteTotal = multi ? (quotation?.options.find((o) => o.option === chosen)?.total ?? 0) : (quotation?.finalTotal ?? 0)
+  const minPct = quotation?.minDepositPct ?? 50
+  const depositPct = Math.min(100, Math.max(minPct, pct ?? minPct))
+  const depositNow = Math.round((quoteTotal * depositPct) / 100)
+  const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '–')
+  const daysLeft = quotation?.validUntil ? Math.max(0, Math.ceil((new Date(quotation.validUntil).getTime() - Date.now()) / 864e5)) : null
+
+  const paper = papers.data?.find((p) => p.id === order.paperId)
+  const pen = pens.data?.find((p) => p.id === order.penId)
+  const ink = inks.data?.find((i) => i.id === order.inkId)
+  const money = (o: Order) =>
+    o.total !== null ? fmt(o.total)
+    : o.estMax !== null ? (o.estMin === o.estMax ? fmt(o.estMax) : `${fmt(o.estMin ?? 0)} – ${fmt(o.estMax)}`)
+    : '–'
+
+  const text0 = order.inputs.find((i) => i.kind === 'TEXT_CONTENT')?.text?.trim()
+  const photos = order.inputs.filter((i) => i.kind === 'ORIGINAL_IMAGE').length
+  const content = text0 ? (text0.length > 48 ? text0.slice(0, 48) + '…' : text0) : photos ? t(photos === 1 ? 'co.sum.photo' : 'co.sum.photos', { n: photos }) : order.inputs.some((i) => i.kind === 'CANVAS') ? t('dr.drawing') : '–'
 
   const rows = [
-    { k: t('or.format'), v: `${tn(sp.type)}, ${sp.size}` },
-    { k: t('or.contentRow'), v: sp.img ? t(sp.mode === 'draw' ? 'or.handDrawn' : 'or.uploaded') : t('or.fontSuffix', { name: tn(sp.fontName) }) },
-    { k: t('or.paper'), v: tn(sp.paper) },
-    { k: t('or.pen'), v: tn(sp.pen) },
-    { k: t('or.ink'), v: tn(sp.ink) },
-    { k: t('or.qty'), v: String(sp.qty) },
-    { k: t('or.robotTime'), v: t('or.perPiece', { n: sp.mins || 4 }) },
-    { k: t('or.total'), v: fmt(order.total) },
+    { k: t('ov.type'), v: t(`ot.${order.type}`) },
+    { k: t('or.contentRow'), v: content },
+    { k: t('or.paper'), v: order.workshopSuggest && !paper ? t('co.sum.suggest') : paper?.name ?? '–' },
+    { k: t('or.pen'), v: pen?.name ?? '–' },
+    { k: t('or.ink'), v: ink?.name ?? '–' },
+    { k: t('or.qty'), v: String(order.quantity) },
+    ...(order.note ? [{ k: t('co.sum.note'), v: order.note }] : []),
+    { k: t(order.total !== null ? 'or.total' : 'ov.estimate'), v: money(order) },
+    ...(order.eta ? [{ k: t('ov.eta'), v: day(order.eta) }] : []),
   ]
+
+  const confirmBox = (kind: 'cancel' | 'changes', label: string, onSend: () => void, danger = false) => (
+    <div className="vh-stack" style={{ gap: 10 }}>
+      <label className="vh-label" htmlFor="ov-reason">{label}</label>
+      <textarea id="ov-reason" className="vh-textarea" rows={3} maxLength={kind === 'cancel' ? 500 : 2000} value={text} onChange={(e) => setText(e.target.value)} />
+      <div className="or-actions">
+        <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => { setPanel(''); setText('') }}>{t('ov.back')}</button>
+        <button className={`vh-btn vh-btn--md ${danger ? 'vh-btn--white' : 'vh-btn--primary'}`} disabled={busy || !text.trim()} onClick={onSend}>
+          {t(kind === 'cancel' ? 'ov.cancelConfirm' : 'ov.changesSend')}
+        </button>
+      </div>
+    </div>
+  )
+
+  const cancelBlock = panel === 'cancel'
+    ? confirmBox('cancel', t('ov.cancelReason'), () => void run(() => cancelOrder(orderId, text.trim())), true)
+    : <button className="vh-link" onClick={() => { setPanel('cancel'); setText('') }}>{t('ov.cancel')}</button>
 
   return (
     <Page label="Order Review">
       <div className="ov">
-      <div className="vh-head">
-        <div className="vh-head-text">
-          <span className="vh-eyebrow">{t('tk.order', { id: order.id })} · {phase === 'done' ? t(`status.${order.status}`) : t(STATUS_KEY[phase])}</span>
-          <h1 className="vh-h1">{t(`or.title.${phase}`)}</h1>
+        <div className="vh-head">
+          <div className="vh-head-text">
+            <span className="vh-eyebrow">{order.code} · <span style={{ color: STATUS_COLOR[status] }}>{t(`os.${status}`)}</span></span>
+            <h1 className="vh-h1">{t(`ov.title.${status}`)}</h1>
+          </div>
+          {status !== 'CANCELLED' && status !== 'REJECTED' && <OrderTimeline labels={STEP_KEYS.map((k) => t(k))} idx={STATUS_STEP[status]} />}
         </div>
-        <OrderTimeline labels={STEP_KEYS.map((k) => t(k))} idx={STEP_IDX[phase]} />
-      </div>
 
-      <div className="vh-cols">
-        <section className="vh-col" style={{ flex: '999 1 560px', gap: 20 }}>
-          <div className="or-stage">
-            <PaperSheet
-              spec={sp}
-              layout={cur}
-              height={sp.land ? '48%' : '82%'}
-              maxWidth="90%"
-              fs={fs}
-              shadow="0 30px 60px var(--sh-55)"
-              reveal={phase === 'gen' ? g : 1}
-              style={{ position: 'relative' }}
-            >
-              {phase === 'gen' && <div className="or-nib" style={{ left: `${(g * 100).toFixed(1)}%` }} aria-hidden="true" />}
-            </PaperSheet>
-          </div>
-
-          {phase === 'gen' && (
-            <div className="or-progress">
-              <div><span>{stage}</span><span className="vh-mono">{pct}</span></div>
-              <div className="or-bar"><div style={{ width: pct }} /></div>
+        <div className="vh-cols">
+          <section className="vh-col" style={{ flex: '999 1 560px', gap: 20 }}>
+            <div className="or-stage">
+              <OrderPreview order={order} sketchUrls={quotation?.sketch?.previewUrls} inkColor={ink?.hex} />
             </div>
-          )}
 
-          {phase === 'review' && (
-            <div className="vh-stack" style={{ gap: 10 }}>
-              <span className="vh-label">{t('or.layout')}</span>
-              <div className="or-variants">
-                {LAYOUTS.map((v) => (
-                  <button key={v.id} className={`or-variant${v.id === variant ? ' on' : ''}`} onClick={() => setVariant(v.id)}>
-                    <div className="or-variant-stage">
-                      <PaperSheet
-                        spec={{ ...sp, text: sp.text.length > 40 ? sp.text.slice(0, 40) + '…' : sp.text }}
-                        layout={v}
-                        height={sp.land ? '50%' : '86%'}
-                        maxWidth="90%"
-                        fs={fs}
-                      />
-                    </div>
-                    <span>{tn(v.name)}</span>
-                  </button>
-                ))}
+            {quotation?.sketch && (
+              <div className="vh-stack" style={{ gap: 6 }}>
+                <span className="vh-label">{t('ov.sketch', { v: quotation.sketch.version })}</span>
+                {quotation.sketch.approachNote && <p className="or-copy">{quotation.sketch.approachNote}</p>}
+                {quotation.sketch.estimatedWritingSec !== null && (
+                  <p className="or-copy">{t('ov.writingTime', { min: Math.max(1, Math.round(quotation.sketch.estimatedWritingSec / 60)) })}</p>
+                )}
               </div>
-            </div>
-          )}
-        </section>
+            )}
 
-        <aside className="vh-aside">
-          <div className="ov-rail-body">
-          <span className="ov-rail-title">{t('or.details')}</span>
-          <SpecRows rows={rows} />
-
-          {phase === 'gen' && (
-            <p className="or-copy">
-              {t('or.genCopy', { font: tn(sp.fontName), pen: tn(sp.pen), paper: tn(sp.paper) })}
-            </p>
-          )}
-
-          {phase === 'review' && (
-            <>
+            {status === 'AWAITING_PRIVACY' && policy.data && (
               <div className="vh-stack" style={{ gap: 10 }}>
-                <label className="vh-label" htmlFor="or-note">{t('or.noteLabel')}</label>
-                <textarea
-                  id="or-note"
-                  className="vh-textarea"
-                  rows={3}
-                  value={note}
-                  placeholder={t('or.notePh')}
-                  onChange={(e) => setNote(e.target.value)}
-                />
+                <span className="vh-label">{policy.data.title ?? t('ov.privacyTitle')} · v{policy.data.version}</span>
+                <div className="ov-policy" tabIndex={0}>{policy.data.body}</div>
               </div>
-              <div className="or-actions">
-                <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={regenerate}>
-                  {t('or.regen')}
-                </button>
-                <button className="vh-btn vh-btn--primary vh-btn--md" onClick={approve}>
-                  {t('or.send')}
-                </button>
-              </div>
-            </>
-          )}
+            )}
 
-          {phase === 'pending' && (
-            <div className="vh-callout vh-callout--amber">
-              <b>{t('or.pendingTitle')}</b>
-              <span>{t('or.pendingBody')}</span>
+            {status === 'QUOTED' && quotation && (
+              <div className="vh-stack" style={{ gap: 14 }}>
+                <span className="vh-label">{t('ov.quote', { v: quotation.version })}</span>
+                {multi && (
+                  <div className="ov-opts" role="radiogroup" aria-label={t('ov.options')}>
+                    {quotation.options.map((o) => (
+                      <button key={o.option} role="radio" aria-checked={o.option === chosen} className={`ov-opt${o.option === chosen ? ' on' : ''}`} onClick={() => setOption(o.option)}>
+                        <span className="ov-opt-name">{t('ov.optionN', { n: o.option })}</span>
+                        <span className="ov-opt-sub">{o.paper} · {o.pen} · {o.ink}</span>
+                        <span className="vh-mono">{fmt(o.total)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="vh-rows">
+                  {quotation.lines.filter((l) => !multi || l.option === chosen).map((l, i) => (
+                    <div key={i} className="vh-row">
+                      <span>{l.item}{l.calc ? <small className="ov-calc"> {l.calc}</small> : null}</span>
+                      <span className="vh-mono">{fmt(l.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="or-copy">{quotation.note}</p>
+              </div>
+            )}
+          </section>
+
+          <aside className="vh-aside">
+            <div className="ov-rail-body">
+              <span className="ov-rail-title">{t('or.details')}</span>
+              <SpecRows rows={rows} />
+
+              {err && <p className="lg-error" role="alert">{t(err)}</p>}
+
+              {status === 'DRAFT' && (
+                <Link to={`/create-order/draft/${order.id}`} className="vh-btn vh-btn--primary">{t('dr.continue')}</Link>
+              )}
+
+              {status === 'SUBMITTED' && (
+                <>
+                  <div className="vh-callout vh-callout--amber"><b>{t('or.pendingTitle')}</b><span>{t('or.pendingBody')}</span></div>
+                  {cancelBlock}
+                </>
+              )}
+
+              {status === 'NEED_INFO' && (
+                <>
+                  <div className="vh-callout vh-callout--amber">
+                    <b>{t('co.needInfo')}</b>
+                    <span>{order.infoRequestNote ?? ''}</span>
+                  </div>
+                  <Link to={`/create-order/draft/${order.id}`} className="vh-btn vh-btn--primary">{t('ov.editOrder')}</Link>
+                  {cancelBlock}
+                </>
+              )}
+
+              {status === 'REJECTED' && (
+                <>
+                  <div className="vh-callout vh-callout--red">
+                    <b>{t('or.rejectedTitle')}</b>
+                    <span>{order.rejectReason ? t(`rr.${order.rejectReason}`) : t('or.noReason')}</span>
+                    {order.rejectNote && <span>{order.rejectNote}</span>}
+                  </div>
+                  <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('or.newOrder')}</Link>
+                </>
+              )}
+
+              {status === 'ACCEPTED' && (
+                <div className="vh-callout vh-callout--teal"><b>{t('or.acceptedTitle')}</b><span>{t('ov.acceptedBody')}</span></div>
+              )}
+
+              {status === 'AWAITING_PRIVACY' && (
+                <>
+                  <div className="vh-callout vh-callout--teal"><b>{t('ov.privacyNeeded')}</b><span>{t('ov.privacyBody')}</span></div>
+                  {panel === 'decline' ? (
+                    <div className="vh-callout vh-callout--red">
+                      <b>{t('ov.declineTitle')}</b>
+                      <span>{t('ov.declineBody')}</span>
+                      <div className="or-actions">
+                        <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => setPanel('')}>{t('ov.back')}</button>
+                        <button className="vh-btn vh-btn--white vh-btn--md" disabled={busy} onClick={() => void run(() => decidePrivacy(orderId, false))}>{t('ov.declineConfirm')}</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="or-actions">
+                      <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => setPanel('decline')}>{t('ov.decline')}</button>
+                      <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || !policy.data} onClick={() => void run(() => decidePrivacy(orderId, true))}>{t('ov.agree')}</button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {status === 'QUOTED' && quotation && (
+                <>
+                  <div className="vh-rows">
+                    <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t('ov.validUntil')}</span><span>{day(quotation.validUntil)}{daysLeft !== null ? ` · ${t('ov.daysLeft', { n: daysLeft })}` : ''}</span></div>
+                    {quotation.eta && <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t('ov.eta')}</span><span>{day(quotation.eta)}</span></div>}
+                  </div>
+                  <div className="vh-stack" style={{ gap: 8 }}>
+                    <label className="vh-label" htmlFor="ov-pct">
+                      {t('ov.depositPct', { pct: depositPct })}
+                      <input id="ov-pct" type="range" min={minPct} max={100} step={5} value={depositPct} onChange={(e) => setPct(Number(e.target.value))} />
+                    </label>
+                    <span className="co-fine">{t('ov.depositMin', { pct: minPct })}</span>
+                  </div>
+                  <div className="vh-total-row">
+                    <span>{t('or.depositDue')}</span>
+                    <span style={{ fontSize: 24 }}>{fmt(depositNow)}</span>
+                  </div>
+                  {panel === 'changes' ? (
+                    confirmBox('changes', t('ov.changesLabel'), () => void run(() => requestChanges(orderId, text.trim())))
+                  ) : (
+                    <>
+                      <button
+                        className="vh-btn vh-btn--primary vh-btn--md"
+                        disabled={busy || (multi && chosen === null)}
+                        onClick={() => void run(
+                          () => approveQuotation(orderId, { ...(multi && chosen !== null ? { option: chosen } : {}), deposit_pct: depositPct }),
+                          () => navigate(orderPath(orderId, 'deposit')),
+                        )}
+                      >
+                        {t('ov.approve')}
+                      </button>
+                      {quotation.pdfUrl && <a className="vh-link" href={quotation.pdfUrl} target="_blank" rel="noreferrer">{t('ov.pdf')}</a>}
+                      <button className="vh-link" onClick={() => { setPanel('changes'); setText('') }}>{t('ov.changes')}</button>
+                      {cancelBlock}
+                    </>
+                  )}
+                </>
+              )}
+
+              {status === 'AWAITING_DEPOSIT' && (
+                <>
+                  <div className="vh-total-row">
+                    <span>{t('or.depositDue')}</span>
+                    <span style={{ fontSize: 24 }}>{fmt(order.depositAmount ?? 0)}</span>
+                  </div>
+                  <Link to={orderPath(order.id, 'deposit')} className="vh-btn vh-btn--primary">{t('or.payDeposit')}</Link>
+                  {cancelBlock}
+                </>
+              )}
+
+              {['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(status) && (
+                <>
+                  <div className="vh-callout vh-callout--green">
+                    <b>{t('or.depositPaid', { status: t(`os.${status}`) })}</b>
+                    <span>{t(`ps.${order.production}`)}</span>
+                  </div>
+                  <span className="co-fine">{t('ov.contactWorkshop')}</span>
+                </>
+              )}
+
+              {status === 'CANCELLED' && (
+                <>
+                  <div className="vh-callout vh-callout--red"><b>{t('ov.cancelledTitle')}</b><span>{t('ov.cancelledBody')}</span></div>
+                  <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('or.newOrder')}</Link>
+                </>
+              )}
             </div>
-          )}
-
-          {phase === 'rejected' && (
-            <>
-              <div className="vh-callout vh-callout--red">
-                <b>{t('or.rejectedTitle')}</b>
-                <span>{(order.rejectReasons ?? []).map((r) => tn(r)).join(', ') || t('or.noReason')}</span>
-                <span className="or-by">{order.staff ?? t('or.studio')}</span>
-              </div>
-              <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('or.newOrder')}</Link>
-            </>
-          )}
-
-          {phase === 'accepted' && (
-            <>
-              <div className="vh-callout vh-callout--teal">
-                <b>{t('or.acceptedTitle')}</b>
-                <span>{t('or.acceptedNote')}</span>
-                <span className="or-by">{order.staff ?? t('or.studio')}</span>
-              </div>
-              <div className="vh-total-row">
-                <span>{t('or.depositDue')}</span>
-                <span style={{ fontSize: 24 }}>{fmt(deposit)}</span>
-              </div>
-              <Link to={orderPath(order.id, 'deposit')} className="vh-btn vh-btn--primary">{t('or.payDeposit')}</Link>
-            </>
-          )}
-
-          {phase === 'done' && (
-            <>
-              <div className="vh-callout vh-callout--green">
-                <b>{t('or.depositPaid', { status: t(`status.${order.status}`) })}</b>
-                <span>{t('or.inQueue')}</span>
-              </div>
-              <Link to={orderPath(order.id, 'result')} className="vh-btn vh-btn--white vh-btn--md">
-                {['Written', 'Rewriting', 'Shipped', 'Delivered'].includes(order.status) ? t('or.viewPhotos') : t('or.preview')}
-              </Link>
-            </>
-          )}
-          </div>
-        </aside>
-      </div>
+          </aside>
+        </div>
       </div>
     </Page>
   )

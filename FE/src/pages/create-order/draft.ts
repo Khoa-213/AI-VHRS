@@ -6,6 +6,5 @@ export const CANVAS_SIZES = [
   { id: 'a7', label: 'A7', w: 74, h: 105 },
 ] as const
 
-export const DRAW_PATH = '/create-order/draw'
-export const drawPathFor = (draftId: string) => `${DRAW_PATH}/${encodeURIComponent(draftId)}`
-export const draftPathFor = (draftId: string) => `/create-order/draft/${encodeURIComponent(draftId)}`
+export const draftPathFor = (orderId: number | string) => `/create-order/draft/${orderId}`
+export const drawPathFor = (orderId: number | string) => `/create-order/draw/${orderId}`

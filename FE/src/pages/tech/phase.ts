@@ -28,26 +28,6 @@ export function useNow(ms = 1000) {
   return now
 }
 
-/** Prototype only: a drawn stand-in for a camera shot, so QC can be completed without a camera. */
-export function samplePhoto(label: string, paper: string, ink: string): string {
-  const c = document.createElement('canvas')
-  c.width = 640
-  c.height = 480
-  const g = c.getContext('2d')
-  if (!g) return ''
-  g.fillStyle = '#2a2c33'
-  g.fillRect(0, 0, 640, 480)
-  g.fillStyle = paper
-  g.fillRect(70, 50, 500, 380)
-  g.fillStyle = ink
-  g.font = '600 44px "Dancing Script", cursive'
-  g.textAlign = 'center'
-  g.fillText('Sample photo', 320, 235)
-  g.font = '500 18px sans-serif'
-  g.fillText(label, 320, 285)
-  return c.toDataURL('image/jpeg', 0.72)
-}
-
 /** Downscale a photo to a small JPEG so it fits in localStorage. */
 export function shrinkImage(file: File, max = 1100, quality = 0.72): Promise<string> {
   return new Promise((resolve, reject) => {

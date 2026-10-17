@@ -349,7 +349,7 @@ function Detail(p: DetailProps) {
                       alignItems: mode === 'upload' ? 'flex-start' : 'center',
                     }}
                   >
-                    <span>{sp.simText || '…'}</span>
+                    <span>…</span>
                   </div>
                 )}
                 <span className="sc-photo-tag sc-photo-tag--tl">

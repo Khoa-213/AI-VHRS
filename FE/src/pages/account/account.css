@@ -78,3 +78,5 @@
   .ac-order{grid-template-columns:minmax(0,1fr) auto}
   .ac-order-total{display:none}
 }
+
+.ac-pager{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:20px}

@@ -1,130 +1,356 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
+import OrderPreview from '../../components/ui/OrderPreview'
+import { useAsync } from '../../hooks/useAsync'
+import { useDebounced } from '../../hooks/useDebounced'
+import { useSaveQueue } from '../../hooks/useSaveQueue'
+import { useT } from '../../i18n'
+import { Link, navigate, orderPath } from '../../router/router'
 import {
-  CREATE_PAYS, FONT_STYLES, INKS, MODES, PAPERS, PENS, STEP_LABELS, TYPES,
-} from '../../constants/catalog'
-import { useLocale, useT, useTn } from '../../i18n'
-import { navigate, orderPath } from '../../router/router'
-import { addOrder, createOrderId, deleteDraft, getDraft, newDraftId, saveDraft, useProfile, useUser } from '../../store/store'
-import type { InputMode, Order, OrderSpec } from '../../types'
-import { fmt, todayLabel } from '../../utils/format'
-import { quote } from '../../utils/pricing'
-import { CANVAS_SIZES, drawPathFor } from './draft'
-import { inkMask } from '../../components/ui/PaperSheet'
-import { MethodLogos } from '../../components/ui/PaymentLogos'
+  ACCEPTED_UPLOADS, MAX_UPLOAD_MB, createOrder, deleteInput, estimate, getInks, getOrder, getPapers, getPens, getTemplates,
+  incompleteFields, orderErrorKey, patchOrder, provideInfo, putText, submitOrder, templatePreviewUrl, uploadOriginal,
+  type Alignment, type Estimate, type Order, type OrderPatch, type OrderType,
+} from '../../services/orders'
+import { useUser } from '../../store/store'
+import type { InputMode } from '../../types'
+import { fmt } from '../../utils/format'
+import { draftPathFor, drawPathFor } from './draft'
 import './create-order.css'
 
-interface Upload {
-  name: string
-  url: string
-  isImg: boolean
-  dataUrl?: string
-}
+const MODES: InputMode[] = ['text', 'upload', 'draw']
+const STEPS = ['co.step.0', 'co.step.1', 'co.step.2']
+const ALIGNMENTS: Alignment[] = ['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY']
+const MAX_QTY = 10000
 
-function initialMode(saved: InputMode): InputMode {
+const typeOf = (m: InputMode): OrderType => (m === 'upload' ? 'OT1_COPY_RESTORE' : 'OT3_TEMPLATE')
+
+function initialMode(): InputMode | null {
   const m = /mode=(text|upload|draw)/.exec(window.location.hash)
-  return (m?.[1] as InputMode | undefined) ?? saved
+  return (m?.[1] as InputMode | undefined) ?? null
 }
 
-/** `draftId` opens a saved draft. Without it the form starts empty and becomes a draft once something is filled in. */
-export default function CreateOrder({ draftId: given = null }: { draftId?: string | null }) {
+/** The order is a draft on the server from the first thing the customer enters; every change is saved there. */
+export default function CreateOrder({ orderId: given = null }: { orderId?: number | null }) {
   const t = useT()
-  const tn = useTn()
-  const locale = useLocale()
   const user = useUser()
-  const profile = useProfile()
-  const priceLabel = (p: number) => (p ? '+' + fmt(p) : t('co.included'))
 
-  // Every change is saved to a draft, so leaving at any point loses nothing.
-  const [draftId] = useState(() => given ?? newDraftId())
-  const [saved] = useState(() => getDraft(draftId))
-  const createdAt = useRef(saved?.createdAt ?? new Date().toISOString())
-  const submitted = useRef(false)
+  const [order, setOrder] = useState<Order | null>(null)
+  const orderRef = useRef<Order | null>(null)
+  const [loading, setLoading] = useState(given !== null)
+  const [step, setStep] = useState(0)
+  const [maxStep, setMaxStep] = useState(0)
+  const [mode, setMode] = useState<InputMode>(() => initialMode() ?? 'text')
+  const [text, setText] = useState('')
+  const [templateId, setTemplateId] = useState<number | null>(null)
+  const [alignment, setAlignment] = useState<Alignment | null>(null)
+  const [fontSize, setFontSize] = useState('')
+  const [paperId, setPaperId] = useState<number | null>(null)
+  const [penId, setPenId] = useState<number | null>(null)
+  const [inkId, setInkId] = useState<number | null>(null)
+  const [suggest, setSuggest] = useState(false)
+  const [qty, setQty] = useState(1)
+  const [note, setNote] = useState('')
+  const [terms, setTerms] = useState(false)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(0)
+  const [est, setEst] = useState<Estimate | null>(null)
 
-  const [step, setStep] = useState(saved?.step ?? 0)
-  const [maxStep, setMaxStep] = useState(saved?.maxStep ?? saved?.step ?? 0)
-  const [type, setType] = useState<string | null>(saved?.type ?? null)
-  const [mode, setMode] = useState<InputMode>(() => initialMode(saved?.mode ?? 'text'))
-  const [text, setText] = useState(saved?.text ?? '')
-  const [fontStyle, setFontStyle] = useState(saved?.fontStyle ?? 'script')
-  const [upload, setUpload] = useState<Upload | null>(() => {
-    const u = saved?.upload
-    if (!u || (u.isImg && !u.dataUrl)) return null
-    return { name: u.name, url: u.dataUrl ?? '', isImg: u.isImg, dataUrl: u.dataUrl }
-  })
-  // The drawing comes from the full-screen canvas page, which writes it into the draft.
-  const strokes = saved?.strokes ?? 0
-  const drawUrl = saved?.drawUrl ?? null
-  const sizeId = saved?.sizeId ?? 'a4'
-  const landscape = saved?.landscape ?? false
-  const sheet = CANVAS_SIZES.find((s) => s.id === sizeId) ?? CANVAS_SIZES[0]
-  const sheetLabel = t('co.sheet', { label: sheet.label, orient: t(landscape ? 'co.landscape' : 'co.portrait') })
-  const [paper, setPaper] = useState<string | null>(saved?.paper ?? null)
-  const [pen, setPen] = useState<string | null>(saved?.pen ?? null)
-  const [ink, setInk] = useState<string | null>(saved?.ink ?? null)
-  const [qty, setQty] = useState(saved?.qty ?? 1)
-  // Contact details start from the profile, so a new order only needs them once.
-  const [name, setName] = useState(saved?.name ?? profile.fullName)
-  const [phone, setPhone] = useState(saved?.phone ?? profile.phone)
-  const [address, setAddress] = useState(saved?.address ?? profile.address)
-  const [pay, setPay] = useState<string | null>(saved?.pay ?? null)
+  const papers = useAsync(getPapers, [])
+  const templates = useAsync(getTemplates, [])
+  const pens = useAsync(() => getPens(paperId), [paperId])
+  const inks = useAsync(() => (penId ? getInks(penId) : Promise.resolve([])), [penId])
 
-  const latest = useRef({ step, maxStep, type, mode, text, fontStyle, upload, paper, pen, ink, qty, name, phone, address, pay })
-  latest.current = { step, maxStep, type, mode, text, fontStyle, upload, paper, pen, ink, qty, name, phone, address, pay }
+  // ---------- saving: one queue, so changes reach the server in the order they were made ----------
 
-  const persist = useCallback((force = false) => {
-    if (submitted.current) return
-    const s = latest.current
-    const filled = !!(s.type || s.text.trim() || s.upload || strokes > 0 || s.paper || s.pen || s.ink || s.qty > 1 || (s.name && s.name !== profile.fullName) || (s.phone && s.phone !== profile.phone) || (s.address && s.address !== profile.address) || s.pay)
-    if (!force && !filled && !getDraft(draftId)) return
-    saveDraft({
-      id: draftId,
-      owner: user?.name ?? 'guest',
-      createdAt: createdAt.current,
-      updatedAt: new Date().toISOString(),
-      step: s.step, maxStep: s.maxStep, type: s.type, mode: s.mode, text: s.text, fontStyle: s.fontStyle,
-      upload: s.upload ? { name: s.upload.name, isImg: s.upload.isImg, dataUrl: s.upload.dataUrl } : null,
-      strokes, drawUrl, sizeId, landscape,
-      paper: s.paper, pen: s.pen, ink: s.ink, qty: s.qty, name: s.name, phone: s.phone, address: s.address, pay: s.pay,
-    })
-  }, [draftId, user, profile, strokes, drawUrl, sizeId, landscape])
+  const { enqueue, idle, pending } = useSaveQueue()
+  const creating = useRef<PromiseLike<Order> | null>(null)
+  const loaded = useRef(false)
+  const lastSaved = useRef<string>('')
+  const wanted = useRef<OrderType>(typeOf(mode))
+  wanted.current = typeOf(mode)
 
-  // Save after each change. The short delay only batches keystrokes of a single burst.
-  const touched = useRef(false)
-  useEffect(() => {
-    if (!touched.current) {
-      touched.current = true
-      return
-    }
-    const h = window.setTimeout(() => persist(), 250)
-    return () => window.clearTimeout(h)
-  }, [step, maxStep, type, mode, text, fontStyle, upload, paper, pen, ink, qty, name, phone, address, pay, persist])
-  useEffect(() => () => persist(), [persist])
-
-  // Release the blob URL when the upload is replaced or the page unmounts.
-  const blobRef = useRef<string | null>(null)
-  useEffect(() => {
-    blobRef.current = upload?.url ?? null
-  }, [upload])
-  useEffect(() => () => {
-    if (blobRef.current) URL.revokeObjectURL(blobRef.current)
+  const adopt = useCallback((o: Order) => {
+    orderRef.current = o
+    setOrder(o)
   }, [])
 
-  const q = quote({ type, paper, pen, ink, qty, mode, text, hasUpload: !!upload, strokes }, t, tn, locale)
-  const F = FONT_STYLES.find((f) => f.id === fontStyle)!
+  /** The draft on the server. It is created the first time something has to be saved. */
+  const ensure = useCallback(async () => {
+    if (orderRef.current) return orderRef.current
+    creating.current ??= createOrder(wanted.current, 1).then((o) => {
+      adopt(o)
+      navigate(draftPathFor(o.id), { replace: true })
+      return o
+    }).finally(() => {
+      creating.current = null
+    })
+    return creating.current
+  }, [adopt])
+
+  const fail = (e: unknown) => setErr(orderErrorKey(e))
+
+  const patch = useCallback((p: OrderPatch) => {
+    setErr('')
+    return enqueue(async () => {
+      const o = await ensure()
+      adopt({ ...(await patchOrder(o.id, p)), inputs: orderRef.current?.inputs ?? o.inputs })
+    }).then(undefined, fail)
+  }, [adopt, enqueue, ensure])
+
+  // ---------- loading an existing draft ----------
+
+  useEffect(() => {
+    if (given === (orderRef.current?.id ?? null)) return
+    orderRef.current = null
+    loaded.current = false
+    lastSaved.current = ''
+    setOrder(null)
+    setStep(0)
+    setMaxStep(0)
+    setTerms(false)
+    setErr('')
+    setEst(null)
+    if (given === null) {
+      setText(''); setTemplateId(null); setAlignment(null); setFontSize('')
+      setPaperId(null); setPenId(null); setInkId(null); setSuggest(false); setQty(1); setNote('')
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    getOrder(given)
+      .then((o) => {
+        if (o.status !== 'DRAFT' && o.status !== 'NEED_INFO') {
+          navigate(orderPath(o.id, 'review'), { replace: true })
+          return
+        }
+        adopt(o)
+        const tx = o.inputs.find((i) => i.kind === 'TEXT_CONTENT')
+        setText(tx?.text ?? '')
+        setTemplateId(tx?.templateId ?? null)
+        setAlignment(tx?.alignment ?? null)
+        setFontSize(tx?.fontSizeMm ? String(tx.fontSizeMm) : '')
+        setPaperId(o.paperId); setPenId(o.penId); setInkId(o.inkId)
+        setSuggest(o.workshopSuggest); setQty(o.quantity); setNote(o.note ?? '')
+        setMode(initialMode() ?? (o.type === 'OT1_COPY_RESTORE' ? 'upload' : !tx && o.inputs.some((i) => i.kind === 'CANVAS') ? 'draw' : 'text'))
+        // Go to the first step that still needs something.
+        const hasContent = o.inputs.length > 0
+        const hasMaterials = o.workshopSuggest || (o.paperId && o.penId && o.inkId)
+        const s = hasContent ? (hasMaterials ? 2 : 1) : 0
+        setStep(s)
+        setMaxStep(s)
+      })
+      .catch((e) => {
+        setErr(orderErrorKey(e))
+      })
+      .finally(() => setLoading(false))
+  }, [given, adopt])
+
+  // First template is the default, so typing text is enough to start a draft.
+  useEffect(() => {
+    if (templateId === null && templates.data?.length) setTemplateId(templates.data[0].id)
+  }, [templates.data, templateId])
+
+  // A paper change can make the chosen pen or ink invalid.
+  useEffect(() => {
+    if (penId && pens.data && !pens.data.some((p) => p.id === penId)) {
+      setPenId(null)
+      setInkId(null)
+    }
+  }, [pens.data, penId])
+  useEffect(() => {
+    if (inkId && inks.data && !inks.data.some((i) => i.id === inkId)) setInkId(null)
+  }, [inks.data, inkId])
+
+  // ---------- text: saved shortly after the typing stops ----------
+
+  const dText = useDebounced(text, 700)
+  const dSize = useDebounced(fontSize, 700)
+  const textKey = `${dText}|${templateId}|${alignment}|${dSize}`
+  useEffect(() => {
+    if (loading) return
+    if (!loaded.current) {
+      loaded.current = true
+      const tx = orderRef.current?.inputs.find((i) => i.kind === 'TEXT_CONTENT')
+      lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}`
+    }
+    // Wait until the typing has settled, so a value still on its way is never saved.
+    if (text !== dText || fontSize !== dSize) return
+    if (mode !== 'text' || !dText.trim() || templateId === null || textKey === lastSaved.current) return
+    lastSaved.current = textKey
+    setErr('')
+    const size = Number(dSize)
+    enqueue(async () => {
+      const o = await ensure()
+      const input = await putText(o.id, {
+        text_content: dText,
+        template_id: templateId,
+        alignment,
+        font_size_mm: dSize && size > 0 ? size : null,
+      })
+      const cur = orderRef.current ?? o
+      adopt({ ...cur, inputs: [...cur.inputs.filter((i) => i.kind !== 'TEXT_CONTENT'), input] })
+    }).then(undefined, (e: unknown) => {
+      lastSaved.current = ''
+      fail(e)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textKey, mode, loading])
+
+  // ---------- materials, quantity, note ----------
+
+  const pickPaper = (id: number) => {
+    setPaperId(id)
+    setPenId(null)
+    setInkId(null)
+    void patch({ paper_type_id: id, pen_type_id: null, ink_color_id: null })
+  }
+  const pickPen = (id: number) => {
+    setPenId(id)
+    setInkId(null)
+    void patch({ pen_type_id: id, ink_color_id: null })
+  }
+  const pickInk = (id: number) => {
+    setInkId(id)
+    void patch({ ink_color_id: id })
+  }
+  const toggleSuggest = (on: boolean) => {
+    setSuggest(on)
+    void patch({ workshop_suggest_materials: on })
+  }
+
+  const dQty = useDebounced(qty, 500)
+  const dNote = useDebounced(note, 700)
+  const sentQty = useRef<number | null>(null)
+  const sentNote = useRef<string | null>(null)
+  useEffect(() => {
+    if (loading || qty !== dQty || note !== dNote) return
+    const o = orderRef.current
+    sentQty.current ??= o?.quantity ?? 1
+    sentNote.current ??= o?.note ?? ''
+    const p: OrderPatch = {}
+    if (dQty !== sentQty.current) { p.quantity = dQty; sentQty.current = dQty }
+    if (dNote !== sentNote.current) { p.customer_note = dNote.trim() ? dNote : null; sentNote.current = dNote }
+    if (Object.keys(p).length) void patch(p)
+  }, [dQty, dNote, loading, patch])
+
+  const clampQty = (n: number) => setQty(Math.max(1, Math.min(MAX_QTY, Math.round(n) || 1)))
+
+  // ---------- content mode ----------
+
+  const chooseMode = async (m: InputMode) => {
+    if (m === mode && m !== 'draw') return
+    setErr('')
+    const next = typeOf(m)
+    const cur = orderRef.current
+    if (cur && cur.type !== next) {
+      const stale = cur.inputs.filter((i) => (next === 'OT1_COPY_RESTORE' ? i.kind !== 'ORIGINAL_IMAGE' : i.kind === 'ORIGINAL_IMAGE'))
+      if (stale.length && !window.confirm(t('co.switchWarn'))) return
+      setBusy(true)
+      try {
+        await enqueue(async () => {
+          for (const i of stale) await deleteInput(cur.id, i.id)
+          const o = await patchOrder(cur.id, { order_type: next })
+          adopt({ ...o, inputs: cur.inputs.filter((i) => !stale.includes(i)) })
+        })
+      } catch (e) {
+        fail(e)
+        return
+      } finally {
+        setBusy(false)
+      }
+    }
+    setMode(m)
+    if (m === 'draw') await openCanvas()
+  }
+
+  const openCanvas = async () => {
+    setErr('')
+    setBusy(true)
+    try {
+      wanted.current = 'OT3_TEMPLATE'
+      const o = await enqueue(ensure)
+      if (o.type !== 'OT3_TEMPLATE') await enqueue(async () => adopt({ ...(await patchOrder(o.id, { order_type: 'OT3_TEMPLATE' })), inputs: o.inputs }))
+      navigate(drawPathFor(o.id))
+    } catch (e) {
+      fail(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const addFiles = async (files: FileList | null) => {
+    if (!files?.length) return
+    setErr('')
+    for (const f of Array.from(files)) {
+      if (!ACCEPTED_UPLOADS.includes(f.type)) { setErr('err.fileType'); continue }
+      if (f.size > MAX_UPLOAD_MB * 1024 * 1024) { setErr('err.fileTooLarge'); continue }
+      setUploading((n) => n + 1)
+      try {
+        wanted.current = 'OT1_COPY_RESTORE'
+        const input = await enqueue(async () => {
+          const o = await ensure()
+          if (o.type !== 'OT1_COPY_RESTORE') adopt({ ...(await patchOrder(o.id, { order_type: 'OT1_COPY_RESTORE' })), inputs: o.inputs })
+          return uploadOriginal(o.id, f)
+        })
+        const cur = orderRef.current
+        if (cur) adopt({ ...cur, inputs: [...cur.inputs, input] })
+      } catch (e) {
+        fail(e)
+      } finally {
+        setUploading((n) => n - 1)
+      }
+    }
+  }
+
+  const removeInput = (id: number) => {
+    const cur = orderRef.current
+    if (!cur) return
+    setErr('')
+    enqueue(async () => {
+      await deleteInput(cur.id, id)
+      const now = orderRef.current ?? cur
+      adopt({ ...now, inputs: now.inputs.filter((i) => i.id !== id) })
+    }).then(undefined, fail)
+  }
+
+  // ---------- estimate ----------
+
+  const dTextForEst = useDebounced(text, 900)
+  useEffect(() => {
+    if (loading) return
+    let live = true
+    estimate({
+      order_type: typeOf(mode),
+      quantity: Math.max(1, dQty),
+      paper_type_id: paperId, pen_type_id: penId, ink_color_id: inkId,
+      ...(order ? { order_id: order.id } : { text: mode === 'text' ? dTextForEst || null : null }),
+    })
+      .then((r) => live && setEst(r))
+      .catch(() => live && setEst(null))
+    return () => {
+      live = false
+    }
+    // The saved time changes whenever the server re-prices the draft.
+  }, [loading, mode, dQty, paperId, penId, inkId, order?.id, order?.savedAt, dTextForEst, pending === 0]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---------- steps ----------
+
+  const photos = order?.inputs.filter((i) => i.kind === 'ORIGINAL_IMAGE') ?? []
+  const canvas = order?.inputs.find((i) => i.kind === 'CANVAS')
+  const strokes = canvas?.canvas?.strokes.length ?? 0
+  const materialsOk = suggest || !!(paperId && penId && inkId)
 
   const valid = (i: number) => {
-    if (i === 0) return !!type
-    if (i === 1) return mode === 'text' ? text.trim().length > 0 : mode === 'upload' ? !!upload : strokes > 0
-    if (i === 2) return !!(paper && pen && ink && qty >= 1)
-    return !!(name.trim() && phone.trim().length >= 8 && address.trim() && pay)
+    if (i === 0) return mode === 'text' ? text.trim().length > 0 && templateId !== null : mode === 'upload' ? photos.length > 0 : strokes > 0
+    if (i === 1) return materialsOk && qty >= 1
+    return terms
   }
-  const ok = valid(step)
+  const ok = valid(step) && !busy && uploading === 0
   const hints = [
-    t('co.hint0'),
-    t(mode === 'text' ? 'co.hint1.text' : mode === 'upload' ? 'co.hint1.upload' : 'co.hint1.draw'),
-    t(!paper ? 'co.hint2.paper' : !pen ? 'co.hint2.pen' : 'co.hint2.ink'),
-    t('co.hint3'),
+    t(mode === 'text' ? 'co.hint0.text' : mode === 'upload' ? 'co.hint0.upload' : 'co.hint0.draw'),
+    t(!materialsOk ? (!paperId ? 'co.hint1.paper' : !penId ? 'co.hint1.pen' : 'co.hint1.ink') : 'co.hint1.qty'),
+    t('co.hint2'),
   ]
 
   const goTo = (i: number) => {
@@ -133,106 +359,126 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const clampQty = (n: number) => setQty(Math.max(1, Math.min(500, Math.round(n) || 1)))
-
-  const setFile = (f: File | undefined | null) => {
-    if (!f) return
-    if (upload) URL.revokeObjectURL(upload.url)
-    const isImg = f.type.startsWith('image/')
-    const next: Upload = { name: f.name, url: URL.createObjectURL(f), isImg }
-    setUpload(next)
-    if (isImg) {
-      const r = new FileReader()
-      r.onload = () => setUpload((u) => (u && u.url === next.url ? { ...u, dataUrl: String(r.result) } : u))
-      r.readAsDataURL(f)
+  const submit = async () => {
+    if (!terms) return
+    setErr('')
+    setBusy(true)
+    try {
+      await idle() // everything typed so far is saved first
+      const o = await ensure()
+      const sent = o.status === 'NEED_INFO' ? await provideInfo(o.id) : await submitOrder(o.id)
+      navigate(orderPath(sent.id, 'review'))
+    } catch (e) {
+      const fields = incompleteFields(e)
+      if (fields.includes('inputs')) goTo(0)
+      else if (fields.includes('materials')) goTo(1)
+      fail(e)
+    } finally {
+      setBusy(false)
     }
-  }
-
-  const submit = () => {
-    const { T, P, N, I } = q
-    if (!T || !P || !N || !I || !valid(3)) return
-    const spec: OrderSpec = {
-      type: T.name, size: T.size, aspect: T.aspect, land: T.land, mins: T.mins,
-      paper: P.name, paperColor: P.color, pen: N.name, penW: N.w, ink: I.name, inkColor: I.color,
-      font: F.font, fontName: F.name, mode, text: text.trim(),
-      img: mode === 'upload' ? upload?.dataUrl ?? null : mode === 'draw' ? drawUrl : null,
-      qty,
-    }
-    const order: Order = {
-      id: createOrderId(),
-      title: `${T.name} × ${qty}`,
-      detail: [P.name, I.name].join(' · '),
-      status: 'Sketching',
-      total: q.total,
-      date: todayLabel(),
-      spec, name: name.trim(), phone: phone.trim(), address: address.trim(), pay: pay ?? undefined,
-    }
-    submitted.current = true
-    deleteDraft(draftId)
-    addOrder(order)
-    navigate(orderPath(order.id, 'review'))
-  }
-
-  const openCanvas = () => {
-    persist(true)
-    navigate(drawPathFor(draftId))
-  }
-
-  const saveAndExit = () => {
-    persist()
-    navigate(user ? '/account/drafts' : `/login?next=${encodeURIComponent('/account/drafts')}`)
   }
 
   const next = () => {
     if (!ok) return
-    if (step < 3) goTo(step + 1)
-    else submit()
+    if (step < 2) goTo(step + 1)
+    else void submit()
   }
 
-  const pvImg = mode === 'upload' && upload?.isImg ? upload.url : mode === 'draw' && drawUrl ? drawUrl : null
-  const raw = mode === 'text' ? text.trim() || 'Chúc Mừng Năm Mới' : mode === 'upload' && upload ? upload.name : 'Chúc Mừng Năm Mới'
-  const previewText = raw.length > 160 ? raw.slice(0, 160) + '…' : raw
-  const pvFont = previewText.length < 22 ? 24 : previewText.length < 60 ? 17 : 12
+  const openStep = (i: number) => (i <= maxStep ? goTo(i) : undefined)
+
+  // ---------- guards ----------
+
+  if (!user) {
+    return (
+      <Page label="Create Order" width={720}>
+        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
+          <h1 className="vh-h1">{t('co.signInTitle')}</h1>
+          <p className="vh-lede">{t('co.signInBody')}</p>
+          <button className="vh-btn vh-btn--primary" onClick={() => navigate(`/login?next=${encodeURIComponent('/create-order')}`)}>{t('nav.signIn')}</button>
+        </div>
+      </Page>
+    )
+  }
+  if (user.role !== 'customer') {
+    return (
+      <Page label="Create Order" width={720}>
+        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
+          <h1 className="vh-h1">{t('co.customerOnlyTitle')}</h1>
+          <p className="vh-lede">{t('co.customerOnlyBody')}</p>
+        </div>
+      </Page>
+    )
+  }
+  if (loading) {
+    return (
+      <Page label="Create Order" width={720}>
+        <p className="vh-lede" role="status">{t('co.loading')}</p>
+      </Page>
+    )
+  }
+  if (given !== null && !order) {
+    return (
+      <Page label="Create Order" width={720}>
+        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
+          <h1 className="vh-h1">{t('np.title')}</h1>
+          {err && <p className="lg-error" role="alert">{t(err)}</p>}
+          <Link to="/account/drafts" className="vh-btn vh-btn--primary">{t('co.toDrafts')}</Link>
+        </div>
+      </Page>
+    )
+  }
+
+  // ---------- view ----------
+
+  const paper = papers.data?.find((p) => p.id === paperId)
+  const pen = pens.data?.find((p) => p.id === penId)
+  const ink = inks.data?.find((i) => i.id === inkId)
+  const template = templates.data?.find((x) => x.id === templateId)
+  const materialsLabel = suggest ? t('co.sum.suggest') : [paper?.name, pen?.name, ink?.name].filter(Boolean).join(', ') || t('co.sum.notChosen')
+  const range = est ? (est.priceMin === est.priceMax ? fmt(est.priceMax) : `${fmt(est.priceMin)} – ${fmt(est.priceMax)}`) : '–'
+  const saveLabel = pending > 0 || uploading > 0 ? t('co.saving') : order ? t('co.saved') : ''
+  const rewrite = order?.status === 'NEED_INFO'
 
   const summary = [
-    { k: t('co.sum.type'), v: q.T ? `${tn(q.T.name)}, ${q.T.size}` : t('co.sum.notChosen'), to: 0 },
     {
       k: t('co.sum.content'),
       v: mode === 'text'
-        ? t('co.sum.textIn', { text: `${text.trim().slice(0, 48)}${text.trim().length > 48 ? '…' : ''}`, font: tn(F.name) })
-        : mode === 'upload' ? (upload ? t('co.sum.image', { name: upload.name }) : t('co.sum.noImage')) : t('co.sum.drawn', { n: strokes, sheet: sheetLabel }),
-      to: 1,
+        ? t('co.sum.textIn', { text: `${text.trim().slice(0, 48)}${text.trim().length > 48 ? '…' : ''}`, font: template?.name ?? '' })
+        : mode === 'upload' ? t(photos.length === 1 ? 'co.sum.photo' : 'co.sum.photos', { n: photos.length }) : t('co.sum.drawn', { n: strokes }),
+      to: 0,
     },
-    { k: t('co.sum.materials'), v: [q.P?.name, q.N?.name, q.I?.name].filter(Boolean).map((n) => tn(n!)).join(', ') || t('co.sum.notChosen'), to: 2 },
-    { k: t('co.sum.qty'), v: t(qty > 1 ? 'co.pieces' : 'co.piece', { n: qty }), to: 2 },
+    { k: t('co.sum.materials'), v: materialsLabel, to: 1 },
+    { k: t('co.sum.qty'), v: t(qty > 1 ? 'co.pieces' : 'co.piece', { n: qty }), to: 1 },
+    ...(note.trim() ? [{ k: t('co.sum.note'), v: note.trim(), to: 1 }] : []),
   ]
 
   return (
     <Page label="Create Order">
       <div className="co">
         <div className="vh-head-text">
-          <span className="vh-eyebrow">{t('co.eyebrow')}</span>
+          <span className="vh-eyebrow">{order ? `${t('co.eyebrow')} · ${order.code}` : t('co.eyebrow')}</span>
           <h1 className="vh-h1 vh-h1--lg">{t('co.h1')}</h1>
         </div>
+
+        {rewrite && order?.infoRequestNote && (
+          <div className="vh-callout vh-callout--amber" role="status">
+            <b>{t('co.needInfo')}</b>
+            <span>{order.infoRequestNote}</span>
+          </div>
+        )}
 
         <div className="co-shell">
           <div className="co-main">
             <div className="co-steps">
-              {STEP_LABELS.map((label, i) => {
+              {STEPS.map((key, i) => {
                 const cur = i === step
                 const done = i <= maxStep && !cur
-                const locked = i > maxStep
                 return (
-                  <button
-                    key={label}
-                    className={`co-step${cur ? ' cur' : done ? ' done' : ''}`}
-                    disabled={locked}
-                    onClick={() => goTo(i)}
-                  >
+                  <button key={key} className={`co-step${cur ? ' cur' : done ? ' done' : ''}`} disabled={i > maxStep} onClick={() => openStep(i)}>
                     <span className="co-step-bar" />
                     <span className="co-step-label">
                       <span className="co-step-num">0{i + 1}</span>
-                      <span>{tn(label)}</span>
+                      <span>{t(key)}</span>
                     </span>
                   </button>
                 )
@@ -243,38 +489,15 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
               {step === 0 && (
                 <>
                   <div className="vh-stack">
-                    <h2 className="co-h2">{t('co.s0.title')}</h2>
-                    <p className="vh-lede">{t('co.s0.lede')}</p>
-                  </div>
-                  <div className="co-tray co-tray--4">
-                    {TYPES.map((o) => (
-                      <button key={o.id} className={`co-opt co-type${type === o.id ? ' on' : ''}`} onClick={() => setType(o.id)}>
-                        <div className="co-type-stage">
-                          <div className="co-type-paper" style={{ width: o.w, height: o.h }} />
-                        </div>
-                        <div className="vh-stack" style={{ gap: 4 }}>
-                          <span className="co-type-name">{tn(o.name)}</span>
-                          <span className="co-type-size">{o.size}</span>
-                        </div>
-                        <span className="co-type-price">{t('co.from', { price: fmt(o.base) })}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {step === 1 && (
-                <>
-                  <div className="vh-stack">
                     <h2 className="co-h2">{t('co.s1.title')}</h2>
                     <p className="vh-lede">{t('co.s1.lede')}</p>
                   </div>
 
                   <div className="co-tray co-tray--3">
                     {MODES.map((m) => (
-                      <button key={m.id} className={`co-opt${mode === m.id ? ' on' : ''}`} onClick={() => (m.id === 'draw' ? openCanvas() : setMode(m.id))}>
-                        <span className="co-opt-name">{tn(m.label)}</span>
-                        <span className="co-opt-sub">{tn(m.desc)}</span>
+                      <button key={m} className={`co-opt${mode === m ? ' on' : ''}`} disabled={busy} onClick={() => void chooseMode(m)}>
+                        <span className="co-opt-name">{t(`co.mode.${m}`)}</span>
+                        <span className="co-opt-sub">{t(`co.mode.${m}.sub`)}</span>
                       </button>
                     ))}
                   </div>
@@ -286,26 +509,59 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
                           className="co-text"
                           rows={5}
                           value={text}
+                          maxLength={20000}
                           aria-label={t('co.message')}
                           placeholder={t('co.placeholder')}
                           onChange={(e) => setText(e.target.value)}
                         />
                         <div className="co-meta vh-mono">
                           <span>{t('co.chars', { n: text.length })}</span>
-                          <span>{t('co.charsExtra')}</span>
+                          <span>{est ? t('co.charsCounted', { min: est.charsMin, max: est.charsMax }) : ''}</span>
                         </div>
                       </div>
+
                       <div className="co-group">
                         <span className="co-group-label">{t('co.styleLabel')}</span>
                         <div className="co-tray co-tray--3 co-tray--keep">
-                          {FONT_STYLES.map((s) => (
-                            <button key={s.id} className={`co-opt co-font${fontStyle === s.id ? ' on' : ''}`} onClick={() => setFontStyle(s.id)}>
-                              <span className="co-font-sample" style={{ fontFamily: s.font }}>{t('co.fontSample')}</span>
-                              <span className="co-font-name">{tn(s.name)}</span>
+                          {(templates.data ?? []).map((s) => (
+                            <button key={s.id} className={`co-opt co-font${templateId === s.id ? ' on' : ''}`} onClick={() => setTemplateId(s.id)}>
+                              <img
+                                className="co-font-preview"
+                                src={templatePreviewUrl(s.id, dText || t('co.fontSample'))}
+                                alt={t('co.templateAlt', { name: s.name })}
+                                loading="lazy"
+                              />
+                              <span className="co-font-name">{s.name}</span>
+                            </button>
+                          ))}
+                          {templates.loading && <span className="co-hint">{t('co.loading')}</span>}
+                          {!!templates.error && <span className="co-hint">{t(orderErrorKey(templates.error))}</span>}
+                        </div>
+                      </div>
+
+                      <div className="co-group">
+                        <span className="co-group-label">{t('co.align')}</span>
+                        <div className="co-tray co-tray--4 co-tray--keep">
+                          <button className={`co-opt${alignment === null ? ' on' : ''}`} onClick={() => setAlignment(null)}>
+                            <span className="co-opt-name">{t('co.align.auto')}</span>
+                          </button>
+                          {ALIGNMENTS.map((a) => (
+                            <button key={a} className={`co-opt${alignment === a ? ' on' : ''}`} onClick={() => setAlignment(a)}>
+                              <span className="co-opt-name">{t(`co.align.${a}`)}</span>
                             </button>
                           ))}
                         </div>
                       </div>
+
+                      <label className="co-cell">
+                        {t('co.fontSize')}
+                        <input
+                          inputMode="decimal"
+                          placeholder={t('co.fontSizePh')}
+                          value={fontSize}
+                          onChange={(e) => setFontSize(e.target.value.replace(/[^\d.]/g, '').slice(0, 5))}
+                        />
+                      </label>
                     </>
                   )}
 
@@ -316,10 +572,10 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => {
                           e.preventDefault()
-                          setFile(e.dataTransfer.files[0])
+                          void addFiles(e.dataTransfer.files)
                         }}
                       >
-                        <input type="file" accept="image/*,.pdf" className="co-file" onChange={(e) => setFile(e.target.files?.[0])} />
+                        <input type="file" multiple accept={ACCEPTED_UPLOADS.join(',')} className="co-file" onChange={(e) => { void addFiles(e.target.files); e.target.value = '' }} />
                         <span className="co-drop-icon">
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -328,48 +584,32 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
                           </svg>
                         </span>
                         <span className="co-drop-title">{t('co.dropPhoto')}</span>
-                        <span className="co-meta vh-mono">{t('co.dropMeta')}</span>
+                        <span className="co-meta vh-mono">{t('co.dropMeta', { mb: MAX_UPLOAD_MB })}</span>
                       </label>
-                      {upload && (
-                        <div className="co-file-row">
-                          <div
-                            className="co-file-thumb"
-                            style={{ backgroundImage: upload.isImg ? `url("${upload.url}")` : 'none' }}
-                          />
+                      {uploading > 0 && <p className="co-hint" role="status">{t('co.uploading')}</p>}
+                      {photos.map((p, i) => (
+                        <div key={p.id} className="co-file-row">
                           <div className="co-file-text">
-                            <span className="co-file-name">{upload.name}</span>
-                            <span className="co-file-ok vh-mono">{t('co.fileReady')}</span>
+                            <span className="co-file-name">{t('co.photoN', { n: i + 1 })}</span>
+                            <span className={`co-file-ok vh-mono${p.qualityWarning ? ' warn' : ''}`}>
+                              {t(p.qualityWarning ? 'co.qualityWarn' : 'co.fileReady')}
+                            </span>
                           </div>
-                          <button
-                            className="vh-btn vh-btn--ghost vh-btn--sm"
-                            onClick={() => {
-                              URL.revokeObjectURL(upload.url)
-                              setUpload(null)
-                            }}
-                          >
-                            {t('co.remove')}
-                          </button>
+                          <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={() => removeInput(p.id)}>{t('co.remove')}</button>
                         </div>
-                      )}
+                      ))}
                     </>
                   )}
 
                   {mode === 'draw' && (
                     <div className="co-sheet">
-                      <div
-                        className="co-sheet-thumb"
-                        style={{ aspectRatio: landscape ? `${sheet.h} / ${sheet.w}` : `${sheet.w} / ${sheet.h}` }}
-                      >
-                        {drawUrl ? <img src={drawUrl} alt={t('co.yourDrawing')} /> : <span className="vh-mono">{t('co.blank')}</span>}
+                      <div className="co-sheet-thumb">
+                        {order && canvas?.canvas ? <OrderPreview order={{ ...order, inputs: [canvas] }} /> : <span className="vh-mono">{t('co.blank')}</span>}
                       </div>
                       <div className="co-sheet-text">
-                        <span className="co-sheet-title">
-                          {t(strokes > 0 ? 'co.drawReady' : 'co.drawNone')}
-                        </span>
-                        <span className="co-meta vh-mono">
-                          {sheetLabel} · {t(strokes === 1 ? 'co.stroke' : 'co.strokes', { n: strokes })} · +15.000₫
-                        </span>
-                        <button className="vh-btn vh-btn--primary vh-btn--sm" onClick={openCanvas}>
+                        <span className="co-sheet-title">{t(strokes > 0 ? 'co.drawReady' : 'co.drawNone')}</span>
+                        <span className="co-meta vh-mono">{t(strokes === 1 ? 'co.stroke' : 'co.strokes', { n: strokes })}</span>
+                        <button className="vh-btn vh-btn--primary vh-btn--sm" disabled={busy} onClick={() => void openCanvas()}>
                           {t(strokes > 0 ? 'co.editCanvas' : 'co.openCanvas')}
                         </button>
                       </div>
@@ -378,53 +618,63 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
                 </>
               )}
 
-              {step === 2 && (
+              {step === 1 && (
                 <>
                   <div className="vh-stack">
                     <h2 className="co-h2">{t('co.s2.title')}</h2>
                     <p className="vh-lede">{t('co.s2.lede')}</p>
                   </div>
 
-                  <div className="co-group">
+                  <label className="co-switch">
+                    <input type="checkbox" checked={suggest} onChange={(e) => toggleSuggest(e.target.checked)} />
+                    <span className="co-switch-text">
+                      <span className="co-opt-name">{t('co.suggest')}</span>
+                      <span className="co-opt-sub">{t('co.suggestSub')}</span>
+                    </span>
+                  </label>
+
+                  <div className={`co-group${suggest ? ' locked' : ''}`}>
                     <span className="co-group-label">{t('co.paper')}</span>
                     <div className="co-tray co-tray--4">
-                      {PAPERS.map((o) => (
-                        <button key={o.id} className={`co-opt co-opt--row${paper === o.id ? ' on' : ''}`} onClick={() => setPaper(o.id)}>
-                          <span className="co-swatch" style={{ background: o.color }} />
+                      {(papers.data ?? []).map((o) => (
+                        <button key={o.id} className={`co-opt co-opt--row${paperId === o.id ? ' on' : ''}`} onClick={() => pickPaper(o.id)}>
                           <span className="co-choice-text">
-                            <span className="co-opt-name">{tn(o.name)}</span>
-                            <span className="co-opt-sub">{tn(o.spec)}</span>
-                            <span className="co-price">{priceLabel(o.price)}</span>
+                            <span className="co-opt-name">{o.name}</span>
+                            <span className="co-opt-sub">{t('co.paperSpec', { gsm: o.gsm, surface: o.surface, size: o.size })}</span>
+                            <span className="co-price">{t('co.perSheet', { price: fmt(o.unitPrice) })}</span>
                           </span>
                         </button>
                       ))}
                     </div>
+                    {papers.loading && <span className="co-hint">{t('co.loading')}</span>}
+                    {!!papers.error && <span className="co-hint">{t(orderErrorKey(papers.error))}</span>}
                   </div>
 
-                  <div className={`co-group${paper ? '' : ' locked'}`}>
+                  <div className={`co-group${suggest || !paperId ? ' locked' : ''}`}>
                     <span className="co-group-label">{t('co.pen')}</span>
                     <div className="co-tray co-tray--4">
-                      {PENS.map((o) => (
-                        <button key={o.id} className={`co-opt co-opt--pen${pen === o.id ? ' on' : ''}`} onClick={() => setPen(o.id)}>
-                          <span className="co-nib"><span style={{ height: o.w }} /></span>
+                      {(pens.data ?? []).map((o) => (
+                        <button key={o.id} className={`co-opt co-opt--pen${penId === o.id ? ' on' : ''}`} onClick={() => pickPen(o.id)}>
+                          <span className="co-nib"><span style={{ height: Math.max(1, Math.min(10, o.strokeWidthMm * 6)) }} /></span>
                           <span className="co-choice-text">
-                            <span className="co-opt-name">{tn(o.name)}</span>
-                            <span className="co-opt-sub">{tn(o.spec)}</span>
-                            <span className="co-price">{priceLabel(o.price)}</span>
+                            <span className="co-opt-name">{o.name}</span>
+                            <span className="co-opt-sub">{t('co.penSpec', { mm: o.strokeWidthMm })}</span>
+                            <span className="co-price">{o.surcharge ? '+' + fmt(o.surcharge) : t('co.included')}</span>
                           </span>
                         </button>
                       ))}
                     </div>
+                    {!!paperId && !pens.loading && !pens.data?.length && <span className="co-hint">{t('co.noPens')}</span>}
                   </div>
 
-                  <div className={`co-group${pen ? '' : ' locked'}`}>
+                  <div className={`co-group${suggest || !penId ? ' locked' : ''}`}>
                     <span className="co-group-label">{t('co.ink')}</span>
                     <div className="co-inks">
-                      {INKS.map((o) => (
-                        <button key={o.id} className={`co-ink${ink === o.id ? ' on' : ''}`} onClick={() => setInk(o.id)}>
-                          <span className="co-ink-dot" style={{ background: o.color }} />
-                          <span className="co-ink-name">{tn(o.name)}</span>
-                          <span className="co-price">{priceLabel(o.price)}</span>
+                      {(inks.data ?? []).map((o) => (
+                        <button key={o.id} className={`co-ink${inkId === o.id ? ' on' : ''}`} onClick={() => pickInk(o.id)}>
+                          <span className="co-ink-dot" style={{ background: o.hex ?? 'var(--t5)' }} />
+                          <span className="co-ink-name">{o.name}</span>
+                          {o.unitPrice > 0 && <span className="co-price">+{fmt(o.unitPrice)}</span>}
                         </button>
                       ))}
                     </div>
@@ -437,14 +687,27 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
                     </div>
                     <div className="co-stepper">
                       <button aria-label={t('co.dec')} onClick={() => clampQty(qty - 1)}>−</button>
-                      <input type="number" aria-label={t('co.qty')} min={1} max={500} value={qty} onChange={(e) => clampQty(+e.target.value)} />
+                      <input type="number" aria-label={t('co.qty')} min={1} max={MAX_QTY} value={qty} onChange={(e) => clampQty(+e.target.value)} />
                       <button aria-label={t('co.inc')} onClick={() => clampQty(qty + 1)}>+</button>
                     </div>
+                  </div>
+
+                  <div className="co-field">
+                    <label className="co-group-label" htmlFor="co-note">{t('co.noteLabel')}</label>
+                    <textarea
+                      id="co-note"
+                      className="co-text"
+                      rows={3}
+                      maxLength={2000}
+                      value={note}
+                      placeholder={t('co.notePh')}
+                      onChange={(e) => setNote(e.target.value)}
+                    />
                   </div>
                 </>
               )}
 
-              {step === 3 && (
+              {step === 2 && (
                 <>
                   <div className="vh-stack">
                     <h2 className="co-h2">{t('co.s3.title')}</h2>
@@ -458,106 +721,75 @@ export default function CreateOrder({ draftId: given = null }: { draftId?: strin
                         <button className="vh-link" onClick={() => goTo(r.to)}>{t('co.edit')}</button>
                       </div>
                     ))}
-                  </div>
-                  <div className="co-group">
-                    <span className="co-group-label">{t('co.delivery')}</span>
-                    <div className="co-tray co-tray--2">
-                      <label className="co-cell">
-                        {t('co.fullName')}
-                        <input autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
-                      </label>
-                      <label className="co-cell">
-                        {t('co.phone')}
-                        <input placeholder="0901 234 567" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-                      </label>
-                      <label className="co-cell co-cell--wide">
-                        {t('co.address')}
-                        <input autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} />
-                      </label>
+                    <div className="co-sum-row">
+                      <span className="co-sum-k">{t('co.sum.estimate')}</span>
+                      <span className="co-sum-v">{range}</span>
                     </div>
                   </div>
-                  <div className="co-group">
-                    <span className="co-group-label">{t('co.payment')}</span>
-                    <div className="co-tray co-tray--3">
-                      {CREATE_PAYS.map((o) => (
-                        <button key={o.id} className={`co-opt${pay === o.id ? ' on' : ''}`} onClick={() => setPay(o.id)}>
-                          <MethodLogos id={o.id} />
-                          <span className="co-opt-name">{tn(o.name)}</span>
-                          <span className="co-opt-sub">{tn(o.spec)}</span>
-                        </button>
-                      ))}
+                  {!!order?.warnings.length && (
+                    <div className="vh-callout vh-callout--amber" role="status">
+                      <b>{t('co.warnings')}</b>
+                      {order.warnings.map((w) => <span key={w}>{w}</span>)}
                     </div>
-                  </div>
+                  )}
+                  <label className="co-switch">
+                    <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} />
+                    <span className="co-switch-text">
+                      <span className="co-opt-name">{t('co.terms')}</span>
+                      <span className="co-opt-sub">{t('co.termsSub')}</span>
+                    </span>
+                  </label>
                 </>
               )}
             </div>
+
+            {err && <p className="lg-error" role="alert">{t(err)}</p>}
 
             <div className="co-nav">
               <button className="vh-btn vh-btn--ghost vh-btn--md co-back" disabled={step === 0} onClick={() => step > 0 && goTo(step - 1)}>
                 {t('co.back')}
               </button>
               <div className="co-next-wrap">
-                <span className="co-hint">{ok ? '' : hints[step]}</span>
-                <button
-                  className={`vh-btn vh-btn--md ${step === 3 ? 'vh-btn--primary' : 'vh-btn--white'}`}
-                  disabled={!ok}
-                  onClick={next}
-                >
-                  {t(step === 3 ? 'co.submit' : 'co.continue')}
+                <span className="co-hint" role="status">{ok ? saveLabel : hints[step]}</span>
+                <button className={`vh-btn vh-btn--md ${step === 2 ? 'vh-btn--primary' : 'vh-btn--white'}`} disabled={!ok} onClick={next}>
+                  {step === 2 ? t(rewrite ? 'co.resubmit' : busy ? 'co.sending' : 'co.submit') : t('co.continue')}
                 </button>
               </div>
             </div>
           </div>
 
           <div className="co-side">
-          <aside className="co-rail">
-            <div className="co-preview">
-              <div
-                className="co-preview-paper"
-                style={{
-                  height: q.T?.land ? '58%' : '88%',
-                  aspectRatio: q.T?.aspect ?? '105/148',
-                  background: q.P?.color ?? '#f4eee0',
-                }}
-              >
-                {pvImg ? (
-                  <div
-                    className="co-preview-img"
-                    style={mode === 'draw' ? inkMask(pvImg, q.I?.color ?? '#1b2440') : { backgroundImage: `url("${pvImg}")` }}
-                  />
+            <aside className="co-rail">
+              <div className="co-preview">
+                {mode === 'text' && templateId !== null && dText.trim() ? (
+                  <img className="co-preview-img" src={templatePreviewUrl(templateId, dText)} alt={t('co.previewAlt')} />
+                ) : order && order.inputs.length ? (
+                  <OrderPreview order={order} inkColor={ink?.hex} />
                 ) : (
-                  <span style={{ fontFamily: F.font, fontSize: pvFont, color: q.I?.color ?? '#1b2440' }}>{previewText}</span>
+                  <span className="co-hint">{t('co.previewEmpty')}</span>
                 )}
               </div>
-            </div>
-            <div className="co-rail-body">
-              <span className="co-est-title">{t('co.estimate')}</span>
-              <div className="co-lines">
-                {q.lines.length ? (
-                  q.lines.map((l) => (
-                    <div key={l.label} className="co-line">
-                      <span>{l.label}</span>
-                      <span className={l.good ? 'good' : undefined}>{l.value}</span>
-                    </div>
-                  ))
-                ) : (
-                  <span className="co-hint">{t('co.chooseType')}</span>
+              <div className="co-rail-body">
+                <span className="co-est-title">{t('co.estimate')}</span>
+                <div className="co-lines">
+                  <div className="co-line"><span>{t('co.sum.materials')}</span><span>{materialsLabel}</span></div>
+                  <div className="co-line"><span>{t('co.sum.qty')}</span><span>{qty}</span></div>
+                  {est && <div className="co-line"><span>{t('co.chars.label')}</span><span>{est.charsMin === est.charsMax ? est.charsMax : `${est.charsMin} – ${est.charsMax}`}</span></div>}
+                </div>
+                <div className="vh-total-row">
+                  <span>{t('co.range')}</span>
+                  <span className="co-total">{range}</span>
+                </div>
+                {est && (
+                  <div className="co-eta">
+                    <div><span>{t('co.minDeposit')}</span><b>{est.minDepositPct}%</b></div>
+                  </div>
                 )}
+                {est && !est.materialsPriced && <span className="co-fine">{t('co.pickMaterialsHint')}</span>}
+                <span className="co-fine">{t('co.fine')}</span>
               </div>
-              <div className="vh-total-row">
-                <span>{t('co.total')}</span>
-                <span className="co-total">{fmt(q.total)}</span>
-              </div>
-              <div className="co-eta">
-                <div><span>{t('co.robotTime')}</span><b>{q.robotTime}</b></div>
-                <div><span>{t('co.deliveryBy')}</span><b>{q.eta}</b></div>
-              </div>
-              <span className="co-fine">{t('co.fine')}</span>
-            </div>
-          </aside>
-          <button type="button" className="vh-btn vh-btn--md vh-btn--white co-save" onClick={saveAndExit}>
-            {t('co.saveExit')}
-          </button>
+            </aside>
+            <Link to="/account/drafts" className="vh-btn vh-btn--md vh-btn--white co-save">{t('co.saveExit')}</Link>
           </div>
         </div>
       </div>

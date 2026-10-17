@@ -43,9 +43,8 @@ export interface OrderSpec {
   text: string
   img: string | null
   qty: number
-  /** Demo only: original file name and the text a photo or drawing reads as. */
+  /** Original file name of an uploaded photo. */
   fileName?: string
-  simText?: string
 }
 
 export interface ShipTo {
@@ -97,7 +96,6 @@ export interface Order {
   /** Packing and courier tracking, filled in once the customer has paid. */
   shipment?: Shipment
   /** True for the sample orders the staff console seeds for itself. */
-  demo?: boolean
 }
 
 /** Order statuses reported by GHN (order detail and webhook). */
@@ -164,7 +162,7 @@ export interface QcReport {
 export interface RobotRun {
   robotId: string
   startedAt: number
-  /** Prototype only: how long the simulated run lasts. */
+  /** How long the run lasts, in seconds. */
   seconds: number
 }
 
@@ -186,36 +184,6 @@ export interface Profile {
   avatar: string | null
   /** Payment method id from PAY_METHODS that checkout preselects. */
   payMethod: string | null
-}
-
-/** A create-order form saved part way. Kept per user and updated on every change. */
-export interface OrderDraft {
-  id: string
-  /** Name of the user it belongs to. Drafts started signed out use "guest" until sign in. */
-  owner: string
-  createdAt: string
-  updatedAt: string
-  /** Step the user is on (0 to 3) and the furthest step they have reached. */
-  step: number
-  maxStep: number
-  type: string | null
-  mode: InputMode
-  text: string
-  fontStyle: string
-  /** Uploaded handwriting photo. Only the data URL survives a reload. */
-  upload: { name: string; isImg: boolean; dataUrl?: string } | null
-  strokes: number
-  drawUrl: string | null
-  sizeId: string
-  landscape: boolean
-  paper: string | null
-  pen: string | null
-  ink: string | null
-  qty: number
-  name: string
-  phone: string
-  address: string
-  pay: string | null
 }
 
 export type Role = 'customer' | 'staff' | 'technician'

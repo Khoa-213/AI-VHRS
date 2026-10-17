@@ -23,10 +23,12 @@ export function usePath() {
   return useSyncExternalStore(subscribe, getPath)
 }
 
-export function navigate(to: string) {
+export function navigate(to: string, opts: { replace?: boolean } = {}) {
   const url = new URL(to, window.location.href)
   const same = url.pathname === window.location.pathname
-  window.history.pushState(null, '', url.pathname + url.search + url.hash)
+  const target = url.pathname + url.search + url.hash
+  if (opts.replace) window.history.replaceState(null, '', target)
+  else window.history.pushState(null, '', target)
   emit()
   if (url.hash) {
     // Wait a frame so the new page has rendered its anchors.
@@ -77,5 +79,4 @@ export function matchOrderRoute(path: string, page: string): string | null {
   return m ? decodeURIComponent(m[1]) : null
 }
 
-export const orderPath = (id: string, page: 'review' | 'deposit' | 'result' | 'final-payment' | 'tracking') =>
-  `/orders/${encodeURIComponent(id)}/${page}`
+export const orderPath = (id: string | number, page: 'review' | 'deposit') => `/orders/${encodeURIComponent(String(id))}/${page}`

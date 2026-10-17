@@ -10,8 +10,8 @@ import type { GhnStatus, Order, ShipLog, Shipment } from '../types'
  *   POST {VITE_GHN_PROXY}/shipments            body { orderId, to, weightG, codAmount }
  *   GET  {VITE_GHN_PROXY}/shipments/{code}     -> { log: [{ status, updated_date }] }
  *
- * Without VITE_GHN_PROXY the layer runs a scripted courier so the whole flow
- * can be demoed. Everything GHN-shaped is normalised in this file only.
+ * Without VITE_GHN_PROXY booking is refused. Everything GHN-shaped is normalised
+ * in this file only.
  */
 
 const BASE: string | undefined = import.meta.env.VITE_GHN_PROXY || undefined
@@ -123,32 +123,23 @@ export interface Booking {
   expectedAt: string
 }
 
-const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms))
 const DAY = 864e5
-
-function mockCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-}
 
 /** Books a GHN order for a packed parcel. */
 export async function bookShipment(order: Order, weightG: number): Promise<Booking> {
-  if (BASE) {
-    const res = await fetch(`${BASE}/shipments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId: order.id, to: order.shipTo, weightG, codAmount: 0 }),
-    })
-    if (!res.ok) throw new Error(`GHN booking failed (${res.status})`)
-    const d = (await res.json()) as { order_code: string; total_fee?: number; expected_delivery_time?: string }
-    return {
-      code: d.order_code,
-      fee: d.total_fee ?? 0,
-      expectedAt: d.expected_delivery_time ?? new Date(Date.now() + 3 * DAY).toISOString(),
-    }
+  if (!BASE) throw new Error('GHN is not configured (VITE_GHN_PROXY)')
+  const res = await fetch(`${BASE}/shipments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId: order.id, to: order.shipTo, weightG, codAmount: 0 }),
+  })
+  if (!res.ok) throw new Error(`GHN booking failed (${res.status})`)
+  const d = (await res.json()) as { order_code: string; total_fee?: number; expected_delivery_time?: string }
+  return {
+    code: d.order_code,
+    fee: d.total_fee ?? 0,
+    expectedAt: d.expected_delivery_time ?? new Date(Date.now() + 3 * DAY).toISOString(),
   }
-  await sleep(700)
-  return { code: mockCode(), fee: 22000 + Math.round(weightG / 500) * 5000, expectedAt: new Date(Date.now() + 3 * DAY).toISOString() }
 }
 
 /** Every scan GHN has for a code, oldest first. */
@@ -161,45 +152,4 @@ export async function fetchLogs(code: string): Promise<ShipLog[]> {
     .filter((l) => l.status in GHN_STATUS)
     .map((l) => ({ status: l.status as GhnStatus, at: new Date(l.updated_date).toISOString(), place: l.warehouse }))
     .sort((a, b) => a.at.localeCompare(b.at))
-}
-
-// ---------- scripted courier (prototype only) ----------
-
-const SCRIPT: GhnStatus[] = ['ready_to_pick', 'picking', 'picked', 'storing', 'transporting', 'sorting', 'delivering', 'delivered']
-
-function placeFor(status: GhnStatus, city: string): string | undefined {
-  switch (status) {
-    case 'picking':
-    case 'picked':
-      return 'Bưu cục Bến Thành, TP. Hồ Chí Minh'
-    case 'storing':
-      return 'Kho trung chuyển Bình Tân'
-    case 'transporting':
-      return 'Tuyến liên tỉnh'
-    case 'sorting':
-      return `Kho phân loại ${city}`
-    case 'delivering':
-    case 'delivered':
-      return `Bưu cục ${city}`
-    default:
-      return undefined
-  }
-}
-
-/** The next scan the scripted courier would report, or null when it is done. */
-export function nextMockLog(logs: ShipLog[], city: string, at = new Date()): ShipLog | null {
-  const last = logs[logs.length - 1]
-  const i = last ? SCRIPT.indexOf(last.status) : -1
-  const status = SCRIPT[i + 1]
-  return status ? { status, at: at.toISOString(), place: placeFor(status, city) } : null
-}
-
-/** Scans up to and including `through`, spaced 5 hours apart ending at `end`. Used for sample orders. */
-export function scriptedLogs(through: GhnStatus, end: Date, city: string): ShipLog[] {
-  const n = SCRIPT.indexOf(through) + 1
-  return SCRIPT.slice(0, n).map((status, i) => ({
-    status,
-    at: new Date(end.getTime() - (n - 1 - i) * 5 * 36e5).toISOString(),
-    place: placeFor(status, city),
-  }))
 }

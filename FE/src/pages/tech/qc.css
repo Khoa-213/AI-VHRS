@@ -63,7 +63,6 @@
 .qc-sent span{font-size:15px;line-height:1.6;color:var(--t3);max-width:60ch}
 .qc-sent-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
 
-.qc-proto{margin-top:8px;width:100%;white-space:normal;height:auto;min-height:40px;padding:8px 14px}
 
 /* Two steps: checklist, then photos */
 .qc-tabbar{padding:0 clamp(16px,2.4vw,32px);margin-top:clamp(16px,2vw,24px);max-width:520px}

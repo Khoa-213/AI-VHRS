@@ -36,7 +36,7 @@ export default function ShippingBoard() {
             <p>{t('sp.lede')}</p>
           </div>
           <div className="sd-top-right">
-            <span className="sd-state">{t(GHN_LIVE ? 'sp.live' : 'sp.simulated')}</span>
+            <span className="sd-state">{t(GHN_LIVE ? 'sp.live' : 'sp.notConnected')}</span>
             <ThemeToggle className="vh-icon-btn" />
             <LanguageToggle className="vh-icon-btn" />
           </div>

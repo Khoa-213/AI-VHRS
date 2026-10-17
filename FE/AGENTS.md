@@ -34,13 +34,12 @@ const locale = useLocale() // dates and numbers: date.toLocaleDateString(locale,
 
 - Variables use `{name}` placeholders. Do not build sentences by concatenating translated pieces; one key per sentence,
   because word order differs between English, Japanese and Vietnamese.
-- Keys are `<area>.<name>`: `nav.`, `co.` (create order), `ct.` (cart), `or.` (review), `dp.` (deposit),
-  `rs.` (result), `fp.` (final payment), `tk.` (tracking), `sp.` (shipping desk), `sc.`/`as.`/`sd.` (staff),
-  `td.`/`po.`/`qc.`/`rp.` (technician), `at.` (assistive touch), `lp.` (landing).
+- Keys are `<area>.<name>`: `nav.`, `co.` (create order), `or.`/`ov.` (order page), `os.`/`ot.`/`ps.` (status, type and production labels), `dp.` (deposit), `err.` (API errors), `sp.` (shipping desk), `sc.`/`as.`/`sd.` (staff),
+  `td.`/`po.`/`qc.`/`rp.` (technician), `lp.` (landing).
 - Catalog and domain names (paper, ink, pens, roster skills, check names, reject reasons) are stored in English in
   data and orders. Keep the stored value English and translate at display time with `tn()`; add an `n.<English text>`
   key to the three dictionaries. Composite strings split on ` · ` and ` × ` are handled by `tn()`.
-- Order status values are stored in English (`Pending`, `Shipped`). Display them with `t(\`status.${order.status}\`)`.
+- Customer order statuses are backend codes (`QUOTED`). Display them with `t(\`os.${order.status}\`)`. Names that come from the catalog (paper, pen, ink, templates) are data and are shown as received.
 - Functions outside React (utils, services) take `t` / `tn` / `locale` as parameters, see `utils/pricing.ts`.
   Do not import the dictionaries directly.
 - Never hard-code a locale such as `'en-GB'`. Use `useLocale()`.
@@ -69,15 +68,22 @@ Text that stays English is a bug unless it is in the exceptions list above.
 
 - No em dash or en dash in user-facing copy. Use a comma, colon or period.
 - Icons come from `@phosphor-icons/react`. Colours come from CSS variables in `src/styles/theme.css`.
-- Local data is a localStorage mock in `src/store/store.ts` (prototype). Keep FE-only; the GHN client in
-  `src/services/ghn.ts` talks to a backend proxy, never directly to GHN with a token.
+- Customer data comes from the API. Staff and technician screens still use the localStorage mock in `src/store/store.ts`.
+  The GHN client in `src/services/ghn.ts` talks to a backend proxy, never directly to GHN with a token.
 
-## Order drafts
+## Customer orders come from the API
 
-The create-order form autosaves to a draft on every change (`saveDraft` in `src/store/store.ts`, localStorage key
-`aivhrs-drafts`). Drafts show under **Account > Drafts** (`/account/drafts`). When you add a field to the
-create-order flow, add it to `OrderDraft` (`src/types/index.ts`), to the `persist` snapshot in `CreateOrder.tsx` and to
-the restore in its initial state, or it will be lost when the user resumes. There is no cart.
+The customer flow (create, submit, privacy, quotation, deposit) talks to the backend through `src/services/orders.ts`
+(contract in `BE/docs/FE_API_GUIDE.md`, Swagger at `/docs`). Build the UI from what the API accepts and returns: when the
+backend gains a field, add it to the UI; do not keep fields the backend does not have.
+
+- A draft is a real order with `order_status = DRAFT`. `CreateOrder.tsx` creates it on the first thing worth saving and
+  autosaves every change through `hooks/useSaveQueue.ts`. Drafts list under **Account > Drafts** (`GET /orders?status=DRAFT`).
+- Catalog (paper, pen, ink, templates) and the price estimate come from the API. Do not hard-code them.
+- `/orders/:id/review` is the order page: it renders by `order_status` and polls while the status moves on its own.
+- Deposit uses the **mock** gateway. Keep the "simulated payment" notice while the backend returns `mode = MOCK`.
+- Result, final payment and tracking have no API yet (backend phase 4), so they have no pages. Add them when they do.
+- Staff and technician screens still read the local mock in `src/store/store.ts`. Wire them one by one and delete their mock data as you go.
 
 ## Account area
 

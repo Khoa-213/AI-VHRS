@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowUpRight, ArrowsClockwise, FastForward } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowUpRight, ArrowsClockwise } from '@phosphor-icons/react'
 import { useState } from 'react'
 import SkipLink from '../../components/ui/SkipLink'
 import ShipmentTimeline from '../../components/ui/ShipmentTimeline'
@@ -7,11 +7,11 @@ import LanguageToggle from '../../components/ui/LanguageToggle'
 import { useLocale, useT } from '../../i18n'
 import { useShipmentSync } from '../../hooks/useShipmentSync'
 import {
-  GHN_LIVE, PACK_STEPS, bookShipment, isFinal, lastLog, packed, shipmentOf, stageChip, stageOf, trackingUrl,
+  GHN_LIVE, PACK_STEPS, bookShipment, packed, shipmentOf, stageChip, stageOf, trackingUrl,
 } from '../../services/ghn'
 import { Link } from '../../router/router'
 import {
-  advanceCourier, saveBooking, setParcelWeight, togglePackStep, useAllStaffOrders, usePrototypeMode,
+  saveBooking, setParcelWeight, togglePackStep, useAllStaffOrders,
 } from '../../store/store'
 import { fmt } from '../../utils/format'
 import StaffRail from './StaffRail'
@@ -26,7 +26,6 @@ export default function ShippingDetail({ id }: { id: string }) {
   const when = (iso?: string) =>
     iso ? new Date(iso).toLocaleString(locale, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : t('sp.notSet')
   const sync = useShipmentSync(order ?? null)
-  const proto = usePrototypeMode()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -57,10 +56,8 @@ export default function ShippingDetail({ id }: { id: string }) {
   const s = shipmentOf(order)
   const stage = stageOf(order)
   const chip = stageChip(order)
-  const last = lastLog(s)
   const booked = !!s.ghnCode
   const ready = packed(s)
-  const finished = !!last && isFinal(last.status)
   const to = order.shipTo
   const address = [to?.street, to?.ward, to?.city].filter(Boolean).join(', ') || order.address || t('sp.noAddress')
 
@@ -71,7 +68,6 @@ export default function ShippingDetail({ id }: { id: string }) {
     try {
       const b = await bookShipment(order, s.weightG)
       saveBooking(order.id, b)
-      if (!GHN_LIVE) advanceCourier(order.id)
     } catch (e) {
       setErr(e instanceof Error ? e.message : t('sp.bookErr'))
     } finally {
@@ -177,7 +173,7 @@ export default function ShippingDetail({ id }: { id: string }) {
                 <ArrowsClockwise size={16} aria-hidden /> {t(sync.busy ? 'sp.refreshing' : 'sp.refresh')}
               </button>
             ) : (
-              <span className="sd-tag">{t('sp.simCourier')}</span>
+              <span className="sd-tag">{t('sp.notConnected')}</span>
             )}
           </div>
 
@@ -186,14 +182,6 @@ export default function ShippingDetail({ id }: { id: string }) {
           {GHN_LIVE && sync.syncedAt && <p className="sd-note">{t('sp.lastSync', { time: sync.syncedAt.toLocaleTimeString(locale) })}</p>}
           {sync.error && <p className="sp-error" role="alert">{t('sp.syncErr', { msg: sync.error })}</p>}
 
-          {!GHN_LIVE && proto && booked && order.status === 'Shipped' && (
-            <div className="sp-sim">
-              <button type="button" className="sp-ghost" disabled={finished} onClick={() => advanceCourier(order.id)}>
-                <FastForward size={16} aria-hidden /> {t('sp.simNext')}
-              </button>
-              <span className="sd-note">{t('sp.simNote')}</span>
-            </div>
-          )}
           {stage === 'problem' && (
             <p className="sd-note">{t('sp.problemNote')}</p>
           )}

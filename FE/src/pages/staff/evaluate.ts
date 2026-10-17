@@ -45,8 +45,8 @@ export function recognizedText(order: Order, edited: string | undefined, t: TFn)
   if (sp.mode === 'text') return sp.text
   if (edited !== undefined) return edited
   if (order.ocrText !== undefined) return order.ocrText
-  if (sp.mode === 'upload') return sp.simText ?? (sp.text || t('rec.unreadable'))
-  return sp.simText ?? ''
+  if (sp.mode === 'upload') return sp.text || t('rec.unreadable')
+  return ''
 }
 
 export function recognitionRows(order: Order, text: string, t: TFn, tn: (s: string) => string): Row[] {

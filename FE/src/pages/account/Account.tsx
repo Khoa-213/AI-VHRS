@@ -3,16 +3,18 @@ import { useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
 import { MethodLogos } from '../../components/ui/PaymentLogos'
 import PaymentLogos from '../../components/ui/PaymentLogos'
-import { PAYMENT_BADGES, PAY_METHODS, STATUS_COLORS } from '../../constants/catalog'
-import { LANGS, setLang, useLang, useT, useTn } from '../../i18n'
-import { Link, navigate, orderPath } from '../../router/router'
+import { PAYMENT_BADGES, PAY_METHODS } from '../../constants/catalog'
+import { STATUS_COLOR, orderLink } from '../../constants/orderStatus'
+import { useAsync } from '../../hooks/useAsync'
+import { LANGS, setLang, useLang, useLocale, useT, useTn } from '../../i18n'
+import { Link, navigate } from '../../router/router'
+import { SENT, listOrders, orderErrorKey, type Order } from '../../services/orders'
 import { setTheme, useTheme } from '../../store/theme'
 import { authErrorKey } from '../../services/api'
 import { PHONE_RULE, cleanPhone } from '../../services/auth'
 import {
-  saveAccount, signOut, updateProfile, useDrafts, useOrders, useProfile, useUser,
+  saveAccount, signOut, updateProfile, useProfile, useUser,
 } from '../../store/store'
-import type { Order } from '../../types'
 import { fmt } from '../../utils/format'
 import { shrinkImage } from '../tech/phase'
 import DraftsSection from './DraftsSection'
@@ -21,20 +23,17 @@ import './account.css'
 export type Section = 'profile' | 'preferences' | 'orders' | 'drafts' | 'payment'
 const CUSTOMER_ONLY: Section[] = ['orders', 'drafts', 'payment']
 
-/** Where an order opens from the history list, by status. */
-function orderHref(o: Order) {
-  if (o.status === 'Accepted') return orderPath(o.id, 'deposit')
-  if (['Shipped', 'Delivered'].includes(o.status)) return orderPath(o.id, 'tracking')
-  if (['Written', 'Rewriting'].includes(o.status)) return orderPath(o.id, 'result')
-  return orderPath(o.id, 'review')
-}
-
 export default function Account({ section }: { section: Section }) {
   const t = useT()
   const user = useUser()
   const profile = useProfile()
-  const orders = useOrders()
-  const drafts = useDrafts()
+  const customerUser = user?.role === 'customer'
+  const counts = useAsync(
+    async () => (customerUser
+      ? { orders: (await listOrders({ status: SENT, pageSize: 1 })).total, drafts: (await listOrders({ status: 'DRAFT', pageSize: 1 })).total }
+      : null),
+    [user?.id, customerUser, section],
+  )
 
   if (!user) {
     return (
@@ -84,8 +83,8 @@ export default function Account({ section }: { section: Section }) {
             {customer && (
               <>
                 <span className="ac-nav-group">{t('acct.group.activity')}</span>
-                {item('orders', '/account/orders', t('acct.nav.orders'), <ClockCounterClockwise size={20} aria-hidden />, orders.length)}
-                {item('drafts', '/account/drafts', t('acct.nav.drafts'), <NotePencil size={20} aria-hidden />, drafts.length)}
+                {item('orders', '/account/orders', t('acct.nav.orders'), <ClockCounterClockwise size={20} aria-hidden />, counts.data?.orders)}
+                {item('drafts', '/account/drafts', t('acct.nav.drafts'), <NotePencil size={20} aria-hidden />, counts.data?.drafts)}
                 {item('payment', '/account/payment', t('acct.nav.payment'), <CreditCard size={20} aria-hidden />)}
               </>
             )}
@@ -267,36 +266,50 @@ function PreferencesSection() {
 
 function OrdersSection() {
   const t = useT()
-  const tn = useTn()
-  const orders = useOrders()
+  const locale = useLocale()
+  const [page, setPage] = useState(1)
+  const list = useAsync(() => listOrders({ status: SENT, page, pageSize: 10 }), [page])
+  const orders: Order[] = list.data?.items ?? []
+  const total = list.data?.total ?? 0
+  const pages = Math.max(1, Math.ceil(total / 10))
   return (
     <>
       <div className="ac-h2-row">
         <h2 className="ac-h2">{t('acct.o.title')}</h2>
-        {orders.length > 0 && <span className="vh-mono ac-count">{t('acct.o.count', { n: orders.length })}</span>}
+        {total > 0 && <span className="vh-mono ac-count">{t('acct.o.count', { n: total })}</span>}
       </div>
+      {list.loading && !list.data && <p className="vh-lede" role="status">{t('co.loading')}</p>}
+      {!!list.error && <p className="lg-error" role="alert">{t(orderErrorKey(list.error))}</p>}
       {orders.length ? (
         <ul className="ac-orders">
-          {orders.map((o) => {
-            const [color] = STATUS_COLORS[o.status]
-            return (
-              <li key={o.id}>
-                <Link to={orderHref(o)} className="ac-order">
-                  <span className="ac-order-main">
-                    <span className="ac-order-title">{tn(o.title)}</span>
-                    <span className="vh-mono ac-order-meta">{o.id} · {o.date}</span>
-                  </span>
-                  <span className="vh-chip" style={{ color }}>{t(`status.${o.status}`)}</span>
-                  <span className="vh-mono ac-order-total">{fmt(o.total)}</span>
-                </Link>
-              </li>
-            )
-          })}
+          {orders.map((o) => (
+            <li key={o.id}>
+              <Link to={orderLink(o.id, o.status)} className="ac-order">
+                <span className="ac-order-main">
+                  <span className="ac-order-title">{t(`ot.${o.type}`)} × {o.quantity}</span>
+                  <span className="vh-mono ac-order-meta">{o.code} · {new Date(o.submittedAt ?? o.createdAt).toLocaleDateString(locale)}</span>
+                </span>
+                <span className="vh-chip" style={{ color: STATUS_COLOR[o.status] }}>{t(`os.${o.status}`)}</span>
+                <span className="vh-mono ac-order-total">
+                  {o.total !== null ? fmt(o.total) : o.estMax !== null ? (o.estMin === o.estMax ? fmt(o.estMax) : `${fmt(o.estMin ?? 0)} – ${fmt(o.estMax)}`) : ''}
+                </span>
+              </Link>
+            </li>
+          ))}
         </ul>
       ) : (
-        <div className="ac-empty">
-          <b>{t('acct.o.emptyTitle')}</b>
-          <span>{t('acct.o.emptyBody')}</span>
+        !list.loading && (
+          <div className="ac-empty">
+            <b>{t('acct.o.emptyTitle')}</b>
+            <span>{t('acct.o.emptyBody')}</span>
+          </div>
+        )
+      )}
+      {pages > 1 && (
+        <div className="ac-pager">
+          <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t('acct.o.prev')}</button>
+          <span className="vh-mono">{page} / {pages}</span>
+          <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>{t('acct.o.next')}</button>
         </div>
       )}
     </>
@@ -315,7 +328,7 @@ function PaymentSection() {
         <button className={`vh-choice${profile.payMethod === null ? ' on' : ''}`} onClick={() => updateProfile({ payMethod: null })}>
           <span className="vh-choice-name">{t('acct.pay.none')}</span>
         </button>
-        {PAY_METHODS.map((m) => (
+        {PAY_METHODS.filter((m) => m.id === 'vnpay' || m.id === 'momo').map((m) => (
           <button key={m.id} className={`vh-choice${profile.payMethod === m.id ? ' on' : ''}`} onClick={() => updateProfile({ payMethod: m.id })}>
             <MethodLogos id={m.id} />
             <span className="vh-choice-name">{tn(m.name)}</span>

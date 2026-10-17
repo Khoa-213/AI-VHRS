@@ -1,4 +1,3 @@
-import AssistiveTouch from './components/prototype/AssistiveTouch'
 import Account, { type Section } from './pages/account/Account'
 import CreateOrder from './pages/create-order/CreateOrder'
 import DrawStudio from './pages/create-order/DrawStudio'
@@ -15,22 +14,19 @@ import RobotPreview from './pages/tech/RobotPreview'
 import RequireStaff from './pages/staff/RequireStaff'
 import ShippingBoard from './pages/staff/ShippingBoard'
 import ShippingDetail from './pages/staff/ShippingDetail'
-import Tracking from './pages/tracking/Tracking'
 import Deposit from './pages/order/Deposit'
-import FinalPayment from './pages/order/FinalPayment'
-import OrderResult from './pages/order/OrderResult'
 import OrderReview from './pages/order/OrderReview'
 import { matchOrderRoute, useInterceptLinks, usePath } from './router/router'
 
 function Routes() {
   const path = usePath()
 
-  if (path === '/create-order/draw') return <DrawStudio key="new" />
-  const draw = /^\/create-order\/draw\/([^/]+)\/?$/.exec(path)
-  if (draw) return <DrawStudio key={draw[1]} draftId={decodeURIComponent(draw[1])} />
-  const draft = /^\/create-order\/draft\/([^/]+)\/?$/.exec(path)
-  if (draft) return <CreateOrder key={draft[1]} draftId={decodeURIComponent(draft[1])} />
-  if (path === '/create-order') return <CreateOrder key="new" />
+  const draw = /^\/create-order\/draw\/(\d+)\/?$/.exec(path)
+  if (draw) return <DrawStudio key={draw[1]} orderId={Number(draw[1])} />
+  // One instance for the whole flow: the draft is created on the server mid-form and the address follows.
+  const draft = /^\/create-order\/draft\/(\d+)\/?$/.exec(path)
+  if (draft) return <CreateOrder key="create" orderId={Number(draft[1])} />
+  if (path === '/create-order' || path === '/create-order/draw') return <CreateOrder key="create" />
   const account = /^\/account(?:\/([^/]+))?\/?$/.exec(path)
   if (account) {
     const known: Section[] = ['orders', 'drafts', 'payment', 'preferences']
@@ -90,22 +86,11 @@ function Routes() {
   if (review) return <OrderReview key={review} id={review} />
   const deposit = matchOrderRoute(path, 'deposit')
   if (deposit) return <Deposit key={deposit} id={deposit} />
-  const result = matchOrderRoute(path, 'result')
-  if (result) return <OrderResult key={result} id={result} />
-  const final = matchOrderRoute(path, 'final-payment')
-  if (final) return <FinalPayment key={final} id={final} />
-  const tracking = matchOrderRoute(path, 'tracking')
-  if (tracking) return <Tracking key={tracking} id={tracking} />
 
   return <Landing />
 }
 
 export default function App() {
   useInterceptLinks()
-  return (
-    <>
-      <Routes />
-      <AssistiveTouch />
-    </>
-  )
+  return <Routes />
 }

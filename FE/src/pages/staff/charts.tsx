@@ -48,33 +48,3 @@ export function Donut({ slices, size = 168, center, caption }: DonutProps) {
     </svg>
   )
 }
-
-interface SparkProps {
-  values: number[]
-  labels: string[]
-  height?: number
-}
-
-/** One-series area line with an emphasised last point. */
-export function Spark({ values, labels, height = 72 }: SparkProps) {
-  const w = 280
-  const pad = 6
-  const max = Math.max(...values) * 1.1
-  const min = 0
-  const x = (i: number) => pad + (i * (w - pad * 2)) / (values.length - 1)
-  const y = (v: number) => height - pad - ((v - min) / (max - min)) * (height - pad * 2)
-  const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ')
-  const area = `${line} L${x(values.length - 1)} ${height} L${x(0)} ${height} Z`
-  const last = values.length - 1
-  return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="sd-spark" role="img" aria-label={`Last 7 days: ${values.map((v, i) => `${labels[i]} ${v}`).join(', ')}`}>
-      <path d={area} fill="var(--s1)" opacity="0.14" />
-      <path d={line} fill="none" stroke="var(--s1)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      {values.map((v, i) => (
-        <circle key={i} cx={x(i)} cy={y(v)} r={i === last ? 4 : 8} fill={i === last ? 'var(--s1)' : 'transparent'} stroke={i === last ? 'var(--card)' : 'none'} strokeWidth="2">
-          <title>{`${labels[i]}: ${v}`}</title>
-        </circle>
-      ))}
-    </svg>
-  )
-}

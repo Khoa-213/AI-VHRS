@@ -6,9 +6,8 @@ import LanguageToggle from '../../components/ui/LanguageToggle'
 import { layoutById } from '../../constants/catalog'
 import { Link } from '../../router/router'
 import {
-  finishRobotRun, startRobotRun, updateOrder, useAllStaffOrders, usePrototypeMode, useUser,
+  startRobotRun, useAllStaffOrders, useUser,
 } from '../../store/store'
-import { fmt } from '../../utils/format'
 import { MODE_LABEL, evaluate } from '../staff/evaluate'
 import { STATE_LABEL, roster } from '../staff/technicians'
 import SimCanvas from './SimCanvas'
@@ -33,7 +32,6 @@ export default function RobotPreview({ id }: { id: string }) {
   const tn = useTn()
   const user = useUser()
   const orders = useAllStaffOrders()
-  const prototype = usePrototypeMode()
   const order = orders.find((o) => o.id === id)
 
   const [tuning, setTuning] = useState<Tuning>(DEFAULT_TUNING)
@@ -362,11 +360,6 @@ export default function RobotPreview({ id }: { id: string }) {
                 <div className="tp-done run" role="status">
                   <b>{t('rp.writing')}</b>
                   <span>{t('rp.writingBody', { robot: run!.robotId })}</span>
-                  {prototype && (
-                    <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={() => finishRobotRun(order.id)}>
-                      {t('rp.protoFinish')}
-                    </button>
-                  )}
                 </div>
               )
             ) : (
@@ -379,27 +372,6 @@ export default function RobotPreview({ id }: { id: string }) {
                 <button className="vh-btn vh-btn--primary vh-btn--md" disabled={!canStart} onClick={() => setConfirm(true)}>
                   {t('rp.startReal')}
                 </button>
-                {prototype && !(watched && checked) && (
-                  <button
-                    className="vh-btn vh-btn--ghost vh-btn--sm"
-                    onClick={() => {
-                      setProgress(1)
-                      setPlaying(false)
-                      setWatched(true)
-                      setChecks({ paper: true, pen: true, ink: true, calibration: true, clear: true })
-                    }}
-                  >
-                    {t('rp.protoPlay')}
-                  </button>
-                )}
-                {!paid && prototype && (
-                  <button
-                    className="vh-btn vh-btn--ghost vh-btn--sm"
-                    onClick={() => updateOrder(order.id, { status: 'Queued', depositMethod: 'Prototype' })}
-                  >
-                    {t('rp.protoDeposit', { amount: fmt(Math.round(order.total * 0.3 / 1000) * 1000) })}
-                  </button>
-                )}
               </>
             )}
           </section>

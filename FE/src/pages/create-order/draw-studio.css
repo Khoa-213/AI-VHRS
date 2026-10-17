@@ -51,8 +51,6 @@
   .ds-group--end{margin-left:0}
 }
 
-/* The prototype bar would cover the sheet; the canvas page is full screen. */
-.ds ~ .at{display:none}
 @media (max-width:900px){
   .ds-tools{flex-wrap:wrap;overflow:visible;gap:8px 16px}
   .ds-group--end{margin-left:0}
@@ -85,3 +83,5 @@
 .ds-pen-swatch--monoline{height:2px}
 .ds-pen-swatch--pencil{height:2px;opacity:.7}
 .ds-pen-swatch--fountain{height:6px;border-radius:999px 2px 999px 2px}
+
+.ds-error{margin:0;padding:8px 16px;font-size:13px;color:var(--danger);background:var(--fx-04)}

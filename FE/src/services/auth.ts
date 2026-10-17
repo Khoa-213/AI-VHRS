@@ -30,14 +30,6 @@ const AREA: Record<string, Role> = {
   ADMIN: 'staff',
 }
 
-/**
- * Technician accounts have no roster id on the backend yet, so the simulated
- * technician queues are matched by email. Unknown technicians get T-01.
- */
-const ROSTER_BY_EMAIL: Record<string, string> = {
-  'tech@netviet.vn': 'T-01',
-}
-
 export function toUser(a: Account): User {
   const role = AREA[a.role] ?? 'customer'
   return {
@@ -47,7 +39,6 @@ export function toUser(a: Account): User {
     phone: a.phone,
     apiRole: a.role,
     role,
-    ...(role === 'technician' ? { techId: ROSTER_BY_EMAIL[a.email.toLowerCase()] ?? 'T-01' } : {}),
   }
 }
 

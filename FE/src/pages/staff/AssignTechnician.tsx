@@ -22,10 +22,10 @@ export default function AssignTechnician({ id }: { id: string }) {
   const techs = useMemo(() => roster(), [])
   const best = recommend(techs, orders)
 
-  const [techId, setTechId] = useState<string>(order?.assignment?.techId ?? best?.id ?? techs[0].id)
-  const tech = techs.find((t) => t.id === techId) ?? techs[0]
+  const [techId, setTechId] = useState<string>(order?.assignment?.techId ?? best?.id ?? techs[0]?.id ?? '')
+  const tech: Technician | undefined = techs.find((t) => t.id === techId) ?? techs[0]
   const [robotId, setRobotId] = useState<string | undefined>(order?.assignment?.robotId)
-  const robot = tech.robots.find((r) => r.id === robotId && r.state !== 'offline') ?? freeRobots(tech)[0]
+  const robot = tech?.robots.find((r) => r.id === robotId && r.state !== 'offline') ?? (tech ? freeRobots(tech)[0] : undefined)
   const [justSaved, setJustSaved] = useState(false)
 
   const header = (
@@ -45,7 +45,7 @@ export default function AssignTechnician({ id }: { id: string }) {
     </header>
   )
 
-  if (!order || order.status !== 'Accepted') {
+  if (!order || order.status !== 'Accepted' || !tech) {
     return (
       <div className="sd sd--sc">
       <StaffRail active="review" />
@@ -55,11 +55,13 @@ export default function AssignTechnician({ id }: { id: string }) {
         <main className="sc-main" id="main">
           <div className="sc-detail">
             <div className="sc-done bad">
-              <h2>{t(order ? 'as.notReady' : 'as.notFound')}</h2>
+              <h2>{t(!order ? 'as.notFound' : order.status !== 'Accepted' ? 'as.notReady' : 'as.noRoster')}</h2>
               <p>
-                {order
-                  ? t('as.notReadyBody', { id: order.id, status: t(`status.${order.status}`) })
-                  : t('as.notFoundBody', { id })}
+                {!order
+                  ? t('as.notFoundBody', { id })
+                  : order.status !== 'Accepted'
+                    ? t('as.notReadyBody', { id: order.id, status: t(`status.${order.status}`) })
+                    : t('as.noRosterBody')}
               </p>
               <Link to="/staff" className="vh-btn vh-btn--ghost vh-btn--md sc-self-start">
                 {t('as.backDash')}
