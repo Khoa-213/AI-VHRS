@@ -4,16 +4,16 @@ import DrawStudio from './pages/create-order/DrawStudio'
 import Landing from './pages/landing/Landing'
 import Login from './pages/login/Login'
 import Register from './pages/login/Register'
-import AssignTechnician from './pages/staff/AssignTechnician'
-import StaffConsole from './pages/staff/StaffConsole'
+import Approvals from './pages/staff/Approvals'
+import Catalog from './pages/staff/Catalog'
+import Schedule from './pages/staff/Schedule'
+import Workbench from './pages/staff/Workbench'
 import StaffDashboard from './pages/staff/StaffDashboard'
 import TechDashboard from './pages/tech/TechDashboard'
 import PreviewOrders from './pages/tech/PreviewOrders'
 import QualityCheck from './pages/tech/QualityCheck'
 import RobotPreview from './pages/tech/RobotPreview'
 import RequireStaff from './pages/staff/RequireStaff'
-import ShippingBoard from './pages/staff/ShippingBoard'
-import ShippingDetail from './pages/staff/ShippingDetail'
 import Deposit from './pages/order/Deposit'
 import OrderReview from './pages/order/OrderReview'
 import { matchOrderRoute, useInterceptLinks, usePath } from './router/router'
@@ -36,20 +36,21 @@ function Routes() {
   if (path === '/login') return <Login />
   if (path === '/register') return <Register />
   if (path === '/staff') return <RequireStaff><StaffDashboard /></RequireStaff>
-  if (path === '/staff/shipping') return <RequireStaff><ShippingBoard /></RequireStaff>
-  const shipping = /^\/staff\/shipping\/([^/]+)\/?$/.exec(path)
-  if (shipping) {
-    return (
-      <RequireStaff>
-        <ShippingDetail key={shipping[1]} id={decodeURIComponent(shipping[1])} />
-      </RequireStaff>
-    )
-  }
-  const staffReview = /^\/staff\/review(?:\/([^/]+))?\/?$/.exec(path)
+  const staffReview = /^\/staff\/review(?:\/(\d+))?\/?$/.exec(path)
   if (staffReview) {
     return (
       <RequireStaff>
-        <StaffConsole id={staffReview[1] ? decodeURIComponent(staffReview[1]) : undefined} />
+        <Workbench id={staffReview[1] ? Number(staffReview[1]) : undefined} />
+      </RequireStaff>
+    )
+  }
+  if (path === '/staff/catalog') return <RequireStaff manager><Catalog /></RequireStaff>
+  if (path === '/staff/approvals') return <RequireStaff manager><Approvals /></RequireStaff>
+  const schedule = /^\/staff\/schedule(?:\/(\d+))?\/?$/.exec(path)
+  if (schedule) {
+    return (
+      <RequireStaff manager>
+        <Schedule id={schedule[1] ? Number(schedule[1]) : undefined} />
       </RequireStaff>
     )
   }
@@ -73,15 +74,6 @@ function Routes() {
       </RequireStaff>
     )
   }
-  const assign = /^\/staff\/assign\/([^/]+)\/?$/.exec(path)
-  if (assign) {
-    return (
-      <RequireStaff>
-        <AssignTechnician key={assign[1]} id={decodeURIComponent(assign[1])} />
-      </RequireStaff>
-    )
-  }
-
   const review = matchOrderRoute(path, 'review')
   if (review) return <OrderReview key={review} id={review} />
   const deposit = matchOrderRoute(path, 'deposit')

@@ -169,3 +169,26 @@
 .co-preview-img{width:auto;height:auto;max-width:92%;max-height:210px;mix-blend-mode:normal;background:#fbfaf5;border-radius:3px;box-shadow:0 14px 24px var(--sh-5)}
 .co-sheet-thumb .opv{min-height:0;padding:0;background:none}
 .co-sheet-thumb{height:auto;min-height:160px;max-width:260px;background:transparent}
+
+.co-photo{display:flex;flex-direction:column;gap:12px;padding:14px;background:linear-gradient(135deg,transparent,var(--tray))}
+.co-photo-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.co-photo-body{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.co-photo-frame{position:relative;flex:0 1 240px;width:240px;max-width:100%;overflow:hidden;background:#d8d4c8;border-radius:2px}
+.co-photo-frame img{position:absolute;left:50%;top:50%;display:block;height:auto;transform-origin:center}
+.co-photo-crop{position:absolute;border:2px solid var(--accent);box-shadow:0 0 0 999px rgba(0,0,0,.45);pointer-events:none}
+.co-photo-tools{flex:1 1 220px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.co-photo-rot{display:flex;flex-wrap:wrap;gap:8px}
+.co-photo-slider{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--t4)}
+.co-photo-slider input{width:100%;accent-color:var(--accent)}
+
+.co-chain{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--t5)}
+.co-chain li{display:inline-flex;align-items:center;gap:6px}
+.co-chain b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:2px;background:var(--fx-08);color:var(--t4);font-size:11px}
+.co-chain li.done b{background:var(--good);color:var(--on-accent)}
+.co-chain li.now b{background:var(--accent);color:var(--on-accent)}
+.co-chain li.done span,.co-chain li.now span{color:var(--t1);font-weight:700}
+.co-ink-dot--sm{display:inline-block;width:12px;height:12px;vertical-align:-1px}
+.co-chips{display:flex;flex-wrap:wrap;gap:6px}
+.co-chip{padding:6px 12px;border:none;border-radius:2px;background:var(--fx-06);color:var(--t3);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.co-chip.on{background:var(--accent);color:var(--on-accent)}
+.co-notice{margin:0;padding:10px 14px;font-size:13px;color:var(--warn);background:linear-gradient(135deg,transparent,var(--st-pending-bg))}

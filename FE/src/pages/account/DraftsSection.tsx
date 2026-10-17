@@ -3,7 +3,7 @@ import { ORDER_HREF } from '../../constants'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
-import { deleteOrder, listOrders, orderErrorKey, type Order } from '../../services/orders'
+import { deleteOrder, listOrders, orderErrorKey, type Order, errText } from '../../services/orders'
 import { fmt } from '../../utils/format'
 import { draftPathFor } from '../create-order/draft'
 import './drafts.css'
@@ -19,12 +19,9 @@ function ago(iso: string, locale: string) {
 }
 
 function summary(o: Order, t: ReturnType<typeof useT>): string {
-  const text = o.inputs.find((i) => i.kind === 'TEXT_CONTENT')?.text?.trim()
-  if (text) return text.length > 60 ? text.slice(0, 60) + '…' : text
-  const photos = o.inputs.filter((i) => i.kind === 'ORIGINAL_IMAGE').length
-  if (photos) return t(photos === 1 ? 'co.sum.photo' : 'co.sum.photos', { n: photos })
-  if (o.inputs.some((i) => i.kind === 'CANVAS')) return t('dr.drawing')
-  return t('dr.untitled')
+  // The list does not carry the inputs, so a draft is named by its type and size.
+  const chars = o.charCount ? ` · ${t('dr.chars', { n: o.charCount })}` : ''
+  return `${t(`ot.${o.type}`)}${chars}`
 }
 
 /** The customer's unsent orders. They are drafts on the server, so any device sees them. */
@@ -60,8 +57,8 @@ export default function DraftsSection({ onCount }: { onCount?: (n: number) => vo
   return (
     <div className="dr-section">
       {list.loading && !list.data && <p className="vh-lede" role="status">{t('co.loading')}</p>}
-      {!!list.error && <p className="lg-error" role="alert">{t(orderErrorKey(list.error))}</p>}
-      {err && <p className="lg-error" role="alert">{t(err)}</p>}
+      {!!list.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(list.error))}</p>}
+      {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
       <ul className="dr-list" aria-label={t('dr.listAria')}>
         {drafts.map((d) => {
           const asking = confirming === d.id

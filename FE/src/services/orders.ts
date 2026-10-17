@@ -87,7 +87,7 @@ export interface Template {
   kind: string
 }
 
-const num = (s: string | number | null | undefined): number | null => (s === null || s === undefined || s === '' ? null : Number(s))
+export const num = (s: string | number | null | undefined): number | null => (s === null || s === undefined || s === '' ? null : Number(s))
 
 interface RawPaper { id: number; code: string; name: string; gsm: number; surface: string; size: string; unit_price: string }
 interface RawPen { id: number; code: string; name: string; category: string; stroke_width_mm: string; surcharge: string }
@@ -167,12 +167,16 @@ export interface OrderInput {
   size: number | null
   /** Quality check of an uploaded photo (set once the upload is confirmed). */
   quality: Record<string, unknown> | null
+  rotation: number
+  cropBox: Record<string, unknown> | null
   qualityWarning: boolean
   text: string | null
   templateId: number | null
   fontSizeMm: number | null
   alignment: Alignment | null
   canvas: CanvasData | null
+  /** Temporary link to the stored file; only the workshop endpoints send it. */
+  fileUrl: string | null
 }
 
 export interface Order {
@@ -204,14 +208,15 @@ export interface Order {
   warnings: string[]
 }
 
-interface RawInput {
+export interface RawInput {
   id: number; kind: InputKind; sort_order: number; mime_type: string | null; file_size_bytes: number | null
   quality_result: Record<string, unknown> | null; is_quality_warning: boolean
+  rotation_deg?: number | null; crop_box?: Record<string, unknown> | null
   text_content: string | null; template_id: number | null; font_size_mm: string | null
-  alignment: Alignment | null; canvas_data: CanvasData | null
+  alignment: Alignment | null; canvas_data: CanvasData | null; file_url?: string | null
 }
 
-interface RawOrder {
+export interface RawOrder {
   id: number; code: string; order_type: OrderType; order_status: OrderStatus; production_status: ProductionStatus
   paper_type_id: number | null; pen_type_id: number | null; ink_color_id: number | null
   workshop_suggest_materials: boolean; quantity: number; char_count: number | null
@@ -222,14 +227,14 @@ interface RawOrder {
   inputs?: RawInput[]; warnings?: string[]
 }
 
-const toInput = (i: RawInput): OrderInput => ({
+export const toInput = (i: RawInput): OrderInput => ({
   id: i.id, kind: i.kind, sortOrder: i.sort_order, mime: i.mime_type, size: i.file_size_bytes,
-  quality: i.quality_result, qualityWarning: i.is_quality_warning,
+  quality: i.quality_result, qualityWarning: i.is_quality_warning, rotation: i.rotation_deg ?? 0, cropBox: i.crop_box ?? null,
   text: i.text_content, templateId: i.template_id, fontSizeMm: num(i.font_size_mm), alignment: i.alignment,
-  canvas: i.canvas_data,
+  canvas: i.canvas_data, fileUrl: i.file_url ?? null,
 })
 
-const toOrder = (o: RawOrder): Order => ({
+export const toOrder = (o: RawOrder): Order => ({
   id: o.id, code: o.code, type: o.order_type, status: o.order_status, production: o.production_status,
   paperId: o.paper_type_id, penId: o.pen_type_id, inkId: o.ink_color_id,
   workshopSuggest: o.workshop_suggest_materials, quantity: o.quantity, charCount: o.char_count,
@@ -436,12 +441,12 @@ export interface Payment {
   createdAt: string
 }
 
-interface RawPayment {
+export interface RawPayment {
   id: number; amount: string; status: string; gateway: Gateway; mode?: string
   needs_refund?: boolean; created_at: string
 }
 
-const toPayment = (p: RawPayment): Payment => ({
+export const toPayment = (p: RawPayment): Payment => ({
   id: p.id, amount: num(p.amount) ?? 0, status: p.status, gateway: p.gateway, mode: p.mode ?? 'MOCK',
   needsRefund: !!p.needs_refund, createdAt: p.created_at,
 })
@@ -462,44 +467,150 @@ export const listPayments = async (id: number): Promise<Payment[]> => {
 
 // ---------- errors ----------
 
-/** Translation key for an error from the order endpoints (keys live under `err.`). */
+/** Backend error codes that have their own translated text (keys live under `err.`). */
+const ERROR_KEYS: Record<string, string> = {
+  TIMEOUT: 'auth.err.timeout',
+  NETWORK: 'auth.err.network',
+  RATE_LIMITED: 'auth.err.rate',
+  VALIDATION_ERROR: 'auth.err.validation',
+  UPLOAD_FAILED: 'err.uploadFailed',
+  ORDER_INCOMPLETE: 'err.incomplete',
+  ORDER_NOT_FOUND: 'err.notFound',
+  STATE_CONFLICT: 'err.stateConflict',
+  ORDER_TYPE_SUSPENDED: 'err.typeSuspended',
+  ORDER_TYPE_LOCKED: 'err.typeLocked',
+  ORDER_TYPE_HAS_INPUTS: 'err.typeHasInputs',
+  ORDER_NOT_EDITABLE: 'err.notEditable',
+  ORDER_NOT_DRAFT: 'err.alreadySent',
+  ORDER_NOT_NEED_INFO: 'err.notNeedInfo',
+  ORDER_IS_DRAFT: 'err.isDraft',
+  TERMS_NOT_ACCEPTED: 'err.termsNotAccepted',
+  PEN_INCOMPATIBLE: 'err.penIncompatible',
+  INK_REQUIRES_PEN: 'err.inkNeedsPen',
+  INVALID_PAPER: 'err.invalidPaper',
+  INVALID_PEN: 'err.invalidPen',
+  INVALID_INK: 'err.invalidInk',
+  FILE_TOO_LARGE: 'err.fileTooLarge',
+  TOO_MANY_FILES: 'err.tooManyFiles',
+  INVALID_FILE: 'err.invalidFile',
+  INVALID_IMAGE: 'err.invalidImage',
+  INVALID_CROP: 'err.invalidCrop',
+  UPLOAD_NOT_FOUND: 'err.uploadNotFound',
+  STORAGE_NOT_CONFIGURED: 'err.storage',
+  STORAGE_UNAVAILABLE: 'err.storage',
+  TEMPLATE_REQUIRED: 'err.templateRequired',
+  INVALID_TEMPLATE: 'err.templateInvalid',
+  EMPTY_TEXT: 'err.emptyText',
+  EMPTY_CANVAS: 'err.emptyCanvas',
+  INPUT_KIND_NOT_ALLOWED: 'err.inputKind',
+  PRIVACY_REQUIRED: 'err.privacyRequired',
+  PRIVACY_NOT_PENDING: 'err.privacyNotPending',
+  QUOTATION_NOT_OPEN: 'err.quotationClosed',
+  QUOTATION_EXPIRED: 'err.quotationClosed',
+  QUOTATION_NOT_FOUND: 'err.quotationNotFound',
+  INVALID_DEPOSIT: 'err.invalidDeposit',
+  OPTION_REQUIRED: 'err.option',
+  INVALID_OPTION: 'err.option',
+  NOTE_REQUIRED: 'err.noteRequired',
+  DEPOSIT_NOT_EXPECTED: 'err.depositState',
+  DEPOSIT_ALREADY_PAID: 'err.depositState',
+  ORDER_CANCEL_UNSUPPORTED: 'err.cancelUnsupported',
+  FORBIDDEN: 'err.forbidden',
+  NOT_AUTHENTICATED: 'err.notSignedIn',
+  ORDER_NOT_CLAIMED: 'err.notClaimed',
+  ORDER_NOT_SUBMITTED: 'err.notSubmitted',
+  ORDER_CLOSED: 'err.orderClosed',
+  ALREADY_ASSIGNED: 'err.alreadyAssigned',
+  STAFF_REQUIRED: 'err.staffRequired',
+  INVALID_STAFF: 'err.invalidStaff',
+  ORDER_NOT_ACCEPTED: 'err.notAccepted',
+  NO_STROKES_FOUND: 'err.noStrokes',
+  IMAGE_TOO_NOISY: 'err.tooNoisy',
+  UNSUPPORTED_CHARS: 'err.unsupportedChars',
+  TEXT_TOO_LONG: 'err.textTooLong',
+  FONT_TOO_LARGE: 'err.fontTooLarge',
+  CANVAS_OUT_OF_PAPER: 'err.canvasOut',
+  AI_TYPE_UNSUPPORTED: 'err.aiUnsupported',
+  SKETCH_REQUIRED: 'err.sketchRequired',
+  SKETCH_CHANGED: 'err.sketchChanged',
+  QUOTATION_ALREADY_OPEN: 'err.quotationOpen',
+  QUOTATION_LOCKED: 'err.quotationLocked',
+  QUOTATION_NOT_SENDABLE: 'err.quotationNotSendable',
+  OPTIONS_REQUIRED: 'err.optionsRequired',
+  MATERIALS_MISSING: 'err.materialsMissing',
+  INVALID_MATERIALS: 'err.invalidMaterials',
+  REASON_REQUIRED: 'err.reasonRequired',
+  INVALID_AMOUNT: 'err.invalidAmount',
+  ADJUST_NOT_ALLOWED_MULTI_OPTION: 'err.adjustMulti',
+  NOTHING_TO_APPROVE: 'err.nothingToApprove',
+  APPROVAL_PENDING: 'err.approvalPending',
+  PDF_NOT_AVAILABLE: 'err.pdfMissing',
+  PRICING_NOT_CONFIGURED: 'err.pricingMissing',
+  EMPTY_MESSAGE: 'err.emptyMessage',
+  MESSAGE_TOO_LONG: 'err.messageTooLong',
+  TOO_MANY_ATTACHMENTS: 'err.tooManyAttachments',
+  INVALID_ATTACHMENT: 'err.invalidAttachment',
+  ATTACHMENT_NOT_UPLOADED: 'err.invalidAttachment',
+  UNSUPPORTED_FILE: 'err.fileType',
+  SLOT_CONFLICT: 'err.slotConflict',
+  ROBOT_UNAVAILABLE: 'err.robotUnavailable',
+  ROBOT_NOT_SUITABLE: 'err.robotNotSuitable',
+  OUTSIDE_WORKING_HOURS: 'err.outsideHours',
+  SLOT_IN_PAST: 'err.slotPast',
+  JOB_ALREADY_STARTED: 'err.jobStarted',
+  STOCK_NEGATIVE: 'err.stockNegative',
+  CODE_TAKEN: 'err.codeTaken',
+}
+
+/**
+ * What to show for an error from the API: a translation key when the code has one, otherwise `msg:` plus the
+ * backend's own (Vietnamese) message, so a code nobody mapped yet still says something useful. Show it with `errText`.
+ */
 export function orderErrorKey(e: unknown): string {
   if (!(e instanceof ApiError)) return 'err.unknown'
-  switch (e.code) {
-    case 'TIMEOUT': return 'auth.err.timeout'
-    case 'NETWORK': return 'auth.err.network'
-    case 'UPLOAD_FAILED': return 'err.uploadFailed'
-    case 'ORDER_INCOMPLETE': return 'err.incomplete'
-    case 'ORDER_NOT_FOUND': return 'err.notFound'
-    case 'STATE_CONFLICT': return 'err.stateConflict'
-    case 'ORDER_TYPE_SUSPENDED': return 'err.typeSuspended'
-    case 'PEN_INCOMPATIBLE': return 'err.penIncompatible'
-    case 'INK_REQUIRES_PEN': return 'err.inkNeedsPen'
-    case 'FILE_TOO_LARGE': return 'err.fileTooLarge'
-    case 'TOO_MANY_FILES': return 'err.tooManyFiles'
-    case 'STORAGE_NOT_CONFIGURED': return 'err.storage'
-    case 'TEMPLATE_REQUIRED': return 'err.templateRequired'
-    case 'INVALID_TEMPLATE': return 'err.templateInvalid'
-    case 'EMPTY_TEXT': return 'err.emptyText'
-    case 'EMPTY_CANVAS': return 'err.emptyCanvas'
-    case 'INPUT_KIND_NOT_ALLOWED': return 'err.inputKind'
-    case 'PRIVACY_REQUIRED': return 'err.privacyRequired'
-    case 'QUOTATION_NOT_OPEN':
-    case 'QUOTATION_EXPIRED': return 'err.quotationClosed'
-    case 'INVALID_DEPOSIT': return 'err.invalidDeposit'
-    case 'OPTION_REQUIRED':
-    case 'INVALID_OPTION': return 'err.option'
-    case 'DEPOSIT_NOT_EXPECTED':
-    case 'DEPOSIT_ALREADY_PAID': return 'err.depositState'
-    case 'ORDER_CANCEL_UNSUPPORTED': return 'err.cancelUnsupported'
-    case 'RATE_LIMITED': return 'auth.err.rate'
-    case 'VALIDATION_ERROR': return 'auth.err.validation'
-  }
-  return e.status >= 500 ? 'auth.err.server' : 'err.unknown'
+  const known = ERROR_KEYS[e.code]
+  if (known) return known
+  if (e.status >= 500) return 'auth.err.server'
+  return e.message && e.status >= 400 ? `msg:${e.message}` : 'err.unknown'
+}
+
+/** Text for a value from `orderErrorKey` (or any key). */
+export const errText = (t: (key: string) => string, key: string): string => (key.startsWith('msg:') ? key.slice(4) : t(key))
+
+/** Field problems of a 422 (`details: [{field, message}]`), as plain lines. */
+export function errDetails(e: unknown): string[] {
+  if (!(e instanceof ApiError) || !Array.isArray(e.details)) return []
+  return (e.details as { field?: string; message?: string }[])
+    .map((d) => [d.field, d.message].filter(Boolean).join(': '))
+    .filter(Boolean)
 }
 
 /** Which part of the form a problem from `ORDER_INCOMPLETE` points at (`details[].field`). */
 export function incompleteFields(e: unknown): string[] {
   if (!(e instanceof ApiError) || !Array.isArray(e.details)) return []
   return (e.details as { field?: string }[]).map((d) => d.field ?? '').filter(Boolean)
+}
+
+// ---------- photo editing ----------
+
+export interface CropBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** Rotation (0, 90, 180, 270) and crop (fractions 0 to 1 of the rotated photo) of an uploaded original. The backend checks the photo again. */
+export async function editPhoto(
+  orderId: number,
+  inputId: number,
+  patch: { rotation_deg?: 0 | 90 | 180 | 270; crop_box?: CropBox | null },
+): Promise<OrderInput> {
+  return toInput(await api<RawInput>(`/orders/${orderId}/inputs/${inputId}`, { method: 'PATCH', body: patch }))
+}
+
+/** Rotation and crop as the backend stored them in `crop_box` / the input. */
+export const cropOf = (i: OrderInput): CropBox | null => {
+  const c = i.cropBox
+  return c && ['x', 'y', 'w', 'h'].every((k) => typeof c[k] === 'number') ? (c as unknown as CropBox) : null
 }

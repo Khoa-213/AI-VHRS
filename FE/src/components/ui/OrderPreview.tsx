@@ -30,17 +30,22 @@ export function StrokeSheet({ canvas, color = '#1b2440', label }: { canvas: Canv
 /** A photo or PDF the customer uploaded, through a temporary link. PDFs have no thumbnail. */
 function Original({ orderId, input }: { orderId: number; input: OrderInput }) {
   const t = useT()
-  const [url, setUrl] = useState<string | null>(null)
+  const [url, setUrl] = useState<string | null>(input.fileUrl)
   const pdf = input.mime === 'application/pdf'
   useEffect(() => {
-    if (pdf) return
+    // The workshop endpoints send the link with the input; the customer asks for one.
+    if (pdf || input.fileUrl) return
     let live = true
     getInputFileUrl(orderId, input.id).then((u) => live && setUrl(u)).catch(() => undefined)
     return () => {
       live = false
     }
-  }, [orderId, input.id, pdf])
-  if (pdf) return <span className="opv-note">{t('opv.pdf')}</span>
+  }, [orderId, input.id, input.fileUrl, pdf])
+  if (pdf) {
+    return input.fileUrl
+      ? <a className="vh-link" href={input.fileUrl} target="_blank" rel="noreferrer">{t('wk.openPdf')}</a>
+      : <span className="opv-note">{t('opv.pdf')}</span>
+  }
   return url ? <img className="opv-img" src={url} alt={t('opv.original')} /> : <span className="opv-note">{t('opv.loading')}</span>
 }
 

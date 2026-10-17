@@ -1,6 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import { emptyShipment } from '../services/ghn'
-import type { Order, Profile, OrderStatus, QcReport, ShipLog, Shipment, User } from '../types'
+import type { Order, Profile, OrderStatus, QcReport, User } from '../types'
 import { getTokens, onSessionExpired } from '../services/api'
 import { apiLogin, apiLogout, apiMe, apiUpdateMe } from '../services/auth'
 
@@ -213,50 +212,6 @@ export function failQc(id: string, reasons: string[], note: string) {
     status: 'Queued', run: undefined, qc: undefined,
     qcFail: { reasons, note, at: new Date().toISOString() },
   })
-}
-
-// ---------- shipping ----------
-
-function findOrder(id: string): Order | undefined {
-  return ordersStore.get().find((o) => o.id === id)
-}
-
-function patchShipment(id: string, fn: (s: Shipment) => Shipment, status?: OrderStatus) {
-  const o = findOrder(id)
-  if (!o) return
-  updateOrder(id, { shipment: fn(o.shipment ?? emptyShipment(o)), ...(status ? { status } : {}) })
-}
-
-/** Staff ticks or unticks a packing step. Locked once the courier is booked. */
-export function togglePackStep(id: string, step: string) {
-  patchShipment(id, (s) => {
-    if (s.ghnCode) return s
-    const done = s.pack.some((m) => m.id === step)
-    return { ...s, pack: done ? s.pack.filter((m) => m.id !== step) : [...s.pack, { id: step, at: new Date().toISOString() }] }
-  })
-}
-
-export function setParcelWeight(id: string, weightG: number) {
-  patchShipment(id, (s) => (s.ghnCode ? s : { ...s, weightG: Math.max(1, Math.round(weightG) || 1) }))
-}
-
-/** Saves the GHN order that staff just booked. */
-export function saveBooking(id: string, b: { code: string; fee: number; expectedAt: string }) {
-  patchShipment(id, (s) => ({ ...s, ghnCode: b.code, fee: b.fee, expectedAt: b.expectedAt, bookedAt: new Date().toISOString() }))
-}
-
-/**
- * Takes the scans GHN reports. An order moves to Delivered when GHN says so.
- * Same-length input is ignored, so polling does not rewrite storage.
- */
-export function applyShipLogs(id: string, logs: ShipLog[]) {
-  const o = findOrder(id)
-  const cur = o?.shipment?.logs ?? []
-  if (!o || !logs.length) return
-  const same = logs.length === cur.length && logs[logs.length - 1].status === cur[cur.length - 1]?.status
-  if (same) return
-  const delivered = logs[logs.length - 1].status === 'delivered'
-  patchShipment(id, (s) => ({ ...s, logs }), delivered ? 'Delivered' : undefined)
 }
 
 export function saveStaffOrder(order: Order) {

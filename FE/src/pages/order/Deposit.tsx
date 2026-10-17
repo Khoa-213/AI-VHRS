@@ -7,8 +7,7 @@ import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
 import { Link, orderPath } from '../../router/router'
 import {
-  getOrder, listPayments, mockCheckout, orderErrorKey, startDeposit, type Gateway, type Payment,
-} from '../../services/orders'
+  getOrder, listPayments, mockCheckout, orderErrorKey, startDeposit, type Gateway, type Payment, errText } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { useProfile } from '../../store/store'
 import { fmt } from '../../utils/format'
@@ -54,7 +53,7 @@ export default function Deposit({ id }: { id: string | null }) {
         <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
           <span className="vh-eyebrow">{t('np.eyebrow')}</span>
           <h1 className="vh-h1">{t('np.title')}</h1>
-          <p className="vh-lede">{q.error ? t(orderErrorKey(q.error)) : t('np.lede')}</p>
+          <p className="vh-lede">{q.error ? errText(t, orderErrorKey(q.error)) : t('np.lede')}</p>
           <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('np.cta')}</Link>
         </div>
       </Page>
@@ -126,7 +125,7 @@ export default function Deposit({ id }: { id: string | null }) {
                   ))}
                 </div>
 
-                {err && <p className="lg-error" role="alert">{t(err)}</p>}
+                {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
                 {failed && <p className="lg-error" role="status">{t('dp.failed')}</p>}
 
                 {!pending ? (

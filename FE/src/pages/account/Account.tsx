@@ -8,7 +8,7 @@ import { STATUS_COLOR, orderLink } from '../../constants/orderStatus'
 import { useAsync } from '../../hooks/useAsync'
 import { LANGS, setLang, useLang, useLocale, useT, useTn } from '../../i18n'
 import { Link, navigate } from '../../router/router'
-import { SENT, listOrders, orderErrorKey, type Order } from '../../services/orders'
+import { SENT, listOrders, orderErrorKey, type Order, errText } from '../../services/orders'
 import { setTheme, useTheme } from '../../store/theme'
 import { authErrorKey } from '../../services/api'
 import { PHONE_RULE, cleanPhone } from '../../services/auth'
@@ -279,7 +279,7 @@ function OrdersSection() {
         {total > 0 && <span className="vh-mono ac-count">{t('acct.o.count', { n: total })}</span>}
       </div>
       {list.loading && !list.data && <p className="vh-lede" role="status">{t('co.loading')}</p>}
-      {!!list.error && <p className="lg-error" role="alert">{t(orderErrorKey(list.error))}</p>}
+      {!!list.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(list.error))}</p>}
       {orders.length ? (
         <ul className="ac-orders">
           {orders.map((o) => (

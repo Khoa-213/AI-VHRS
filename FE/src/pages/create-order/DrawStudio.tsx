@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { useT } from '../../i18n'
 import { navigate } from '../../router/router'
-import { deleteInput, getOrder, orderErrorKey, putCanvas, type CanvasData, type Point, type Stroke } from '../../services/orders'
+import { deleteInput, getOrder, orderErrorKey, putCanvas, type CanvasData, type Point, type Stroke, errText } from '../../services/orders'
 import { CANVAS_SIZES, draftPathFor } from './draft'
 import './draw-studio.css'
 
@@ -398,7 +398,7 @@ export default function DrawStudio({ orderId }: { orderId: number }) {
         </button>
       </header>
 
-      {err && <p className="ds-error" role="alert">{t(err)}</p>}
+      {err && <p className="ds-error" role="alert">{errText(t, err)}</p>}
 
       <div className="ds-tools" role="toolbar" aria-label={t('ds.tools')}>
         <div className="ds-group" role="radiogroup" aria-label={t('ds.paperSize')}>

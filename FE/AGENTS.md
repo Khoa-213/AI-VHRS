@@ -68,8 +68,7 @@ Text that stays English is a bug unless it is in the exceptions list above.
 
 - No em dash or en dash in user-facing copy. Use a comma, colon or period.
 - Icons come from `@phosphor-icons/react`. Colours come from CSS variables in `src/styles/theme.css`.
-- Customer data comes from the API. Staff and technician screens still use the localStorage mock in `src/store/store.ts`.
-  The GHN client in `src/services/ghn.ts` talks to a backend proxy, never directly to GHN with a token.
+- Customer and workshop (Staff, Manager) data comes from the API. Only the technician screens still use the localStorage mock in `src/store/store.ts`.
 
 ## Customer orders come from the API
 
@@ -82,8 +81,12 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
 - Catalog (paper, pen, ink, templates) and the price estimate come from the API. Do not hard-code them.
 - `/orders/:id/review` is the order page: it renders by `order_status` and polls while the status moves on its own.
 - Deposit uses the **mock** gateway. Keep the "simulated payment" notice while the backend returns `mode = MOCK`.
-- Result, final payment and tracking have no API yet (backend phase 4), so they have no pages. Add them when they do.
-- Staff and technician screens still read the local mock in `src/store/store.ts`. Wire them one by one and delete their mock data as you go.
+- Result, final payment, tracking and shipping have no API yet (backend phase 4), so they have no pages. Add them when they do.
+- The workshop side lives in `src/pages/staff/` and `src/services/workshop.ts`: dashboard, `Workbench` (intake, sketch, quotation, chat),
+  `Approvals`, `Schedule` and `Catalog` (Manager only; materials, ink colors, stock, compatibility, templates, robots, price list via `services/manage.ts`). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
+- Errors from the API go through `orderErrorKey` / `errText` (`services/orders.ts`): known codes have translated text, any other code shows the backend's own message. Add a code to `ERROR_KEYS` and `err.*` when you want it translated.
+- The order chat (`components/ui/Chat.tsx`) is shared by the customer order page and the workshop.
+- The technician screens (`src/pages/tech/`) still use the local mock (`store.ts`, `pages/staff/technicians.ts`, `evaluate.ts`, `telemetry.ts`). Wire them when backend phase 4 adds jobs, QC and photos, and delete that mock as you go.
 
 ## Account area
 

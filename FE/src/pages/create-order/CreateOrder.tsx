@@ -7,14 +7,15 @@ import { useSaveQueue } from '../../hooks/useSaveQueue'
 import { useT } from '../../i18n'
 import { Link, navigate, orderPath } from '../../router/router'
 import {
-  ACCEPTED_UPLOADS, MAX_UPLOAD_MB, createOrder, deleteInput, estimate, getInks, getOrder, getPapers, getPens, getTemplates,
+  ACCEPTED_UPLOADS, MAX_UPLOAD_MB, createOrder, deleteInput, editPhoto, estimate, getInks, getOrder, getPapers, getPens, getTemplates,
   incompleteFields, orderErrorKey, patchOrder, provideInfo, putText, submitOrder, templatePreviewUrl, uploadOriginal,
-  type Alignment, type Estimate, type Order, type OrderPatch, type OrderType,
-} from '../../services/orders'
+  type Alignment, type CropBox, type Estimate, type Order, type OrderPatch, type OrderType, errText } from '../../services/orders'
 import { useUser } from '../../store/store'
 import type { InputMode } from '../../types'
 import { fmt } from '../../utils/format'
+import { ApiError } from '../../services/api'
 import { draftPathFor, drawPathFor } from './draft'
+import PhotoRow from './PhotoRow'
 import './create-order.css'
 
 const MODES: InputMode[] = ['text', 'upload', 'draw']
@@ -52,6 +53,9 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [note, setNote] = useState('')
   const [terms, setTerms] = useState(false)
   const [err, setErr] = useState('')
+  const [notice, setNotice] = useState('')
+  const [closed, setClosed] = useState<InputMode[]>([])
+  const [sizeFilter, setSizeFilter] = useState('')
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(0)
   const [est, setEst] = useState<Estimate | null>(null)
@@ -88,13 +92,29 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     return creating.current
   }, [adopt])
 
-  const fail = (e: unknown) => setErr(orderErrorKey(e))
+  const fail = (e: unknown) => {
+    // The workshop can switch an order type off: its modes are then not offered any more.
+    if (e instanceof ApiError && e.code === 'ORDER_TYPE_SUSPENDED') {
+      const off: InputMode[] = wanted.current === 'OT1_COPY_RESTORE' ? ['upload'] : ['text', 'draw']
+      setClosed((c) => [...new Set([...c, ...off])])
+    }
+    setErr(orderErrorKey(e))
+  }
 
   const patch = useCallback((p: OrderPatch) => {
     setErr('')
+    setNotice('')
     return enqueue(async () => {
       const o = await ensure()
-      adopt({ ...(await patchOrder(o.id, p)), inputs: orderRef.current?.inputs ?? o.inputs })
+      const fresh = await patchOrder(o.id, p)
+      adopt({ ...fresh, inputs: orderRef.current?.inputs ?? o.inputs })
+      // The backend resets the pen or the ink when a change makes them invalid: follow what it kept.
+      const reset = fresh.warnings.filter((w) => w === 'PEN_RESET' || w === 'INK_RESET')
+      if (p.paper_type_id !== undefined || reset.length) {
+        setPenId(fresh.penId)
+        setInkId(fresh.inkId)
+      }
+      if (reset.length) setNotice(reset.includes('PEN_RESET') ? 'warn.PEN_RESET' : 'warn.INK_RESET')
     }).then(undefined, fail)
   }, [adopt, enqueue, ensure])
 
@@ -200,10 +220,9 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   // ---------- materials, quantity, note ----------
 
   const pickPaper = (id: number) => {
+    // Only the paper is sent: the backend keeps a pen that still fits and clears one that does not.
     setPaperId(id)
-    setPenId(null)
-    setInkId(null)
-    void patch({ paper_type_id: id, pen_type_id: null, ink_color_id: null })
+    void patch({ paper_type_id: id })
   }
   const pickPen = (id: number) => {
     setPenId(id)
@@ -314,6 +333,18 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     }).then(undefined, fail)
   }
 
+  const changePhoto = (id: number, change: { rotation_deg?: 0 | 90 | 180 | 270; crop_box?: CropBox | null }) => {
+    const cur = orderRef.current
+    if (!cur) return
+    setErr('')
+    enqueue(async () => {
+      const input = await editPhoto(cur.id, id, change)
+      // The photo was analysed again, so the character count and the price changed too.
+      const fresh = await getOrder(cur.id)
+      adopt({ ...fresh, inputs: fresh.inputs.map((i) => (i.id === input.id ? input : i)) })
+    }).then(undefined, fail)
+  }
+
   // ---------- estimate ----------
 
   const dTextForEst = useDebounced(text, 900)
@@ -421,7 +452,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
       <Page label="Create Order" width={720}>
         <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
           <h1 className="vh-h1">{t('np.title')}</h1>
-          {err && <p className="lg-error" role="alert">{t(err)}</p>}
+          {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
           <Link to="/account/drafts" className="vh-btn vh-btn--primary">{t('co.toDrafts')}</Link>
         </div>
       </Page>
@@ -495,9 +526,9 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
                   <div className="co-tray co-tray--3">
                     {MODES.map((m) => (
-                      <button key={m} className={`co-opt${mode === m ? ' on' : ''}`} disabled={busy} onClick={() => void chooseMode(m)}>
+                      <button key={m} className={`co-opt${mode === m ? ' on' : ''}`} disabled={busy || closed.includes(m)} onClick={() => void chooseMode(m)}>
                         <span className="co-opt-name">{t(`co.mode.${m}`)}</span>
-                        <span className="co-opt-sub">{t(`co.mode.${m}.sub`)}</span>
+                        <span className="co-opt-sub">{closed.includes(m) ? t('co.modeClosed') : t(`co.mode.${m}.sub`)}</span>
                       </button>
                     ))}
                   </div>
@@ -535,7 +566,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                             </button>
                           ))}
                           {templates.loading && <span className="co-hint">{t('co.loading')}</span>}
-                          {!!templates.error && <span className="co-hint">{t(orderErrorKey(templates.error))}</span>}
+                          {!!templates.error && <span className="co-hint">{errText(t, orderErrorKey(templates.error))}</span>}
                         </div>
                       </div>
 
@@ -587,16 +618,16 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                         <span className="co-meta vh-mono">{t('co.dropMeta', { mb: MAX_UPLOAD_MB })}</span>
                       </label>
                       {uploading > 0 && <p className="co-hint" role="status">{t('co.uploading')}</p>}
-                      {photos.map((p, i) => (
-                        <div key={p.id} className="co-file-row">
-                          <div className="co-file-text">
-                            <span className="co-file-name">{t('co.photoN', { n: i + 1 })}</span>
-                            <span className={`co-file-ok vh-mono${p.qualityWarning ? ' warn' : ''}`}>
-                              {t(p.qualityWarning ? 'co.qualityWarn' : 'co.fileReady')}
-                            </span>
-                          </div>
-                          <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={() => removeInput(p.id)}>{t('co.remove')}</button>
-                        </div>
+                      {order && photos.map((p, i) => (
+                        <PhotoRow
+                          key={p.id}
+                          orderId={order.id}
+                          input={p}
+                          index={i + 1}
+                          busy={busy}
+                          onEdit={(change) => changePhoto(p.id, change)}
+                          onRemove={() => removeInput(p.id)}
+                        />
                       ))}
                     </>
                   )}
@@ -633,32 +664,51 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                     </span>
                   </label>
 
-                  <div className={`co-group${suggest ? ' locked' : ''}`}>
-                    <span className="co-group-label">{t('co.paper')}</span>
+                  {notice && <p className="co-notice" role="status">{t(notice)}</p>}
+
+                  <ol className="co-chain" aria-label={t('co.chain')}>
+                    <li className={paper ? 'done' : 'now'}><b>1</b> {t('co.paper')}: <span>{paper?.name ?? t('co.sum.notChosen')}</span></li>
+                    <li className={pen ? 'done' : paper ? 'now' : ''}><b>2</b> {t('co.pen')}: <span>{pen?.name ?? t('co.sum.notChosen')}</span></li>
+                    <li className={ink ? 'done' : pen ? 'now' : ''}>
+                      <b>3</b> {t('co.ink')}:{' '}
+                      <span>{ink ? <><i className="co-ink-dot co-ink-dot--sm" style={{ background: ink.hex ?? 'var(--t5)' }} /> {ink.name}</> : t('co.sum.notChosen')}</span>
+                    </li>
+                  </ol>
+
+                  <div className="co-group">
+                    <span className="co-group-label">1. {t('co.paper')}</span>
+                    <div className="co-chips" role="group" aria-label={t('co.sizeFilter')}>
+                      {['', ...new Set((papers.data ?? []).map((p) => p.size))].map((sz) => (
+                        <button key={sz || 'all'} className={`co-chip${sizeFilter === sz ? ' on' : ''}`} onClick={() => setSizeFilter(sz)}>
+                          {sz || t('co.sizeAll')}
+                        </button>
+                      ))}
+                    </div>
                     <div className="co-tray co-tray--4">
-                      {(papers.data ?? []).map((o) => (
+                      {(papers.data ?? []).filter((o) => !sizeFilter || o.size === sizeFilter).map((o) => (
                         <button key={o.id} className={`co-opt co-opt--row${paperId === o.id ? ' on' : ''}`} onClick={() => pickPaper(o.id)}>
                           <span className="co-choice-text">
                             <span className="co-opt-name">{o.name}</span>
-                            <span className="co-opt-sub">{t('co.paperSpec', { gsm: o.gsm, surface: o.surface, size: o.size })}</span>
+                            <span className="co-opt-sub">{t('co.paperSpec', { gsm: o.gsm, surface: t(`surface.${o.surface}`), size: o.size })}</span>
                             <span className="co-price">{t('co.perSheet', { price: fmt(o.unitPrice) })}</span>
                           </span>
                         </button>
                       ))}
                     </div>
                     {papers.loading && <span className="co-hint">{t('co.loading')}</span>}
-                    {!!papers.error && <span className="co-hint">{t(orderErrorKey(papers.error))}</span>}
+                    {!!papers.error && <span className="co-hint">{errText(t, orderErrorKey(papers.error))}</span>}
                   </div>
 
-                  <div className={`co-group${suggest || !paperId ? ' locked' : ''}`}>
-                    <span className="co-group-label">{t('co.pen')}</span>
+                  <div className="co-group">
+                    <span className="co-group-label">2. {t('co.pen')}</span>
+                    {!paperId && <span className="co-hint">{t('co.pickPaperFirst')}</span>}
                     <div className="co-tray co-tray--4">
-                      {(pens.data ?? []).map((o) => (
+                      {(paperId ? pens.data ?? [] : []).map((o) => (
                         <button key={o.id} className={`co-opt co-opt--pen${penId === o.id ? ' on' : ''}`} onClick={() => pickPen(o.id)}>
                           <span className="co-nib"><span style={{ height: Math.max(1, Math.min(10, o.strokeWidthMm * 6)) }} /></span>
                           <span className="co-choice-text">
                             <span className="co-opt-name">{o.name}</span>
-                            <span className="co-opt-sub">{t('co.penSpec', { mm: o.strokeWidthMm })}</span>
+                            <span className="co-opt-sub">{t(`pen.${o.category}`)} · {t('co.penSpec', { mm: o.strokeWidthMm })}</span>
                             <span className="co-price">{o.surcharge ? '+' + fmt(o.surcharge) : t('co.included')}</span>
                           </span>
                         </button>
@@ -667,17 +717,20 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                     {!!paperId && !pens.loading && !pens.data?.length && <span className="co-hint">{t('co.noPens')}</span>}
                   </div>
 
-                  <div className={`co-group${suggest || !penId ? ' locked' : ''}`}>
-                    <span className="co-group-label">{t('co.ink')}</span>
+                  <div className="co-group">
+                    <span className="co-group-label">3. {t('co.ink')}</span>
+                    {!penId && <span className="co-hint">{t('co.pickPenFirst')}</span>}
                     <div className="co-inks">
-                      {(inks.data ?? []).map((o) => (
-                        <button key={o.id} className={`co-ink${inkId === o.id ? ' on' : ''}`} onClick={() => pickInk(o.id)}>
+                      {(penId ? inks.data ?? [] : []).map((o) => (
+                        <button key={o.id} className={`co-ink${inkId === o.id ? ' on' : ''}`} onClick={() => pickInk(o.id)} aria-pressed={inkId === o.id}>
                           <span className="co-ink-dot" style={{ background: o.hex ?? 'var(--t5)' }} />
                           <span className="co-ink-name">{o.name}</span>
                           {o.unitPrice > 0 && <span className="co-price">+{fmt(o.unitPrice)}</span>}
                         </button>
                       ))}
                     </div>
+                    {!!penId && inks.loading && <span className="co-hint">{t('co.loading')}</span>}
+                    {!!penId && !inks.loading && !inks.data?.length && <span className="co-hint">{t('co.noInks')}</span>}
                   </div>
 
                   <div className="co-qty">
@@ -729,7 +782,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                   {!!order?.warnings.length && (
                     <div className="vh-callout vh-callout--amber" role="status">
                       <b>{t('co.warnings')}</b>
-                      {order.warnings.map((w) => <span key={w}>{w}</span>)}
+                      {order.warnings.map((w) => <span key={w}>{t(`warn.${w}`)}</span>)}
                     </div>
                   )}
                   <label className="co-switch">
@@ -743,7 +796,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
               )}
             </div>
 
-            {err && <p className="lg-error" role="alert">{t(err)}</p>}
+            {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
 
             <div className="co-nav">
               <button className="vh-btn vh-btn--ghost vh-btn--md co-back" disabled={step === 0} onClick={() => step > 0 && goTo(step - 1)}>
@@ -785,6 +838,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                     <div><span>{t('co.minDeposit')}</span><b>{est.minDepositPct}%</b></div>
                   </div>
                 )}
+                {est && <span className="co-fine">{t(`co.basis.${est.basis}`)}</span>}
                 {est && !est.materialsPriced && <span className="co-fine">{t('co.pickMaterialsHint')}</span>}
                 <span className="co-fine">{t('co.fine')}</span>
               </div>

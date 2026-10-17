@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Page from '../../components/layout/Page'
+import Chat from '../../components/ui/Chat'
 import OrderPreview from '../../components/ui/OrderPreview'
 import { OrderTimeline, SpecRows } from '../../components/ui/OrderParts'
 import { ORDER_HREF } from '../../constants'
@@ -9,8 +10,7 @@ import { useLocale, useT } from '../../i18n'
 import { Link, navigate, orderPath } from '../../router/router'
 import {
   WAITING, approveQuotation, cancelOrder, decidePrivacy, getInks, getOrder, getPapers, getPens, getPrivacyPolicy, getQuotation,
-  orderErrorKey, requestChanges, type Order,
-} from '../../services/orders'
+  orderErrorKey, requestChanges, type Order, errText } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { fmt } from '../../utils/format'
 import './order.css'
@@ -63,7 +63,7 @@ export default function OrderReview({ id }: { id: string | null }) {
         <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
           <span className="vh-eyebrow">{t('np.eyebrow')}</span>
           <h1 className="vh-h1">{t('np.title')}</h1>
-          <p className="vh-lede">{q.error ? t(orderErrorKey(q.error)) : t('np.lede')}</p>
+          <p className="vh-lede">{q.error ? errText(t, orderErrorKey(q.error)) : t('np.lede')}</p>
           <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('np.cta')}</Link>
         </div>
       </Page>
@@ -187,6 +187,7 @@ export default function OrderReview({ id }: { id: string | null }) {
                 <p className="or-copy">{quotation.note}</p>
               </div>
             )}
+            {status !== 'DRAFT' && <Chat orderId={orderId} closed={['REJECTED', 'CANCELLED', 'COMPLETED'].includes(status)} />}
           </section>
 
           <aside className="vh-aside">
@@ -194,7 +195,7 @@ export default function OrderReview({ id }: { id: string | null }) {
               <span className="ov-rail-title">{t('or.details')}</span>
               <SpecRows rows={rows} />
 
-              {err && <p className="lg-error" role="alert">{t(err)}</p>}
+              {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
 
               {status === 'DRAFT' && (
                 <Link to={`/create-order/draft/${order.id}`} className="vh-btn vh-btn--primary">{t('dr.continue')}</Link>
