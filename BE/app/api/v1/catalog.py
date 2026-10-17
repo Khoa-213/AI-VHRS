@@ -1,14 +1,17 @@
 """FR-04, FR-09 (UC-06, UC-11): read-only catalog. Lists are already filtered by compatibility (BR-05)."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
 
 from app.api.deps import SessionDep, require_roles
 from app.api.order_schemas import InkOut, PaperOut, PenOut, StyleOut, TemplateOut
 from app.models.account import Account, RoleCode
 from app.models.order import HandwritingStyle, StyleStatus
+from app.core.errors import AppError
 from app.repositories.catalog import CatalogRepository
+from app.services.stroke_ai import text_to_stroke
+from app.services.stroke_ai.trajectory import render_preview
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
@@ -33,6 +36,19 @@ def inks(pen_id: int, session: SessionDep) -> list[InkOut]:
 @router.get("/templates", response_model=list[TemplateOut], summary="Thư viện mẫu chữ đang bật")
 def templates(session: SessionDep) -> list[TemplateOut]:
     return [TemplateOut.model_validate(t) for t in CatalogRepository(session).templates()]
+
+
+@router.get("/templates/{template_id}/preview", response_class=Response,
+            responses={200: {"content": {"image/png": {}}}},
+            summary="FR-04 Xem thử mẫu chữ với nội dung tự gõ (ảnh PNG, không cần đăng nhập)")
+def template_preview(template_id: int, session: SessionDep,
+                     text: Annotated[str, Query(min_length=1, max_length=200)] = "Nét Việt") -> Response:
+    tpl = CatalogRepository(session).template(template_id)
+    if tpl is None or not tpl.is_active:
+        raise AppError(404, "TEMPLATE_NOT_FOUND", "Không tìm thấy mẫu chữ.")
+    pages = text_to_stroke.compose_text(text, font_name=text_to_stroke.font_name_from_uri(tpl.font_uri),
+                                        paper_size="A5", font_size_mm=9.0)
+    return Response(render_preview(pages[0], px_per_mm=4.0), media_type="image/png")
 
 
 @router.get("/my-styles", response_model=list[StyleOut], summary="UC-09 Bộ nét đã lưu (đã duyệt) của tôi")
