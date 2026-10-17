@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import PrincipalDep, SessionDep, client_ip
-from app.api.schemas import (AccountOut, LoginIn, MessageOut, OAuthTokenOut, PasswordResetConfirmIn,
+from app.api.schemas import (AccountOut, GoogleLoginIn, LoginIn, MessageOut, OAuthTokenOut, PasswordResetConfirmIn,
                              PasswordResetRequestIn, RefreshIn, RegisterIn, TokenOut, account_out)
 from app.core.ratelimit import rate_limit
+from app.integrations.google_auth import GoogleVerifier, get_google_verifier
 from app.integrations.mailer import Mailer, get_mailer
 from app.services.auth import AuthService
 
@@ -36,6 +37,18 @@ def register(body: RegisterIn, svc: Svc) -> AccountOut:
 def login(body: LoginIn, svc: Svc, request: Request) -> TokenOut:
     acc, access, refresh = svc.login(body.email, body.password, ip=client_ip(request),
                                      user_agent=request.headers.get("user-agent"))
+    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc))
+
+
+@router.post("/google", response_model=TokenOut, summary="UC-01 Đăng nhập bằng Google (khách hàng; gửi Google ID token)",
+             dependencies=[Depends(rate_limit("login", 20, 60))],
+             responses={401: {"description": "GOOGLE_TOKEN_INVALID / GOOGLE_EMAIL_NOT_VERIFIED"},
+                        403: {"description": "GOOGLE_NOT_ALLOWED (tài khoản nội bộ) / ACCOUNT_DISABLED"},
+                        503: {"description": "GOOGLE_NOT_CONFIGURED / GOOGLE_UNAVAILABLE"}})
+def login_google(body: GoogleLoginIn, svc: Svc, request: Request,
+                 verifier: Annotated[GoogleVerifier, Depends(get_google_verifier)]) -> TokenOut:
+    identity = verifier.verify(body.id_token)
+    acc, access, refresh = svc.login_google(identity, ip=client_ip(request), user_agent=request.headers.get("user-agent"))
     return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc))
 
 

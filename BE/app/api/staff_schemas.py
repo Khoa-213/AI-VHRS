@@ -100,9 +100,10 @@ class SketchDetailOut(SketchOut):
 
 # ---- quotations (UC-26) ----------------------------------------------------------------------------
 class MaterialOptionIn(BaseModel):
-    paper_type_id: int
-    pen_type_id: int
-    ink_color_id: int
+    """One material option. Whatever the customer already chose is kept and may be left out; Staff only fill the rest."""
+    paper_type_id: int | None = None
+    pen_type_id: int | None = None
+    ink_color_id: int | None = None
 
 
 class QuotationCreateIn(BaseModel):

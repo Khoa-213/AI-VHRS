@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     supabase_service_key: str | None = None
     storage_bucket: str = "order-inputs"
     upload_url_ttl_seconds: int = 7200
+    # Google sign-in: OAuth *Web* client id(s) from Google Cloud Console, comma separated. Empty = the endpoint answers 503.
+    google_client_id: str | None = None
+
+    @property
+    def google_client_ids(self) -> list[str]:
+        return [c.strip() for c in (self.google_client_id or "").split(",") if c.strip()]
 
     @property
     def sqlalchemy_url(self) -> str:
