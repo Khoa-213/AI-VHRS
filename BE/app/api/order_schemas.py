@@ -40,6 +40,16 @@ class InkOut(_ORM):
     unit_price: Decimal
 
 
+class PenWithInksOut(PenOut):
+    inks: list[InkOut]
+
+
+class SuggestMaterialsOut(BaseModel):
+    """Everything the customer can still pick after choosing the paper: the pens that suit it, each with its inks."""
+    paper: PaperOut
+    pens: list[PenWithInksOut]
+
+
 class TemplateOut(_ORM):
     id: int
     code: str

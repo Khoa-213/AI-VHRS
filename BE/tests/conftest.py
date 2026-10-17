@@ -41,6 +41,15 @@ def _cleanup() -> None:
         c.execute(text(f"delete from pricing_configs where created_by in {_TEST_IDS}"))
         c.execute(text("update pricing_configs set is_active = true where version = (select max(version) from pricing_configs) "
                        "and not exists (select 1 from pricing_configs where is_active)"))
+        # The test catalog is publicly visible while the suite runs, so a REAL customer may have ordered one of its
+        # items. Never delete those (FK violation would abort the whole cleanup): switch them off and rename them so
+        # they are no longer treated as test data. Their order stays untouched.
+        c.execute(text("update pen_types set code='orphan_'||code, is_active=false where code like 'pytest\\_%' "
+                       "and id in (select pen_type_id from orders where pen_type_id is not null)"))
+        c.execute(text("update paper_types set code='orphan_'||code, is_active=false where code like 'pytest\\_%' "
+                       "and id in (select paper_type_id from orders where paper_type_id is not null)"))
+        c.execute(text("update templates set code='orphan_'||left(code, 30), is_active=false where code like 'pytest\\_%' "
+                       "and id in (select template_id from order_inputs where template_id is not null)"))
         c.execute(text("delete from paper_pen_compats where paper_type_id in "
                        "(select id from paper_types where code like 'pytest\\_%')"))
         c.execute(text("delete from ink_colors where pen_type_id in (select id from pen_types where code like 'pytest\\_%')"))
@@ -68,11 +77,12 @@ def _all_order_types_open(_db_clean):
         row = c.execute(text("select value::text, description from system_settings where key='order_types_enabled'")).first()
         c.execute(text("delete from system_settings where key='order_types_enabled'"))
     yield
-    if row:
-        with get_engine().begin() as c:
-            c.execute(text("insert into system_settings (key, value, description) values "
-                           "('order_types_enabled', cast(:v as jsonb), :d) on conflict (key) do nothing"),
-                      {"v": row[0], "d": row[1]})
+    # Always put the restriction back. If the row was already missing when this run began (an earlier run was
+    # interrupted), restore the project default instead of leaving customers able to order OT-2.
+    value, desc = (row[0], row[1]) if row else ('["OT1_COPY_RESTORE", "OT3_TEMPLATE"]', "LI-10: loại đơn đang nhận.")
+    with get_engine().begin() as c:
+        c.execute(text("insert into system_settings (key, value, description) values "
+                       "('order_types_enabled', cast(:v as jsonb), :d) on conflict (key) do nothing"), {"v": value, "d": desc})
 
 
 @pytest.fixture(autouse=True)

@@ -65,6 +65,10 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=72)
 
 
+class GoogleLoginIn(BaseModel):
+    id_token: str = Field(min_length=20, max_length=4096, description="Google ID token (`credential` from Google Identity Services).")
+
+
 class RefreshIn(BaseModel):
     refresh_token: str
 

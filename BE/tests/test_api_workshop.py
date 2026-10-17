@@ -239,7 +239,9 @@ def test_assignment_rejects_non_staff_and_closed_orders(client, cust, manager, w
     oid = _ot3(client, cust, wcat)
     for bad in (mid, _user(client, "CUSTOMER")[1], 99999999):
         assert client.put(f"{M}/orders/{oid}/assignment", headers=mh, json={"staff_id": bad}).status_code == 422
-    client.post(f"{W}/orders/{oid}/reject", headers=mh, json={"reason": "TOO_OLD", "staff_id": _user(client, "STAFF")[1]})
+    sh, sid = _user(client, "STAFF")
+    assert client.put(f"{M}/orders/{oid}/assignment", headers=mh, json={"staff_id": sid}).status_code == 200
+    assert client.post(f"{W}/orders/{oid}/reject", headers=sh, json={"reason": "TOO_OLD"}).status_code == 200   # Staff close it
     r = client.put(f"{M}/orders/{oid}/assignment", headers=mh, json={"staff_id": _user(client, "STAFF")[1]})
     assert r.status_code == 409 and _err(r) == "ORDER_CLOSED"
 
@@ -259,15 +261,24 @@ def test_accept_claims_records_history_and_blocks_other_staff(client, cust, staf
     assert r.status_code == 409 and _err(r) == "STATE_CONFLICT"                       # trigger: ACCEPTED -> ACCEPTED
 
 
-def test_manager_accept_needs_a_staff_for_a_pool_order(client, cust, manager, wcat):
+def test_manager_cannot_handle_orders_only_assign_them(client, cust, manager, wcat):
+    """Separation of duties: the Manager assigns Staff and approves prices, Staff handle the order itself."""
     mh, _ = manager
     oid = _ot3(client, cust, wcat)
-    r = client.post(f"{W}/orders/{oid}/accept", headers=mh, json={})
-    assert r.status_code == 422 and _err(r) == "STAFF_REQUIRED"
+    for path, body in (("accept", {}), ("accept", {"staff_id": 1}), ("reject", {"reason": "OTHER", "note": "x"}),
+                       ("request-info", {"note": "x"}), ("claim", None), ("sketches/generate", {}),
+                       ("sketches", {"trajectory": {}}), ("sketches/1/finalize", None), ("quotations", {})):
+        r = client.post(f"{W}/orders/{oid}/{path}", headers=mh, json=body)
+        assert r.status_code == 403 and _err(r) == "FORBIDDEN", path
+    assert client.patch(f"{W}/orders/{oid}/sketches/1", headers=mh, json={"approach_note": "x"}).status_code == 403
+    for method, url, body in (("PUT", f"{W}/quotations/1/adjustment", {"adjusted_total": 1000, "reason": "x"}),
+                              ("DELETE", f"{W}/quotations/1/adjustment", None), ("POST", f"{W}/quotations/1/send", None),
+                              ("POST", f"{W}/quotations/1/cancel", None)):
+        assert client.request(method, url, headers=mh, json=body).status_code == 403, url
     assert _order_status(oid) == "SUBMITTED"
-    sid = _user(client, "STAFF")[1]
-    r = client.post(f"{W}/orders/{oid}/accept", headers=mh, json={"staff_id": sid})
-    assert r.status_code == 200 and r.json()["assigned_staff_id"] == sid
+    sid, sh = _user(client, "STAFF")[1], None
+    assert client.put(f"{M}/orders/{oid}/assignment", headers=mh, json={"staff_id": sid}).status_code == 200   # assigning is his job
+    assert client.get(f"{W}/orders/{oid}", headers=mh).status_code == 200                                     # and reading everything
 
 
 def test_reject_with_reason_and_customer_sees_it(client, cust, staff, wcat):
@@ -588,17 +599,16 @@ def test_manager_rejection_restores_the_computed_price(client, cust, staff, mana
     assert client.post(f"{W}/quotations/{q['id']}/send", headers=sh).status_code == 200
 
 
-def test_manager_own_big_adjustment_needs_no_second_approval(client, cust, manager, wcat):
-    mh, mid = manager
-    sid = _user(client, "STAFF")[1]
-    oid = _ot3(client, cust, wcat)
-    assert client.post(f"{W}/orders/{oid}/accept", headers=mh, json={"staff_id": sid}).status_code == 200
-    v = client.post(f"{W}/orders/{oid}/sketches/generate", headers=mh, json={}).json()["version"]
-    client.post(f"{W}/orders/{oid}/sketches/{v}/finalize", headers=mh)
-    q = client.post(f"{W}/orders/{oid}/quotations", headers=mh, json={}).json()
+def test_manager_cannot_adjust_prices_himself(client, cust, staff, manager, wcat):
+    """No self-approval: a price above the threshold is set by Staff and approved by a different person."""
+    sh, _ = staff
+    oid, q = _quoted(client, cust, sh, wcat)
     big = int(Decimal(q["computed_total"]) * 2 / 100) * 100
-    r = client.put(f"{W}/quotations/{q['id']}/adjustment", headers=mh, json={"adjusted_total": str(big), "reason": "Ưu đãi"})
-    assert r.json()["adjustment_status"] == "APPROVED" and r.json()["approved_by"] == mid
+    r = client.put(f"{W}/quotations/{q['id']}/adjustment", headers=manager[0], json={"adjusted_total": str(big), "reason": "Ưu đãi"})
+    assert r.status_code == 403 and _err(r) == "FORBIDDEN"
+    assert client.get(f"{W}/quotations/{q['id']}", headers=manager[0]).json()["adjustment_status"] == "NONE"
+    r = client.put(f"{W}/quotations/{q['id']}/adjustment", headers=sh, json={"adjusted_total": str(big), "reason": "Ưu đãi"})
+    assert r.json()["adjustment_status"] == "PENDING_MANAGER"                                  # needs the Manager's decision
 
 
 def test_clear_adjustment(client, cust, staff, wcat):
@@ -798,7 +808,9 @@ def test_chat_permissions(client, cust, staff, manager, wcat):
         assert client.post(url, headers=h, json={"body": "x"}).status_code == 404
     for role in ("ADMIN", "TECHNICAL_STAFF"):
         assert client.get(url, headers=auth(client, role)).status_code == 403
+    assert client.get(url, headers=manager[0]).status_code == 200                      # the Manager joins to resolve complaints
     assert client.post(url, headers=manager[0], json={"body": "Manager đây"}).status_code == 201
+    assert client.post(f"{url}/read", headers=manager[0]).status_code == 200
     assert client.get(url).status_code == 401
 
 
