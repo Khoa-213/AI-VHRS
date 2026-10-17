@@ -1,4 +1,5 @@
 """FR-01 authentication use cases: register, login, refresh, password reset."""
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -7,10 +8,12 @@ from sqlalchemy.orm import Session
 from app.core import security
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.integrations.google_auth import GoogleIdentity
 from app.integrations.mailer import Mailer
 from app.models.account import Account, AccountStatus, AuthSession, RoleCode
 from app.repositories.accounts import AccountRepository
 from app.repositories.sessions import SessionRepository
+from app.services import audit
 
 _BAD_CREDENTIALS = AppError(401, "INVALID_CREDENTIALS", "Email hoặc mật khẩu không đúng.")
 
@@ -64,11 +67,38 @@ class AuthService:
                 acc.failed_login_count = 0
             self.session.commit()  # persist the counter even though we answer 401
             raise _BAD_CREDENTIALS
+        return self._open_session(acc, now, ip, user_agent)
+
+    def _open_session(self, acc: Account, now: datetime, ip: str | None,
+                      user_agent: str | None) -> tuple[Account, str, str]:
         acc.failed_login_count, acc.locked_until, acc.last_login_at = 0, None, now
         sid = self.sessions.add(AuthSession(
             account_id=acc.id, expires_at=now + timedelta(days=self.cfg.refresh_token_ttl_days),
             ip_address=ip, user_agent=(user_agent or "")[:255] or None)).id
         return acc, *self._issue_pair(acc, sid)
+
+    # Google sign-in. No schema change: an account is matched by its (Google-verified) e-mail. Customers only:
+    # internal roles are created by the Admin (BR-01) and sign in with their password.
+    def login_google(self, identity: GoogleIdentity, *, ip: str | None = None,
+                     user_agent: str | None = None) -> tuple[Account, str, str]:
+        now = _now()
+        acc = self.repo.get_by_email(identity.email)
+        if acc is None:
+            role = self.repo.role_by_code(RoleCode.CUSTOMER.value)
+            assert role is not None, "roles seed missing"
+            name = (identity.name or identity.email.split("@")[0]).strip()[:150] or "Khách hàng"
+            acc = self.repo.add(Account(role_id=role.id, email=identity.email,
+                                        password_hash=security.hash_password(secrets.token_urlsafe(32)),
+                                        full_name=name))     # unusable random password; "forgot password" can set one
+            audit.record(self.session, actor_id=acc.id, action="ACCOUNT_REGISTER_GOOGLE", entity_type="account",
+                         entity_id=acc.id, ip=ip)
+        elif acc.role.code != RoleCode.CUSTOMER.value:
+            raise AppError(403, "GOOGLE_NOT_ALLOWED", "Tài khoản nội bộ đăng nhập bằng email và mật khẩu.")
+        if acc.status != AccountStatus.ACTIVE:
+            raise AppError(403, "ACCOUNT_DISABLED", "Tài khoản đã bị khoá hoặc vô hiệu hoá.")
+        if acc.locked_until and acc.locked_until > now:
+            raise AppError(423, "ACCOUNT_TEMP_LOCKED", "Tài khoản tạm khoá do nhập sai nhiều lần. Vui lòng thử lại sau.")
+        return self._open_session(acc, now, ip, user_agent)
 
     def refresh(self, refresh_token: str) -> tuple[Account, str, str]:
         payload = security.decode_token(refresh_token, security.REFRESH)

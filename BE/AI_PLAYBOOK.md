@@ -45,7 +45,9 @@ Service chỉ gán `order.order_status = ...`, `session.flush()`; lỗi `P0409` 
 ### S03 · Lỗi làm rollback cả request – cái cần giữ phải `commit` trước khi `raise`
 `get_session` rollback khi có exception. Việc đáng giữ dù request thất bại (đánh dấu báo giá hết hạn, audit `PAYMENT_MISMATCH`) phải `session.commit()` rồi mới `raise AppError`. Đã dính 2 lần (Phase 3). Sau `commit`, khoá `FOR UPDATE` và `set_actor` đều mất: lấy lại nếu còn ghi tiếp.
 
-### S04 · Phân quyền bản ghi: 403 vs 404
+### S04 · Phân quyền: token → vai trò → ma trận, và 403 vs 404
+**Mọi route phải có quy tắc trong `tests/test_permission_matrix.py::RULES`** (route mới không khai báo sẽ làm test đỏ). Vai trò luôn lấy từ DB theo token, không tin claim trong token. Manager chỉ đọc đơn/duyệt giá/quản trị xưởng; ghi trên đơn là của Staff. Sau khi thêm/đổi endpoint: cập nhật RULES + bảng quyền trong `docs/FE_API_GUIDE.md`.
+
 Sai vai trò → 403 (`require_roles`). Đúng vai trò nhưng bản ghi không phải của mình → **404** (không lộ tồn tại). Staff: `WorkshopAccess.order(...)`; khách: `get_owned`. Mọi endpoint mới phải có test cho: 401, 403 (4 vai trò còn lại), 404 (người khác), thành công.
 
 ### S05 · Tiền, số thập phân, JSON

@@ -1,7 +1,9 @@
-"""Workshop side, shared by STAFF and MANAGER: order queue and intake, sketches, quotations.
+"""Workshop side: order queue and intake, sketches, quotations.
 
-STAFF act on orders assigned to them (plus the unassigned SUBMITTED pool); MANAGER on every order that has
-left DRAFT. CUSTOMER, TECHNICAL_STAFF and ADMIN get 403. Another Staff's order answers 404.
+READ endpoints are open to STAFF and MANAGER; every WRITE endpoint is STAFF only (MANAGER gets 403: Manager assigns,
+approves price adjustments and manages the workshop, see api/v1/manager*.py). STAFF act on orders assigned to them
+(plus the unassigned SUBMITTED pool); MANAGER reads every order that has left DRAFT. CUSTOMER, TECHNICAL_STAFF and
+ADMIN get 403. Another Staff's order answers 404.
 """
 from datetime import date
 from typing import Annotated
@@ -31,6 +33,9 @@ from app.services.staff_orders import StaffOrderService
 router = APIRouter(prefix="/workshop", tags=["Workshop"])
 WorkshopDep = Annotated[Account, Depends(require_roles(RoleCode.STAFF.value, RoleCode.MANAGER.value))]
 StorageDep = Annotated[ObjectStorage | None, Depends(optional_storage)]
+# Every write on an order (accept / reject / sketch / quotation / send) belongs to STAFF. The MANAGER may read all
+# orders but only assigns, approves price adjustments and runs the workshop: separation of duties (BR-02, BR-09).
+STAFF_ONLY = [Depends(require_roles(RoleCode.STAFF.value))]
 _IMAGES = {"ORIGINAL_IMAGE", "HANDWRITING_SAMPLE"}
 
 
@@ -100,31 +105,31 @@ def get_order(order_id: int, svc: Orders, session: SessionDep) -> WorkshopOrderD
     return out
 
 
-@router.post("/orders/{order_id}/claim", response_model=WorkshopOrderRow,
+@router.post("/orders/{order_id}/claim", dependencies=STAFF_ONLY, response_model=WorkshopOrderRow,
              summary="FR-12 Staff tự nhận đơn trong pool (nguyên tử: chỉ một người nhận được)")
 def claim(order_id: int, svc: Orders) -> WorkshopOrderRow:
     return _row(svc.claim(order_id), "")
 
 
-@router.post("/orders/{order_id}/accept", response_model=WorkshopOrderRow, summary="UC-24 Tiếp nhận (SUBMITTED → ACCEPTED)")
+@router.post("/orders/{order_id}/accept", dependencies=STAFF_ONLY, response_model=WorkshopOrderRow, summary="UC-24 Tiếp nhận (SUBMITTED → ACCEPTED)")
 def accept(order_id: int, body: AcceptIn, svc: Orders) -> WorkshopOrderRow:
     return _row(svc.accept(order_id, body.staff_id), "")
 
 
-@router.post("/orders/{order_id}/reject", response_model=WorkshopOrderRow,
+@router.post("/orders/{order_id}/reject", dependencies=STAFF_ONLY, response_model=WorkshopOrderRow,
              summary="UC-24 Từ chối kèm lý do (SUBMITTED → REJECTED)")
 def reject(order_id: int, body: RejectIn, svc: Orders) -> WorkshopOrderRow:
     return _row(svc.reject(order_id, body.reason, body.note, body.staff_id), "")
 
 
-@router.post("/orders/{order_id}/request-info", response_model=WorkshopOrderRow,
+@router.post("/orders/{order_id}/request-info", dependencies=STAFF_ONLY, response_model=WorkshopOrderRow,
              summary="UC-24 Yêu cầu khách bổ sung (SUBMITTED → NEED_INFO)")
 def request_info(order_id: int, body: RequestInfoIn, svc: Orders) -> WorkshopOrderRow:
     return _row(svc.request_info(order_id, body.note, body.staff_id), "")
 
 
 # ---- sketches -------------------------------------------------------------------------------------
-@router.post("/orders/{order_id}/sketches/generate", response_model=SketchOut, status_code=status.HTTP_201_CREATED,
+@router.post("/orders/{order_id}/sketches/generate", dependencies=STAFF_ONLY, response_model=SketchOut, status_code=status.HTTP_201_CREATED,
              summary="UC-25 Chạy AI tạo phác thảo (OT-1: phục dựng nét từ ảnh; OT-3: sinh nét từ font một nét)",
              responses={422: {"description": "AI_TYPE_UNSUPPORTED (OT-2), UNSUPPORTED_CHARS, NO_STROKES_FOUND, ..."}})
 def generate_sketch(order_id: int, body: SketchGenerateIn, svc: Sketches) -> SketchOut:
@@ -132,7 +137,7 @@ def generate_sketch(order_id: int, body: SketchGenerateIn, svc: Sketches) -> Ske
     return sketch_out(row, svc.preview_urls(row), warnings)
 
 
-@router.post("/orders/{order_id}/sketches", response_model=SketchOut, status_code=status.HTTP_201_CREATED,
+@router.post("/orders/{order_id}/sketches", dependencies=STAFF_ONLY, response_model=SketchOut, status_code=status.HTTP_201_CREATED,
              summary="UC-25 Lưu quỹ đạo đã chỉnh sửa / vẽ tay thành phiên bản mới")
 def create_manual_sketch(order_id: int, body: SketchManualIn, svc: Sketches) -> SketchOut:
     row = svc.create_manual(order_id, body.trajectory, body.approach_note,
@@ -153,20 +158,20 @@ def get_sketch(order_id: int, version: int, svc: Sketches) -> SketchDetailOut:
     return out
 
 
-@router.patch("/orders/{order_id}/sketches/{version}", response_model=SketchOut,
+@router.patch("/orders/{order_id}/sketches/{version}", dependencies=STAFF_ONLY, response_model=SketchOut,
               summary="Sửa ghi chú cách làm / độ phức tạp đề xuất")
 def patch_sketch(order_id: int, version: int, body: SketchPatchIn, svc: Sketches) -> SketchOut:
     return sketch_out(svc.patch(order_id, version, body.model_dump(exclude_unset=True)))
 
 
-@router.post("/orders/{order_id}/sketches/{version}/finalize", response_model=SketchOut,
+@router.post("/orders/{order_id}/sketches/{version}/finalize", dependencies=STAFF_ONLY, response_model=SketchOut,
              summary="Chốt phiên bản này là bản gửi khách / dùng sản xuất")
 def finalize_sketch(order_id: int, version: int, svc: Sketches) -> SketchOut:
     return sketch_out(svc.finalize(order_id, version))
 
 
 # ---- quotations -----------------------------------------------------------------------------------
-@router.post("/orders/{order_id}/quotations", response_model=QuotationOut, status_code=status.HTTP_201_CREATED,
+@router.post("/orders/{order_id}/quotations", dependencies=STAFF_ONLY, response_model=QuotationOut, status_code=status.HTTP_201_CREATED,
              summary="UC-26 Lập báo giá từ Pricing Engine (cần phác thảo đã chốt, BR-22)")
 def create_quotation(order_id: int, body: QuotationCreateIn, svc: Quotes) -> QuotationOut:
     return quotation_out(svc.create(
@@ -179,29 +184,35 @@ def list_quotations(order_id: int, svc: Quotes) -> list[QuotationOut]:
     return [quotation_out(q) for q in svc.list_for_order(order_id)]
 
 
+@router.get("/orders/{order_id}/material-suggestions",
+            summary="Các tổ hợp giấy-bút-mực Staff còn có thể đề xuất (giữ lựa chọn của khách, đúng luật tương thích)")
+def material_suggestions(order_id: int, svc: Quotes) -> dict:
+    return svc.material_candidates(order_id)
+
+
 @router.get("/quotations/{quotation_id}", response_model=QuotationOut, summary="Chi tiết báo giá")
 def get_quotation(quotation_id: int, svc: Quotes) -> QuotationOut:
     return quotation_out(svc.get(quotation_id))
 
 
-@router.put("/quotations/{quotation_id}/adjustment", response_model=QuotationOut,
+@router.put("/quotations/{quotation_id}/adjustment", dependencies=STAFF_ONLY, response_model=QuotationOut,
             summary="FR-31 Điều chỉnh tổng giá: trong ±15% ghi lý do; vượt thì chờ Manager duyệt (BR-09)")
 def adjust(quotation_id: int, body: AdjustIn, svc: Quotes) -> QuotationOut:
     return quotation_out(svc.adjust(quotation_id, body.adjusted_total, body.reason))
 
 
-@router.delete("/quotations/{quotation_id}/adjustment", response_model=QuotationOut, summary="Bỏ điều chỉnh giá")
+@router.delete("/quotations/{quotation_id}/adjustment", dependencies=STAFF_ONLY, response_model=QuotationOut, summary="Bỏ điều chỉnh giá")
 def clear_adjustment(quotation_id: int, svc: Quotes) -> QuotationOut:
     return quotation_out(svc.clear_adjustment(quotation_id))
 
 
-@router.post("/quotations/{quotation_id}/send", response_model=QuotationOut,
+@router.post("/quotations/{quotation_id}/send", dependencies=STAFF_ONLY, response_model=QuotationOut,
              summary="Gửi báo giá cho khách: tạo PDF, hiệu lực 7 ngày; đơn → AWAITING_PRIVACY (hoặc QUOTED nếu đã đồng ý chính sách)")
 def send(quotation_id: int, svc: Quotes) -> QuotationOut:
     return quotation_out(svc.send(quotation_id))
 
 
-@router.post("/quotations/{quotation_id}/cancel", response_model=QuotationOut, summary="Hủy báo giá chưa gửi")
+@router.post("/quotations/{quotation_id}/cancel", dependencies=STAFF_ONLY, response_model=QuotationOut, summary="Hủy báo giá chưa gửi")
 def cancel(quotation_id: int, svc: Quotes) -> QuotationOut:
     return quotation_out(svc.cancel(quotation_id))
 

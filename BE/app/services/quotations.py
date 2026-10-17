@@ -184,22 +184,38 @@ class QuotationService:
                      ip=self.ip)
         return row
 
+    _FIELDS = (("paper_type_id", "giấy"), ("pen_type_id", "bút"), ("ink_color_id", "mực"))
+
     def _material_options(self, order: Order, options: list[dict[str, int | None]] | None):
+        """'Let the workshop choose' keeps whatever the customer already picked: Staff may only fill in what is
+        still empty (paper -> pen -> ink), and every option must still pass the compatibility rules."""
+        fixed = {f: getattr(order, f) for f, _ in self._FIELDS}
         if order.workshop_suggest_materials:
-            if not options or len(options) > MAX_OPTIONS:
+            if all(fixed.values()):
+                specs = [dict(fixed)]                              # nothing left for Staff to suggest
+            elif not options or len(options) > MAX_OPTIONS:
                 raise AppError(422, "OPTIONS_REQUIRED",
                                f"Khách chọn 'để xưởng đề xuất': cần 1–{MAX_OPTIONS} phương án vật tư.")
-            specs = options
+            else:
+                specs = options
         else:
-            if not (order.paper_type_id and order.pen_type_id and order.ink_color_id):
+            if not all(fixed.values()):
                 raise AppError(409, "MATERIALS_MISSING", "Đơn chưa chọn đủ giấy, bút, mực.")
-            specs = [{"paper_type_id": order.paper_type_id, "pen_type_id": order.pen_type_id,
-                      "ink_color_id": order.ink_color_id}]
+            specs = [dict(fixed)]
         picks = []
         for i, spec in enumerate(specs, start=1):
-            paper = self.catalog.paper(spec.get("paper_type_id") or 0)
-            pen = self.catalog.pen(spec.get("pen_type_id") or 0)
-            ink = self.catalog.ink(spec.get("ink_color_id") or 0)
+            merged = {}
+            for f, label in self._FIELDS:
+                if spec.get(f) and fixed[f] and spec[f] != fixed[f]:
+                    raise AppError(422, "MATERIAL_LOCKED_BY_CUSTOMER",
+                                   f"Phương án {i}: khách đã chọn {label}, không được đổi.", {"option": i, "field": f})
+                merged[f] = spec.get(f) or fixed[f]
+            missing = [label for f, label in self._FIELDS if not merged[f]]
+            if missing:
+                raise AppError(422, "INVALID_MATERIALS", f"Phương án {i}: còn thiếu {', '.join(missing)}.", {"option": i})
+            paper = self.catalog.paper(merged["paper_type_id"])
+            pen = self.catalog.pen(merged["pen_type_id"])
+            ink = self.catalog.ink(merged["ink_color_id"])
             problem = None
             if not (paper and paper.is_active):
                 problem = "giấy không tồn tại hoặc đã ngừng"
@@ -213,6 +229,29 @@ class QuotationService:
                 raise AppError(422, "INVALID_MATERIALS", f"Phương án {i}: {problem}.", {"option": i})
             picks.append((paper, pen, ink))
         return picks
+
+    def material_candidates(self, order_id: int, limit: int = 60) -> dict:
+        """What Staff may still offer: every paper / pen / ink combination that keeps the customer's choices and
+        obeys the compatibility rules (customer's own picks are shown as `fixed`)."""
+        order = self.access.order(order_id)
+        fixed = {f: getattr(order, f) for f, _ in self._FIELDS}
+        papers = [self.catalog.paper(fixed["paper_type_id"])] if fixed["paper_type_id"] else self.catalog.papers()
+        combos: list[dict] = []
+        for paper in papers:
+            if paper is None or not paper.is_active:
+                continue
+            for pen in self.catalog.pens_for_paper(paper.id):
+                if fixed["pen_type_id"] and pen.id != fixed["pen_type_id"]:
+                    continue
+                for ink in self.catalog.inks_for_pen(pen.id):
+                    if fixed["ink_color_id"] and ink.id != fixed["ink_color_id"]:
+                        continue
+                    combos.append({"paper_type_id": paper.id, "pen_type_id": pen.id, "ink_color_id": ink.id,
+                                   "paper": paper.name, "pen": pen.name, "ink": ink.name})
+        names = {f: (getattr(self.catalog, k)(fixed[f]).name if fixed[f] else None)
+                 for f, k in (("paper_type_id", "paper"), ("pen_type_id", "pen"), ("ink_color_id", "ink"))}
+        return {"suggest_enabled": order.workshop_suggest_materials, "fixed": {**fixed, **{f"{k}_name": v for k, v in names.items()}},
+                "total": len(combos), "combos": combos[:limit]}
 
     # ---- read ----
     def get(self, quotation_id: int) -> Quotation:
@@ -246,9 +285,6 @@ class QuotationService:
         if not decision.needs_manager:
             q.adjustment_status, q.status = AdjustmentStatus.WITHIN_THRESHOLD, QuotationStatus.DRAFT
             q.approved_by = q.approved_at = None
-        elif self.is_manager:                                    # a Manager's own adjustment needs no second approval
-            q.adjustment_status, q.status = AdjustmentStatus.APPROVED, QuotationStatus.DRAFT
-            q.approved_by, q.approved_at = self.actor.id, _now()
         else:
             q.adjustment_status, q.status = AdjustmentStatus.PENDING_MANAGER, QuotationStatus.PENDING_APPROVAL
             q.approved_by = q.approved_at = None

@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
 
 from app.api.deps import SessionDep, require_roles
-from app.api.order_schemas import InkOut, PaperOut, PenOut, StyleOut, TemplateOut
+from app.api.order_schemas import (InkOut, PaperOut, PenOut, PenWithInksOut, StyleOut, SuggestMaterialsOut,
+                                   TemplateOut)
 from app.models.account import Account, RoleCode
 from app.models.order import HandwritingStyle, StyleStatus
 from app.core.errors import AppError
@@ -26,6 +27,23 @@ def pens(session: SessionDep, paper_id: int | None = Query(default=None)) -> lis
     repo = CatalogRepository(session)
     rows = repo.pens_for_paper(paper_id) if paper_id is not None else repo.pens()
     return [PenOut.model_validate(p) for p in rows]
+
+
+@router.get("/suggest-materials", response_model=SuggestMaterialsOut,
+            summary="Gợi ý vật tư theo giấy đã chọn: các bút tương thích kèm màu mực (BR-05, BR-06)",
+            responses={404: {"description": "PAPER_NOT_FOUND"}})
+def suggest_materials(session: SessionDep, paper_type_id: int = Query(ge=1)) -> SuggestMaterialsOut:
+    repo = CatalogRepository(session)
+    paper = repo.paper(paper_type_id)
+    if paper is None or not paper.is_active:
+        raise AppError(404, "PAPER_NOT_FOUND", "Không tìm thấy loại giấy.")
+    pens = []
+    for pen in repo.pens_for_paper(paper.id):
+        inks = repo.inks_for_pen(pen.id)
+        if inks:                                           # a pen without any active ink cannot be ordered
+            pens.append(PenWithInksOut(**PenOut.model_validate(pen).model_dump(),
+                                       inks=[InkOut.model_validate(i) for i in inks]))
+    return SuggestMaterialsOut(paper=PaperOut.model_validate(paper), pens=pens)
 
 
 @router.get("/pens/{pen_id}/inks", response_model=list[InkOut], summary="Màu mực của bút (BR-05)")

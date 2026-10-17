@@ -68,12 +68,13 @@ Trạng thái báo giá/job **không** có trigger: do service kiểm tra.
 - Python 3.11 (3.14 local) · FastAPI · SQLAlchemy 2 · Alembic · PostgreSQL (Supabase) · Pydantic v2 · JWT + session server-side · httpx · OpenCV headless · Hershey-Fonts · fpdf2.
 - Lỗi: `{"error":{"code","message","details"}}`; phân trang `{items,total,page,page_size}`.
 - Phân quyền bản ghi: đơn của người khác → **404**; sai vai trò → **403**. Staff thấy đơn được giao + pool `SUBMITTED` chưa ai nhận (chỉ đọc tới khi nhận); Manager thấy mọi đơn không phải `DRAFT`.
+- **Manager không xử lý đơn như Staff** (chủ dự án chọn 2026-10-17): Manager chỉ **đọc** mọi đơn, phân công Staff, duyệt/từ chối giá vượt ngưỡng, quản vật tư/mẫu chữ/robot/bảng giá/ngưỡng %, lập lịch; mọi lệnh ghi trong `/workshop/*` (accept, reject, phác thảo, báo giá, điều chỉnh, gửi) là **STAFF only**; Manager **được** nhắn tin với khách trong chat để xử lý khiếu nại; Manager không tự duyệt giá của chính mình. Ma trận quyền toàn API được test tự động ở `tests/test_permission_matrix.py`.
 - **Admin chỉ quản trị hệ thống** (tài khoản, tích hợp, tham số, audit); **không** xem/sửa đơn, giá, sản xuất (override Report 3). Manager lo đơn/sản xuất/giá/vật tư.
 - **Không kết nối robot thật** (không SDK Fairino, serial, lệnh chuyển động). Cổng thanh toán/vận chuyển là **MOCK** có nhãn `mode=MOCK`; mô phỏng không bao giờ được báo như thao tác thật.
 - AI là thật nhưng **cổ điển, không gọi dịch vụ ngoài**: OT-1 (CV: thinning Zhang-Suen, đồ thị nét…), OT-3 (font một nét Hershey + ghép dấu tiếng Việt NFD). OT-2 không sinh tự động (R&D).
 - Loại đơn khách được đặt: `system_settings.order_types_enabled` = `["OT1_COPY_RESTORE","OT3_TEMPLATE"]` (OT-2 tắt).
 - Nguồn ngưỡng điều chỉnh giá (BR-09) và % cọc tối thiểu (BR-10): **`pricing_configs`** (có phiên bản, mỗi báo giá giữ snapshot). Khoá `system_settings.price_adjust_threshold_pct` (migration 0002) **không được code đọc**.
-- BR-09 so giá Staff nhập với giá hệ thống tính (`computed_total`) của chính báo giá đó, **không** so với giá ước tính lúc khách tạo đơn.
+- BR-09 so giá Staff nhập với giá hệ thống tính (`computed_total`) của chính báo giá đó, **không** so với giá ước tính lúc khách tạo đơn (chủ dự án chọn phương án A, 2026-10-17).
 - Mọi mã lỗi nghiệp vụ nằm trong `AppError(...)`; danh sách để FE đối chiếu: `grep -rhoE 'AppError\([0-9]{3}, "[A-Z_0-9]+"' app | sort -u`.
 
 ## 6. Test
@@ -86,6 +87,7 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 | `test_pricing.py`, `test_quotation_rules.py`, `test_phase3_rules.py`, `test_stroke_ai.py`, `test_handwriting_image.py`, `test_security.py` | luật thuần, AI, bảo mật | không |
 | `test_api_accounts.py`, `test_api_orders*.py`, `test_db_state_guard.py`, `test_hardening.py` | Phase 0–1, trigger | có |
 | `test_api_workshop.py` | Phase 2 (xưởng, phác thảo, báo giá, riêng tư, chat) | có |
+| `test_permission_matrix.py` | ma trận quyền: mọi route × 5 vai trò, token/đăng xuất | có |
 | `test_api_payments.py` | Phase 3: duyệt báo giá, cọc MOCK, webhook, huỷ | có |
 | `test_api_manager_ops.py` | Phase 3: vật tư, tồn kho, mẫu chữ, bộ nét, robot, bảng giá | có |
 | `test_api_scheduling.py` | Phase 3: lịch sản xuất, xung đột, đổi/gỡ, FAILED | có |
@@ -118,6 +120,9 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 
 ## 9. Changelog (mới nhất trước)
 
+- **2026-10-17 – Chọn vật tư**: `GET /catalog/suggest-materials?paper_type_id=` (bút tương thích + mực, công khai); "để xưởng chọn" giữ nguyên lựa chọn của khách, Staff chỉ điền phần thiếu và vẫn theo luật tương thích (`MATERIAL_LOCKED_BY_CUSTOMER`); `GET /workshop/orders/{id}/material-suggestions` liệt kê tổ hợp còn đề xuất được; `MaterialOptionIn` các trường đều tuỳ chọn. Không đổi schema, không thêm cảnh báo chất lượng. Tương thích giấy–bút–mực là **bảng quy tắc do con người thiết lập** (không có AI nhận diện): seed ban đầu theo BR-06, Manager chỉnh qua `/manager/compatibility`.
+- **2026-10-17 – Đăng nhập Google**: `POST /auth/google {id_token}` (`integrations/google_auth.py` xác minh qua Google tokeninfo: aud/iss/exp/email_verified; `AuthService.login_google`). **Không đổi schema**: khớp tài khoản theo email đã xác minh, chỉ khách hàng (email nội bộ → 403 `GOOGLE_NOT_ALLOWED`), tạo `CUSTOMER` mới nếu chưa có. Cần env `GOOGLE_CLIENT_ID` (Web client từ Google Cloud Console); chưa có thì endpoint trả 503. Test: luật xác minh trên verifier thật với transport giả lập, logic tài khoản trên DB thật; **chưa thử với token Google thật**.
+- **2026-10-17 – Phân quyền Manager/Staff** (chưa commit): mọi lệnh ghi `/workshop/*` chỉ STAFF; chat dành cho Customer+Staff+Manager (Manager nhắn để xử lý khiếu nại); bỏ nhánh "Manager tự duyệt giá" trong `QuotationService.adjust`; thêm `tests/test_permission_matrix.py` (quét mọi route × 5 vai trò, route mới thiếu quy tắc thì fail); cập nhật test Phase 2 và `docs/FE_API_GUIDE.md`.
 - **2026-10-16 – Phase 3** (chưa commit): thêm `models/ops.py`, `services/{payments,manager_catalog,scheduling}.py`, `domain/{payment_rules,pricing_config_rules,scheduling_rules}.py`, `integrations/payment_gateway.py`, `repositories/ops.py`, `api/v1/{payments,manager_ops,scheduling}.py`, `api/ops_schemas.py`; mở rộng `orders.cancel` (QUOTED/AWAITING_DEPOSIT), `customer_quotes.py` (approve), `workshop.py` (payments/jobs chỉ đọc), seed (robot + 2 settings), `conftest` (dọn payments/jobs/robots/pricing/styles). Sửa 3 lỗi phát hiện qua test: (a) hết hạn báo giá bị rollback khi API trả 409 → `expire_and_persist`; (b) audit `PAYMENT_MISMATCH` bị rollback → commit trước khi raise; (c) cảnh báo Pydantic `OptionSummary`. Thêm `PROJECT_STATUS.md`, `AI_PLAYBOOK.md`, `CLAUDE.md`, `docs/FE_API_GUIDE.md`.
 - **2026-10-16 – Phase 2** (commit `e7d0fbf`): xưởng + AI + báo giá + riêng tư + chat + seed.
 - Trước đó: Phase 0–1 (auth, tài khoản, đặt đơn, upload).
