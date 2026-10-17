@@ -85,6 +85,7 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
 - The workshop side lives in `src/pages/staff/` and `src/services/workshop.ts`: dashboard, `Workbench` (intake, sketch, quotation, chat),
   `Approvals`, `Schedule` and `Catalog` (Manager only; materials, ink colors, stock, compatibility, templates, robots, price list via `services/manage.ts`). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
 - Errors from the API go through `orderErrorKey` / `errText` (`services/orders.ts`): known codes have translated text, any other code shows the backend's own message. Add a code to `ERROR_KEYS` and `err.*` when you want it translated.
+- Workshop screens (Staff, Manager, Technician) all render inside `components/ws/Shell.tsx`: the icon pill, the header and a language button. Their look is `components/ws/ws.css` (generated from the Figma-based design, everything under `.ws`, light only, no theme toggle) and `workshop.css`; the accent is the `--acc` variable. Use the shared pieces in `components/ws/parts.tsx` and `charts.tsx` before adding new markup.
 - The order chat (`components/ui/Chat.tsx`) is shared by the customer order page and the workshop.
 - The technician screens (`src/pages/tech/`) still use the local mock (`store.ts`, `pages/staff/technicians.ts`, `evaluate.ts`, `telemetry.ts`). Wire them when backend phase 4 adds jobs, QC and photos, and delete that mock as you go.
 

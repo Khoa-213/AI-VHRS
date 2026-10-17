@@ -1,16 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowsClockwise, Camera, Check, PaperPlaneTilt, Warning, X } from '@phosphor-icons/react'
 import { useT, useTn } from '../../i18n'
-import SkipLink from '../../components/ui/SkipLink'
-import ThemeToggle from '../../components/ui/ThemeToggle'
-import LanguageToggle from '../../components/ui/LanguageToggle'
+import Shell from '../../components/ws/Shell'
 import { Link } from '../../router/router'
 import { failQc, submitQc, useAllStaffOrders, useUser } from '../../store/store'
 import type { QcPhoto } from '../../types'
 import { MODE_LABEL } from '../staff/evaluate'
 import { PHOTO_SLOTS, QC_FAIL_REASONS, qcGroups } from './qcItems'
 import { runDone, shrinkImage, useNow } from './phase'
-import TechRail from './TechRail'
 import '../staff/dashboard.css'
 import '../staff/staff.css'
 import '../staff/polish.css'
@@ -42,24 +39,15 @@ export default function QualityCheck({ id }: { id: string }) {
   const done = all.filter((i) => ticked[i.id]).length
 
   const shell = (body: React.ReactNode) => (
-    <div className="sd">
-      <SkipLink />
-      <TechRail active="qc" />
-      <main className="sd-body" id="main">
-        <header className="sd-top">
-          <div>
-            <h1>{order ? t('qc.title', { id: order.id }) : t('qc.titleShort')}</h1>
-            <p>{order ? t('qc.subtitle', { title: tn(order.title), name: order.name || t('qc.theCustomer') }) : t('qc.notFound')}</p>
-          </div>
-          <div className="sd-top-right">
-            <Link to="/tech/qc" className="sd-btn">{t('qc.another')}</Link>
-            <ThemeToggle className="vh-icon-btn" />
-            <LanguageToggle className="vh-icon-btn" />
-          </div>
-        </header>
-        {body}
-      </main>
-    </div>
+    <Shell
+      area="tech"
+      active="qc"
+      title={order ? t('qc.title', { id: order.id }) : t('qc.titleShort')}
+      lede={order ? t('qc.subtitle', { title: tn(order.title), name: order.name || t('qc.theCustomer') }) : t('qc.notFound')}
+      tools={<Link to="/tech/qc" className="sd-btn">{t('qc.another')}</Link>}
+    >
+      {body}
+    </Shell>
   )
 
   if (!order) {

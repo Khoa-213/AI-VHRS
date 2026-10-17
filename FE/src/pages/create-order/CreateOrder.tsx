@@ -16,6 +16,7 @@ import { fmt } from '../../utils/format'
 import { ApiError } from '../../services/api'
 import { draftPathFor, drawPathFor } from './draft'
 import PhotoRow from './PhotoRow'
+import TemplateCard from './TemplateCard'
 import './create-order.css'
 
 const MODES: InputMode[] = ['text', 'upload', 'draw']
@@ -56,6 +57,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [notice, setNotice] = useState('')
   const [closed, setClosed] = useState<InputMode[]>([])
   const [sizeFilter, setSizeFilter] = useState('')
+  // Templates whose preview the backend refuses cannot be sketched either, so they are not offered.
+  const [broken, setBroken] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(0)
   const [est, setEst] = useState<Estimate | null>(null)
@@ -168,8 +171,10 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   // First template is the default, so typing text is enough to start a draft.
   useEffect(() => {
-    if (templateId === null && templates.data?.length) setTemplateId(templates.data[0].id)
-  }, [templates.data, templateId])
+    const ok = templates.data?.find((x) => !broken.includes(x.id))
+    if (templateId === null && ok) setTemplateId(ok.id)
+    if (templateId !== null && broken.includes(templateId)) setTemplateId(ok?.id ?? null)
+  }, [templates.data, templateId, broken])
 
   // A paper change can make the chosen pen or ink invalid.
   useEffect(() => {
@@ -555,15 +560,15 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                         <span className="co-group-label">{t('co.styleLabel')}</span>
                         <div className="co-tray co-tray--3 co-tray--keep">
                           {(templates.data ?? []).map((s) => (
-                            <button key={s.id} className={`co-opt co-font${templateId === s.id ? ' on' : ''}`} onClick={() => setTemplateId(s.id)}>
-                              <img
-                                className="co-font-preview"
-                                src={templatePreviewUrl(s.id, dText || t('co.fontSample'))}
-                                alt={t('co.templateAlt', { name: s.name })}
-                                loading="lazy"
-                              />
-                              <span className="co-font-name">{s.name}</span>
-                            </button>
+                            <TemplateCard
+                              key={s.id}
+                              template={s}
+                              text={dText || t('co.fontSample')}
+                              on={templateId === s.id}
+                              onPick={() => setTemplateId(s.id)}
+                              onBroken={() => setBroken((b) => (b.includes(s.id) ? b : [...b, s.id]))}
+                              broken={broken.includes(s.id)}
+                            />
                           ))}
                           {templates.loading && <span className="co-hint">{t('co.loading')}</span>}
                           {!!templates.error && <span className="co-hint">{errText(t, orderErrorKey(templates.error))}</span>}

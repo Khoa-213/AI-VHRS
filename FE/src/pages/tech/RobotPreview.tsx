@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useT, useTn } from '../../i18n'
-import SkipLink from '../../components/ui/SkipLink'
-import ThemeToggle from '../../components/ui/ThemeToggle'
-import LanguageToggle from '../../components/ui/LanguageToggle'
 import { layoutById } from '../../constants/catalog'
+import Shell from '../../components/ws/Shell'
 import { Link } from '../../router/router'
 import {
   startRobotRun, useAllStaffOrders, useUser,
@@ -11,15 +9,14 @@ import {
 import { MODE_LABEL, evaluate } from '../staff/evaluate'
 import { STATE_LABEL, roster } from '../staff/technicians'
 import SimCanvas from './SimCanvas'
-import TechRail from './TechRail'
 import {
   DEFAULT_TUNING, buildPlan, penAt, pieceSeconds, solveArm, viewportFor, mmOf,
   type Tuning, type ViewFlags,
 } from './sim'
 import '../staff/dashboard.css'
 import '../staff/staff.css'
-import './tech.css'
 import '../staff/polish.css'
+import './tech.css'
 
 const RATES = [1, 10, 30, 60]
 const CHECKS = ['paper', 'pen', 'ink', 'calibration', 'clear'] as const
@@ -101,26 +98,16 @@ export default function RobotPreview({ id }: { id: string }) {
 
   const shown = live && run ? Math.min(1, Math.max(0, (now - run.startedAt) / (run.seconds * 1000))) : progress
 
-  const header = (
-    <header className="sd-top">
-      <div>
-        <h1>{order ? t('rp.title', { id: order.id }) : t('rp.titleShort')}</h1>
-        <p>{order ? t('rp.subtitle', { title: tn(order.title), name: order.name || t('common.customer') }) : t('rp.notFound')}</p>
-      </div>
-      <div className="sd-top-right">
-        <Link to="/tech/preview" className="sd-btn">{t('rp.another')}</Link>
-        <ThemeToggle className="vh-icon-btn" />
-        <LanguageToggle className="vh-icon-btn" />
-      </div>
-    </header>
-  )
-
   const shell = (body: React.ReactNode) => (
-    <div className="sd">
-      <SkipLink />
-      <TechRail active="preview" />
-      <main className="sd-body" id="main">{header}{body}</main>
-    </div>
+    <Shell
+      area="tech"
+      active="preview"
+      title={order ? t('rp.title', { id: order.id }) : t('rp.titleShort')}
+      lede={order ? t('rp.subtitle', { title: tn(order.title), name: order.name || t('common.customer') }) : t('rp.notFound')}
+      tools={<Link to="/tech/preview" className="sd-btn">{t('rp.another')}</Link>}
+    >
+      {body}
+    </Shell>
   )
 
   if (!order || !plan) {
