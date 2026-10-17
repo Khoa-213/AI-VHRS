@@ -95,6 +95,7 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 
 **Kết quả gần nhất (ghi lại sau mỗi lần chạy toàn bộ):**
 - 2026-10-16 (Phase 2, trước Phase 3): toàn bộ suite **219 passed** trên Supabase (Python 3.14).
+- 2026-10-17 (sau phân quyền, Google, vật tư): toàn bộ suite 314 passed + 1 failed (test cũ dùng Manager để từ chối đơn, đã sửa) + 1 error (bước dọn cuối, xem bài học trong `AI_PLAYBOOK.md` 8, đã sửa); sau đó chạy lại `test_api_materials/google_login/permission_matrix/workshop/payments/manager_ops`: **119 passed** (111 + 8). **Chưa chạy lại toàn bộ suite sau các sửa này.** Cần: Google thật chưa thử (đã có `GOOGLE_CLIENT_ID` trong `.env`, chưa kiểm tra bằng token thật).
 - 2026-10-16 (sau Phase 3): **toàn bộ suite 295 passed** trong 28 phút 35 giây trên Supabase (Python 3.14). Sau chạy: DB không còn `pytest_*`, bảng giá thật (version 1) active, `order_types_enabled` đã khôi phục.
 - Chưa từng chạy: FE nối API thật, OT-1 trên chữ viết tay thật (không có benchmark), Python 3.11 cho code Phase 3.
 
