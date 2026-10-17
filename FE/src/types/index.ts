@@ -43,9 +43,8 @@ export interface OrderSpec {
   text: string
   img: string | null
   qty: number
-  /** Demo only: original file name and the text a photo or drawing reads as. */
+  /** Original file name of an uploaded photo. */
   fileName?: string
-  simText?: string
 }
 
 export interface ShipTo {
@@ -95,7 +94,6 @@ export interface Order {
   /** Set when QC failed and the order went back to the robot queue. */
   qcFail?: { reasons: string[]; note: string; at: string }
   /** True for the sample orders the staff console seeds for itself. */
-  demo?: boolean
 }
 
 export interface QcPhoto {
@@ -117,7 +115,7 @@ export interface QcReport {
 export interface RobotRun {
   robotId: string
   startedAt: number
-  /** Prototype only: how long the simulated run lasts. */
+  /** How long the run lasts, in seconds. */
   seconds: number
 }
 
@@ -128,17 +126,17 @@ export interface Assignment {
   at: string
 }
 
-export interface CartItem {
-  key: string
-  name: string
-  text: string
-  font: string
-  aspect: string
-  paperName: string
-  paperColor: string
-  pack: number
-  unit: number
-  qty: number
+/** Account details a customer keeps on their profile page. */
+export interface Profile {
+  fullName: string
+  email: string
+  phone: string
+  address: string
+  bio: string
+  /** Small JPEG data URL. */
+  avatar: string | null
+  /** Payment method id from PAY_METHODS that checkout preselects. */
+  payMethod: string | null
 }
 
 export type Role = 'customer' | 'staff' | 'technician'
@@ -148,4 +146,10 @@ export interface User {
   role: Role
   /** Roster id of a technician account (T-01 ...). */
   techId?: string
+  /** Backend account id and email. */
+  id?: number
+  email?: string
+  phone?: string | null
+  /** Backend role code: CUSTOMER, STAFF, TECHNICAL_STAFF, MANAGER or ADMIN. */
+  apiRole?: string
 }

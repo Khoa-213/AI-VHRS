@@ -1,0 +1,5 @@
+.opv{display:flex;flex-direction:column;gap:16px;align-items:center;justify-content:center;width:100%;min-height:260px;padding:20px;border-radius:4px;background:var(--fx-04)}
+.opv-img,.opv-svg{display:block;max-width:100%;max-height:520px;width:auto;height:auto;background:#fbfaf5;border-radius:6px;box-shadow:0 14px 30px var(--sh-5)}
+.opv-svg{width:min(100%,360px)}
+.opv-text{white-space:pre-wrap;text-align:center;color:var(--t1);font-size:18px;line-height:1.5;margin:0}
+.opv-note{color:var(--t3);font-size:14px;text-align:center}

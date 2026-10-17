@@ -1,13 +1,11 @@
 import { ORDER_HREF, svgProps } from '../../../constants'
 import Reveal from '../../../components/ui/Reveal'
+import { useT } from '../../../i18n'
 
 const MODES = [
   {
     mode: 'text',
-    title: 'Text + Single-Line Font',
-    copy: 'Type your message, pick a digital calligraphy style, and preview the exact strokes before the pen touches paper.',
     sample: 'An khang thịnh vượng',
-    link: 'Browse styles →',
     icon: (
       <>
         <polyline points="4 7 4 4 20 4 20 7" />
@@ -18,9 +16,6 @@ const MODES = [
   },
   {
     mode: 'upload',
-    title: 'Upload Handwriting Photo',
-    copy: 'Snap or scan any handwritten page. We clean it up, trace each stroke, and turn it into a path the arm can follow.',
-    link: 'Start with a photo →',
     icon: (
       <>
         <rect width="18" height="18" x="3" y="3" rx="2" />
@@ -31,9 +26,6 @@ const MODES = [
   },
   {
     mode: 'draw',
-    title: 'iPad Live Canvas Drawing',
-    copy: 'Write directly with Apple Pencil. Pressure, speed and stroke order are captured live and replayed by the arm.',
-    link: 'Open the canvas →',
     icon: (
       <>
         <path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z" />
@@ -46,14 +38,13 @@ const MODES = [
 ] as const
 
 export default function Modes() {
+  const t = useT()
   return (
     <section id="modes" className="lp-modes">
       <div className="lp-modes-inner">
         <Reveal className="lp-modes-head" dur=".8s">
-          <h2 className="lp-h2-modes">Bring your hand. We bring the arm.</h2>
-          <p className="lp-modes-lede">
-            Every mode ends the same way: a smooth, verified trajectory written in real ink.
-          </p>
+          <h2 className="lp-h2-modes">{t('lp.modes.title')}</h2>
+          <p className="lp-modes-lede">{t('lp.modes.lede')}</p>
         </Reveal>
 
         <div className="lp-mode-grid">
@@ -72,11 +63,11 @@ export default function Modes() {
                 </svg>
               </span>
               <div className="lp-mode-body">
-                <h3>{m.title}</h3>
-                <p>{m.copy}</p>
+                <h3>{t(`lp.mode.${m.mode}.title`)}</h3>
+                <p>{t(`lp.mode.${m.mode}.copy`)}</p>
               </div>
               {'sample' in m && <div className="lp-sample">{m.sample}</div>}
-              <span className="lp-mode-link">{m.link}</span>
+              <span className="lp-mode-link">{t(`lp.mode.${m.mode}.link`)}</span>
             </Reveal>
           ))}
         </div>

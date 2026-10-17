@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { layoutById } from '../../constants/catalog'
+import { useT } from '../../i18n'
 import type { Order } from '../../types'
 import {
   H, PX, W,
@@ -26,6 +27,7 @@ export default function SimCanvas({ order, plan, vp, pen, arm, tuning, flags, fo
   const ref = useRef<HTMLCanvasElement>(null)
   const ink = useRef<HTMLCanvasElement | null>(null)
   const z = useRef(0)
+  const t = useT()
 
   // Ink layer: the whole text once, revealed later with clip rects.
   useEffect(() => {
@@ -191,7 +193,7 @@ export default function SimCanvas({ order, plan, vp, pen, arm, tuning, flags, fo
     g.beginPath(); g.roundRect(bx, by, 230, 90, 8); g.fill()
     g.fillStyle = '#8b92a1'
     g.font = '700 11px "JetBrains Mono", monospace'
-    g.fillText('SIDE VIEW · Z', bx + 12, by + 20)
+    g.fillText(t('sc.sideView'), bx + 12, by + 20)
     const target = pen.down ? 0 : tuning.lift
     z.current += (target - z.current) * 0.4
     g.fillStyle = order.spec.paperColor
@@ -205,7 +207,7 @@ export default function SimCanvas({ order, plan, vp, pen, arm, tuning, flags, fo
     g.beginPath(); g.arc(bx + 115, penTop + 3, 3, 0, 7); g.fill()
     g.fillStyle = '#c9ced8'
     g.fillText(`Z +${z.current.toFixed(1)} mm`, bx + 150, by + 20)
-  }, [order, plan, vp, pen, arm, tuning.lift, flags, live, fontTick])
+  }, [order, plan, vp, pen, arm, tuning.lift, flags, live, fontTick, t])
 
   return (
     <canvas
@@ -214,7 +216,7 @@ export default function SimCanvas({ order, plan, vp, pen, arm, tuning, flags, fo
       height={H}
       className="tp-canvas"
       role="img"
-      aria-label={`Simulated FR3 writing ${order.id}, ${Math.round((pen.char / plan.chars) * 100)} percent`}
+      aria-label={t('sc.canvasAria', { id: order.id, pct: Math.round((pen.char / plan.chars) * 100) })}
     />
   )
 }

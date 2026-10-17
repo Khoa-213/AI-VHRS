@@ -26,7 +26,8 @@ class Validators {
     return null;
   }
 
-  /// Validates password strength.
+  /// Validates password strength. Same rule as the backend: 8 to 72
+  /// characters with at least one letter and one digit.
   static String? password(String? value) {
     if (value == null || value.isEmpty) {
       return 'Password is required.';
@@ -34,11 +35,11 @@ class Validators {
     if (value.length < 8) {
       return 'Password must be at least 8 characters.';
     }
-    if (!RegExp(r'[A-Z]').hasMatch(value)) {
-      return 'Password must contain at least one uppercase letter.';
+    if (value.length > 72) {
+      return 'Password must be at most 72 characters.';
     }
-    if (!RegExp(r'[a-z]').hasMatch(value)) {
-      return 'Password must contain at least one lowercase letter.';
+    if (!RegExp(r'[A-Za-z]').hasMatch(value)) {
+      return 'Password must contain at least one letter.';
     }
     if (!RegExp(r'[0-9]').hasMatch(value)) {
       return 'Password must contain at least one number.';
@@ -56,18 +57,24 @@ class Validators {
     return null;
   }
 
-  /// Validates phone number (Vietnamese format).
+  /// Strips spaces, dashes and brackets: "090 123-4567" → "0901234567".
+  static String cleanPhone(String value) => value.replaceAll(RegExp(r'[\s\-()]'), '');
+
+  /// Validates phone number (Vietnamese format, same rule as the backend:
+  /// 0 or +84 followed by 9 digits).
   static String? phoneNumber(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Phone number is required.';
     }
-    final cleaned = value.replaceAll(RegExp(r'[\s\-()]'), '');
-    final regex = RegExp(r'^(\+84|84|0)(3|5|7|8|9)\d{8}$');
-    if (!regex.hasMatch(cleaned)) {
+    if (!RegExp(r'^(0|\+84)\d{9}$').hasMatch(cleanPhone(value))) {
       return 'Please enter a valid Vietnamese phone number.';
     }
     return null;
   }
+
+  /// Like [phoneNumber], but an empty field is allowed.
+  static String? optionalPhoneNumber(String? value) =>
+      value == null || value.trim().isEmpty ? null : phoneNumber(value);
 
   /// Validates string length within bounds.
   static String? length(String? value, {int? min, int? max, String fieldName = 'This field'}) {

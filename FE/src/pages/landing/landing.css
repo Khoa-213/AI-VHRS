@@ -15,7 +15,7 @@
 .lp-hero{background:var(--bg);padding:clamp(80px,12vw,150px) clamp(16px,3vw,32px) clamp(80px,10vw,120px)}
 .lp-hero-inner{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;align-items:center;text-align:center;gap:26px;transition:opacity var(--dur) ease,transform var(--dur) cubic-bezier(.2,.7,.2,1)}
 .lp-eyebrow{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-text)}
-.lp-h1{margin:0;font-weight:800;font-size:clamp(56px,10vw,148px);line-height:.95;letter-spacing:-.05em;background:linear-gradient(180deg,var(--h1-a) 0%,var(--h1-b) 38%,var(--h1-c) 68%,var(--h1-d) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-wrap:balance}
+.lp-h1{margin:0;font-family:'Bickham Script Pro','Bickham Script Pro 3','Bickham Script','Great Vibes',cursive;font-weight:400;font-size:clamp(56px,9.5vw,140px);line-height:1.15;letter-spacing:0;padding:.04em .06em .12em;background:linear-gradient(180deg,var(--h1-a) 0%,var(--h1-b) 38%,var(--h1-c) 68%,var(--h1-d) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-wrap:balance}
 .lp-hero-sub{margin:0;max-width:640px;font-size:clamp(16px,1.5vw,19px);line-height:1.6;color:var(--t4);text-wrap:pretty}
 .lp-hero-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:8px}
 .lp-cta-btn{display:inline-flex;align-items:center;gap:10px;background:var(--btn-inv-bg);color:var(--btn-inv-fg);font-weight:700;font-size:16px;padding:16px 28px;border-radius:999px;white-space:nowrap;transition:transform .15s,background .2s}
@@ -60,7 +60,7 @@
 .lp-mode-link{margin-top:auto;display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--t1)}
 
 .lp-cta-section{background:var(--bg);padding:0 clamp(16px,3vw,32px) clamp(80px,10vw,120px)}
-.lp-cta-card{max-width:1320px;margin:0 auto;padding:clamp(40px,6vw,72px);background:radial-gradient(ellipse at center,var(--tray-hover) 0%,var(--tray) 55%,transparent 100%);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:28px;transition:opacity var(--dur) ease,transform var(--dur) cubic-bezier(.2,.7,.2,1)}
+.lp-cta-card{max-width:1320px;margin:0 auto;padding:clamp(40px,6vw,72px);background:radial-gradient(closest-side,var(--tray-hover) 0%,color-mix(in srgb,var(--tray) 80%,transparent) 42%,color-mix(in srgb,var(--tray) 28%,transparent) 74%,transparent 100%);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:28px;transition:opacity var(--dur) ease,transform var(--dur) cubic-bezier(.2,.7,.2,1)}
 .lp-cta-copy{display:flex;flex-direction:column;gap:12px;max-width:620px}
 .lp-cta-copy h2{margin:0;font-size:clamp(30px,3.6vw,48px);font-weight:800;line-height:1.05;letter-spacing:-.035em;color:var(--t1)}
 .lp-cta-copy p{margin:0;font-size:16px;line-height:1.6;color:var(--t4)}
@@ -71,4 +71,20 @@
 }
 @media (prefers-reduced-motion:reduce){
   .lp-hero-inner,.lp-modes-head,.lp-mode-card,.lp-cta-card{transition:none}
+}
+
+/* Finished pieces running above the call to action. Two identical sets, the track slides by exactly one set. */
+.lp-mq{max-width:1320px;margin:0 auto clamp(40px,6vw,72px);overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.lp-mq-track{display:flex;width:max-content;animation:lp-mq 70s linear infinite}
+.lp-mq:hover .lp-mq-track{animation-play-state:paused}
+.lp-mq-set{display:flex;gap:28px;margin:0;padding:12px 28px 20px 0;list-style:none}
+.lp-mq-item{flex:none;display:flex;flex-direction:column;align-items:center;gap:12px}
+.lp-mq-paper{height:196px;border-radius:3px;box-shadow:0 14px 26px color-mix(in srgb,var(--sh-5) 100%,transparent);display:flex;align-items:center;justify-content:center;padding:10%;box-sizing:border-box;overflow:hidden}
+.lp-mq-paper span{font-size:17px;line-height:1.15;text-align:center;overflow-wrap:anywhere}
+.lp-mq-name{font-size:13px;font-weight:600;color:var(--t5);white-space:nowrap}
+@keyframes lp-mq{to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){
+  .lp-mq{-webkit-mask-image:none;mask-image:none;overflow-x:auto}
+  .lp-mq-track{animation:none}
+  .lp-mq-set[aria-hidden]{display:none}
 }

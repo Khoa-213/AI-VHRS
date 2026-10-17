@@ -62,24 +62,92 @@ coverage/
 *.tsbuildinfo
 
 # ========================
-# BE - Python
+# BE - Python & FastAPI
 # ========================
+# Byte-compiled / optimized / C extensions
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Virtual Environments
 venv/
 .venv/
 env/
+ENV/
+env.bak/
+venv.bak/
 .Python
+
+# Distribution / Packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+# The Python rule above must not hide the Flutter sources.
+!Mobile/lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 pip-log.txt
 pip-delete-this-directory.txt
-*.egg-info/
-*.egg
-.mypy_cache/
+
+# Databases (SQLite / Local Dev)
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads, Media & Static runtime
+uploads/
+media/
+storage/
+temp/
+tmp/
+
+# AI / ML Models & Weights & Checkpoints
+checkpoints/
+weights/
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.bin
+*.h5
+*.pkl
+*.joblib
+
+# Celery / Redis / Background Tasks
+celerybeat-schedule
+celerybeat.pid
+dump.rdb
+
+# Testing, Coverage & Linters
 .pytest_cache/
-.ruff_cache/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
 htmlcov/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
 
 # ========================
 # BE - Node (nếu dùng)

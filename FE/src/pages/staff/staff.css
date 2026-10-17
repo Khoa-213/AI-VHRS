@@ -163,3 +163,7 @@
 .sc-done.assigned h2{color:var(--good)}
 .sc-done.needs{background:linear-gradient(135deg,transparent,color-mix(in srgb,var(--warn) 16%,transparent))}
 .sc-done.needs h2{color:var(--warn)}
+
+/* Review and assign pages sit next to the icon rail. */
+.sd--sc>.sc{flex:1;min-width:0}
+.sc-nav:empty{flex:1}

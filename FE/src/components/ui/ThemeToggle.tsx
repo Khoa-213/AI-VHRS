@@ -1,16 +1,18 @@
 import { svgProps } from '../../constants'
+import { useT } from '../../i18n'
 import { toggleTheme, useTheme } from '../../store/theme'
 
 /** Icon button that flips between the dark and light theme. Shows the theme you would switch to. */
 export default function ThemeToggle({ className }: { className: string }) {
   const theme = useTheme()
-  const next = theme === 'dark' ? 'light' : 'dark'
+  const t = useT()
+  const label = t(theme === 'dark' ? 'theme.toLight' : 'theme.toDark')
   return (
     <button
       type="button"
       className={className}
-      aria-label={`Switch to ${next} theme`}
-      title={`Switch to ${next} theme`}
+      aria-label={label}
+      title={label}
       onClick={toggleTheme}
     >
       <svg width="19" height="19" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>

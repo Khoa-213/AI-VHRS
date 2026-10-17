@@ -1,3 +1,135 @@
+# ==========================================
+# Byte-compiled / optimized / C extensions
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ==========================================
+# Virtual Environments
+# ==========================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.Python
+
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# ==========================================
+# Distribution / Packaging / Builds
+# ==========================================
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ==========================================
+# Databases (SQLite / Local Dev)
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==========================================
+# Uploads, Media & Static runtime
+# ==========================================
+uploads/
+media/
+storage/
+temp/
+tmp/
+
+# ==========================================
+# AI / ML Models, Weights & Datasets
+# ==========================================
+checkpoints/
+weights/
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.bin
+*.h5
+*.pkl
+*.joblib
+dataset/
+datasets/
+data/raw/
+data/processed/
+
+# ==========================================
+# Celery / Redis / Background Workers
+# ==========================================
+celerybeat-schedule
+celerybeat.pid
+dump.rdb
+
+# ==========================================
+# Logs
+# ==========================================
+logs/
+*.log
+
+# ==========================================
+# Testing, Coverage & Type Checking
+# ==========================================
+.pytest_cache/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+htmlcov/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyre/
+.pytype/
+
+# ==========================================
+# IDEs & OS Files
+# ==========================================
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.sw?
+
+# ==========================================
+# Jupyter Notebooks
+# ==========================================
+.ipynb_checkpoints
+
 .env
 .venv/
 __pycache__/

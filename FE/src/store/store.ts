@@ -1,20 +1,18 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import { INKS, PAPERS, PENS, PRODUCTS, TYPES, FONT_STYLES } from '../constants/catalog'
-import type { CartItem, Order, OrderSpec, OrderStatus, QcReport, User } from '../types'
-import { todayLabel } from '../utils/format'
+import type { Order, Profile, OrderStatus, QcReport, User } from '../types'
+import { getTokens, onSessionExpired } from '../services/api'
+import { apiLogin, apiLogout, apiMe, apiUpdateMe } from '../services/auth'
 
 /**
- * Front-end-only "backend": orders, cart, user and prototype flag live in
- * localStorage and are exposed through small subscribable stores. Swap the
- * functions at the bottom for API calls when a real backend exists.
+ * App state in small subscribable stores. The signed-in user comes from the
+ * backend (services/auth.ts); the customer's orders come from the API
+ * (services/orders.ts). The orders kept here are the staff and technician screens' own, until those are wired in.
  */
 
 const KEYS = {
   orders: 'aivhrs-orders',
-  cart: 'aivhrs-cart',
+  profiles: 'aivhrs-profiles',
   user: 'aivhrs-user',
-  prototype: 'aivhrs-prototype',
-  staffDemos: 'aivhrs-staff-demos',
 } as const
 
 function read<T>(key: string): T | null {
@@ -53,115 +51,22 @@ function createStore<T>(init: () => T, persist: (v: T) => void) {
   }
 }
 
-// ---------- seeds ----------
-
-function makeSpec(over: Partial<OrderSpec> = {}): OrderSpec {
-  const t = TYPES[0]
-  return {
-    type: t.name, size: t.size, aspect: t.aspect, land: t.land, mins: t.mins,
-    paper: PAPERS[0].name, paperColor: PAPERS[0].color,
-    pen: PENS[0].name, penW: PENS[0].w,
-    ink: INKS[0].name, inkColor: INKS[0].color,
-    font: FONT_STYLES[0].font, fontName: FONT_STYLES[0].name,
-    mode: 'text', text: 'Chúc Mừng Năm Mới', img: null, qty: 10,
-    ...over,
-  }
-}
-
-function seedOrders(): Order[] {
-  const wed = TYPES[3]
-  return [
-    {
-      id: 'VH-4821', title: 'Wedding invitation × 120', detail: 'Cotton rag · Metallic gold',
-      status: 'Queued', total: 9840000, date: '06 Oct 2026', layout: 'framed', staff: 'Minh · AI-VHRS Studio',
-      assignment: { techId: 'T-01', techName: 'Hà Trần', robotId: 'FR3-01', at: '2026-10-06T08:00:00.000Z' },
-      spec: makeSpec({
-        type: wed.name, size: wed.size, aspect: wed.aspect, land: wed.land, mins: wed.mins,
-        paper: PAPERS[1].name, paperColor: PAPERS[1].color, ink: INKS[4].name, inkColor: INKS[4].color,
-        font: FONT_STYLES[1].font, fontName: FONT_STYLES[1].name, text: 'Thu & Khang', qty: 120,
-      }),
-    },
-    {
-      id: 'VH-4710', title: 'Greeting card × 10', detail: 'Ivory · Midnight blue',
-      status: 'Shipped', total: 405000, date: '28 Sep 2026', staff: 'Minh · AI-VHRS Studio',
-      spec: makeSpec({ qty: 10 }),
-    },
-    {
-      id: 'VH-4532', title: 'Handwritten letter × 1', detail: 'Giấy dó · Sepia',
-      status: 'Delivered', total: 145000, date: '02 Sep 2026', staff: 'Minh · AI-VHRS Studio',
-      spec: makeSpec({
-        type: TYPES[1].name, size: TYPES[1].size, aspect: TYPES[1].aspect, mins: TYPES[1].mins,
-        paper: PAPERS[3].name, paperColor: PAPERS[3].color, ink: INKS[2].name, inkColor: INKS[2].color,
-        font: FONT_STYLES[2].font, fontName: FONT_STYLES[2].name, text: 'Gửi em, người thương…', qty: 1,
-      }),
-    },
-  ]
-}
-
-/** Sample orders waiting in the staff console, one per input type. */
-function staffDemoSeeds(): Order[] {
-  const base = makeSpec()
-  return [
-    {
-      id: 'VH-5102', title: 'Wedding invitation × 120', detail: 'Cotton rag · Metallic gold', status: 'Pending',
-      total: 9840000, name: 'Thu Trang', date: '10 Oct 2026', demo: true,
-      spec: makeSpec({
-        type: TYPES[3].name, size: TYPES[3].size, aspect: TYPES[3].aspect, mins: TYPES[3].mins,
-        paper: PAPERS[1].name, paperColor: PAPERS[1].color, ink: INKS[4].name, inkColor: INKS[4].color,
-        font: FONT_STYLES[1].font, fontName: FONT_STYLES[1].name, mode: 'text',
-        text: 'Trân trọng kính mời\nThu & Khang', qty: 120,
-      }),
-    },
-    {
-      id: 'VH-5107', title: 'Handwritten letter × 1', detail: 'Giấy dó · Sepia', status: 'Pending',
-      total: 145000, name: 'Quốc Bảo', date: '10 Oct 2026', demo: true,
-      spec: {
-        ...makeSpec({
-          type: TYPES[1].name, size: TYPES[1].size, aspect: TYPES[1].aspect, mins: TYPES[1].mins,
-          paper: PAPERS[3].name, paperColor: PAPERS[3].color, ink: INKS[2].name, inkColor: INKS[2].color,
-          mode: 'upload', text: '', qty: 1,
-        }),
-        fileName: 'thu-gui-me.jpg',
-        simText: 'Gửi mẹ,\ncon nhớ mẹ nhiều lắm.\nTết này con về nhé.',
-      },
-    },
-    {
-      id: 'VH-5111', title: 'Greeting card × 10', detail: 'Ivory · Midnight blue', status: 'Pending',
-      total: 405000, name: 'Ngọc Hân', date: '09 Oct 2026', demo: true,
-      spec: { ...base, mode: 'draw', text: '', qty: 10, simText: 'chúc mừng sinh nhật\nbé Na tròn 5 tuổi' },
-    },
-  ]
-}
-
-const DEMO_USER: User = { name: 'Khang', role: 'customer' }
-
-/** Prototype accounts. Any other email signs in as a customer. */
-export const STAFF_ACCOUNTS: Record<string, string> = { 'minh@aivhrs.vn': 'Minh' }
-
-/** Technician accounts, matched to the roster ids on the assignment page. */
-export const TECH_ACCOUNTS: Record<string, { name: string; techId: string }> = {
-  'ha@aivhrs.vn': { name: 'Hà Trần', techId: 'T-01' },
-  'phuc@aivhrs.vn': { name: 'Phúc Lê', techId: 'T-02' },
-  'anh@aivhrs.vn': { name: 'Anh Vũ', techId: 'T-03' },
-  'thao@aivhrs.vn': { name: 'Thảo Đinh', techId: 'T-04' },
-}
+/** Ids of the sample orders the prototype used to seed. */
+const SAMPLE_IDS = ['VH-4821', 'VH-4710', 'VH-4532']
 
 // ---------- stores ----------
 
 const ordersStore = createStore<Order[]>(
   () => {
-    const saved = read<Order[]>(KEYS.orders)
-    if (Array.isArray(saved) && saved.length) {
-      // Sample order saved before technicians existed: give it to the first one.
-      return saved.map((o) =>
-        o.id === 'VH-4821' && o.status === 'Queued' && !o.assignment
-          ? { ...o, assignment: { techId: 'T-01', techName: 'Hà Trần', robotId: 'FR3-01', at: '2026-10-06T08:00:00.000Z' } }
-          : o,
-      )
+    // Browsers that ran the prototype still hold its sample orders and flags: drop them once.
+    try {
+      localStorage.removeItem('aivhrs-prototype')
+      localStorage.removeItem('aivhrs-staff-demos')
+    } catch {
+      // Storage blocked: nothing to clean.
     }
-    const seed = seedOrders()
-    write(KEYS.orders, seed)
-    return seed
+    const saved = read<Order[]>(KEYS.orders)
+    return Array.isArray(saved) ? saved.filter((o) => !SAMPLE_IDS.includes(o.id)) : []
   },
   (orders) => {
     try {
@@ -178,122 +83,122 @@ const ordersStore = createStore<Order[]>(
   },
 )
 
-const cartStore = createStore<CartItem[]>(
-  () => {
-    const saved = read<CartItem[]>(KEYS.cart)
-    return Array.isArray(saved) ? saved : []
-  },
-  (c) => write(KEYS.cart, c),
+const profilesStore = createStore<Record<string, Partial<Profile>>>(
+  () => read<Record<string, Partial<Profile>>>(KEYS.profiles) ?? {},
+  (p) => write(KEYS.profiles, p),
 )
 
+/** Cached copy of the signed-in account. Only trusted while API tokens exist; refreshed by `startSession`. */
 const userStore = createStore<User | null>(
-  () => {
-    const raw = localStorage.getItem(KEYS.user)
-    if (raw === null) return DEMO_USER
-    const saved = read<Partial<User>>(KEYS.user)
-    // Sessions saved before roles existed are customers.
-    if (!saved?.name) return null
-    if (saved.role === 'technician' && saved.techId) return { name: saved.name, role: 'technician', techId: saved.techId }
-    return { name: saved.name, role: saved.role === 'staff' ? 'staff' : 'customer' }
-  },
+  () => (getTokens() ? read<User>(KEYS.user) : null),
   (u) => write(KEYS.user, u),
 )
 
-const staffDemoStore = createStore<Order[]>(
+/** True after the refresh token was rejected, until the next sign-in. The login page explains it. */
+const expiredStore = createStore<boolean>(
   () => {
-    const saved = read<Order[]>(KEYS.staffDemos)
-    return Array.isArray(saved) ? saved : staffDemoSeeds()
+    try {
+      return sessionStorage.getItem('aivhrs-expired') === '1'
+    } catch {
+      return false
+    }
   },
-  (o) => write(KEYS.staffDemos, o),
-)
-
-const prototypeStore = createStore<boolean>(
-  () => read<boolean>(KEYS.prototype) ?? true,
-  (v) => write(KEYS.prototype, v),
+  (v) => {
+    try {
+      if (v) sessionStorage.setItem('aivhrs-expired', '1')
+      else sessionStorage.removeItem('aivhrs-expired')
+    } catch {
+      // The notice just will not survive a reload.
+    }
+  },
 )
 
 // ---------- hooks ----------
 
 export const useOrders = () => useSyncExternalStore(ordersStore.subscribe, ordersStore.get)
-export const useCart = () => useSyncExternalStore(cartStore.subscribe, cartStore.get)
 export const useUser = () => useSyncExternalStore(userStore.subscribe, userStore.get)
-export const usePrototypeMode = () => useSyncExternalStore(prototypeStore.subscribe, prototypeStore.get)
+export const useSessionExpired = () => useSyncExternalStore(expiredStore.subscribe, expiredStore.get)
+/** Profile of the signed-in user. Missing fields fall back to the account name. */
+export function useProfile(): Profile {
+  const all = useSyncExternalStore(profilesStore.subscribe, profilesStore.get)
+  const user = useUser()
+  return useMemo(() => {
+    const p = (user && all[profileKey(user)]) || {}
+    // Name, email and phone come from the backend account; the rest is kept on this device.
+    return {
+      fullName: user?.name ?? '',
+      email: user?.email ?? '',
+      phone: user?.phone ?? '',
+      address: p.address ?? '',
+      bio: p.bio ?? '',
+      avatar: p.avatar ?? null,
+      payMethod: p.payMethod ?? null,
+    }
+  }, [all, user])
+}
 
-/** Orders staff can work on: the customer's real orders plus the console's own sample orders. */
+
+/** Orders staff can work on: pending, accepted and rejected. */
 export function useStaffQueue(): Order[] {
   const orders = useOrders()
-  const demos = useSyncExternalStore(staffDemoStore.subscribe, staffDemoStore.get)
-  return useMemo(
-    () => [...orders.filter((o) => ['Pending', 'Accepted', 'Rejected'].includes(o.status)), ...demos],
-    [orders, demos],
-  )
+  return useMemo(() => orders.filter((o) => ['Pending', 'Accepted', 'Rejected'].includes(o.status)), [orders])
 }
 
-/** Every order staff care about: customers' orders past the sketch step, plus the sample orders. */
+/** Every order staff care about: those past the sketch step. */
 export function useAllStaffOrders(): Order[] {
   const orders = useOrders()
-  const demos = useSyncExternalStore(staffDemoStore.subscribe, staffDemoStore.get)
-  return useMemo(() => [...orders.filter((o) => o.status !== 'Sketching'), ...demos], [orders, demos])
+  return useMemo(() => orders.filter((o) => o.status !== 'Sketching'), [orders])
 }
 
-/**
- * The order for an id. Unknown or missing ids fall back to the newest order,
- * so every order page always has something to show.
- */
+/** The order for an id, or null when there is none. */
 export function useOrder(id: string | null): Order | null {
   const orders = useOrders()
-  return orders.find((o) => o.id === id) ?? orders[0] ?? null
+  return orders.find((o) => o.id === id) ?? null
 }
 
 // ---------- actions ----------
 
-export const setPrototypeMode = (on: boolean) => prototypeStore.set(on)
-export const signIn = () => userStore.set(DEMO_USER)
-
-/** Mock login: the email decides the role, the password is not checked. */
-export function login(email: string): User {
-  const key = email.trim().toLowerCase()
-  const staffName = STAFF_ACCOUNTS[key]
-  const tech = TECH_ACCOUNTS[key]
-  const local = key.split('@')[0] || 'Guest'
-  const user: User = staffName
-    ? { name: staffName, role: 'staff' }
-    : tech
-      ? { name: tech.name, role: 'technician', techId: tech.techId }
-      : { name: local.charAt(0).toUpperCase() + local.slice(1), role: 'customer' }
+/** Signs in against the backend. Throws an `ApiError` (see `authErrorKey`). */
+export async function signInWithPassword(email: string, password: string): Promise<User> {
+  const user = await apiLogin(email.trim(), password)
+  expiredStore.set(false)
   userStore.set(user)
   return user
 }
-export const signOut = () => userStore.set(null)
 
-export function createOrderId() {
-  return 'VH-' + String(Math.floor(4900 + Math.random() * 5000))
+/** Signs out here at once and revokes the session on the server in the background. */
+export function signOut() {
+  void apiLogout()
+  userStore.set(null)
 }
 
-export function addOrder(order: Order) {
-  ordersStore.set([order, ...ordersStore.get()])
+/**
+ * Checks the saved session against `GET /me` when the app starts, so a
+ * changed name or role shows up and a revoked session ends.
+ */
+export function startSession() {
+  onSessionExpired(() => {
+    userStore.set(null)
+    expiredStore.set(true)
+  })
+  if (!getTokens()) {
+    if (userStore.get()) userStore.set(null)
+    return
+  }
+  apiMe()
+    .then((u) => userStore.set(u))
+    .catch(() => {
+      // Offline or waking server: keep the cached user. A rejected session already signed out.
+    })
 }
 
 export function updateOrder(id: string, patch: Partial<Order>) {
-  // The staff console's sample orders live in their own store.
-  if (staffDemoStore.get().some((o) => o.id === id)) {
-    staffDemoStore.set(staffDemoStore.get().map((o) => (o.id === id ? { ...o, ...patch } : o)))
-    return
-  }
   ordersStore.set(ordersStore.get().map((o) => (o.id === id ? { ...o, ...patch } : o)))
 }
 
-/** Saves a staff change to the right store (sample orders live apart from the customer's). */
-/** Technician presses Start on the real robot. The run is simulated in the prototype. */
+/** Technician presses Start on the robot. */
 export function startRobotRun(id: string, robotId: string, seconds = 45) {
   updateOrder(id, { run: { robotId, startedAt: Date.now(), seconds } })
-}
-
-/** Prototype only: jumps a running robot job to its end so photo and QC can open. */
-export function finishRobotRun(id: string) {
-  const o = [...ordersStore.get(), ...staffDemoStore.get()].find((x) => x.id === id)
-  if (!o?.run) return
-  updateOrder(id, { run: { ...o.run, startedAt: Date.now() - o.run.seconds * 1000 } })
 }
 
 /** QC passed: the order is Written and the customer gets the photos. */
@@ -310,62 +215,32 @@ export function failQc(id: string, reasons: string[], note: string) {
 }
 
 export function saveStaffOrder(order: Order) {
-  if (order.demo) staffDemoStore.set(staffDemoStore.get().map((o) => (o.id === order.id ? order : o)))
-  else updateOrder(order.id, order)
+  updateOrder(order.id, order)
 }
 
 export function setStatus(id: string, status: OrderStatus, patch: Partial<Order> = {}) {
   updateOrder(id, { ...patch, status })
 }
 
-export function addToCart(item: Omit<CartItem, 'qty'>) {
-  const cart = cartStore.get()
-  const ex = cart.find((c) => c.key === item.key)
-  cartStore.set(
-    ex ? cart.map((c) => (c.key === item.key ? { ...c, qty: c.qty + 1 } : c)) : [...cart, { ...item, qty: 1 }],
-  )
+// ---------- profile ----------
+
+const profileKey = (u: User) => u.email ?? u.name
+
+/** Fields kept on this device only (address, bio, picture, payment method). */
+export function updateProfile(patch: Partial<Omit<Profile, 'fullName' | 'email' | 'phone'>>) {
+  const u = userStore.get()
+  if (!u) return
+  const all = profilesStore.get()
+  const key = profileKey(u)
+  profilesStore.set({ ...all, [key]: { ...all[key], ...patch } })
 }
 
-export function setCartQty(key: string, qty: number) {
-  const cart = cartStore.get()
-  cartStore.set(qty <= 0 ? cart.filter((c) => c.key !== key) : cart.map((c) => (c.key === key ? { ...c, qty } : c)))
-}
-
-export const clearCart = () => cartStore.set([])
-
-/** Cart checkout: turns the cart into one order that goes straight to the robot queue. */
-export function checkoutCart(): Order | null {
-  const cart = cartStore.get()
-  if (!cart.length) return null
-  const sub = cart.reduce((n, c) => n + c.unit * c.qty, 0)
-  const total = sub + (sub >= 500000 ? 0 : 30000)
-  const first = cart[0]
-  const product = PRODUCTS.find((p) => first.name === p.name)
-  const paper = PAPERS.find((p) => p.name === first.paperName) ?? PAPERS[0]
-  const order: Order = {
-    id: createOrderId(),
-    title: cart.length === 1 ? `${first.name} × ${first.qty * first.pack}` : `${cart.length} items`,
-    detail: cart.map((c) => c.paperName).join(' · '),
-    status: 'Queued',
-    total,
-    date: todayLabel(),
-    staff: 'Minh · AI-VHRS Studio',
-    spec: makeSpec({
-      type: first.name, aspect: first.aspect, land: first.aspect === '220/110',
-      paper: paper.name, paperColor: first.paperColor,
-      ink: INKS[0].name, inkColor: product?.ink ?? INKS[0].color,
-      font: first.font, fontName: 'Ready-made', text: first.text, qty: first.qty * first.pack,
-    }),
-  }
-  addOrder(order)
-  clearCart()
-  return order
-}
-
-/** Wipe everything and go back to the seeded demo data. */
-export function resetDemo() {
-  ordersStore.set(seedOrders())
-  cartStore.set([])
-  userStore.set(DEMO_USER)
-  staffDemoStore.set(staffDemoSeeds())
+/** Name and phone live on the backend account (`PATCH /me`). Throws an `ApiError`. */
+export async function saveAccount(patch: { fullName?: string; phone?: string | null }) {
+  const u = await apiUpdateMe({
+    ...(patch.fullName !== undefined ? { full_name: patch.fullName } : {}),
+    ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+  })
+  userStore.set(u)
+  return u
 }
