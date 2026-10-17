@@ -1,14 +1,12 @@
-import { SignOut, UserSwitch, X } from '@phosphor-icons/react'
+import { X } from '@phosphor-icons/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ORDER_HREF } from '../../constants'
 import { useT } from '../../i18n'
 import { STATUS_COLORS } from '../../constants/catalog'
-import { Link, navigate, usePath } from '../../router/router'
+import { Link, usePath } from '../../router/router'
 import {
-  STAFF_ACCOUNTS, TECH_ACCOUNTS, login, resetDemo, setPrototypeMode, signIn, signOut,
-  useOrders, usePrototypeMode, useUser,
+  resetDemo, setPrototypeMode, useOrders, usePrototypeMode,
 } from '../../store/store'
-import type { Role } from '../../types'
 import { STAGES, STEPS } from './steps'
 import './assistive.css'
 
@@ -22,7 +20,6 @@ interface Pos {
   y: number
 }
 
-const HOME: Record<Role, string> = { customer: '/', staff: '/staff', technician: '/tech' }
 
 const clampY = (y: number) => Math.max(MARGIN, Math.min(window.innerHeight - SIZE - MARGIN, y))
 
@@ -36,19 +33,13 @@ function loadPos(): Pos {
   return { side: 'right', y: clampY(window.innerHeight - SIZE - 96) }
 }
 
-const ACCOUNTS: { name: string; role: Role; run: () => void }[] = [
-  { name: 'Khang', role: 'customer', run: () => signIn() },
-  ...Object.entries(STAFF_ACCOUNTS).map(([email, name]) => ({ name, role: 'staff' as Role, run: () => void login(email) })),
-  ...Object.entries(TECH_ACCOUNTS).map(([email, t]) => ({ name: t.name, role: 'technician' as Role, run: () => void login(email) })),
-]
-
 /**
  * Floating round button, like iOS AssistiveTouch. Drag it to any edge; tap it
- * for the prototype tools: switch user and drive the order flow.
+ * for the prototype tools that drive the order flow. Accounts are real now:
+ * sign in on /login, sign out from the account page or the staff and technician rails.
  */
 export default function AssistiveTouch() {
   const t = useT()
-  const user = useUser()
   const on = usePrototypeMode()
   const orders = useOrders()
   const path = usePath()
@@ -139,12 +130,6 @@ export default function AssistiveTouch() {
     }, 240)
   }
 
-  const pick = (a: (typeof ACCOUNTS)[number]) => {
-    a.run()
-    setOpen(false)
-    navigate(HOME[a.role])
-  }
-
   const idInPath = /^\/orders\/([^/]+)\//.exec(path)?.[1]
   const order = orders.find((o) => o.id === (idInPath && decodeURIComponent(idInPath))) ?? orders[0]
   const step = order ? STEPS[order.status] : undefined
@@ -192,40 +177,6 @@ export default function AssistiveTouch() {
               <X size={18} />
             </button>
           </div>
-
-          <section aria-labelledby="at-users">
-            <h2 id="at-users"><UserSwitch size={16} aria-hidden /> {t('at.switchUser')}</h2>
-            <ul className="at-users">
-              {ACCOUNTS.map((a) => {
-                const current = user?.role === a.role && user.name === a.name
-                return (
-                  <li key={a.role + a.name}>
-                    <button type="button" className={current ? 'on' : ''} aria-current={current ? 'true' : undefined} onClick={() => pick(a)}>
-                      <span className="at-av">{a.name.charAt(0)}</span>
-                      <span className="at-who">
-                        <b>{a.name}</b>
-                        <span>{t(`role.${a.role}`)}</span>
-                      </span>
-                      {current && <span className="at-cur">{t('at.current')}</span>}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-            {user && (
-              <button
-                type="button"
-                className="at-row-btn"
-                onClick={() => {
-                  signOut()
-                  setOpen(false)
-                  navigate('/')
-                }}
-              >
-                <SignOut size={16} aria-hidden /> {t('at.signOut')}
-              </button>
-            )}
-          </section>
 
           <section aria-labelledby="at-proto">
             <div className="at-switch-row">

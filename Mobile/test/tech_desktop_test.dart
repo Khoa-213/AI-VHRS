@@ -12,7 +12,36 @@ import 'package:ai_vhrs_mobile/features/tech/domain/roster.dart';
 import 'package:ai_vhrs_mobile/features/tech/domain/tech_models.dart';
 import 'package:ai_vhrs_mobile/features/tech/i18n/tech_strings.dart';
 import 'package:ai_vhrs_mobile/features/tech/presentation/desktop_router.dart';
-import 'package:ai_vhrs_mobile/main_desktop.dart';
+import 'package:ai_vhrs_mobile/core/network/network_exceptions.dart';
+import 'package:ai_vhrs_mobile/features/auth/data/auth_repository.dart';
+import 'package:ai_vhrs_mobile/features/auth/domain/models/user.dart';
+import 'package:ai_vhrs_mobile/features/auth/presentation/auth_notifier.dart';
+import 'package:ai_vhrs_mobile/main.dart';
+
+/// Stands in for the backend: one technical-staff and one customer account.
+class _FakeAuth implements AuthRepository {
+  static User _user(int id, String email, String name, String role) =>
+      User(id: '$id', email: email, fullName: name, role: role, createdAt: DateTime(2026, 10, 11));
+
+  @override
+  Future<AuthSession> login({required String email, required String password}) async {
+    if (password != 'ChangeMe@123') throw const UnauthorizedException('bad', 'INVALID_CREDENTIALS');
+    return switch (email) {
+      'tech@netviet.vn' => (accessToken: 'a', refreshToken: 'r', user: _user(4, email, 'Technical Staff', UserRole.technicalStaff)),
+      'customer@example.com' => (accessToken: 'a', refreshToken: 'r', user: _user(5, email, 'Demo Customer', UserRole.customer)),
+      _ => throw const UnauthorizedException('bad', 'INVALID_CREDENTIALS'),
+    };
+  }
+
+  @override
+  Future<void> logout() async {}
+
+  @override
+  Future<User> getProfile() async => throw const UnauthorizedException();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   setUpAll(() async {
@@ -61,7 +90,10 @@ void main() {
     late ProviderContainer c;
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
-      c = ProviderContainer(overrides: [prefsProvider.overrideWithValue(await SharedPreferences.getInstance())]);
+      c = ProviderContainer(overrides: [
+        prefsProvider.overrideWithValue(await SharedPreferences.getInstance()),
+        authRepositoryProvider.overrideWithValue(_FakeAuth()),
+      ]);
     });
     tearDown(() => c.dispose());
 
@@ -89,10 +121,15 @@ void main() {
       reloaded.dispose();
     });
 
-    test('only technician accounts sign in', () {
-      final s = c.read(sessionProvider.notifier);
-      expect(s.login('minh@aivhrs.vn'), isFalse);
-      expect(s.login('ha@aivhrs.vn'), isTrue);
+    test('only technical staff get a session, mapped to a roster queue', () async {
+      final auth = c.read(authNotifierProvider.notifier);
+      await auth.login(email: 'customer@example.com', password: 'ChangeMe@123');
+      expect(c.read(sessionProvider), isNull);
+      await auth.login(email: 'tech@netviet.vn', password: 'ChangeMe@123');
+      final session = c.read(sessionProvider)!;
+      expect(session.name, 'Technical Staff');
+      expect(session.techId, 'T-01');
+      expect(c.read(myOrdersProvider), isNotEmpty);
       expect(c.read(myOrdersProvider).every((o) => o.assignment!.techId == 'T-01'), isTrue);
     });
   });
@@ -104,15 +141,24 @@ void main() {
     SharedPreferences.setMockInitialValues({'aivhrs-lang': 'en'});
     final prefs = await SharedPreferences.getInstance();
 
-    await tester.pumpWidget(ProviderScope(overrides: [prefsProvider.overrideWithValue(prefs)], child: const TechDesktopApp()));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [prefsProvider.overrideWithValue(prefs), authRepositoryProvider.overrideWithValue(_FakeAuth())],
+      child: const TechDesktopApp(),
+    ));
     await tester.pumpAndSettle();
     expect(find.text('Technician desk'), findsOneWidget);
 
-    await tester.tap(find.text('Hà Trần · T-01'));
-    await tester.pump();
+    // Wrong password: error shown, still on the login screen.
+    await tester.enterText(find.byType(TextFormField).at(0), 'tech@netviet.vn');
+    await tester.enterText(find.byType(TextFormField).at(1), 'wrong-pass1');
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Hà Trần'), findsWidgets);
+    expect(find.text('Email or password is incorrect.'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).at(1), 'ChangeMe@123');
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Technical Staff'), findsWidgets);
     expect(find.text('My orders'), findsOneWidget);
 
     final container = ProviderScope.containerOf(tester.element(find.byType(MaterialApp)));

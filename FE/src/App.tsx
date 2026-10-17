@@ -4,6 +4,7 @@ import CreateOrder from './pages/create-order/CreateOrder'
 import DrawStudio from './pages/create-order/DrawStudio'
 import Landing from './pages/landing/Landing'
 import Login from './pages/login/Login'
+import Register from './pages/login/Register'
 import AssignTechnician from './pages/staff/AssignTechnician'
 import StaffConsole from './pages/staff/StaffConsole'
 import StaffDashboard from './pages/staff/StaffDashboard'
@@ -37,6 +38,7 @@ function Routes() {
     return <Account section={section} />
   }
   if (path === '/login') return <Login />
+  if (path === '/register') return <Register />
   if (path === '/staff') return <RequireStaff><StaffDashboard /></RequireStaff>
   if (path === '/staff/shipping') return <RequireStaff><ShippingBoard /></RequireStaff>
   const shipping = /^\/staff\/shipping\/([^/]+)\/?$/.exec(path)

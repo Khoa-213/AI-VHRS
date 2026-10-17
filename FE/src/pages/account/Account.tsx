@@ -7,8 +7,10 @@ import { PAYMENT_BADGES, PAY_METHODS, STATUS_COLORS } from '../../constants/cata
 import { LANGS, setLang, useLang, useT, useTn } from '../../i18n'
 import { Link, navigate, orderPath } from '../../router/router'
 import { setTheme, useTheme } from '../../store/theme'
+import { authErrorKey } from '../../services/api'
+import { PHONE_RULE, cleanPhone } from '../../services/auth'
 import {
-  signIn, signOut, updateProfile, useDrafts, useOrders, useProfile, useUser,
+  saveAccount, signOut, updateProfile, useDrafts, useOrders, useProfile, useUser,
 } from '../../store/store'
 import type { Order } from '../../types'
 import { fmt } from '../../utils/format'
@@ -40,7 +42,7 @@ export default function Account({ section }: { section: Section }) {
         <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
           <h1 className="vh-h1">{t('acct.guestTitle')}</h1>
           <p className="vh-lede">{t('acct.guestBody')}</p>
-          <button className="vh-btn vh-btn--primary" onClick={() => { signIn(); navigate('/account') }}>{t('nav.signIn')}</button>
+          <button className="vh-btn vh-btn--primary" onClick={() => navigate('/login?next=/account')}>{t('nav.signIn')}</button>
         </div>
       </Page>
     )
@@ -126,12 +128,31 @@ function ProfileSection() {
     setForm((f) => ({ ...f, ...patch }))
     setSaved(false)
   }
-  const save = (e: React.FormEvent) => {
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
+  const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    updateProfile({ ...form, fullName: form.fullName.trim() || user?.name || '' })
-    setSaved(true)
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setSaved(false), 3000)
+    if (saving) return
+    const phone = cleanPhone(form.phone)
+    if (phone && !PHONE_RULE.test(phone)) {
+      setFormError(t('reg.errPhone'))
+      return
+    }
+    setFormError('')
+    setSaving(true)
+    try {
+      // Name and phone live on the backend account; address and bio stay on this device.
+      const fullName = form.fullName.trim() || user?.name || ''
+      if (fullName !== user?.name || phone !== (user?.phone ?? '')) await saveAccount({ fullName, phone: phone || null })
+      updateProfile({ address: form.address, bio: form.bio })
+      setSaved(true)
+      window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      setFormError(t(authErrorKey(err)))
+    } finally {
+      setSaving(false)
+    }
   }
   const pick = async (f: File | undefined) => {
     if (!f) return
@@ -155,8 +176,8 @@ function ProfileSection() {
           </label>
           <label className="ac-field">
             <span>{t('acct.p.email')}</span>
-            <input className="vh-input" type="email" autoComplete="email" value={form.email} onChange={(e) => set({ email: e.target.value })} />
-            <small>{t('acct.p.emailHelp')}</small>
+            <input className="vh-input" type="email" autoComplete="email" value={form.email} readOnly aria-readonly="true" />
+            <small>{t('acct.p.emailLocked')}</small>
           </label>
           <label className="ac-field">
             <span>{t('acct.p.phone')}</span>
@@ -173,8 +194,9 @@ function ProfileSection() {
             <textarea className="vh-textarea" rows={4} placeholder={t('acct.p.bioPh')} value={form.bio} onChange={(e) => set({ bio: e.target.value })} />
           </label>
           <div className="ac-actions">
-            <button type="submit" className="vh-btn vh-btn--primary vh-btn--md">{t('acct.p.save')}</button>
+            <button type="submit" className="vh-btn vh-btn--primary vh-btn--md" disabled={saving}>{t(saving ? 'acct.p.saving' : 'acct.p.save')}</button>
             {saved && <span className="ac-saved" role="status">{t('acct.p.saved')}</span>}
+            {formError && <span className="ac-error" role="alert">{formError}</span>}
           </div>
         </form>
 

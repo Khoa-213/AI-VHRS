@@ -14,7 +14,7 @@ class DioClient {
   late final Dio _dio;
   final SecureStorageService _storage;
 
-  DioClient({required SecureStorageService storage}) : _storage = storage {
+  DioClient({required SecureStorageService storage, void Function()? onSessionExpired}) : _storage = storage {
     _dio = Dio(
       BaseOptions(
         baseUrl: ApiConstants.baseUrl,
@@ -29,12 +29,14 @@ class DioClient {
     );
 
     _dio.interceptors.addAll([
-      AuthInterceptor(storage: _storage, dio: _dio),
-      LogInterceptor(
-        requestBody: true,
-        responseBody: true,
-        logPrint: (obj) => debugPrint('  [DIO] $obj'),
-      ),
+      AuthInterceptor(storage: _storage, dio: _dio, onSessionExpired: onSessionExpired),
+      // Bodies carry passwords and tokens: log them in debug builds only.
+      if (kDebugMode)
+        LogInterceptor(
+          requestBody: true,
+          responseBody: true,
+          logPrint: (obj) => debugPrint('  [DIO] $obj'),
+        ),
     ]);
   }
 
@@ -181,5 +183,12 @@ class DioClient {
 /// Riverpod provider for the DioClient singleton.
 final dioClientProvider = Provider<DioClient>((ref) {
   final storage = ref.watch(secureStorageProvider);
-  return DioClient(storage: storage);
+  return DioClient(
+    storage: storage,
+    onSessionExpired: () => ref.read(sessionExpiredProvider.notifier).state++,
+  );
 });
+
+/// Bumped each time the refresh token is rejected. The auth notifier listens
+/// and signs the user out, so the router sends them back to the login screen.
+final sessionExpiredProvider = StateProvider<int>((ref) => 0);

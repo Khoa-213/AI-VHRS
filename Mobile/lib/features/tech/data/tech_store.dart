@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/domain/models/auth_state.dart';
+import '../../auth/presentation/auth_notifier.dart';
 import '../domain/roster.dart';
 import '../domain/tech_models.dart';
 import 'prefs.dart';
@@ -14,7 +16,6 @@ import 'seed_orders.dart';
 /// through `DioClient`.
 
 const _ordersKey = 'aivhrs-tech-orders';
-const _userKey = 'aivhrs-tech-user';
 const _protoKey = 'aivhrs-prototype';
 
 // ─── Orders ──────────────────────────────────────────────────────────
@@ -112,40 +113,23 @@ final orderByIdProvider = Provider.family<TechOrder?, String>((ref, id) {
 
 // ─── Session ─────────────────────────────────────────────────────────
 
+/// The signed-in technician, from the real backend session.
 class TechSession {
   final String name;
+
+  /// Roster id the mock orders are assigned to (T-01 ...).
   final String techId;
-  const TechSession(this.name, this.techId);
+  final String email;
+  const TechSession(this.name, this.techId, this.email);
 }
 
-class SessionNotifier extends StateNotifier<TechSession?> {
-  final Prefs _prefs;
-  SessionNotifier(this._prefs) : super(_load(_prefs));
-
-  static TechSession? _load(Prefs prefs) {
-    final raw = prefs.getString(_userKey);
-    if (raw == null) return null;
-    final j = jsonDecode(raw) as Map<String, dynamic>;
-    return TechSession(j['name'] as String, j['techId'] as String);
-  }
-
-  /// Signs in with a prototype technician account. Returns false for any other email.
-  bool login(String email) {
-    final acc = techAccounts[email.trim().toLowerCase()];
-    if (acc == null) return false;
-    state = TechSession(acc.name, acc.techId);
-    _prefs.setString(_userKey, jsonEncode({'name': acc.name, 'techId': acc.techId}));
-    return true;
-  }
-
-  void signOut() {
-    state = null;
-    _prefs.remove(_userKey);
-  }
-}
-
-final sessionProvider =
-    StateNotifierProvider<SessionNotifier, TechSession?>((ref) => SessionNotifier(ref.watch(prefsProvider)));
+/// Null until a `TECHNICAL_STAFF` account is signed in. Sign in and out go
+/// through `authNotifierProvider`.
+final sessionProvider = Provider<TechSession?>((ref) {
+  final auth = ref.watch(authNotifierProvider);
+  if (auth is! AuthAuthenticated) return null;
+  return TechSession(auth.fullName, rosterIdForEmail(auth.email), auth.email);
+});
 
 final myTechnicianProvider = Provider<Technician?>((ref) => technicianById(ref.watch(sessionProvider)?.techId));
 

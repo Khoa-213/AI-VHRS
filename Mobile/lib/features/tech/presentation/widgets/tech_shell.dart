@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../auth/presentation/auth_notifier.dart';
 import '../../data/tech_store.dart';
 import '../../domain/tech_models.dart';
 import '../../i18n/tech_strings.dart';
@@ -114,7 +115,7 @@ class TechShell extends ConsumerWidget {
                   const _PrototypeMenu(),
                   const SizedBox(height: 14),
                   _RailButton(
-                    onTap: () => ref.read(sessionProvider.notifier).signOut(),
+                    onTap: () => ref.read(authNotifierProvider.notifier).logout(),
                     label: t('rail.signOut'),
                     child: Column(
                       children: [

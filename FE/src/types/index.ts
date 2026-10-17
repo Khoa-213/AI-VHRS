@@ -225,4 +225,10 @@ export interface User {
   role: Role
   /** Roster id of a technician account (T-01 ...). */
   techId?: string
+  /** Backend account id and email. */
+  id?: number
+  email?: string
+  phone?: string | null
+  /** Backend role code: CUSTOMER, STAFF, TECHNICAL_STAFF, MANAGER or ADMIN. */
+  apiRole?: string
 }

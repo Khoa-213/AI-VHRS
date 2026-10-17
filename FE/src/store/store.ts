@@ -2,11 +2,13 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { INKS, PAPERS, PENS, TYPES, FONT_STYLES } from '../constants/catalog'
 import { PACK_STEPS, emptyShipment, nextMockLog, scriptedLogs } from '../services/ghn'
 import type { Order, OrderDraft, OrderSpec, Profile, OrderStatus, QcReport, ShipLog, Shipment, User } from '../types'
+import { getTokens, onSessionExpired } from '../services/api'
+import { apiLogin, apiLogout, apiMe, apiUpdateMe } from '../services/auth'
 
 /**
- * Front-end-only "backend": orders, cart, user and prototype flag live in
- * localStorage and are exposed through small subscribable stores. Swap the
- * functions at the bottom for API calls when a real backend exists.
+ * App state in small subscribable stores. The signed-in user comes from the
+ * backend (services/auth.ts); orders, drafts and the prototype flag still live
+ * in localStorage until their API calls are wired in.
  */
 
 const KEYS = {
@@ -159,19 +161,6 @@ function staffDemoSeeds(): Order[] {
   ]
 }
 
-const DEMO_USER: User = { name: 'Khang', role: 'customer' }
-
-/** Prototype accounts. Any other email signs in as a customer. */
-export const STAFF_ACCOUNTS: Record<string, string> = { 'minh@aivhrs.vn': 'Minh' }
-
-/** Technician accounts, matched to the roster ids on the assignment page. */
-export const TECH_ACCOUNTS: Record<string, { name: string; techId: string }> = {
-  'ha@aivhrs.vn': { name: 'Hà Trần', techId: 'T-01' },
-  'phuc@aivhrs.vn': { name: 'Phúc Lê', techId: 'T-02' },
-  'anh@aivhrs.vn': { name: 'Anh Vũ', techId: 'T-03' },
-  'thao@aivhrs.vn': { name: 'Thảo Đinh', techId: 'T-04' },
-}
-
 // ---------- stores ----------
 
 const ordersStore = createStore<Order[]>(
@@ -224,17 +213,29 @@ const profilesStore = createStore<Record<string, Partial<Profile>>>(
   (p) => write(KEYS.profiles, p),
 )
 
+/** Cached copy of the signed-in account. Only trusted while API tokens exist; refreshed by `startSession`. */
 const userStore = createStore<User | null>(
-  () => {
-    const raw = localStorage.getItem(KEYS.user)
-    if (raw === null) return DEMO_USER
-    const saved = read<Partial<User>>(KEYS.user)
-    // Sessions saved before roles existed are customers.
-    if (!saved?.name) return null
-    if (saved.role === 'technician' && saved.techId) return { name: saved.name, role: 'technician', techId: saved.techId }
-    return { name: saved.name, role: saved.role === 'staff' ? 'staff' : 'customer' }
-  },
+  () => (getTokens() ? read<User>(KEYS.user) : null),
   (u) => write(KEYS.user, u),
+)
+
+/** True after the refresh token was rejected, until the next sign-in. The login page explains it. */
+const expiredStore = createStore<boolean>(
+  () => {
+    try {
+      return sessionStorage.getItem('aivhrs-expired') === '1'
+    } catch {
+      return false
+    }
+  },
+  (v) => {
+    try {
+      if (v) sessionStorage.setItem('aivhrs-expired', '1')
+      else sessionStorage.removeItem('aivhrs-expired')
+    } catch {
+      // The notice just will not survive a reload.
+    }
+  },
 )
 
 const staffDemoStore = createStore<Order[]>(
@@ -254,16 +255,18 @@ const prototypeStore = createStore<boolean>(
 
 export const useOrders = () => useSyncExternalStore(ordersStore.subscribe, ordersStore.get)
 export const useUser = () => useSyncExternalStore(userStore.subscribe, userStore.get)
+export const useSessionExpired = () => useSyncExternalStore(expiredStore.subscribe, expiredStore.get)
 /** Profile of the signed-in user. Missing fields fall back to the account name. */
 export function useProfile(): Profile {
   const all = useSyncExternalStore(profilesStore.subscribe, profilesStore.get)
   const user = useUser()
   return useMemo(() => {
-    const p = (user && all[user.name]) || {}
+    const p = (user && all[profileKey(user)]) || {}
+    // Name, email and phone come from the backend account; the rest is kept on this device.
     return {
-      fullName: p.fullName ?? user?.name ?? '',
-      email: p.email ?? '',
-      phone: p.phone ?? '',
+      fullName: user?.name ?? '',
+      email: user?.email ?? '',
+      phone: user?.phone ?? '',
       address: p.address ?? '',
       bio: p.bio ?? '',
       avatar: p.avatar ?? null,
@@ -314,27 +317,41 @@ export function useDrafts(): OrderDraft[] {
 // ---------- actions ----------
 
 export const setPrototypeMode = (on: boolean) => prototypeStore.set(on)
-export const signIn = () => {
-  userStore.set(DEMO_USER)
-  adoptGuestDrafts(DEMO_USER.name)
-}
 
-/** Mock login: the email decides the role, the password is not checked. */
-export function login(email: string): User {
-  const key = email.trim().toLowerCase()
-  const staffName = STAFF_ACCOUNTS[key]
-  const tech = TECH_ACCOUNTS[key]
-  const local = key.split('@')[0] || 'Guest'
-  const user: User = staffName
-    ? { name: staffName, role: 'staff' }
-    : tech
-      ? { name: tech.name, role: 'technician', techId: tech.techId }
-      : { name: local.charAt(0).toUpperCase() + local.slice(1), role: 'customer' }
+/** Signs in against the backend. Throws an `ApiError` (see `authErrorKey`). */
+export async function signInWithPassword(email: string, password: string): Promise<User> {
+  const user = await apiLogin(email.trim(), password)
+  expiredStore.set(false)
   userStore.set(user)
   if (user.role === 'customer') adoptGuestDrafts(user.name)
   return user
 }
-export const signOut = () => userStore.set(null)
+
+/** Signs out here at once and revokes the session on the server in the background. */
+export function signOut() {
+  void apiLogout()
+  userStore.set(null)
+}
+
+/**
+ * Checks the saved session against `GET /me` when the app starts, so a
+ * changed name or role shows up and a revoked session ends.
+ */
+export function startSession() {
+  onSessionExpired(() => {
+    userStore.set(null)
+    expiredStore.set(true)
+  })
+  if (!getTokens()) {
+    if (userStore.get()) userStore.set(null)
+    return
+  }
+  apiMe()
+    .then((u) => userStore.set(u))
+    .catch(() => {
+      // Offline or waking server: keep the cached user. A rejected session already signed out.
+    })
+}
 
 export function createOrderId() {
   return 'VH-' + String(Math.floor(4900 + Math.random() * 5000))
@@ -463,11 +480,25 @@ export function setStatus(id: string, status: OrderStatus, patch: Partial<Order>
 
 // ---------- profile ----------
 
-export function updateProfile(patch: Partial<Profile>) {
+const profileKey = (u: User) => u.email ?? u.name
+
+/** Fields kept on this device only (address, bio, picture, payment method). */
+export function updateProfile(patch: Partial<Omit<Profile, 'fullName' | 'email' | 'phone'>>) {
   const u = userStore.get()
   if (!u) return
   const all = profilesStore.get()
-  profilesStore.set({ ...all, [u.name]: { ...all[u.name], ...patch } })
+  const key = profileKey(u)
+  profilesStore.set({ ...all, [key]: { ...all[key], ...patch } })
+}
+
+/** Name and phone live on the backend account (`PATCH /me`). Throws an `ApiError`. */
+export async function saveAccount(patch: { fullName?: string; phone?: string | null }) {
+  const u = await apiUpdateMe({
+    ...(patch.fullName !== undefined ? { full_name: patch.fullName } : {}),
+    ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+  })
+  userStore.set(u)
+  return u
 }
 
 // ---------- drafts ----------
@@ -499,6 +530,5 @@ function adoptGuestDrafts(name: string) {
 export function resetDemo() {
   ordersStore.set(seedOrders())
   draftsStore.set([])
-  userStore.set(DEMO_USER)
   staffDemoStore.set(staffDemoSeeds())
 }

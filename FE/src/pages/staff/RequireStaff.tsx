@@ -9,7 +9,8 @@ export default function RequireStaff({ children, role = 'staff' }: { children: R
   const allowed = user?.role === role
 
   useEffect(() => {
-    if (!allowed) {
+    // StrictMode runs effects twice: only redirect from the guarded page itself.
+    if (!allowed && window.location.pathname !== '/login') {
       const next = window.location.pathname
       navigate(`/login?next=${encodeURIComponent(next)}`)
     }

@@ -52,46 +52,59 @@ class ErrorHandler {
   }
 
   /// Maps HTTP status code to specific [NetworkException].
+  ///
+  /// The backend always answers errors as
+  /// `{"error": {"code": "INVALID_CREDENTIALS", "message": "...", "details": ...}}`.
   static NetworkException _handleResponseError(Response? response) {
     final statusCode = response?.statusCode ?? 0;
-    final data = response?.data;
-    final serverMessage = _extractMessage(data);
+    final err = _envelope(response?.data);
+    final serverMessage = err.message;
+    final code = err.code;
 
     switch (statusCode) {
       case 400:
-        return BadRequestException(
-          serverMessage ?? 'Invalid request.',
-          data is Map<String, dynamic> ? data['errors'] as Map<String, dynamic>? : null,
-        );
+        return BadRequestException(serverMessage ?? 'Invalid request.', err.fields, code);
       case 401:
-        return UnauthorizedException(serverMessage ?? 'Session expired.');
+        return UnauthorizedException(serverMessage ?? 'Session expired.', code);
       case 403:
-        return ForbiddenException(serverMessage ?? 'Access denied.');
+        return ForbiddenException(serverMessage ?? 'Access denied.', code);
       case 404:
-        return NotFoundException(serverMessage ?? 'Resource not found.');
+        return NotFoundException(serverMessage ?? 'Resource not found.', code);
       case 409:
-        return ConflictException(serverMessage ?? 'Conflict.');
+        return ConflictException(serverMessage ?? 'Conflict.', code);
       case 422:
-        return UnprocessableException(
-          serverMessage ?? 'Validation failed.',
-          data is Map<String, dynamic> ? data['errors'] as Map<String, dynamic>? : null,
-        );
+        return UnprocessableException(serverMessage ?? 'Validation failed.', err.fields, code);
+      case 423 || 429:
+        final retry = int.tryParse(response?.headers.value('retry-after') ?? '') ??
+            (err.details is Map ? (err.details as Map)['retry_after_seconds'] as int? : null);
+        return TooManyAttemptsException(serverMessage ?? 'Too many attempts. Please try again later.', code, retry);
       case >= 500:
-        return ServerException(serverMessage ?? 'Server error.', statusCode);
+        return ServerException(serverMessage ?? 'Server error.', statusCode, code);
       default:
-        return ServerException('Unexpected error ($statusCode).', statusCode);
+        return ServerException('Unexpected error ($statusCode).', statusCode, code);
     }
   }
 
-  /// Attempts to extract a human-readable message from the response body.
-  static String? _extractMessage(dynamic data) {
+  /// Reads the backend error envelope. Also accepts a plain `{"message"}` or `{"detail"}` body.
+  static ({String? code, String? message, Object? details, Map<String, dynamic>? fields}) _envelope(dynamic data) {
     if (data is Map<String, dynamic>) {
-      return data['message'] as String? ?? data['error'] as String?;
+      final e = data['error'];
+      if (e is Map<String, dynamic>) {
+        final details = e['details'];
+        Map<String, dynamic>? fields;
+        if (details is List) {
+          fields = {
+            for (final d in details.whereType<Map>())
+              if (d['field'] != null) '${d['field']}': d['message'],
+          };
+        }
+        return (code: e['code'] as String?, message: e['message'] as String?, details: details, fields: fields);
+      }
+      final msg = data['message'] ?? data['detail'];
+      return (code: null, message: msg is String ? msg : null, details: null, fields: null);
     }
-    if (data is String && data.isNotEmpty) {
-      return data;
-    }
-    return null;
+    if (data is String && data.isNotEmpty) return (code: null, message: data, details: null, fields: null);
+    return (code: null, message: null, details: null, fields: null);
   }
 
   /// Convenience: handle any error, routing Dio vs generic exceptions.

@@ -9,5 +9,7 @@
 .lg-already{margin:0;padding:12px 14px;border-radius:12px;background:var(--fx-04);font-size:13px;color:var(--t3)}
 .lg-error{margin:0;font-size:13px;font-weight:600;color:var(--danger)}
 .lg-card .vh-input{border-radius:12px}
-.lg-demo{display:flex;flex-direction:column;gap:10px;padding-top:6px;border-top:1px solid var(--fx-08);font-size:12px;color:var(--t5)}
-.lg-demo>div{display:flex;flex-wrap:wrap;gap:8px}
+.lg-note{margin:-6px 0 0;font-size:12px;line-height:1.5;color:var(--t5);text-align:center}
+.lg-links{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;font-size:13px;color:var(--t4)}
+.lg-links button.vh-link{padding:0;border:0;background:none;font:inherit;cursor:pointer}
+.lg-field-help{display:block;margin-top:6px;font-size:12px;font-weight:400;line-height:1.4;color:var(--t5)}

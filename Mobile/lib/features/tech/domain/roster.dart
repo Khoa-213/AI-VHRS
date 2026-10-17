@@ -95,13 +95,13 @@ Technician? technicianById(String? id) {
   return null;
 }
 
-/// Prototype accounts, same as FE `TECH_ACCOUNTS`. Any password works.
-const techAccounts = <String, ({String name, String techId})>{
-  'ha@aivhrs.vn': (name: 'Hà Trần', techId: 'T-01'),
-  'phuc@aivhrs.vn': (name: 'Phúc Lê', techId: 'T-02'),
-  'anh@aivhrs.vn': (name: 'Anh Vũ', techId: 'T-03'),
-  'thao@aivhrs.vn': (name: 'Thảo Đinh', techId: 'T-04'),
+/// Backend accounts have no roster id yet, so the mock orders are matched by
+/// email. Any other technical-staff account gets T-01's queue.
+const _rosterByEmail = {
+  'tech@netviet.vn': 'T-01',
 };
+
+String rosterIdForEmail(String email) => _rosterByEmail[email.trim().toLowerCase()] ?? 'T-01';
 
 /// Orders a technician is carrying: assigned and not yet written.
 int loadOf(String techId, List<TechOrder> orders) => orders
