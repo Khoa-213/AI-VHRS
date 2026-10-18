@@ -4,6 +4,9 @@ import DrawStudio from './pages/create-order/DrawStudio'
 import Landing from './pages/landing/Landing'
 import Login from './pages/login/Login'
 import Register from './pages/login/Register'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import Accounts from './pages/admin/Accounts'
+import AuditLog from './pages/admin/AuditLog'
 import Approvals from './pages/staff/Approvals'
 import Catalog from './pages/staff/Catalog'
 import Pricing from './pages/staff/Pricing'
@@ -27,9 +30,9 @@ import { useUser } from './store/store'
  * /login), customers stay out of both. Anything else is sent home, so a trimmed address never lands on the wrong site.
  */
 function homeFor(role: string | undefined, path: string): string | null {
-  const own = role === 'staff' ? '/staff' : role === 'technician' ? '/tech' : null
+  const own = role === 'staff' ? '/staff' : role === 'technician' ? '/tech' : role === 'admin' ? '/admin' : null
   if (own) return path === own || path.startsWith(own + '/') || /^\/(account|login)(\/|$)/.test(path) ? null : own
-  if (role === 'customer' && /^\/(staff|tech)(\/|$)/.test(path)) return '/'
+  if (role === 'customer' && /^\/(staff|tech|admin)(\/|$)/.test(path)) return '/'
   return null
 }
 
@@ -76,6 +79,10 @@ function Routes() {
       </RequireStaff>
     )
   }
+
+  if (path === '/admin') return <RequireStaff role="admin"><AdminDashboard /></RequireStaff>
+  if (path === '/admin/accounts') return <RequireStaff role="admin"><Accounts /></RequireStaff>
+  if (path === '/admin/audit') return <RequireStaff role="admin"><AuditLog /></RequireStaff>
 
   if (path === '/tech') return <RequireStaff role="technician"><TechDashboard /></RequireStaff>
   if (path === '/tech/preview') return <RequireStaff role="technician"><PreviewOrders mode="preview" /></RequireStaff>

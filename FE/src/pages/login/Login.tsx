@@ -6,12 +6,14 @@ import LanguageToggle from '../../components/ui/LanguageToggle'
 import { Link, navigate } from '../../router/router'
 import { authErrorKey } from '../../services/api'
 import { apiRequestReset } from '../../services/auth'
-import { signInWithPassword, useSessionExpired, useUser } from '../../store/store'
+import GoogleButton from '../../components/ui/GoogleButton'
+import { GOOGLE_CLIENT_ID } from '../../services/google'
+import { signInWithGoogle, signInWithPassword, useSessionExpired, useUser } from '../../store/store'
 import type { Role } from '../../types'
 import './login.css'
 import '../staff/polish.css'
 
-const HOME: Record<Role, string> = { customer: '/', staff: '/staff', technician: '/tech' }
+const HOME: Record<Role, string> = { customer: '/', staff: '/staff', technician: '/tech', admin: '/admin' }
 const EMAIL = /^\S+@\S+\.\S+$/
 
 /** Where to go after signing in: the page that sent the visitor here, else by role. */
@@ -19,8 +21,8 @@ function destination(role: Role): string {
   const next = new URLSearchParams(window.location.search).get('next')
   if (next && next.startsWith('/') && !next.startsWith('//') && !/^\/(login|register)\b/.test(next)) {
     // Each role only follows `next` into its own area.
-    const own = role === 'staff' ? '/staff' : role === 'technician' ? '/tech' : null
-    const area = next.startsWith('/staff') ? '/staff' : next.startsWith('/tech') ? '/tech' : null
+    const own = role === 'staff' ? '/staff' : role === 'technician' ? '/tech' : role === 'admin' ? '/admin' : null
+    const area = next.startsWith('/staff') ? '/staff' : next.startsWith('/tech') ? '/tech' : next.startsWith('/admin') ? '/admin' : null
     if (!area || area === own) return next
   }
   return HOME[role]
@@ -54,6 +56,21 @@ export default function Login() {
         const u = await signInWithPassword(email, password)
         navigate(destination(u.role))
       }
+    } catch (err) {
+      setError(t(authErrorKey(err)))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const google = async (idToken: string) => {
+    if (busy) return
+    setError('')
+    setNotice('')
+    setBusy(true)
+    try {
+      const u = await signInWithGoogle(idToken)
+      navigate(destination(u.role))
     } catch (err) {
       setError(t(authErrorKey(err)))
     } finally {
@@ -128,6 +145,13 @@ export default function Login() {
               : t(busy ? 'login.signingIn' : 'login.title')}
           </button>
           {busy && mode === 'login' && <p className="lg-note" role="status">{t('login.waking')}</p>}
+
+          {mode === 'login' && GOOGLE_CLIENT_ID && (
+            <>
+              <p className="lg-or"><span>{t('login.or')}</span></p>
+              <GoogleButton disabled={busy} onToken={(tok) => void google(tok)} onError={() => setError(t('auth.err.googleDown'))} />
+            </>
+          )}
 
           <div className="lg-links">
             {mode === 'login' ? (

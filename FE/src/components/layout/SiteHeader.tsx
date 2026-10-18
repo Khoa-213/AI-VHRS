@@ -20,6 +20,7 @@ export default function SiteHeader() {
           <Link to="/#modes">{t('nav.penmanship')}</Link>
           <Link to="/#queue">{t('nav.orderQueue')}</Link>
           {user?.role === 'staff' && <Link to="/staff">{t('nav.staffDash')}</Link>}
+          {user?.role === 'admin' && <Link to="/admin">{t('nav.adminDash')}</Link>}
           {user?.role === 'technician' && <Link to="/tech">{t('nav.techDesk')}</Link>}
         </nav>
         <div className="vh-actions">

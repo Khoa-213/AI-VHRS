@@ -1,4 +1,4 @@
-import { CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, SealCheck, SignOut, SquaresFour } from '@phosphor-icons/react'
+import { CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
@@ -11,8 +11,8 @@ import SkipLink from '../ui/SkipLink'
 import './ws.css'
 import './workshop.css'
 
-export type Area = 'staff' | 'manager' | 'tech'
-export type RailKey = 'dashboard' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc'
+export type Area = 'staff' | 'manager' | 'tech' | 'admin'
+export type RailKey = 'dashboard' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit'
 
 interface Item {
   key: RailKey
@@ -29,7 +29,7 @@ function useCounts(area: Area, techId?: string) {
   const orders = useAllStaffOrders()
   const now = useNow(1000)
   const api = useAsync(
-    async () => (area === 'tech'
+    async () => (area === 'tech' || area === 'admin'
       ? null
       : {
         intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
@@ -37,7 +37,7 @@ function useCounts(area: Area, techId?: string) {
         schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
       }),
     [area],
-    area === 'tech' ? undefined : 60000,
+    area === 'tech' || area === 'admin' ? undefined : 60000,
   )
   const qc = orders.filter((o) => o.assignment?.techId === techId && phaseOf(o, now) === 'qc').length
   return { ...(api.data ?? { intake: 0, approvals: 0, schedule: 0 }), qc }
@@ -63,7 +63,13 @@ export default function Shell({
   const icon = (I: typeof SquaresFour) => <I size={22} weight="regular" aria-hidden />
 
   const items: (Item | 'gap')[] =
-    area === 'tech'
+    area === 'admin'
+      ? [
+        { key: 'dashboard', to: '/admin', label: t('rail.dashboard'), icon: icon(SquaresFour) },
+        { key: 'accounts', to: '/admin/accounts', label: t('rail.accounts'), icon: icon(Users) },
+        { key: 'audit', to: '/admin/audit', label: t('rail.audit'), icon: icon(Scroll) },
+      ]
+      : area === 'tech'
       ? [
         { key: 'dashboard', to: '/tech', label: t('rail.dashboard'), icon: icon(SquaresFour) },
         { key: 'preview', to: '/tech/preview', label: t('rail.preview'), icon: icon(PlayCircle) },
@@ -84,15 +90,15 @@ export default function Shell({
       ]
 
   const name = user?.name ?? ''
-  const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : t('wk.roleStaff')
+  const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
 
   return (
     <div className="ws">
       <SkipLink />
       <div className="app2">
         <div className="rail-col">
-          <Link to={area === 'tech' ? '/tech' : '/staff'} className="logo" aria-label={t(area === 'tech' ? 'rail.techMark' : 'rail.staffMark')}>AV</Link>
-          <nav className="rail" aria-label={t(area === 'tech' ? 'rail.tech' : 'rail.staff')}>
+          <Link to={area === 'tech' ? '/tech' : area === 'admin' ? '/admin' : '/staff'} className="logo" aria-label={t(area === 'tech' ? 'rail.techMark' : area === 'admin' ? 'rail.adminMark' : 'rail.staffMark')}>AV</Link>
+          <nav className="rail" aria-label={t(area === 'tech' ? 'rail.tech' : area === 'admin' ? 'rail.admin' : 'rail.staff')}>
             {items.map((it, i) =>
               it === 'gap' ? (
                 <span key={`g${i}`} className="gap" />
