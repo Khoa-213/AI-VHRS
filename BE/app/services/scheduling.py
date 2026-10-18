@@ -15,11 +15,11 @@ from app.core.errors import AppError
 from app.db.session import set_actor
 from app.domain import scheduling_rules as sr
 from app.models.account import Account, AccountStatus, RoleCode
-from app.models.ops import JobStatus, ProductionJob, Robot, RobotStatus
+from app.models.ops import Incident, JobEvent, JobStatus, ProductionJob, Robot, RobotStatus
 from app.models.order import Order, OrderStatus, ProductionStatus
 from app.repositories.accounts import AccountRepository
 from app.repositories.catalog import CatalogRepository
-from app.repositories.ops import JobRepository, RobotRepository
+from app.repositories.ops import EventRepository, IncidentRepository, JobRepository, RobotRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit, notifications
@@ -43,6 +43,8 @@ class SchedulingService:
         self.catalog = CatalogRepository(session)
         self.sketches = SketchRepository(session)
         self.accounts = AccountRepository(session)
+        self.event_repo = EventRepository(session)
+        self.incident_repo = IncidentRepository(session)
 
     # ------------------------------------------------------------------ configuration
     def _params(self) -> tuple[sr.WorkCalendar, dict[str, int]]:
@@ -199,7 +201,8 @@ class SchedulingService:
         job = self.jobs.add(ProductionJob(
             order_id=order.id, sketch_id=sketch.id, robot_id=robot.id, technician_id=tech.id,
             scheduled_by=self.manager.id, status=JobStatus.SCHEDULED, is_rewrite=rewrite, slot_start=slot_start,
-            slot_end=slot_end, estimated_duration_min=minutes, package_hash=sketch.content_hash))
+            slot_end=slot_end, estimated_duration_min=minutes, package_uri=sketch.trajectory_uri,
+            package_hash=sketch.content_hash, packaged_at=_now()))                       # FR-38: the job's package
         set_actor(self.session, self.manager.id, note or "Xếp lịch sản xuất")
         order.production_status = ProductionStatus.SCHEDULED
         if order.eta is None:
@@ -269,10 +272,36 @@ class SchedulingService:
                 for a in rows]
 
     def labels(self, jobs: list[ProductionJob]) -> dict[str, dict[int, str]]:
-        """Display names for a page of jobs (order code, robot code, technician name)."""
-        orders = {j.order_id: self.orders.get(j.order_id) for j in jobs}
-        return {"order": {i: o.code for i, o in orders.items() if o},
-                "robot": {r: (self.robots.get(r).code) for r in {j.robot_id for j in jobs}},
-                "tech": {t: (self.accounts.get(t).full_name) for t in {j.technician_id for j in jobs}}}
+        return job_labels(self.session, jobs)
+
+    # ------------------------------------------------------------------ job timeline and incidents (Phase 4a, read side)
+    def events(self, job_id: int, page: int, page_size: int) -> tuple[list[JobEvent], int]:
+        job = self.get(job_id)
+        return self.event_repo.for_job(job.id, offset=(page - 1) * page_size, limit=page_size)
+
+    def incident_page(self, *, resolved: bool | None, robot_id: int | None, page: int, page_size: int
+                      ) -> tuple[list[Incident], int]:
+        return self.incident_repo.search(resolved=resolved, robot_id=robot_id, offset=(page - 1) * page_size,
+                                         limit=page_size)
+
+    def resolve_incident(self, incident_id: int, note: str) -> Incident:
+        """Close an incident once the cause is dealt with. The robot's status is changed through the robot API."""
+        row = self.incident_repo.get(incident_id, lock=True)
+        if row is None:
+            raise AppError(404, "INCIDENT_NOT_FOUND", "Không tìm thấy sự cố.")
+        if row.resolved_at is not None:
+            raise AppError(409, "INCIDENT_ALREADY_RESOLVED", "Sự cố đã được đóng.")
+        row.resolved_by, row.resolved_at, row.resolution_note = self.manager.id, _now(), note
+        self.session.flush()
+        audit.record(self.session, actor_id=self.manager.id, action="INCIDENT_RESOLVE", entity_type="incident",
+                     entity_id=row.id, new={"robot_id": row.robot_id, "job_id": row.job_id}, reason=note, ip=self.ip)
+        return row
 
 
+def job_labels(session: Session, jobs: list[ProductionJob]) -> dict[str, dict[int, str]]:
+    """Display names for a page of jobs (order code, robot code, technician name)."""
+    orders, robots, accounts = OrderRepository(session), RobotRepository(session), AccountRepository(session)
+    found = {j.order_id: orders.get(j.order_id) for j in jobs}
+    return {"order": {i: o.code for i, o in found.items() if o},
+            "robot": {r: robots.get(r).code for r in {j.robot_id for j in jobs}},
+            "tech": {t: accounts.get(t).full_name for t in {j.technician_id for j in jobs}}}

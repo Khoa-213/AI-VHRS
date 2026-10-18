@@ -27,7 +27,9 @@ def _cleanup() -> None:
             or (entity_type = 'production_job' and entity_id in (select id from production_jobs where order_id in {_TEST_ORDERS}))
             or (entity_type = 'order' and entity_id in {_TEST_ORDERS})
             or (entity_type = 'quotation' and entity_id in (select id from quotations where order_id in {_TEST_ORDERS}))
-            or (entity_type = 'sketch' and entity_id in (select id from sketches where order_id in {_TEST_ORDERS}))"""))
+            or (entity_type = 'sketch' and entity_id in (select id from sketches where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'incident' and entity_id in (select id from incidents where reported_by in {_TEST_IDS}
+                 or robot_id in (select id from robots where code like 'pytest\\_%')))"""))
         # orders (cascade: inputs, sketches, quotations, messages, status_histories) before accounts;
         # test catalog rows after the orders
         # payments / production jobs do not cascade from orders; jobs must go before the test robots
@@ -35,6 +37,9 @@ def _cleanup() -> None:
         c.execute(text(f"delete from production_jobs where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from orders where customer_id in {_TEST_IDS}"))
         c.execute(text("delete from production_jobs where robot_id in (select id from robots where code like 'pytest\\_%')"))
+        # incidents reference robots and accounts without cascade (job_events/calibrations went with their jobs)
+        c.execute(text(f"delete from incidents where reported_by in {_TEST_IDS} "
+                       "or robot_id in (select id from robots where code like 'pytest\\_%')"))
         c.execute(text("delete from robots where code like 'pytest\\_%'"))
         c.execute(text(f"delete from handwriting_styles where owner_id in {_TEST_IDS}"))
         # a test may have saved a new PricingConfig version: drop those and re-activate the last real one

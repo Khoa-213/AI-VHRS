@@ -17,7 +17,7 @@
 
 - Giao tiếp **tiếng Việt**, giữ thuật ngữ kỹ thuật tiếng Anh. Báo cáo trung thực: cái gì **đã chạy**, cái gì **chưa chạy**, cái gì **không chắc**.
 - **Chỉ làm `BE/`.** Không sửa `FE/`, `Mobile/`, root repo (trừ khi được yêu cầu rõ).
-- **Không kết nối robot thật** (không SDK Fairino, serial, lệnh chuyển động). Cổng thanh toán/vận chuyển dùng adapter **MOCK** có `mode=MOCK`; không bao giờ trình bày mô phỏng như thao tác thật.
+- **Kết nối robot thật (SDK Fairino, Robot Agent, serial/IoT) thuộc phạm vi BE nhưng CHƯA làm: chỉ làm khi chủ dự án yêu cầu rõ.** Mặc định chừa lại, làm các luồng tương tác với web app trước. Trong lúc chưa kết nối: không gọi SDK/serial/lệnh chuyển động, kết quả mô phỏng và dữ liệu lực/tiến độ do client báo lên (hoặc nhập thủ công) và BE chỉ ghi nhận. Cổng thanh toán/vận chuyển dùng adapter **MOCK** có `mode=MOCK`; không bao giờ trình bày mô phỏng như thao tác thật.
 - **Dữ liệu phải thật**: dữ liệu mẫu seed thẳng vào Supabase bằng script idempotent; không hard-code dữ liệu giả trong code. AI là AI thật (xem `services/stroke_ai/`), không giả vờ.
 - Admin = quản trị hệ thống (không đụng đơn/giá/sản xuất); Manager = đơn/sản xuất/giá/vật tư.
 - **Không đổi schema/migration, không chạy lệnh DB phá huỷ khi chưa được duyệt.** Cần đổi → nêu giới hạn hiện tại, SQL đề xuất, ảnh hưởng, cách rollback.
@@ -175,3 +175,16 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 
 ### 2026-10-16 · Git: không viết lại lịch sử chung
 **Bối cảnh:** muốn gỡ dòng `Co-Authored-By` khỏi commit đã vào `main`. **Cách làm đúng:** đánh giá ảnh hưởng đồng đội trước; nếu chỉ lỡ đẩy `--force` lên `BE`, khôi phục lại đúng SHA cũ bằng `--force-with-lease=BE:<sha mới>` để không ai phải chạy thêm lệnh; chủ dự án quyết định có viết lại `main` hay không.
+
+### 2026-10-18 · Bảng mới tham chiếu robot/tài khoản mà không cascade (Phase 4a)
+**Bối cảnh:** `incidents` tham chiếu `robots` và `accounts` không `ON DELETE CASCADE` (còn `calibrations`, `job_events` thì cascade theo job); `job_events.incident_id` lại trỏ ngược tới `incidents`. Xoá robot/tài khoản test mà không xoá `incidents` trước sẽ vi phạm khoá ngoại và huỷ cả `_cleanup`. **Cách làm đúng:** thứ tự dọn là jobs (kéo theo `job_events`, `calibrations`) → `incidents` (theo `reported_by` hoặc robot test, kèm audit `entity_type='incident'`) → robots → accounts. Thêm bảng mới ⇒ đọc `ON DELETE` của nó trước khi sửa `_cleanup` (S07).
+
+### 2026-10-18 · Kiểm tra test có thật sự bắt lỗi (kiểm tra đột biến, rẻ)
+**Bối cảnh:** bộ test mới pass ngay lần đầu; pass ngay không chứng minh test có giá trị. **Cách làm đúng:** với luật quan trọng (ở đây BR-19), tạm bỏ một dòng bảo vệ trong code (ví dụ `sed -i`), chạy đúng test liên quan, thấy nó **đỏ**, rồi khôi phục (`cp` bản sao lưu) và kiểm tra bằng `grep` rằng dòng bảo vệ đã về. Không để code đột biến lại trong working tree.
+
+### 2026-10-18 · Ngắt pytest bằng SIGINT, không SIGKILL
+**Bối cảnh:** phải dừng suite đang chạy trên Supabase thật. **Cách làm đúng:** gửi `kill -INT` tới tiến trình `python -m pytest` thật (không phải shell bọc ngoài: `pgrep -f "^\.venv/bin/python -m pytest"`), để fixture cuối phiên chạy `_cleanup` và trả `order_types_enabled`; sau đó kiểm tra DB không còn `pytest_*`, bảng giá thật còn đúng 1 bản active, `order_types_enabled` còn đủ.
+
+### 2026-10-18 · Codespace dừng giữa lúc chạy test ⇒ DB dùng chung bị bỏ dở
+**Bối cảnh:** phiên làm việc kết thúc khi suite đang chạy trên Supabase. Dọn dẹp cuối phiên không chạy: còn 167 tài khoản + 60 đơn + 51 mục danh mục `pytest_*`, và **`system_settings.order_types_enabled` bị mất** (suite xoá nó lúc chạy), nghĩa là khách thật có thể đặt loại đơn R&D OT-2 đang bị tắt. Log nằm trong thư mục tạm cũng mất theo. **Cách làm đúng:** (1) việc đầu tiên của phiên mới, trước mọi việc khác, nếu nghi suite từng bị cắt ngang: chạy `.venv/bin/python scripts/recover_after_interrupted_tests.py` (khôi phục setting + `_cleanup`, in số liệu kiểm tra); (2) không báo "test đã chạy xong" khi chỉ có tiến trình nền "đã dừng"; (3) chỉ bắt đầu một lần chạy dài khi biết người dùng còn ở đó, và nói rõ rủi ro này.
+
