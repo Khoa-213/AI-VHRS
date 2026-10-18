@@ -42,14 +42,6 @@ export default function Hero() {
     <section id="top" ref={ref} className="lp-hero">
       <div className="lp-halo" aria-hidden="true" />
 
-      <div className="lp-hand lp-hand--l" aria-hidden="true">
-        <div className="lp-hand-in">
-          <div className="lp-sheet" style={{ background: PAPER.color, aspectRatio: SAMPLE.aspect }}>
-            <span style={{ fontFamily: SAMPLE.font, color: SAMPLE.ink }}>{SAMPLE.text}</span>
-          </div>
-        </div>
-      </div>
-
       <div className="lp-hero-title">
         <h1 className="lp-h1">
           <span className="lp-h1-brand">AI-VHRS</span>
@@ -59,9 +51,18 @@ export default function Hero() {
         </h1>
       </div>
 
-      <div className="lp-hand lp-hand--r" aria-hidden="true">
-        <div className="lp-hand-in">
-          <img src={fr3Arm} alt="" draggable={false} />
+      <div className="lp-hero-art" aria-hidden="true">
+        <div className="lp-hand lp-hand--l">
+          <div className="lp-hand-in">
+            <div className="lp-sheet" style={{ background: PAPER.color, aspectRatio: SAMPLE.aspect }}>
+              <span style={{ fontFamily: SAMPLE.font, color: SAMPLE.ink }}>{SAMPLE.text}</span>
+            </div>
+          </div>
+        </div>
+        <div className="lp-hand lp-hand--r">
+          <div className="lp-hand-in">
+            <img src={fr3Arm} alt="" draggable={false} />
+          </div>
         </div>
       </div>
 

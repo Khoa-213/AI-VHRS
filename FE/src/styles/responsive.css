@@ -1,0 +1,160 @@
+/* Shared responsive rules. Keep scrolling inside navigation, tables and canvases,
+   rather than clipping the whole document to hide layout problems. */
+html{scroll-padding-top:140px;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body,#root{min-width:0}
+img,video{max-width:100%}
+button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}
+:where(button,a,input,select,textarea):focus-visible{outline:2px solid var(--t4);outline-offset:3px}
+.vh-wrap,.vh-head-text,.vh-label,.ac-head>div,.ws .hd .t{min-width:0}
+.vh-lede,.vh-head-text,.ac-head,.ac-lede,.ws .hd,.entry-login-description{overflow-wrap:anywhere}
+.vh-btn{max-width:100%;height:auto;min-height:54px;padding-block:12px;white-space:normal}
+.vh-btn--sm{min-height:40px}
+.vh-btn--md{min-height:50px}
+.vh-btn--dashed{min-height:44px}
+.vh-nav a{white-space:nowrap}
+.vh-actions,.lp-actions{flex-shrink:0}
+.vh-tools{display:flex;align-items:center;gap:2px}
+.vh-logo,.lp-logo{flex-shrink:0}
+.lp-hero-art{display:contents}
+.ws .search-pill{min-width:0;width:min(100%,360px)}
+.ws .ad-scroll{position:relative;min-width:0;max-width:100%;margin-inline:0;padding-inline:0;overscroll-behavior-inline:contain}
+.ws .ad-diff{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+
+@media(max-width:1280px){
+  .lp-header-inner{display:flex;flex-wrap:wrap;row-gap:10px}
+  .lp-header-inner>.lp-actions{margin-left:auto}
+  .lp-nav{order:3;width:100%;min-width:0;overflow-x:auto;justify-content:safe center;scrollbar-width:thin}
+  .lp-nav>a,.lp-nav-group{flex-shrink:0}
+  .vh-header-inner{flex-wrap:wrap;gap:8px 16px}
+  .vh-actions{margin-left:auto}
+  .vh-nav{order:3;flex-basis:100%;flex-wrap:nowrap;justify-content:safe center;overflow-x:auto;scrollbar-width:thin}
+  .vh-nav a{flex-shrink:0;min-height:44px;display:flex;align-items:center}
+  .vh-aside{top:146px}
+}
+
+/* A header in normal flow reserves its actual height for every language. */
+@media(max-width:1100px){
+  .lp-root>.lp-header{position:relative;top:auto}
+  .lp-header-inner{padding:16px clamp(16px,3vw,32px)}
+  .lp-header-inner .lp-icon-btn{width:44px;height:44px;flex-shrink:0}
+  .lp-tools,.lp-nav-group{height:auto;min-height:44px}
+  .lp-nav a.lp-nav-lead,.lp-start-btn{height:auto;min-height:44px}
+  .lp-nav .lp-nav-group a{min-height:44px;display:flex;align-items:center;padding-inline:12px}
+  .lp-hero{min-height:max(650px,calc(100svh - 150px))}
+  .order-entry-hero{min-height:max(620px,calc(100svh - 160px));padding-top:70px;padding-bottom:100px}
+  .vh-aside{position:static}
+  .entry-login input,.vh-input,.vh-select,.vh-textarea,.ac-field input{font-size:16px}
+}
+
+@media(max-width:900px){
+  .order-entry-hero{display:grid;grid-template-columns:minmax(0,1fr);padding:50px 32px 80px;gap:12px}
+  .order-entry-copy{width:100%;max-width:640px}
+  .order-entry-copy h1{font-size:clamp(40px,7vw,66px)}
+  .order-entry-copy p{max-width:54ch}
+  .order-entry-art{position:relative;right:auto;bottom:auto;justify-self:end;width:min(75%,480px);height:350px;opacity:1}
+  .order-entry-art img{transform:rotate(-10deg);object-position:center}
+  .order-entry-brand{font-size:clamp(50px,10vw,100px);left:0;top:10%}
+  .order-entry-orbit{right:-25%;width:650px;top:auto;bottom:-100px;transform:none}
+  .order-entry-footer{left:32px;right:32px;bottom:22px}
+  .ws .app2{gap:18px;padding:20px}
+  .ws .main2{flex-basis:100%;max-width:100%}
+  .ws .rail-col{flex:1 1 100%;min-width:0;flex-direction:row;flex-wrap:wrap;gap:12px;align-items:center}
+  .ws .rail{width:auto;max-width:100%;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;padding:6px 10px}
+  .ws .rail a{flex-shrink:0}
+  .ws .rail .gap{width:8px;height:1px;flex-shrink:0}
+  .ws .rail-foot{margin:0 0 0 auto;flex-direction:row}
+  .ws .hd .tools{max-width:100%;gap:8px}
+}
+
+@media(max-width:760px){
+  .lp-hero{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 240px auto;min-height:0;padding:36px 24px 28px}
+  .lp-hero-title{position:relative;inset:auto;transform:none;padding:0;grid-row:1}
+  .lp-hero .lp-h1{font-size:clamp(30px,7.2vw,52px);line-height:1.12}
+  .lp-h1-line{max-width:100%}
+  .lp-hero-art{display:block;position:relative;grid-row:2;overflow:hidden;margin-inline:-24px}
+  .lp-hand--l{top:50%;transform:translateY(-50%)}
+  .lp-hand--r{bottom:auto;top:0;transform:none;z-index:1}
+  .lp-hand--r img{height:310px;margin:0 -100px 0 0}
+  .lp-sheet{width:clamp(100px,25vw,170px);margin-left:-12px}
+  .lp-sheet span{font-size:clamp(18px,4vw,28px)}
+  .lp-halo{width:min(85vw,460px);top:40%}
+  .lp-hero-foot{position:relative;inset:auto;padding:0;grid-row:3;gap:20px}
+  .lp-hero-note{max-width:100%}
+  .lp-hero .lp-eyebrow{font-size:11px;line-height:1.6}
+  .lp-hero .lp-hero-sub{font-size:14px;line-height:1.6;max-width:48ch}
+  .lp-chips{width:100%;gap:10px}
+  .lp-chip{min-height:44px;height:auto;white-space:normal;text-align:center;justify-content:center;padding:12px 18px}
+  .lp-specs-wrap{align-items:flex-end;padding-bottom:56px}
+  .lp-specs{max-width:100%;gap:12px}
+  .lp-spec-copy{font-size:14px}
+  .lp-spec-grid{gap:4px}
+  .lp-spec{padding:10px}
+  .lp-showcase{height:auto}
+  .lp-sticky{position:relative;height:auto;min-height:0;padding-top:24px;display:grid;gap:16px}
+  .lp-bigtext{top:150px;opacity:1!important}
+  .lp-robot{position:relative;left:auto;top:auto;height:280px;margin-inline:auto;transform:none!important}
+  .lp-specs-wrap{position:relative;inset:auto;display:block;padding:0 24px 40px;pointer-events:auto}
+  .lp-specs,.lp-spec{opacity:1!important;transform:none!important}
+  .lp-specs{pointer-events:auto!important}
+  .lp-progress{display:none}
+  .co-step-label{white-space:normal;line-height:1.5;align-items:flex-start}
+  .ac-head{align-items:flex-start}
+  .ac-head h1,.ac-head p{overflow-wrap:anywhere}
+  .ac-seg{max-width:100%;flex-wrap:wrap}
+  .ac-nav-item{min-height:44px}
+  .ac-h2-row{flex-wrap:wrap}
+}
+
+@media(max-width:560px){
+  html{scroll-padding-top:120px}
+  .lp-header-inner{padding:12px;column-gap:8px}
+  .lp-actions{gap:4px}
+  .lp-start-btn{padding:0 6px}
+  .lp-nav{justify-content:flex-start}
+  .lp-nav a.lp-nav-lead{padding-right:12px;gap:6px}
+  .lp-nav .lp-nav-group a{padding-inline:10px}
+  .lp-hero{padding-inline:20px}
+  .lp-chips>a{flex:1 1 160px}
+  .lp-cta-btn,.lp-ghost-btn{white-space:normal;justify-content:center;text-align:center;min-height:48px;padding:14px 20px}
+  .order-entry-hero{padding:32px 22px 88px;gap:8px}
+  .order-entry-copy h1{font-size:clamp(34px,9vw,48px);line-height:1.15}
+  .order-entry-eyebrow{font-size:11px;letter-spacing:.03em;margin-bottom:18px}
+  .order-entry-copy p{font-size:15px;line-height:1.7;margin:20px 0 24px}
+  .order-entry-buttons{gap:10px}
+  .order-entry-buttons>*{flex:1 1 150px;padding:14px 20px;gap:16px;text-align:center}
+  .order-entry-art{height:250px;width:90%;right:auto;bottom:auto}
+  .order-entry-footer{left:22px;right:22px;bottom:18px;font-size:10px}
+  .order-entry-footer span:last-child{max-width:65%}
+  .entry-login{width:calc(100% - 24px);max-height:calc(100dvh - 24px);border-radius:24px;overscroll-behavior:contain}
+  .entry-login-panel{padding:32px 22px 24px}
+  .entry-login h2{font-size:30px;padding-right:24px}
+  .entry-login-close{width:44px;height:44px;top:12px;right:12px}
+  .entry-login-link{min-height:44px}
+  .entry-login-register{font-size:13px}
+  .vh-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto;padding:10px 12px;gap:8px}
+  .vh-logo{font-size:18px}
+  .vh-actions{display:contents}
+  .vh-tools{grid-column:2;grid-row:1;gap:0}
+  .vh-icon-btn{width:44px;height:44px;flex-shrink:0}
+  .vh-actions>.vh-start{grid-column:1/-1;grid-row:2;min-height:44px;margin:0}
+  .vh-nav{grid-column:1/-1;grid-row:3;display:flex;justify-content:flex-start}
+  .vh-header{position:relative}
+  .vh-main{padding:28px 16px 64px}
+  .vh-panel{padding:20px;gap:16px}
+  .vh-head-text{width:100%}
+  .vh-card-grid{grid-template-columns:minmax(0,1fr)}
+  .vh-total-row{flex-wrap:wrap}
+  .co-meta,.co-next-wrap{flex-wrap:wrap}
+  .co-tray--keep .co-opt{padding:10px 8px}
+  .co-opt-name{overflow-wrap:anywhere}
+  .ac-order{padding:14px 12px;gap:10px}
+  .ws .app2{padding:16px 12px 28px}
+  .ws .hd .t{flex-basis:100%}
+  .ws .hd h1{font-size:26px;overflow-wrap:anywhere}
+  .ws .panel,.ws .sd-card{padding:18px 16px}
+}
+
+@media(pointer:coarse){
+  .co-stepper button,.ac-seg button{min-width:44px;min-height:44px}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
