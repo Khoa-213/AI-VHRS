@@ -9,8 +9,9 @@
 1. Đọc `PROJECT_STATUS.md` (đang ở phase nào, việc chờ ai, giả định chưa xác nhận) và file này.
 2. `git status`, `git log --oneline -10`, nhánh hiện tại (làm trên nhánh `BE`).
 3. Có `BE/.env` chưa? (không in nội dung). Thiếu → xin chủ dự án, **không** giả lập dữ liệu.
-4. Muốn biết code đang có gì: đọc `PROJECT_STATUS.md` mục 4 rồi mở đúng file; không quét cả repo.
-5. Nếu yêu cầu của người dùng mâu thuẫn với file này hoặc `PROJECT_STATUS.md` mục 5 (quyết định đã chốt) → nêu rõ mâu thuẫn và hỏi, đừng âm thầm đổi.
+4. Cần luật nghiệp vụ/ý nghĩa mã BR/FR/UC/MSG/LI? Đọc `docs/source/README.md` (bản chép Report 1–3 + danh sách FR bản 2, kèm bảng "đã override" và "điểm còn mơ hồ") và `grep -rn "BR-xx" docs/source` **trước khi hỏi chủ dự án**.
+5. Muốn biết code đang có gì: đọc `PROJECT_STATUS.md` mục 4 rồi mở đúng file; không quét cả repo.
+6. Nếu yêu cầu của người dùng mâu thuẫn với file này hoặc `PROJECT_STATUS.md` mục 5 (quyết định đã chốt) → nêu rõ mâu thuẫn và hỏi, đừng âm thầm đổi.
 
 ## 1. Luật không thương lượng
 
