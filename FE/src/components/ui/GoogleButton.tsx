@@ -74,5 +74,6 @@ export default function GoogleButton({ onToken, onError, disabled }: { onToken: 
   }, [width, lang])
 
   if (!GOOGLE_CLIENT_ID) return null
-  return <div ref={host} style={{ display: 'flex', justifyContent: 'center', minHeight: 44, opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : undefined }} />
+  // Google's light iframe needs a matching color scheme to keep its outside corners transparent.
+  return <div ref={host} style={{ colorScheme: 'light', display: 'flex', justifyContent: 'center', minHeight: 44, opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : undefined }} />
 }
