@@ -3,11 +3,11 @@ from __future__ import annotations  # methods named `list` would otherwise shado
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models.ops import (ACTIVE_JOB_STATUSES, JobStatus, Payment, PaymentGateway, PaymentStatus, PaymentType,
-                            ProductionJob, Robot, RobotStatus)
+from app.models.ops import (ACTIVE_JOB_STATUSES, Calibration, Incident, JobEvent, JobStatus, Payment, PaymentGateway,
+                            PaymentStatus, PaymentType, ProductionJob, Robot, RobotStatus)
 
 
 class PaymentRepository:
@@ -128,3 +128,73 @@ class JobRepository:
             ProductionJob.status.in_(ACTIVE_JOB_STATUSES), ProductionJob.slot_end > since)
             .group_by(ProductionJob.technician_id)).all()
         return {t: n for t, n in rows}
+
+
+class CalibrationRepository:
+    def __init__(self, session: Session):
+        self.s = session
+
+    def add(self, row: Calibration) -> Calibration:
+        self.s.add(row)
+        self.s.flush()
+        self.s.refresh(row)
+        return row
+
+    def invalidate_all(self, job_id: int) -> None:
+        self.s.execute(update(Calibration).where(Calibration.job_id == job_id, Calibration.is_valid)
+                       .values(is_valid=False))
+
+    def latest(self, job_id: int) -> Calibration | None:
+        return self.s.scalar(select(Calibration).where(Calibration.job_id == job_id)
+                             .order_by(Calibration.id.desc()).limit(1))
+
+    def valid(self, job_id: int) -> Calibration | None:
+        return self.s.scalar(select(Calibration).where(Calibration.job_id == job_id, Calibration.is_valid)
+                             .order_by(Calibration.id.desc()).limit(1))
+
+
+class EventRepository:
+    def __init__(self, session: Session):
+        self.s = session
+
+    def add(self, row: JobEvent) -> JobEvent:
+        self.s.add(row)
+        self.s.flush()
+        self.s.refresh(row)
+        return row
+
+    def for_job(self, job_id: int, *, offset: int, limit: int) -> tuple[list[JobEvent], int]:
+        stmt = select(JobEvent).where(JobEvent.job_id == job_id)
+        total = self.s.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        rows = list(self.s.scalars(stmt.order_by(JobEvent.id).offset(offset).limit(limit)))
+        return rows, total
+
+
+class IncidentRepository:
+    def __init__(self, session: Session):
+        self.s = session
+
+    def add(self, row: Incident) -> Incident:
+        self.s.add(row)
+        self.s.flush()
+        self.s.refresh(row)
+        return row
+
+    def get(self, incident_id: int, *, lock: bool = False) -> Incident | None:
+        stmt = select(Incident).where(Incident.id == incident_id)
+        return self.s.scalar(stmt.with_for_update() if lock else stmt)
+
+    def for_job(self, job_id: int) -> list[Incident]:
+        return list(self.s.scalars(select(Incident).where(Incident.job_id == job_id).order_by(Incident.id)))
+
+    def search(self, *, resolved: bool | None, robot_id: int | None, offset: int, limit: int
+               ) -> tuple[list[Incident], int]:
+        stmt = select(Incident)
+        if resolved is not None:
+            stmt = stmt.where(Incident.resolved_at.is_not(None) if resolved else Incident.resolved_at.is_(None))
+        if robot_id is not None:
+            stmt = stmt.where(Incident.robot_id == robot_id)
+        total = self.s.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        rows = list(self.s.scalars(stmt.order_by(Incident.created_at.desc(), Incident.id.desc())
+                                   .offset(offset).limit(limit)))
+        return rows, total
