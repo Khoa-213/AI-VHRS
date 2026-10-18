@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.models.catalog import PaperSize, TemplateKind
-from app.models.ops import IncidentType, JobEventType, JobStatus, PaymentGateway, PaymentStatus, PaymentType, RobotStatus
+from app.models.ops import JobStatus, PaymentGateway, PaymentStatus, PaymentType, RobotStatus
 from app.models.order import StyleStatus
 
 Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=30,
@@ -383,11 +383,6 @@ class JobOut(_ORM):
     slot_end: datetime
     estimated_duration_min: int
     package_hash: str | None
-    progress_pct: float | None = None
-    downloaded_at: datetime | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    simulation_passed: bool | None = None
 
 
 class TechnicianOut(BaseModel):
@@ -395,164 +390,3 @@ class TechnicianOut(BaseModel):
     full_name: str
     email: str
     active_jobs: int
-
-
-# ---------------------------------------------------------------- Technical Staff: production floor (Phase 4a)
-_MAX_JSON_CHARS = 200_000
-
-
-def _bounded(v: Any) -> Any:
-    import json
-    if v is not None and len(json.dumps(v)) > _MAX_JSON_CHARS:
-        raise ValueError("dữ liệu quá lớn")
-    return v
-
-
-class CalibrationIn(BaseModel):
-    """FR-44: checklist, force zero, paper probe points (P0, P1, P2 + optional grid), paper-to-robot transform."""
-    checklist: dict[str, bool]
-    force_zero_offset: float = Field(allow_inf_nan=False, ge=-1000, le=1000, description="N, mean over 1 s with the pen in the air.")
-    probe_points: list[dict[str, float]] = Field(max_length=400, description="[{x,y,z}, ...] in robot-base mm; the first three are P0, P1, P2.")
-    frame_transform: dict[str, Any] | None = None
-    height_map: dict[str, Any] | list[Any] | None = None
-    force_curve: dict[str, Any] | list[Any] | None = None
-
-    @model_validator(mode="after")
-    def _size(self) -> "CalibrationIn":
-        for v in (self.frame_transform, self.height_map, self.force_curve):
-            _bounded(v)
-        return self
-
-
-class CalibrationOut(_ORM):
-    id: int
-    job_id: int
-    robot_id: int
-    technician_id: int
-    checklist: dict[str, Any] | None
-    force_zero_offset: float | None
-    probe_points: Any
-    frame_transform: dict[str, Any] | None
-    height_map: Any | None
-    force_curve: Any | None
-    is_valid: bool
-    created_at: datetime
-
-
-class SimulationIn(BaseModel):
-    """FR-45: the workstation simulates the trajectory and reports the outcome; the server records it."""
-    passed: bool
-    errors: list[Annotated[str, StringConstraints(max_length=500)]] = Field(default_factory=list, max_length=100)
-    report: dict[str, Any] | None = None
-
-    @model_validator(mode="after")
-    def _size(self) -> "SimulationIn":
-        _bounded(self.report)
-        return self
-
-
-class JobEventIn(BaseModel):
-    """Events the Robot Agent / app may post. DOWNLOADED, CALIBRATED, SIMULATED, START, WRITTEN, INCIDENT and
-    HASH_MISMATCH are written by the server and refused here."""
-    event_type: JobEventType
-    stroke_index: int | None = Field(default=None, ge=0, le=10_000_000)
-    progress_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
-    force_summary: dict[str, Any] | None = Field(default=None, description="{f_mean, f_max, rms_err_pct, in_band_pct, samples}")
-    payload: dict[str, Any] | None = None
-
-    @model_validator(mode="after")
-    def _size(self) -> "JobEventIn":
-        _bounded(self.payload)
-        return self
-
-
-class JobEventOut(_ORM):
-    id: int
-    job_id: int
-    event_type: JobEventType
-    actor_id: int | None
-    incident_id: int | None
-    stroke_index: int | None
-    force_summary: dict[str, Any] | None
-    payload: dict[str, Any] | None
-    occurred_at: datetime
-
-
-class IncidentIn(BaseModel):
-    type: IncidentType
-    description: Reason
-    robot_status_after: Literal["MAINTENANCE", "BROKEN"] | None = Field(
-        default=None, description="Take the robot out of service (FR-39). Leave empty when the robot is fine.")
-
-
-class IncidentOut(_ORM):
-    id: int
-    job_id: int | None
-    robot_id: int | None
-    reported_by: int
-    type: IncidentType
-    description: str
-    robot_status_after: RobotStatus | None
-    resolved_by: int | None
-    resolved_at: datetime | None
-    resolution_note: str | None
-    created_at: datetime
-
-
-class ResolveIncidentIn(BaseModel):
-    note: Reason
-
-
-class PackagePaper(BaseModel):
-    name: str
-    gsm: int
-    surface: str
-    size: str
-
-
-class PackagePen(BaseModel):
-    """PenProfile (BR-20): the force band the Robot Agent must keep and the speed cap."""
-    name: str
-    category: str
-    stroke_width_mm: float
-    f_target_n: float
-    f_min_n: float
-    f_max_n: float
-    f_hard_n: float
-    v_max_mm_s: float
-
-
-class JobPackageOut(BaseModel):
-    """FR-38 / UC-32. The trajectory itself is fetched from `trajectory_url`; the workstation must check that the
-    SHA-256 of what it downloaded equals `package_hash` before it runs anything (MSG14 otherwise)."""
-    job_id: int
-    order_code: str
-    order_type: str
-    quantity: int
-    is_rewrite: bool
-    estimated_duration_min: int
-    package_hash: str
-    hash_algorithm: Literal["SHA-256"] = "SHA-256"
-    trajectory_url: str
-    trajectory_url_expires_in: int
-    trajectory_format: str
-    pages: int
-    paper: PackagePaper | None
-    pen: PackagePen | None
-    ink_name: str | None
-    ink_hex: str | None
-    approach_note: str | None
-    preview_url: str | None
-
-
-class TechJobDetail(JobOut):
-    order_type: str = ""
-    quantity: int = 1
-    eta: date | None = None
-    paper_name: str | None = None
-    pen_name: str | None = None
-    ink_name: str | None = None
-    approach_note: str | None = None
-    calibration: CalibrationOut | None = None
-    can_start: bool = Field(default=False, description="Downloaded, valid calibration and a passed simulation.")
-    incidents: list[IncidentOut] = Field(default_factory=list)

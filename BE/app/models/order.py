@@ -112,10 +112,6 @@ class Order(Base):
     privacy_declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     eta: Mapped[date | None] = mapped_column(Date)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Acceptance (FR-28, BR-13). awaiting_acceptance_at is set by the DB trigger when the order reaches AWAITING_ACCEPTANCE.
-    awaiting_acceptance_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    accepted_product_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    free_rewrite_used: Mapped[bool] = mapped_column(Boolean, default=False)
     last_saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
