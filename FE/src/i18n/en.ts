@@ -41,6 +41,9 @@ export const en = {
   'login.continue': 'Continue',
   'login.email': 'Email',
   'login.password': 'Password',
+  'login.showPassword': 'Show password',
+  'login.hidePassword': 'Hide password',
+  'login.close': 'Close sign-in dialog',
   'login.errEmail': 'Enter a valid email address.',
   'login.errPassword': 'Enter your password.',
   'login.expired': 'Your session has ended. Please sign in again.',
@@ -104,7 +107,7 @@ export const en = {
   // customer tracking
 
   // staff shipping desk
-  "lp.eyebrow": "Robot-written Vietnamese calligraphy",
+  "lp.eyebrow": "Vietnamese handwriting restoration with robotics",
   "lp.sub": "Your words, traced by AI and written in real ink on real paper by a Fairino 6-axis robotic arm.",
   "lp.explore": "Explore Robot Demo",
   "lp.modes.title": "Bring your hand. We bring the arm.",

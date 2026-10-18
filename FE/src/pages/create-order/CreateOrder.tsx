@@ -17,7 +17,13 @@ import { ApiError } from '../../services/api'
 import { draftPathFor, drawPathFor } from './draft'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
+import SignInDialog from './SignInDialog'
+import Header from '../landing/components/Header'
+import fr3Arm from '../../assets/fr3-arm.png'
+import '../landing/landing.css'
+import '../landing/landing-redesign.css'
 import './create-order.css'
+import './order-entry.css'
 
 const MODES: InputMode[] = ['text', 'upload', 'draw']
 const STEPS = ['co.step.0', 'co.step.1', 'co.step.2']
@@ -35,6 +41,7 @@ function initialMode(): InputMode | null {
 export default function CreateOrder({ orderId: given = null }: { orderId?: number | null }) {
   const t = useT()
   const user = useUser()
+  const [showSignIn, setShowSignIn] = useState(false)
 
   const [order, setOrder] = useState<Order | null>(null)
   const orderRef = useRef<Order | null>(null)
@@ -426,13 +433,29 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   if (!user) {
     return (
-      <Page label="Create Order" width={720}>
-        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
-          <h1 className="vh-h1">{t('co.signInTitle')}</h1>
-          <p className="vh-lede">{t('co.signInBody')}</p>
-          <button className="vh-btn vh-btn--primary" onClick={() => navigate(`/login?next=${encodeURIComponent('/create-order')}`)}>{t('nav.signIn')}</button>
-        </div>
-      </Page>
+      <div className="lp-root order-entry">
+        <Header />
+        <main className="order-entry-hero" aria-labelledby="order-entry-title">
+          <div className="order-entry-orbit" aria-hidden="true"><span /></div>
+          <div className="order-entry-copy">
+            <span className="order-entry-eyebrow">{t('lp.eyebrow')}</span>
+            <h1 id="order-entry-title">{t('co.signInTitle')}</h1>
+            <p>{t('co.signInBody')}</p>
+            <div className="order-entry-buttons">
+              <button type="button" className="order-entry-primary" onClick={() => setShowSignIn(true)}>
+                {t('nav.signIn')}<span aria-hidden="true">↗</span>
+              </button>
+              <Link className="order-entry-secondary" to="/register">{t('reg.submit')}</Link>
+            </div>
+          </div>
+          <div className="order-entry-art" aria-hidden="true">
+            <span className="order-entry-brand">AI-VHRS</span>
+            <img src={fr3Arm} alt="" draggable={false} />
+          </div>
+          <div className="order-entry-footer"><span>AI-VHRS</span><span>{t('lp.eyebrow')}</span></div>
+        </main>
+        {showSignIn && <SignInDialog onClose={() => setShowSignIn(false)} />}
+      </div>
     )
   }
   if (user.role !== 'customer') {

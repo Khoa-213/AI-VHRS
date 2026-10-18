@@ -10,19 +10,19 @@ export default function Header() {
   return (
     <header className="lp-header">
       <div className="lp-header-inner">
-        <a href="#top" className="lp-logo" aria-label="AI-VHRS FR3">
+        <a href="/#top" className="lp-logo" aria-label="AI-VHRS FR3">
           <span className="lp-logo-mark" aria-hidden="true" />
           <span>AI-VHRS</span>
         </a>
         <nav className="lp-nav" aria-label={t('nav.features')}>
-          <a href="#showcase" className="lp-nav-lead">
+          <a href="/#showcase" className="lp-nav-lead">
             <span className="lp-nav-dot" aria-hidden="true" />
             {t('nav.features')}
           </a>
           <div className="lp-nav-group">
-            <a href="#showcase">{t('nav.robotSpecs')}</a>
-            <a href="#modes">{t('nav.penmanship')}</a>
-            <a href="#queue">{t('nav.orderQueue')}</a>
+            <a href="/#showcase">{t('nav.robotSpecs')}</a>
+            <a href="/#modes">{t('nav.penmanship')}</a>
+            <a href="/#queue">{t('nav.orderQueue')}</a>
           </div>
         </nav>
         <div className="lp-actions">

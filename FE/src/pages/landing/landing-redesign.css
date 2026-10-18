@@ -8,7 +8,9 @@
 /* ---------- navbar ---------- */
 .lp-header{position:fixed;left:0;right:0;top:0;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none;--pill:rgba(232,236,242,.82)}
 :root:not([data-theme="light"]) .lp-header{--pill:rgba(38,44,56,.78)}
-.lp-header-inner{max-width:none;padding:clamp(22px,2.6vw,36px) clamp(26px,3.4vw,52px) 0;gap:14px}
+.lp-header-inner{max-width:none;padding:clamp(22px,2.6vw,36px) clamp(26px,3.4vw,52px) 0;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:14px}
+.lp-header-inner>.lp-logo{justify-self:start}
+.lp-header-inner>.lp-actions{justify-self:end}
 .lp-header-inner>*{pointer-events:auto}
 .lp-logo{display:inline-flex;align-items:center;gap:9px;font-family:inherit;font-size:14px;font-weight:600;letter-spacing:-.01em;color:var(--t1);padding:5px 12px 5px 6px;border-radius:999px;background:var(--pill);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 .lp-logo-mark{width:22px;height:22px;border-radius:50%;border:5px solid var(--accent);box-sizing:border-box;background:var(--t1);flex:none}
@@ -27,8 +29,8 @@
 .lp-start-btn:hover{background:var(--tray-hover);color:var(--t1);transform:none}
 .lp-start-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
 @media (max-width:1100px){
-  .lp-header-inner{flex-wrap:wrap;row-gap:10px}
-  .lp-nav{order:3;width:100%;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}
+  .lp-header-inner{display:flex;flex-wrap:wrap;row-gap:10px}
+  .lp-nav{order:3;width:100%;overflow-x:auto;justify-content:safe center;scrollbar-width:none}
   .lp-nav::-webkit-scrollbar{display:none}
   .lp-actions{margin-left:auto}
 }
