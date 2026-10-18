@@ -34,6 +34,8 @@ def _cleanup() -> None:
         # test catalog rows after the orders
         # payments / production jobs do not cascade from orders; jobs must go before the test robots
         c.execute(text(f"delete from payments where order_id in {_TEST_ORDERS}"))
+        # product_photos.job_id does not cascade, so photos go before their jobs
+        c.execute(text(f"delete from product_photos where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from production_jobs where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from orders where customer_id in {_TEST_IDS}"))
         c.execute(text("delete from production_jobs where robot_id in (select id from robots where code like 'pytest\\_%')"))

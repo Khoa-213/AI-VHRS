@@ -1,13 +1,13 @@
 """Data access for payments, robots and production jobs. No business rules."""
 from __future__ import annotations  # methods named `list` would otherwise shadow the builtin in later annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models.ops import (ACTIVE_JOB_STATUSES, Calibration, Incident, JobEvent, JobStatus, Payment, PaymentGateway,
-                            PaymentStatus, PaymentType, ProductionJob, Robot, RobotStatus)
+                            PaymentStatus, PaymentType, ProductionJob, ProductPhoto, Robot, RobotStatus)
 
 
 class PaymentRepository:
@@ -87,6 +87,11 @@ class JobRepository:
     def active_for_order(self, order_id: int) -> ProductionJob | None:
         return self.s.scalar(select(ProductionJob).where(ProductionJob.order_id == order_id,
                                                          ProductionJob.status.in_(ACTIVE_JOB_STATUSES)))
+
+    def latest_in(self, order_id: int, statuses: tuple[JobStatus, ...], *, lock: bool = False) -> ProductionJob | None:
+        stmt = (select(ProductionJob).where(ProductionJob.order_id == order_id, ProductionJob.status.in_(statuses))
+                .order_by(ProductionJob.id.desc()).limit(1))
+        return self.s.scalar(stmt.with_for_update() if lock else stmt)
 
     def previous_outcomes(self, order_id: int) -> set[JobStatus]:
         return set(self.s.scalars(select(ProductionJob.status).where(ProductionJob.order_id == order_id)))
@@ -198,3 +203,29 @@ class IncidentRepository:
         rows = list(self.s.scalars(stmt.order_by(Incident.created_at.desc(), Incident.id.desc())
                                    .offset(offset).limit(limit)))
         return rows, total
+
+
+class PhotoRepository:
+    def __init__(self, session: Session):
+        self.s = session
+
+    def add(self, row: ProductPhoto) -> ProductPhoto:
+        self.s.add(row)
+        self.s.flush()
+        self.s.refresh(row)
+        return row
+
+    def get(self, job_id: int, photo_id: int) -> ProductPhoto | None:
+        return self.s.scalar(select(ProductPhoto).where(
+            ProductPhoto.id == photo_id, ProductPhoto.job_id == job_id, ProductPhoto.deleted_at.is_(None)))
+
+    def by_path(self, job_id: int, path: str) -> ProductPhoto | None:
+        return self.s.scalar(select(ProductPhoto).where(ProductPhoto.job_id == job_id, ProductPhoto.url == path))
+
+    def live(self, job_id: int) -> list[ProductPhoto]:
+        return list(self.s.scalars(select(ProductPhoto).where(
+            ProductPhoto.job_id == job_id, ProductPhoto.deleted_at.is_(None)).order_by(ProductPhoto.id)))
+
+    def soft_delete(self, row: ProductPhoto) -> None:
+        row.deleted_at = datetime.now(timezone.utc)
+        self.s.flush()

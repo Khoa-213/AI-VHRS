@@ -42,7 +42,7 @@ Tài khoản demo trên Supabase: `customer@example.com`, `khach@example.com`, `
 | 2 | Staff/Manager: hàng đợi, nhận/phân công, tiếp nhận/từ chối/yêu cầu bổ sung, **phác thảo AI thật (OT-1, OT-3)**, báo giá (Pricing Engine, ±ngưỡng, Manager duyệt, PDF, hết hạn 7 ngày), chính sách riêng tư, chat, seed dữ liệu thật | ✅ xong, đã commit (`e7d0fbf`) |
 | **3** | Khách duyệt báo giá + chọn % cọc, **cọc qua cổng MOCK + webhook ký HMAC idempotent**, khách huỷ khi chưa cọc; Manager: giấy/bút/mực/tồn kho/tương thích, mẫu chữ, duyệt bộ nét, robot, **bảng giá có phiên bản** (gồm ngưỡng BR-09 & % cọc tối thiểu), **lập lịch sản xuất** (gợi ý, xếp, đổi, gỡ, xếp lại khi FAILED) | ✅ xong, đã commit (`be0d2f0`) |
 | **4a** | **Technical Staff (web scope A)**: job của tôi, tải gói job + kiểm hash (MSG14), chuẩn bị, **Calibration**, kết quả mô phỏng, bắt đầu/kết thúc viết, **JobEvent** (tiến độ, PAUSE/RESUME, ESTOP, OVER_FORCE…), **Incident** (job + đơn → FAILED, robot → bảo trì/hỏng), trừ kho khi WRITTEN; Manager đọc nhật ký job + sự cố và đóng sự cố | ✅ code + test xong, **chưa commit** |
-| 4b | Ảnh sản phẩm + QC ≥ 2 ảnh (BR-21) → `PHOTO_UPLOADED` → `AWAITING_ACCEPTANCE`; khách nghiệm thu / viết lại 1 lần miễn phí (BR-13), tự nghiệm thu 7 ngày | ⬜ chưa làm |
+| **4b** | **Ảnh sản phẩm + QC** ≥ 2 ảnh (BR-21) → `PHOTO_UPLOADED` → `AWAITING_ACCEPTANCE`; khách xem ảnh, **nghiệm thu** / **viết lại 1 lần miễn phí** (BR-13), tự nghiệm thu 7 ngày (kiểm tra khi khách đọc/thao tác); QC không đạt → job viết lại; đóng giả định #10 (đường REWRITE_REQUIRED có test đầu-cuối) | ✅ code + test mới xong, **chưa commit** |
 | 4c | Thanh toán cuối `(G−D)+F_ship` (2 dòng FINAL + SHIPPING), giao hàng (carrier MOCK, webhook `DELIVERED` → `COMPLETED`), nhận tại xưởng | ⬜ chưa làm |
 | 4d | Huỷ sau cọc + hoàn tiền (BR-14/16), xử lý khoản `needs_refund`, ETA & dời ETA (BR-15/16) | ⬜ chưa làm |
 | 4e | Notification center (in-app) + email thay hook `notify()` | ⬜ chưa làm |
@@ -53,11 +53,12 @@ Tài khoản demo trên Supabase: `customer@example.com`, `khach@example.com`, `
 ```
 api/v1/*        route mỏng: auth, me, catalog, pricing, orders, customer_quotes, messages, payments,
                 workshop (Staff+Manager), manager (phân công, duyệt giá), manager_ops (vật tư/giá/robot), scheduling (+ nhật ký job, sự cố),
-                technician (sàn sản xuất), admin
-api/*schemas.py Pydantic in/out (tách khỏi ORM): schemas, order_schemas, staff_schemas, ops_schemas
+                technician (sàn sản xuất + ảnh/QC), acceptance (khách nghiệm thu), admin
+api/*schemas.py Pydantic in/out (tách khỏi ORM): schemas, order_schemas, staff_schemas, ops_schemas, photo_schemas
 services/       nghiệp vụ: orders, pricing(thuần), quotations, payments, manager_catalog, scheduling, staff_orders, sketches,
-                messages, notifications(hook, chưa gửi), audit, workshop_access(phân quyền bản ghi), technician (vòng đời job), stroke_ai/ (AI thật)
-domain/         luật thuần (không DB): quotation_rules, payment_rules, pricing_config_rules, scheduling_rules, job_rules
+                messages, notifications(hook, chưa gửi), audit, workshop_access(phân quyền bản ghi), technician (vòng đời job),
+                product_photos (ảnh + QC, nộp ảnh, QC fail), acceptance (nghiệm thu, viết lại, tự nghiệm thu), stroke_ai/ (AI thật)
+domain/         luật thuần (không DB): quotation_rules, payment_rules, pricing_config_rules, scheduling_rules, job_rules, photo_rules (ảnh/QC/nghiệm thu)
 repositories/   truy cập dữ liệu (không nghiệp vụ): accounts, catalog, orders, workshop, ops
 models/         ORM ánh xạ bảng có sẵn: account, catalog, order, sketch, ops   (schema do SQL migration sở hữu)
 integrations/   storage (Supabase Storage + InMemoryStorage cho test), payment_gateway (MOCK), mailer (console)
@@ -130,11 +131,15 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 7. Hết hạn báo giá chạy **lười** (khi có người đọc đơn); scheduler chủ động ở Phase 5. Cọc quá hạn chưa tự huỷ đơn (Phase 5).
 8. Thông báo (MSG07/08/10, `DEPOSIT_PAID`, `JOB_ASSIGNED`, `JOB_SAFETY_STOP`, `INCIDENT_REPORTED`) mới chỉ ghi log qua hook `services/notifications.notify()`; gửi thật ở Phase 4. Mã `DEPOSIT_PAID`/`JOB_ASSIGNED` do AI đặt tên vì chưa có bảng mã MSG đầy đủ.
 9. Webhook MOCK ký bằng khoá dẫn xuất từ `JWT_SECRET`; cổng thật sẽ có khoá riêng (Phase 5 – tích hợp).
-10. Đường REWRITE_REQUIRED của lập lịch có code (`is_rewrite`) nhưng **chưa có test đầu-cuối** (cần luồng nghiệm thu của Phase 4).
+10. ~~Đường REWRITE_REQUIRED của lập lịch chưa có test đầu-cuối~~ → **đã có** ở Phase 4b (`test_api_photos_acceptance.py`: viết lại → Manager xếp lại → job mới `is_rewrite` → ảnh → nghiệm thu).
 11. **Phase 4a (AI chọn, cần xác nhận):** checklist hiệu chuẩn gồm `frame_mounted`, `paper_clamped`, `pen_installed`, `force_zeroed` (SRS chỉ nói "khung/giấy/bút + zero lực"); điểm dò ≥ 3 và P0, P1, P2 không thẳng hàng; mỗi lần hiệu chuẩn lại thì phải mô phỏng lại.
 12. **Tồn kho khi `WRITTEN`** (SRS chỉ nói "trừ tồn kho"): giấy = số lượng × số trang trong quỹ đạo, bút 1, mực 1 mỗi job; tồn không đủ thì về 0, ghi `shortfall` vào sự kiện `WRITTEN` và **không chặn** việc đã viết xong. Viết lại (job mới) trừ thêm.
 13. **Chưa kết nối robot (theo quyết định 2026-10-18, mục 5):** BE hiện chỉ nhận kết quả mô phỏng và các sự kiện tiến độ/an toàn do client (web/app) báo lên; BE chưa tự mô phỏng/kiểm tra động học và chưa gửi lệnh nào tới robot. Khi chủ dự án yêu cầu kết nối, các endpoint `/technician/*` giữ nguyên hợp đồng, chỉ thêm adapter Robot Agent phía sau (cổng `integrations/` + mock, như thanh toán). Có thể bắt đầu chuẩn bị trước `slot_start` (không ép giờ). Robot không được đổi sang `BUSY` khi job chạy (để lịch tương lai của robot vẫn xếp được).
 14. Sự cố chưa đính kèm ảnh (cột `photo_urls` để trống tới bước ảnh, 4b). Sự cố chỉ báo được khi job đã `PREPARING`/`WRITING`/`PAUSED`; job `SCHEDULED` thì Manager tự gỡ/đổi lịch.
+15. **Phase 4b (AI chọn, cần xác nhận):** ảnh sản phẩm chỉ jpg/png, ≤ `max_upload_mb`, cạnh dài ≥ 1280 px, tối đa 10 ảnh/job (SRS chỉ nói ≥ 2 ảnh); mỗi ảnh còn hiện phải QC = PASS (trigger DB yêu cầu); ảnh QC FAIL phải ghi lý do và phải xoá (xoá mềm) hoặc đổi sang PASS trước khi nộp.
+16. **Viết lại (BR-13):** yêu cầu của khách được **duyệt tự động** (bắt buộc chọn `WORKSHOP_ERROR`/`DIFFERS_FROM_SKETCH` + mô tả ≥ 5 ký tự), vì DB không có trạng thái "chờ duyệt viết lại"; Staff/Manager chỉ được thông báo. Lần 2 → `409 REWRITE_LIMIT_REACHED`. **QC không đạt do xưởng** (`/technician/jobs/{id}/qc-fail`) **không** tiêu lượt miễn phí của khách. Viết lại trừ kho vật tư thêm một lần nữa (giả định #12). Tính phí viết lại lần 2: chưa có chính sách giá.
+17. **Tự nghiệm thu:** kiểm tra "lười" khi khách đọc `product-photos`/`accept`/`rewrite` (giống hết hạn báo giá); hạn = `awaiting_acceptance_at` + `system_settings.auto_accept_days` (7). Chưa có tiến trình nền, chưa nhắc sau 3 ngày (`accept_reminder_days`) → Phase 5 / 4e. Đơn không ai đọc thì vẫn `AWAITING_ACCEPTANCE` cho tới khi scheduler chạy.
+18. `overlay_url` (ảnh chồng phác thảo) **không** do BE tạo (cần căn chỉnh giấy, NFR-04); client tự chồng `sketch_preview_url`. ETA không tự dời khi viết lại (Phase 4d).
 
 ## 9. Changelog (mới nhất trước)
 
