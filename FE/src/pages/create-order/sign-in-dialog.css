@@ -6,7 +6,7 @@
 .entry-login::backdrop{background:rgba(5,7,10,.65);backdrop-filter:blur(12px)}
 .entry-login-panel{position:relative;padding:40px clamp(24px,5vw,40px);overflow:hidden}
 .entry-login-brand{display:block;font-size:12px;font-weight:700;letter-spacing:.12em;color:var(--t4);margin-bottom:24px}
-.entry-login h2{font-size:36px;line-height:1.15;letter-spacing:-.045em;font-weight:600;margin:0 0 12px}
+.entry-login h1,.entry-login h2{font-size:36px;line-height:1.15;letter-spacing:-.045em;font-weight:600;margin:0 0 12px}
 .entry-login-description{font-size:13px;line-height:1.7;color:var(--t4);margin:0 0 26px}
 .entry-login-close{position:absolute;right:18px;top:18px;display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line-strong);border-radius:50%;background:var(--fx-04);color:var(--t1);cursor:pointer}
 .entry-login form{display:flex;flex-direction:column;gap:12px}
@@ -28,3 +28,12 @@
 .entry-login-notice{font-size:12px;color:var(--t4);margin:0;line-height:1.6}
 .entry-login-divider{display:flex;align-items:center;gap:12px;color:var(--t4);font-size:12px;margin:6px 0}
 .entry-login-divider::before,.entry-login-divider::after{content:'';height:1px;flex:1;background:var(--line-strong)}
+.entry-register-field{display:flex;flex-direction:column;gap:8px;min-width:0}
+.entry-register-help{font-size:12px;line-height:1.6;color:var(--t4)}
+.entry-register-switch{border:0;background:none;padding:0;color:var(--t1);font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.entry-register-page{min-height:100dvh}
+.entry-register-page>.lp-header{position:relative}
+.entry-register-main{display:flex;justify-content:center;padding:clamp(24px,4vw,56px) 16px 64px;background:radial-gradient(ellipse at 50% 20%,var(--fx-04),transparent 65%)}
+.entry-register-page .entry-register-card{position:relative;inset:auto;margin:0;width:min(520px,100%);max-height:none;overflow:visible}
+.entry-register-card .entry-login-panel{border-radius:26px}
+@media(max-width:560px){.entry-register-card h1{font-size:30px}.entry-register-card{width:100%}.entry-register-switch{min-height:44px}}

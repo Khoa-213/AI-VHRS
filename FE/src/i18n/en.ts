@@ -59,6 +59,8 @@ export const en = {
   'reset.sent': 'If {email} has an account, a reset link is on its way.',
   'reset.back': 'Back to sign in',
   'reg.title': 'Create an account',
+  'reg.close': 'Close registration dialog',
+  'reg.created': 'Your account has been created. Sign in to continue.',
   'reg.lede': 'Order handwritten cards and letters, and follow them from robot to doorstep.',
   'reg.name': 'Full name',
   'reg.phone': 'Phone (optional)',

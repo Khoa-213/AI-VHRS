@@ -53,6 +53,8 @@ export const vi: Record<Key, string> = {
   'reset.sent': 'Nếu {email} có tài khoản, liên kết đặt lại đã được gửi.',
   'reset.back': 'Quay lại đăng nhập',
   'reg.title': 'Tạo tài khoản',
+  'reg.close': 'Đóng cửa sổ đăng ký',
+  'reg.created': 'Tài khoản đã được tạo. Hãy đăng nhập để tiếp tục.',
   'reg.lede': 'Đặt thiệp và thư viết tay, theo dõi từ lúc robot viết tới khi giao tận nơi.',
   'reg.name': 'Họ và tên',
   'reg.phone': 'Số điện thoại (không bắt buộc)',
