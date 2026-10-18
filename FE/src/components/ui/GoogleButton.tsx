@@ -48,7 +48,14 @@ export default function GoogleButton({ onToken, onError, disabled }: { onToken: 
   const [width, setWidth] = useState(0)
 
   useEffect(() => {
-    if (host.current) setWidth(Math.min(400, Math.floor(host.current.getBoundingClientRect().width)))
+    const el = host.current
+    if (!el) return
+    // A dialog is initially hidden; observe it so opening it supplies the real width.
+    const measure = () => setWidth(Math.min(400, Math.floor(el.getBoundingClientRect().width)))
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    measure()
+    return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
