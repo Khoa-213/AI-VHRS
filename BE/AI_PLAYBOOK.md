@@ -9,8 +9,9 @@
 1. Đọc `PROJECT_STATUS.md` (đang ở phase nào, việc chờ ai, giả định chưa xác nhận) và file này.
 2. `git status`, `git log --oneline -10`, nhánh hiện tại (làm trên nhánh `BE`).
 3. Có `BE/.env` chưa? (không in nội dung). Thiếu → xin chủ dự án, **không** giả lập dữ liệu.
-4. Muốn biết code đang có gì: đọc `PROJECT_STATUS.md` mục 4 rồi mở đúng file; không quét cả repo.
-5. Nếu yêu cầu của người dùng mâu thuẫn với file này hoặc `PROJECT_STATUS.md` mục 5 (quyết định đã chốt) → nêu rõ mâu thuẫn và hỏi, đừng âm thầm đổi.
+4. Cần luật nghiệp vụ/ý nghĩa mã BR/FR/UC/MSG/LI? Đọc `docs/source/README.md` (bản chép Report 1–3 + danh sách FR bản 2, kèm bảng "đã override" và "điểm còn mơ hồ") và `grep -rn "BR-xx" docs/source` **trước khi hỏi chủ dự án**.
+5. Muốn biết code đang có gì: đọc `PROJECT_STATUS.md` mục 4 rồi mở đúng file; không quét cả repo.
+6. Nếu yêu cầu của người dùng mâu thuẫn với file này hoặc `PROJECT_STATUS.md` mục 5 (quyết định đã chốt) → nêu rõ mâu thuẫn và hỏi, đừng âm thầm đổi.
 
 ## 1. Luật không thương lượng
 
@@ -156,6 +157,9 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 ## 8. Nhật ký kỹ năng & bài học bổ sung (thêm vào cuối, mới nhất ở dưới)
 
 > Mẫu: `### YYYY-MM-DD · Tên ngắn` — **Bối cảnh** (chuyện gì xảy ra) · **Cách làm đúng** · **Lệnh/đoạn code mẫu nếu có**. Nếu đủ quan trọng thì nâng lên thành skill card ở mục 3.
+
+### 2026-10-17 · Test trên DB dùng chung làm lộ dữ liệu test cho người dùng thật
+**Bối cảnh:** danh mục test (giấy/bút/mẫu chữ `pytest_*`) công khai trong lúc suite chạy; một khách thật đặt đơn bằng bút test; bước dọn cuối vi phạm khoá ngoại và **cả `_cleanup` bị huỷ** (để lại 303 tài khoản + hàng trăm đơn test). Ngoài ra chạy 2 phiên pytest chồng nhau làm mất setting `order_types_enabled` và làm đỏ 25 test. **Cách làm đúng:** (1) không bao giờ chạy hai pytest cùng lúc, kể cả một lệnh `-k` nhỏ (fixture session autouse vẫn dọn DB); (2) `_cleanup` đổi tên + tắt (`orphan_…`) mọi mục danh mục test còn được đơn thật tham chiếu thay vì xoá; (3) khuyến nghị dùng **dự án Supabase riêng cho test**; (4) sau mỗi lần chạy kiểm tra DB: không còn `pytest_*`, `order_types_enabled` còn đủ.
 
 ### 2026-10-16 · Hết hạn báo giá bị rollback (Phase 3)
 **Bối cảnh:** `expire_if_overdue` đổi báo giá sang `EXPIRED` rồi API trả 409; rollback của request xoá mất việc hết hạn. **Cách làm đúng:** `expire_and_persist` (commit rồi mới raise); xem S03.

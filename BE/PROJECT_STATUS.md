@@ -4,6 +4,8 @@
 > ngay trong cùng lượt làm việc: mục 1 (trạng thái), mục 3 (bảng phase), mục 6 (test), mục 9 (changelog) và các mục khác nếu có
 > thay đổi. Quy trình đầy đủ ở `AI_PLAYBOOK.md`. Hướng dẫn cho FE ở `docs/FE_API_GUIDE.md` (cũng phải cập nhật khi API đổi).
 
+> **Tài liệu yêu cầu gốc** (Report 1–3 SRS, danh sách FR/entity bản 2, phiếu đăng ký) nằm ở `docs/source/` – đọc `docs/source/README.md` trước khi hỏi chủ dự án về nghiệp vụ.
+
 ## 1. Đang ở đâu
 
 | Mục | Giá trị |
@@ -75,6 +77,7 @@ Trạng thái báo giá/job **không** có trigger: do service kiểm tra.
 - Loại đơn khách được đặt: `system_settings.order_types_enabled` = `["OT1_COPY_RESTORE","OT3_TEMPLATE"]` (OT-2 tắt).
 - Nguồn ngưỡng điều chỉnh giá (BR-09) và % cọc tối thiểu (BR-10): **`pricing_configs`** (có phiên bản, mỗi báo giá giữ snapshot). Khoá `system_settings.price_adjust_threshold_pct` (migration 0002) **không được code đọc**.
 - BR-09 so giá Staff nhập với giá hệ thống tính (`computed_total`) của chính báo giá đó, **không** so với giá ước tính lúc khách tạo đơn (chủ dự án chọn phương án A, 2026-10-17).
+- **Chốt 2026-10-18 cho Phase 4** (chi tiết `docs/source/README.md`): viết lại chỉ 1 lần miễn phí (lần 2 → lỗi "liên hệ xưởng", không đổi schema); giao thất bại/hoàn → giữ đơn `DELIVERING`, không đổi trigger; webhook hãng `DELIVERED` → `COMPLETED`, khách xác nhận nhận hàng chỉ ghi `received_confirmed_at`; test tiếp tục trên Supabase thật.
 - Mọi mã lỗi nghiệp vụ nằm trong `AppError(...)`; danh sách để FE đối chiếu: `grep -rhoE 'AppError\([0-9]{3}, "[A-Z_0-9]+"' app | sort -u`.
 
 ## 6. Test
@@ -95,6 +98,7 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 
 **Kết quả gần nhất (ghi lại sau mỗi lần chạy toàn bộ):**
 - 2026-10-16 (Phase 2, trước Phase 3): toàn bộ suite **219 passed** trên Supabase (Python 3.14).
+- 2026-10-17 (sau phân quyền, Google, vật tư): toàn bộ suite 314 passed + 1 failed (test cũ dùng Manager để từ chối đơn, đã sửa) + 1 error (bước dọn cuối, xem bài học trong `AI_PLAYBOOK.md` 8, đã sửa); sau đó chạy lại `test_api_materials/google_login/permission_matrix/workshop/payments/manager_ops`: **119 passed** (111 + 8). **Chưa chạy lại toàn bộ suite sau các sửa này.** Cần: Google thật chưa thử (đã có `GOOGLE_CLIENT_ID` trong `.env`, chưa kiểm tra bằng token thật).
 - 2026-10-16 (sau Phase 3): **toàn bộ suite 295 passed** trong 28 phút 35 giây trên Supabase (Python 3.14). Sau chạy: DB không còn `pytest_*`, bảng giá thật (version 1) active, `order_types_enabled` đã khôi phục.
 - Chưa từng chạy: FE nối API thật, OT-1 trên chữ viết tay thật (không có benchmark), Python 3.11 cho code Phase 3.
 
@@ -119,6 +123,9 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 10. Đường REWRITE_REQUIRED của lập lịch có code (`is_rewrite`) nhưng **chưa có test đầu-cuối** (cần luồng nghiệm thu của Phase 4).
 
 ## 9. Changelog (mới nhất trước)
+
+- **2026-10-18 – Tài liệu gốc vào repo** (chưa commit): thêm `docs/source/` (chép markdown từ Report 1, 2, 3/SRS, danh sách chức năng & entity bản 2, phiếu đăng ký đề tài, và bản UI 3-actor đã đánh dấu lỗi thời) + `README.md` chỉ mục, bảng quyết định đã override, luật Phase 4–5 đã có đáp án và các điểm tài liệu còn mơ hồ; cập nhật `CLAUDE.md`, `AI_PLAYBOOK.md` mục 0.
+- **2026-10-18 – Biến môi trường Google**: `GOOGLE_CLIENT` là tên chính (khớp Render), `GOOGLE_CLIENT_ID` vẫn được đọc (`core/config.py` dùng `AliasChoices`); cập nhật `.env.example`, `DEPLOY.md`, `FE_API_GUIDE.md`. Chưa chạy lại toàn bộ suite trên Supabase sau thay đổi này (lần chạy 2026-10-18 bị ngắt giữa chừng); đã chạy trên Postgres cục bộ trước khi đổi: 322 passed, 1 skipped.
 
 - **2026-10-17 – Chọn vật tư**: `GET /catalog/suggest-materials?paper_type_id=` (bút tương thích + mực, công khai); "để xưởng chọn" giữ nguyên lựa chọn của khách, Staff chỉ điền phần thiếu và vẫn theo luật tương thích (`MATERIAL_LOCKED_BY_CUSTOMER`); `GET /workshop/orders/{id}/material-suggestions` liệt kê tổ hợp còn đề xuất được; `MaterialOptionIn` các trường đều tuỳ chọn. Không đổi schema, không thêm cảnh báo chất lượng. Tương thích giấy–bút–mực là **bảng quy tắc do con người thiết lập** (không có AI nhận diện): seed ban đầu theo BR-06, Manager chỉnh qua `/manager/compatibility`.
 - **2026-10-17 – Đăng nhập Google**: `POST /auth/google {id_token}` (`integrations/google_auth.py` xác minh qua Google tokeninfo: aud/iss/exp/email_verified; `AuthService.login_google`). **Không đổi schema**: khớp tài khoản theo email đã xác minh, chỉ khách hàng (email nội bộ → 403 `GOOGLE_NOT_ALLOWED`), tạo `CUSTOMER` mới nếu chưa có. Cần env `GOOGLE_CLIENT_ID` (Web client từ Google Cloud Console); chưa có thì endpoint trả 503. Test: luật xác minh trên verifier thật với transport giả lập, logic tài khoản trên DB thật; **chưa thử với token Google thật**.

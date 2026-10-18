@@ -84,7 +84,7 @@ def test_staff_cannot_override_a_customer_choice_or_break_compatibility(client, 
     r = _quote(client, sh, oid, [{"ink_color_id": wcat["gel_ink"]}])                         # pen missing
     assert r.status_code == 422 and "bút" in r.json()["error"]["message"]
     assert _err(_quote(client, sh, oid)) == "OPTIONS_REQUIRED"
-    assert _err(_quote(client, sh, oid, [{}, {}, {}, {}])) == "OPTIONS_REQUIRED"
+    assert _err(_quote(client, sh, oid, [{}, {}, {}, {}])) == "VALIDATION_ERROR"          # at most 3 options
     ok = _quote(client, sh, oid, [{"pen_type_id": wcat["gel"], "ink_color_id": wcat["gel_ink"]}])
     assert ok.status_code == 201, ok.text
 
@@ -92,13 +92,13 @@ def test_staff_cannot_override_a_customer_choice_or_break_compatibility(client, 
 def test_a_pen_chosen_by_the_customer_stays_and_staff_pick_paper_and_ink(client, cust, staff, wcat):
     sh = staff[0]
     oid = _suggest_order(client, cust, sh, wcat, pen_type_id=wcat["gel"])
+    swapped = _quote(client, sh, oid, [{"pen_type_id": wcat["fountain"], "paper_type_id": wcat["paper"],
+                                        "ink_color_id": wcat["fountain_ink"]}])
+    assert swapped.status_code == 422 and _err(swapped) == "MATERIAL_LOCKED_BY_CUSTOMER"
     r = _quote(client, sh, oid, [{"paper_type_id": wcat["paper"], "ink_color_id": wcat["gel_ink"]},
                                  {"paper_type_id": wcat["gloss"], "ink_color_id": wcat["gel_ink"]}])
     assert r.status_code == 201, r.text
     assert {o["pen"] for o in r.json()["options"]} == {"But gel test"}
-    swapped = _quote(client, sh, oid, [{"pen_type_id": wcat["fountain"], "paper_type_id": wcat["paper"],
-                                        "ink_color_id": wcat["fountain_ink"]}])
-    assert swapped.status_code == 422 and _err(swapped) == "MATERIAL_LOCKED_BY_CUSTOMER"
 
 
 def test_everything_chosen_by_the_customer_needs_no_options(client, cust, staff, wcat):

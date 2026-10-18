@@ -67,7 +67,7 @@ def test_not_configured_and_google_down():
 
 
 def test_without_a_client_id_the_endpoint_answers_503(client):
-    app.dependency_overrides.pop(get_google_verifier, None)          # the real verifier, no GOOGLE_CLIENT_ID in this env
+    app.dependency_overrides.pop(get_google_verifier, None)          # the real verifier, no GOOGLE_CLIENT in this env
     r = client.post(f"{API}/auth/google", json={"id_token": TOKEN})
     from app.core.config import get_settings
     assert r.status_code == (503 if not get_settings().google_client_ids else 401)
