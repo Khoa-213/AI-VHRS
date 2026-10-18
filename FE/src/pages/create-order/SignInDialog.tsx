@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Eye, EyeSlash, LockKey, X } from '@phosphor-icons/react'
 import { useT } from '../../i18n'
-import { Link, navigate } from '../../router/router'
+import { navigate } from '../../router/router'
 import { authErrorKey } from '../../services/api'
 import { apiRequestReset } from '../../services/auth'
 import { GOOGLE_CLIENT_ID } from '../../services/google'
 import { signInWithGoogle, signInWithPassword } from '../../store/store'
 import GoogleButton from '../../components/ui/GoogleButton'
 import type { User } from '../../types'
+import RegisterForm from '../login/RegisterForm'
 import './sign-in-dialog.css'
 
-export default function SignInDialog({ onClose }: { onClose: () => void }) {
+export default function SignInDialog({ onClose, initialMode = 'login' }: { onClose: () => void; initialMode?: 'login' | 'register' }) {
   const t = useT()
   const dialog = useRef<HTMLDialogElement>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [visible, setVisible] = useState(false)
   const [reset, setReset] = useState(false)
+  const [register, setRegister] = useState(initialMode === 'register')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -75,11 +77,11 @@ export default function SignInDialog({ onClose }: { onClose: () => void }) {
     <dialog ref={dialog} className="entry-login" aria-labelledby="entry-login-title" aria-describedby="entry-login-description"
       onCancel={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <div className="entry-login-panel">
-        <button type="button" className="entry-login-close" onClick={onClose} aria-label={t('login.close')}><X size={20} /></button>
+        <button type="button" className="entry-login-close" onClick={onClose} aria-label={t(register ? 'reg.close' : 'login.close')}><X size={20} /></button>
         <span className="entry-login-brand">AI-VHRS</span>
-        <h2 id="entry-login-title">{t(reset ? 'reset.title' : 'login.title')}</h2>
-        <p id="entry-login-description" className="entry-login-description">{t(reset ? 'reset.lede' : 'co.signInBody')}</p>
-        <form onSubmit={submit} noValidate aria-busy={busy}>
+        <h2 id="entry-login-title">{t(register ? 'reg.title' : reset ? 'reset.title' : 'login.title')}</h2>
+        <p id="entry-login-description" className="entry-login-description">{t(register ? 'reg.lede' : reset ? 'reset.lede' : 'co.signInBody')}</p>
+        {register ? <RegisterForm onSuccess={finish} onSignIn={() => setRegister(false)} /> : <form onSubmit={submit} noValidate aria-busy={busy}>
           <label htmlFor="entry-email">{t('login.email')}</label>
           <input id="entry-email" type="email" autoComplete="username" autoFocus value={email} disabled={busy} onChange={(event) => setEmail(event.target.value)} />
           {!reset && <>
@@ -101,8 +103,8 @@ export default function SignInDialog({ onClose }: { onClose: () => void }) {
             <GoogleButton disabled={busy} onToken={(token) => void google(token)} onError={() => setError(t('auth.err.googleDown'))} />
           </>}
           <button type="button" className="entry-login-link" disabled={busy} onClick={() => { setReset(!reset); setError(''); setNotice(''); setVisible(false) }}>{t(reset ? 'reset.back' : 'login.forgot')}</button>
-          {!reset && <p className="entry-login-register">{t('login.noAccount')} <Link to="/register">{t('login.createAccount')}</Link></p>}
-        </form>
+          {!reset && <p className="entry-login-register">{t('login.noAccount')}{' '}<button type="button" className="entry-register-switch" disabled={busy} onClick={() => { setRegister(true); setVisible(false); setError(''); setNotice('') }}>{t('login.createAccount')}</button></p>}
+        </form>}
       </div>
     </dialog>
   )

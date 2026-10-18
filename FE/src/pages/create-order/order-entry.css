@@ -10,6 +10,7 @@
 .order-entry-primary{background:var(--btn-inv-bg);color:var(--btn-inv-fg);border:1px solid var(--btn-inv-bg)}
 .order-entry-primary:hover{background:var(--btn-inv-hover);color:var(--btn-inv-fg)}
 .order-entry-primary{font-family:inherit;cursor:pointer}
+.order-entry-secondary{font-family:inherit;cursor:pointer}
 .order-entry-primary span{font-size:21px;line-height:1}
 .order-entry-secondary{border:1px solid var(--line-strong);color:var(--t1);background:transparent}
 .order-entry-secondary:hover{background:var(--tray);color:var(--t1)}

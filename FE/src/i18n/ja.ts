@@ -53,6 +53,8 @@ export const ja: Record<Key, string> = {
   'reset.sent': '{email} のアカウントがあれば、再設定リンクを送信しました。',
   'reset.back': 'ログインに戻る',
   'reg.title': 'アカウントを作成',
+  'reg.close': '登録画面を閉じる',
+  'reg.created': 'アカウントを作成しました。ログインして続行してください。',
   'reg.lede': '手書きのカードや手紙を注文し、ロボットの執筆からお届けまで確認できます。',
   'reg.name': '氏名',
   'reg.phone': '電話番号（任意）',

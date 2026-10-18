@@ -1,9 +1,12 @@
-.entry-login{position:fixed;inset:0;margin:auto;width:min(480px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--line-strong);border-radius:28px;background:var(--surface,var(--bg));color:var(--t1);box-shadow:0 32px 100px #0005;overflow:auto}
+@property --entry-border-angle{syntax:'<angle>';initial-value:0deg;inherits:false}
+.entry-login{position:fixed;inset:0;margin:auto;width:min(480px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:0;border:2px solid transparent;border-radius:28px;background:linear-gradient(var(--surface,var(--bg)),var(--surface,var(--bg))) padding-box,conic-gradient(from var(--entry-border-angle),transparent 0deg 245deg,#729dff55 275deg,#ad83f5 308deg,#f291ae 330deg,#fff3fb 346deg,#fff 352deg,transparent 357deg 360deg) border-box,linear-gradient(135deg,#729dff66,#ad83f566,#f291ae66) border-box;color:var(--t1);box-shadow:0 0 18px #ad83f526,0 32px 100px #0005;overflow:auto;animation:entry-border-orbit 3s linear infinite,entry-border-glow 3s ease-in-out infinite}
+@keyframes entry-border-orbit{to{--entry-border-angle:360deg}}
+@keyframes entry-border-glow{0%,100%{box-shadow:0 0 14px #729dff33,0 0 30px #ad83f51a,0 32px 100px #0005}50%{box-shadow:0 0 22px #ad83f54d,0 0 42px #f291ae26,0 32px 100px #0005}}
+@media(prefers-reduced-motion:reduce){.entry-login{animation:none}}
 .entry-login::backdrop{background:rgba(5,7,10,.65);backdrop-filter:blur(12px)}
 .entry-login-panel{position:relative;padding:40px clamp(24px,5vw,40px);overflow:hidden}
-.entry-login-panel::before{content:'';position:absolute;top:0;left:15%;right:15%;height:2px;background:linear-gradient(90deg,transparent,#b5cfff,#c4acf0,#efb0ac,transparent)}
 .entry-login-brand{display:block;font-size:12px;font-weight:700;letter-spacing:.12em;color:var(--t4);margin-bottom:24px}
-.entry-login h2{font-size:36px;line-height:1.15;letter-spacing:-.045em;font-weight:600;margin:0 0 12px}
+.entry-login h1,.entry-login h2{font-size:36px;line-height:1.15;letter-spacing:-.045em;font-weight:600;margin:0 0 12px}
 .entry-login-description{font-size:13px;line-height:1.7;color:var(--t4);margin:0 0 26px}
 .entry-login-close{position:absolute;right:18px;top:18px;display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line-strong);border-radius:50%;background:var(--fx-04);color:var(--t1);cursor:pointer}
 .entry-login form{display:flex;flex-direction:column;gap:12px}
@@ -25,3 +28,12 @@
 .entry-login-notice{font-size:12px;color:var(--t4);margin:0;line-height:1.6}
 .entry-login-divider{display:flex;align-items:center;gap:12px;color:var(--t4);font-size:12px;margin:6px 0}
 .entry-login-divider::before,.entry-login-divider::after{content:'';height:1px;flex:1;background:var(--line-strong)}
+.entry-register-field{display:flex;flex-direction:column;gap:8px;min-width:0}
+.entry-register-help{font-size:12px;line-height:1.6;color:var(--t4)}
+.entry-register-switch{border:0;background:none;padding:0;color:var(--t1);font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.entry-register-page{min-height:100dvh}
+.entry-register-page>.lp-header{position:relative}
+.entry-register-main{display:flex;justify-content:center;padding:clamp(24px,4vw,56px) 16px 64px;background:radial-gradient(ellipse at 50% 20%,var(--fx-04),transparent 65%)}
+.entry-register-page .entry-register-card{position:relative;inset:auto;margin:0;width:min(520px,100%);max-height:none;overflow:visible}
+.entry-register-card .entry-login-panel{border-radius:26px}
+@media(max-width:560px){.entry-register-card h1{font-size:30px}.entry-register-card{width:100%}.entry-register-switch{min-height:44px}}
