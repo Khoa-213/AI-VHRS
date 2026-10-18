@@ -120,6 +120,9 @@ class OrderOut(_ORM):
     reject_reason: str | None
     reject_note: str | None
     eta: Any | None
+    awaiting_acceptance_at: datetime | None = None
+    accepted_product_at: datetime | None = None
+    free_rewrite_used: bool = False
     last_saved_at: datetime
     submitted_at: datetime | None
     created_at: datetime

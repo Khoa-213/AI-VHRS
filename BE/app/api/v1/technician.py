@@ -7,16 +7,18 @@ simulation result, progress, safety events, end of writing and incidents. Nothin
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (CalibrationIn, CalibrationOut, IncidentIn, IncidentOut, JobEventIn, JobEventOut,
                                  JobOut, JobPackageOut, SimulationIn, TechJobDetail)
+from app.api.photo_schemas import PhotoOut, PhotoQcIn, PhotoRegisterIn, PhotoUploadIn, PhotoUploadOut, QcFailIn
 from app.api.schemas import ErrorOut, Page
 from app.api.v1.orders import optional_storage
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
 from app.models.ops import JobStatus, ProductionJob
+from app.services.product_photos import ProductPhotoService
 from app.services.scheduling import job_labels
 from app.services.technician import TechnicianJobService
 
@@ -32,6 +34,13 @@ def _svc(session: SessionDep, tech: TechDep, request: Request, storage: StorageD
 
 
 Svc = Annotated[TechnicianJobService, Depends(_svc)]
+
+
+def _photo_svc(session: SessionDep, tech: TechDep, request: Request, storage: StorageDep) -> ProductPhotoService:
+    return ProductPhotoService(session, tech, storage, client_ip(request))
+
+
+PhotoSvc = Annotated[ProductPhotoService, Depends(_photo_svc)]
 
 
 def _jobs_out(svc: TechnicianJobService, jobs: list[ProductionJob]) -> list[JobOut]:
@@ -128,3 +137,55 @@ def finish(job_id: int, svc: Svc) -> JobOut:
 def incident(job_id: int, body: IncidentIn, svc: Svc) -> IncidentOut:
     return IncidentOut.model_validate(svc.report_incident(
         job_id, kind=body.type, description=body.description, robot_status_after=body.robot_status_after))
+
+
+# ---- UC-38 / FR-49: product photos and QC (Phase 4b) ---------------------------------------------------------------
+PHOTO_ERRORS = {**CONFLICT, 422: {"model": ErrorOut, "description": "INVALID_PHOTO / PHOTO_TOO_SMALL / TOO_MANY_PHOTOS / QC_NOTE_REQUIRED"}}
+
+
+@router.post("/jobs/{job_id}/photos/upload-url", response_model=PhotoUploadOut, status_code=status.HTTP_201_CREATED,
+             summary="UC-38 Xin liên kết tải ảnh sản phẩm lên kho (job phải WRITTEN). PUT file vào `upload_url`, rồi đăng ký ảnh",
+             responses={**PHOTO_ERRORS, 503: {"model": ErrorOut, "description": "STORAGE_NOT_CONFIGURED"}})
+def photo_upload_url(job_id: int, body: PhotoUploadIn, svc: PhotoSvc) -> PhotoUploadOut:
+    key, target = svc.request_upload(job_id, body.mime_type, body.size_bytes)
+    return PhotoUploadOut(photo_key=key, upload_url=target.url, method=target.method, expires_in=target.expires_in)
+
+
+@router.post("/jobs/{job_id}/photos", response_model=PhotoOut, status_code=status.HTTP_201_CREATED,
+             summary="UC-38 Đăng ký ảnh đã tải lên: server đọc lại file, kiểm tra loại/dung lượng/độ phân giải, ghi loại ảnh (toàn cảnh/cận cảnh) và QC",
+             responses={**PHOTO_ERRORS, 409: {"model": ErrorOut, "description": "UPLOAD_NOT_FOUND / JOB_STATE_CONFLICT / PHOTO_REMOVED"}})
+def photo_register(job_id: int, body: PhotoRegisterIn, svc: PhotoSvc) -> PhotoOut:
+    return PhotoOut(**svc.to_out(svc.register(job_id, body.photo_key, body.kind, body.qc_result, body.qc_note)))
+
+
+@router.get("/jobs/{job_id}/photos", response_model=list[PhotoOut],
+            summary="Ảnh sản phẩm của job kèm liên kết xem có chữ ký và kết quả QC")
+def photo_list(job_id: int, svc: PhotoSvc) -> list[PhotoOut]:
+    return [PhotoOut(**svc.to_out(p)) for p in svc.list_photos(job_id)]
+
+
+@router.patch("/jobs/{job_id}/photos/{photo_id}", response_model=PhotoOut,
+              summary="UC-38 Đánh dấu QC đạt / không đạt cho một ảnh (FAIL cần ghi chú)", responses=PHOTO_ERRORS)
+def photo_qc(job_id: int, photo_id: int, body: PhotoQcIn, svc: PhotoSvc) -> PhotoOut:
+    return PhotoOut(**svc.to_out(svc.set_qc(job_id, photo_id, body.qc_result, body.qc_note)))
+
+
+@router.delete("/jobs/{job_id}/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT,
+               summary="Xoá một ảnh (xoá mềm) trước khi nộp ảnh", responses=CONFLICT)
+def photo_remove(job_id: int, photo_id: int, svc: PhotoSvc) -> Response:
+    svc.remove(job_id, photo_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/jobs/{job_id}/photos/submit", response_model=JobOut,
+             summary="UC-38/39 Nộp ảnh: cần ≥ 2 ảnh (toàn cảnh + cận cảnh), mọi ảnh QC đạt (BR-21). Job → PHOTO_UPLOADED, đơn → AWAITING_ACCEPTANCE",
+             responses={**CONFLICT, 409: {"model": ErrorOut, "description": "PHOTO_REQUIREMENTS_NOT_MET / JOB_STATE_CONFLICT / STATE_CONFLICT"}})
+def photo_submit(job_id: int, svc: PhotoSvc) -> JobOut:
+    return _jobs_out(svc, [svc.submit(job_id)])[0]
+
+
+@router.post("/jobs/{job_id}/qc-fail", response_model=JobOut,
+             summary="UC-38 Sản phẩm không đạt QC: job → REWRITE_REQUIRED, đơn về hàng đợi xếp lịch (không tính lượt viết lại miễn phí của khách)",
+             responses=PHOTO_ERRORS)
+def qc_fail(job_id: int, body: QcFailIn, svc: PhotoSvc) -> JobOut:
+    return _jobs_out(svc, [svc.qc_fail(job_id, body.note)])[0]

@@ -73,6 +73,17 @@ class JobEventType(str, enum.Enum):
     FORCE_SUMMARY = "FORCE_SUMMARY"
 
 
+class PhotoKind(str, enum.Enum):
+    OVERALL = "OVERALL"
+    CLOSE_UP = "CLOSE_UP"
+    OTHER = "OTHER"
+
+
+class QcResult(str, enum.Enum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+
+
 class IncidentType(str, enum.Enum):
     ROBOT = "ROBOT"
     MATERIAL = "MATERIAL"
@@ -198,3 +209,20 @@ class JobEvent(Base):
     force_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+
+
+class ProductPhoto(Base):
+    """Photo of the written product with the technician's QC verdict (FR-49, BR-21). `url` is the storage path.
+    A removed photo keeps its row (`deleted_at`) so the history stays; only live photos count for BR-21."""
+    __tablename__ = "product_photos"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    job_id: Mapped[int] = mapped_column(ForeignKey("production_jobs.id"))
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    kind: Mapped[PhotoKind] = mapped_column(Enum(PhotoKind, name="photo_kind", create_type=False))
+    url: Mapped[str] = mapped_column(Text)
+    overlay_url: Mapped[str | None] = mapped_column(Text)
+    qc_result: Mapped[QcResult | None] = mapped_column(Enum(QcResult, name="qc_result", create_type=False))
+    qc_note: Mapped[str | None] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
