@@ -31,7 +31,7 @@ Cho tới khi có, nguồn thực tế là trigger DB `fn_order_state_guard` và
 | LI-10: OT-2 là R&D | `system_settings.order_types_enabled` = chỉ OT-1, OT-3 | mục 5 |
 | FR-36 (OT-2) học nét | Chưa làm; AI là cổ điển, không gọi dịch vụ ngoài | mục 5 |
 | Cổng thanh toán VNPay/MoMo, GHN/GHTK thật | **MOCK** có nhãn `mode=MOCK` (phiếu đăng ký cho phép fallback mock) | mục 5 |
-| Robot thật FR3 + Robot Agent + IoT | **Không** làm trong BE; Technical Staff làm "web scope A" (bản ghi/trạng thái) | mục 3 (Phase 4) |
+| Robot thật FR3 + Robot Agent + IoT | Thuộc phạm vi BE nhưng **chưa làm; chỉ làm khi chủ dự án yêu cầu rõ** (2026-10-18). Trước đó Technical Staff làm "web scope A": bản ghi/trạng thái, client báo kết quả lên | mục 3, 5 |
 
 ## Quyết định bổ sung của chủ dự án (2026-10-18, cho Phase 4)
 | Vấn đề tài liệu không nói rõ | Quyết định |

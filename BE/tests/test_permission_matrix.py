@@ -40,6 +40,7 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/payments/\{payment_id\}/mock-checkout$", ALL, {CUSTOMER}),
     (r"^/workshop/", READ, {STAFF, MANAGER}),
     (r"^/workshop/", WRITE, {STAFF}),                                        # accept, reject, sketch, quote, send: Staff only
+    (r"^/technician/", ALL, {TECH}),                                         # only the technician, and only their own jobs (BR-19)
     (r"^/manager/", ALL, {MANAGER}),
     (r"^/admin/", ALL, {ADMIN}),
 ]
