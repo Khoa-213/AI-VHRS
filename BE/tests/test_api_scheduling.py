@@ -39,7 +39,12 @@ def _robot(category=None, status="AVAILABLE") -> int:
 
 @pytest.fixture
 def robot():
-    return _robot()
+    rid = _robot()
+    yield rid
+    # Test data is only deleted at the end of the session. A robot left AVAILABLE would keep competing with every later
+    # test for the Manager's top-5 schedule suggestions (MAX_SUGGESTIONS, ties go to the lower id), so once enough of
+    # them pile up `robot in suggestions` fails (seen in the full run, after the Phase 4b tests added more of them).
+    _sql("update robots set status='MAINTENANCE' where id=:r returning 1", r=rid)
 
 
 @pytest.fixture

@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.api.v1.orders import optional_storage
 from app.db.session import get_engine
+from app.domain.quotation_rules import adjustment_pct
 from app.integrations.storage import InMemoryStorage
 from app.main import app
 from app.services import pricing as pr
@@ -544,8 +545,10 @@ def test_adjustment_within_threshold_staff_alone_and_boundary(client, cust, staf
     assert Decimal(a["final_total"]) == edge and abs(Decimal(a["adjustment_pct"])) <= 15
     assert _sql("select count(*) from audit_logs where action='PRICE_ADJUST' and entity_id=:q and reason='Khách quen'",
                 q=q["id"]) == 1
+    # BR-09 is judged on the percentage rounded to 2 decimals (same as the DB column), so with large totals the first
+    # 100 VND step above 15% can still read 15.00. Find the first amount the rule itself calls "over".
     over = edge + 100
-    while Decimal(over - computed) * 100 / computed <= Decimal("15.00"):
+    while adjustment_pct(computed, over) <= Decimal("15.00"):
         over += 100
     r = client.put(f"{W}/quotations/{q['id']}/adjustment", headers=sh, json={"adjusted_total": str(over), "reason": "Quá tay"})
     assert r.json()["adjustment_status"] == "PENDING_MANAGER" and r.json()["status"] == "PENDING_APPROVAL"

@@ -33,6 +33,17 @@ def test_adjustment_pct_matches_db_rounding():
     assert adjustment_pct(D(399600), D(420000)) == D("5.11")
 
 
+def test_threshold_is_judged_on_the_rounded_percentage_by_design():
+    """Project owner's choice (2026-10-18, option B): BR-09 compares the percentage rounded to 2 decimals, the same value
+    the DB column and the API show. On a large total the first 100 VND above 15% therefore still reads 15.00 and the
+    Staff may adjust alone; the next steps up read 15.01 and need the Manager."""
+    computed = D(6_000_000)
+    just_over = classify_adjustment(computed, D(6_900_100), D(15))      # really +15.0017%
+    assert just_over.pct == D("15.00") and just_over.needs_manager is False
+    over = classify_adjustment(computed, D(6_900_300), D(15))           # +15.005% rounds to 15.01
+    assert over.pct == D("15.01") and over.needs_manager is True
+
+
 @pytest.mark.parametrize("bad", [0, -100, 1050, 99_999])
 def test_adjusted_total_must_be_positive_multiple_of_100(bad):
     with pytest.raises(ValueError):
