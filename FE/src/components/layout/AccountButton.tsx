@@ -1,4 +1,5 @@
 import { UserCircle } from '@phosphor-icons/react'
+import { openAuth } from '../../store/authDialog'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { useProfile, useUser } from '../../store/store'
@@ -10,9 +11,9 @@ export default function AccountButton({ buttonClassName, avatarClassName }: { bu
   const profile = useProfile()
   if (!user) {
     return (
-      <Link to="/login" className={buttonClassName} aria-label={t('nav.signIn')} title={t('nav.signIn')}>
+      <button type="button" onClick={() => openAuth()} className={buttonClassName} aria-label={t('nav.signIn')} title={t('nav.signIn')}>
         <UserCircle size={22} aria-hidden />
-      </Link>
+      </button>
     )
   }
   const initial = (profile.fullName || user.name).trim().charAt(0).toUpperCase()

@@ -1,3 +1,4 @@
+import { openAuth } from '../../store/authDialog'
 import { useEffect, type ReactNode } from 'react'
 import { useT } from '../../i18n'
 import { Link, navigate } from '../../router/router'
@@ -23,7 +24,9 @@ export default function RequireStaff({ children, role = 'staff', manager = false
   useEffect(() => {
     // StrictMode runs effects twice: only redirect from the guarded page itself. Someone signed in without access sees a notice instead.
     if (!allowed && !user && window.location.pathname !== '/login') {
-      navigate(`/login?next=${encodeURIComponent(window.location.pathname)}`)
+      const next = window.location.pathname
+      navigate('/', { replace: true })
+      openAuth('login', next)
     }
   }, [allowed, user])
 

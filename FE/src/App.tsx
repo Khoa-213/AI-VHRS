@@ -2,8 +2,8 @@ import Account, { type Section } from './pages/account/Account'
 import CreateOrder from './pages/create-order/CreateOrder'
 import DrawStudio from './pages/create-order/DrawStudio'
 import Landing from './pages/landing/Landing'
-import Login from './pages/login/Login'
-import Register from './pages/login/Register'
+import SignInDialog from './pages/create-order/SignInDialog'
+import { closeAuth, openAuth, useAuthDialog } from './store/authDialog'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import Accounts from './pages/admin/Accounts'
 import AuditLog from './pages/admin/AuditLog'
@@ -39,6 +39,14 @@ function homeFor(role: string | undefined, path: string): string | null {
 function Routes() {
   const path = usePath()
   const user = useUser()
+  const legacyAuth = path === '/login' || path === '/register'
+  useEffect(() => {
+    if (legacyAuth) {
+      const next = new URLSearchParams(window.location.search).get('next') ?? undefined
+      navigate('/', { replace: true })
+      openAuth(path === '/register' ? 'register' : 'login', next)
+    }
+  }, [legacyAuth, path])
   const redirect = homeFor(user?.role, path)
   useEffect(() => {
     if (redirect) navigate(redirect, { replace: true })
@@ -57,8 +65,7 @@ function Routes() {
     const section = known.find((s) => s === account[1]) ?? 'profile'
     return <Account section={section} />
   }
-  if (path === '/login') return <Login />
-  if (path === '/register') return <Register />
+
   if (path === '/staff') return <RequireStaff>{user?.apiRole === 'MANAGER' ? <ManagerDashboard /> : <StaffDashboard />}</RequireStaff>
   const staffReview = /^\/staff\/review(?:\/(\d+))?\/?$/.exec(path)
   if (staffReview) {
@@ -113,5 +120,6 @@ function Routes() {
 
 export default function App() {
   useInterceptLinks()
-  return <Routes />
+  const auth = useAuthDialog()
+  return <><Routes />{auth && <SignInDialog initialMode={auth.mode} next={auth.next} onClose={closeAuth} />}</>
 }
