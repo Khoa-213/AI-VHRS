@@ -8,8 +8,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import (JobOut, ProductionQueueRow, RescheduleIn, ScheduleIn, SuggestionOut, TechnicianOut,
-                                 UnscheduleIn)
+from app.api.ops_schemas import (IncidentOut, JobEventOut, JobOut, ProductionQueueRow, RescheduleIn, ResolveIncidentIn,
+                                 ScheduleIn, SuggestionOut, TechnicianOut, UnscheduleIn)
 from app.api.schemas import ErrorOut, Page
 from app.models.account import Account, RoleCode
 from app.models.ops import JobStatus, ProductionJob
@@ -96,3 +96,22 @@ def job_detail(job_id: int, svc: Svc) -> JobOut:
 @router.get("/technicians", response_model=list[TechnicianOut], summary="Technical Staff đang hoạt động + số job đang giữ")
 def technicians(svc: Svc) -> list[TechnicianOut]:
     return [TechnicianOut(**t) for t in svc.technicians()]
+
+
+@router.get("/jobs/{job_id}/events", response_model=Page[JobEventOut],
+            summary="Nhật ký sự kiện của job (tải gói, hiệu chuẩn, mô phỏng, tiến độ, dừng khẩn cấp, sự cố)")
+def job_events(job_id: int, svc: Svc, page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=500)) -> Page[JobEventOut]:
+    rows, total = svc.events(job_id, page, page_size)
+    return Page(items=[JobEventOut.model_validate(r) for r in rows], total=total, page=page, page_size=page_size)
+
+
+@router.get("/incidents", response_model=Page[IncidentOut], summary="FR-48 Sự cố robot/vật tư (mới nhất trước); lọc chưa xử lý, theo robot")
+def incidents(svc: Svc, resolved: bool | None = None, robot_id: int | None = None,
+              page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200)) -> Page[IncidentOut]:
+    rows, total = svc.incident_page(resolved=resolved, robot_id=robot_id, page=page, page_size=page_size)
+    return Page(items=[IncidentOut.model_validate(r) for r in rows], total=total, page=page, page_size=page_size)
+
+
+@router.post("/incidents/{incident_id}/resolve", response_model=IncidentOut, summary="Đóng sự cố đã xử lý (trạng thái robot đổi qua API robot)")
+def resolve_incident(incident_id: int, body: ResolveIncidentIn, svc: Svc) -> IncidentOut:
+    return IncidentOut.model_validate(svc.resolve_incident(incident_id, body.note))
