@@ -1,5 +1,5 @@
 @property --entry-border-angle{syntax:'<angle>';initial-value:0deg;inherits:false}
-.entry-login{position:fixed;inset:0;margin:auto;width:min(480px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:0;border:2px solid transparent;border-radius:28px;background:linear-gradient(var(--surface,var(--bg)),var(--surface,var(--bg))) padding-box,conic-gradient(from var(--entry-border-angle),transparent 0deg 245deg,#729dff55 275deg,#ad83f5 308deg,#f291ae 330deg,#fff3fb 346deg,#fff 352deg,transparent 357deg 360deg) border-box,linear-gradient(135deg,#729dff66,#ad83f566,#f291ae66) border-box;color:var(--t1);box-shadow:0 0 18px #ad83f526,0 32px 100px #0005;overflow:auto;animation:entry-border-orbit 3s linear infinite,entry-border-glow 3s ease-in-out infinite}
+.entry-login{--entry-input-bg:color-mix(in srgb,var(--t1) 3%,var(--surface,var(--bg)));position:fixed;inset:0;margin:auto;width:min(480px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:0;border:2px solid transparent;border-radius:28px;background:linear-gradient(var(--surface,var(--bg)),var(--surface,var(--bg))) padding-box,conic-gradient(from var(--entry-border-angle),transparent 0deg 245deg,#729dff55 275deg,#ad83f5 308deg,#f291ae 330deg,#fff3fb 346deg,#fff 352deg,transparent 357deg 360deg) border-box,linear-gradient(135deg,#729dff66,#ad83f566,#f291ae66) border-box;color:var(--t1);box-shadow:0 0 18px #ad83f526,0 32px 100px #0005;overflow:auto;animation:entry-border-orbit 3s linear infinite,entry-border-glow 3s ease-in-out infinite}
 @keyframes entry-border-orbit{to{--entry-border-angle:360deg}}
 @keyframes entry-border-glow{0%,100%{box-shadow:0 0 14px #729dff33,0 0 30px #ad83f51a,0 32px 100px #0005}50%{box-shadow:0 0 22px #ad83f54d,0 0 42px #f291ae26,0 32px 100px #0005}}
 @media(prefers-reduced-motion:reduce){.entry-login{animation:none}}
@@ -11,9 +11,11 @@
 .entry-login-close{position:absolute;right:18px;top:18px;display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line-strong);border-radius:50%;background:var(--fx-04);color:var(--t1);cursor:pointer}
 .entry-login form{display:flex;flex-direction:column;gap:12px}
 .entry-login label{font-size:12px;font-weight:600;color:var(--t3)}
-.entry-login input{width:100%;min-width:0;min-height:48px;padding:12px 16px;border:1px solid var(--line-strong);border-radius:14px;background:var(--fx-025);color:var(--t1);font:inherit;font-size:14px;margin-bottom:6px}
-.entry-login-password{display:flex;align-items:center;border:1px solid var(--line-strong);border-radius:14px;background:var(--fx-025);padding-left:14px;color:var(--t4)}
-.entry-login-password input{border:0;background:none;margin:0;padding-left:10px}
+.entry-login input{width:100%;min-width:0;min-height:48px;padding:12px 16px;border:1px solid var(--line-strong);border-radius:14px;background:var(--entry-input-bg);color:var(--t1);font:inherit;font-size:14px;margin-bottom:6px}
+.entry-login-password{display:flex;align-items:center;border:1px solid var(--line-strong);border-radius:14px;background:var(--entry-input-bg);padding-left:14px;color:var(--t4);overflow:hidden}
+.entry-login-password input{flex:1;border:0;border-radius:0;background:transparent;margin:0;padding-left:10px}
+/* Browser autofill must match the field, including the password icon container. */
+.entry-login input:is(:autofill,:-webkit-autofill){-webkit-text-fill-color:var(--t1);caret-color:var(--t1);box-shadow:0 0 0 1000px var(--entry-input-bg) inset}
 .entry-login-password>svg{flex:none}
 .entry-login-password button{flex:none;display:grid;place-items:center;width:46px;min-height:46px;border:0;background:none;color:var(--t4);cursor:pointer;border-radius:12px}
 .entry-login-password:focus-within{outline:2px solid var(--t4);outline-offset:2px}

@@ -68,6 +68,11 @@ class StyleStatus(str, enum.Enum):
     DELETED = "DELETED"
 
 
+class DeliveryMethod(str, enum.Enum):
+    DELIVERY = "DELIVERY"
+    PICKUP = "PICKUP"
+
+
 class ComplexityLevel(str, enum.Enum):
     SIMPLE = "SIMPLE"
     MEDIUM = "MEDIUM"
@@ -116,6 +121,14 @@ class Order(Base):
     awaiting_acceptance_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     accepted_product_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     free_rewrite_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Delivery (Phase 4c, FR-21..23). For PICKUP, delivery_address holds only the contact {receiver, phone}.
+    delivery_method: Mapped[DeliveryMethod | None] = mapped_column(
+        Enum(DeliveryMethod, name="delivery_method", create_type=False))
+    delivery_address: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    pickup_slot_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pickup_slot_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    received_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
