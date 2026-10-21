@@ -17,7 +17,7 @@
 
 - Giao tiếp **tiếng Việt**, giữ thuật ngữ kỹ thuật tiếng Anh. Báo cáo trung thực: cái gì **đã chạy**, cái gì **chưa chạy**, cái gì **không chắc**.
 - **Chỉ làm `BE/`.** Không sửa `FE/`, `Mobile/`, root repo (trừ khi được yêu cầu rõ).
-- **Không kết nối robot thật** (không SDK Fairino, serial, lệnh chuyển động). Cổng thanh toán/vận chuyển dùng adapter **MOCK** có `mode=MOCK`; không bao giờ trình bày mô phỏng như thao tác thật.
+- **Kết nối robot thật (SDK Fairino, Robot Agent, serial/IoT) thuộc phạm vi BE nhưng CHƯA làm: chỉ làm khi chủ dự án yêu cầu rõ.** Mặc định chừa lại, làm các luồng tương tác với web app trước. Trong lúc chưa kết nối: không gọi SDK/serial/lệnh chuyển động, kết quả mô phỏng và dữ liệu lực/tiến độ do client báo lên (hoặc nhập thủ công) và BE chỉ ghi nhận. Cổng thanh toán/vận chuyển dùng adapter **MOCK** có `mode=MOCK`; không bao giờ trình bày mô phỏng như thao tác thật.
 - **Dữ liệu phải thật**: dữ liệu mẫu seed thẳng vào Supabase bằng script idempotent; không hard-code dữ liệu giả trong code. AI là AI thật (xem `services/stroke_ai/`), không giả vờ.
 - Admin = quản trị hệ thống (không đụng đơn/giá/sản xuất); Manager = đơn/sản xuất/giá/vật tư.
 - **Không đổi schema/migration, không chạy lệnh DB phá huỷ khi chưa được duyệt.** Cần đổi → nêu giới hạn hiện tại, SQL đề xuất, ảnh hưởng, cách rollback.

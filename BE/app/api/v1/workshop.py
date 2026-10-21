@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.order_schemas import InputOut
 from app.api.ops_schemas import JobOut, PaymentOut
+from app.api.photo_schemas import WorkshopPhotoOut
 from app.api.schemas import Page
 from app.api.staff_schemas import (AcceptIn, AdjustIn, FileLinkOut, OptionSummary, QuotationCreateIn, QuotationOut, RejectIn,
                                    RequestInfoIn, SketchDetailOut, SketchGenerateIn, SketchManualIn, SketchOut,
@@ -24,6 +25,7 @@ from app.models.order import Order, OrderStatus
 from app.models.sketch import Quotation, Sketch
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.repositories.ops import JobRepository
+from app.services.acceptance import workshop_photos
 from app.services.payments import PaymentService
 from app.services.workshop_access import WorkshopAccess
 from app.services.quotations import QuotationService, option_summaries
@@ -228,6 +230,13 @@ def order_payments(order_id: int, session: SessionDep, actor: WorkshopDep) -> li
     from app.api.v1.payments import payment_out
     order = WorkshopAccess(session, actor).order(order_id)
     return [payment_out(p) for p in PaymentService(session).for_workshop(order.id)]
+
+
+@router.get("/orders/{order_id}/product-photos", response_model=list[WorkshopPhotoOut],
+            summary="FR-49 Ảnh sản phẩm và kết quả QC của mọi job của đơn (chỉ đọc)")
+def order_product_photos(order_id: int, session: SessionDep, actor: WorkshopDep, storage: StorageDep) -> list[WorkshopPhotoOut]:
+    order = WorkshopAccess(session, actor).order(order_id)
+    return [WorkshopPhotoOut(**p) for p in workshop_photos(session, order, storage)]
 
 
 @router.get("/orders/{order_id}/jobs", response_model=list[JobOut], summary="Các job sản xuất đã xếp cho đơn")
