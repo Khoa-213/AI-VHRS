@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.order import OrderInputKind, OrderStatus, OrderType, ProductionStatus
+from app.models.order import DeliveryMethod, OrderInputKind, OrderStatus, OrderType, ProductionStatus
 
 
 class _ORM(BaseModel):
@@ -123,6 +123,12 @@ class OrderOut(_ORM):
     awaiting_acceptance_at: datetime | None = None
     accepted_product_at: datetime | None = None
     free_rewrite_used: bool = False
+    delivery_method: DeliveryMethod | None = None
+    delivery_address: dict[str, Any] | None = None
+    pickup_slot_start: datetime | None = None
+    pickup_slot_end: datetime | None = None
+    received_confirmed_at: datetime | None = None
+    completed_at: datetime | None = None
     last_saved_at: datetime
     submitted_at: datetime | None
     created_at: datetime

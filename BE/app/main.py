@@ -4,8 +4,8 @@ from sqlalchemy import text
 
 from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
-from app.api.v1 import (acceptance, admin, auth, catalog, customer_quotes, manager, manager_ops, me, messages, orders,
-                        payments, pricing, scheduling, technician, workshop)
+from app.api.v1 import (acceptance, admin, auth, catalog, customer_quotes, delivery, manager, manager_ops, me, messages,
+                        orders, payments, pricing, scheduling, technician, workshop)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 
@@ -37,6 +37,7 @@ TAGS = [
     {"name": "Scheduling", "description": "FR-37, FR-40 · BR-18. Manager: hàng đợi, gợi ý và xếp lịch sản xuất, đổi lịch."},
     {"name": "Technician", "description": "UC-31..39 · FR-43..49 · BR-19. Chỉ TECHNICAL_STAFF, chỉ job được giao: tải gói job (hash), chuẩn bị, hiệu chuẩn, kết quả mô phỏng, bắt đầu/kết thúc viết, sự kiện an toàn, sự cố. Chưa kết nối robot (chỉ làm khi chủ dự án yêu cầu)."},
     {"name": "Acceptance", "description": "UC-18 · FR-28 · BR-13. Khách xem ảnh sản phẩm thật, nghiệm thu hoặc yêu cầu viết lại (1 lần miễn phí); tự nghiệm thu sau 7 ngày."},
+    {"name": "Delivery", "description": "FR-18, FR-21, FR-23 · UC-20. Khách chọn giao hàng / nhận tại xưởng, thanh toán cuối (G − D) + phí ship (MOCK), xác nhận đã nhận. Staff bàn giao tại xưởng (`/workshop/orders/{id}/pickup/confirm`)."},
     {"name": "Admin", "description": "FR-51 · UC-48, UC-51. Chỉ vai trò ADMIN."},
     {"name": "System", "description": "Kiểm tra sức khoẻ dịch vụ."},
 ]
@@ -89,6 +90,7 @@ v1.include_router(manager_ops.router)
 v1.include_router(scheduling.router)
 v1.include_router(technician.router)
 v1.include_router(acceptance.router)
+v1.include_router(delivery.router)
 v1.include_router(payments.router)
 v1.include_router(admin.router)
 

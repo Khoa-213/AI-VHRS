@@ -46,6 +46,10 @@ class WorkCalendar:
     def _window(self, day: date) -> Interval:
         return (datetime.combine(day, self.start, self.tz), datetime.combine(day, self.end, self.tz))
 
+    def day_end(self, moment: datetime) -> datetime:
+        """Closing time of the working day `moment` falls on (that day need not be a working day)."""
+        return self._window(moment.astimezone(self.tz).date())[1]
+
     def next_open(self, moment: datetime) -> datetime:
         """Smallest instant >= moment that lies inside working hours."""
         local = moment.astimezone(self.tz)
