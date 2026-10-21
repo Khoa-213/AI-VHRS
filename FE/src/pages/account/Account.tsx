@@ -1,3 +1,4 @@
+import { openAuth } from '../../store/authDialog'
 import { ClockCounterClockwise, CreditCard, NotePencil, SignOut, SlidersHorizontal, User as UserIcon } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
@@ -41,7 +42,7 @@ export default function Account({ section }: { section: Section }) {
         <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
           <h1 className="vh-h1">{t('acct.guestTitle')}</h1>
           <p className="vh-lede">{t('acct.guestBody')}</p>
-          <button className="vh-btn vh-btn--primary" onClick={() => navigate('/login?next=/account')}>{t('nav.signIn')}</button>
+          <button className="vh-btn vh-btn--primary" onClick={() => openAuth('login', '/account')}>{t('nav.signIn')}</button>
         </div>
       </Page>
     )

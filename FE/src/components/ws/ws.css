@@ -130,7 +130,7 @@
 .ws .sub{color:var(--ink3);font-size:13px}
 .ws .accent{color:var(--acc)}
 .ws .app2{display:flex;flex-wrap:wrap;gap:26px;padding:28px 32px 40px;min-height:100vh}
-.ws .rail-col{flex:0 0 64px;display:flex;flex-direction:column;align-items:center;gap:22px}
+.ws .rail-col{flex:0 0 64px;display:flex;flex-direction:column;align-items:center;gap:22px;position:sticky;top:28px;align-self:flex-start;height:calc(100vh - 56px)}
 .ws .logo{width:48px;height:48px;border-radius:50%;background:var(--acc);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;letter-spacing:.02em}
 .ws .rail{width:62px;background:#fff;border-radius:31px;padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:8px;box-shadow:var(--shadow)}
 .ws .rail a{position:relative;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--ink2)}

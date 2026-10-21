@@ -17,7 +17,7 @@ import { ApiError } from '../../services/api'
 import { draftPathFor, drawPathFor } from './draft'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
-import SignInDialog from './SignInDialog'
+import { openAuth } from '../../store/authDialog'
 import Header from '../landing/components/Header'
 import fr3Arm from '../../assets/fr3-arm.png'
 import '../landing/landing.css'
@@ -41,7 +41,6 @@ function initialMode(): InputMode | null {
 export default function CreateOrder({ orderId: given = null }: { orderId?: number | null }) {
   const t = useT()
   const user = useUser()
-  const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null)
 
   const [order, setOrder] = useState<Order | null>(null)
   const orderRef = useRef<Order | null>(null)
@@ -442,10 +441,10 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
             <h1 id="order-entry-title">{t('co.signInTitle')}</h1>
             <p>{t('co.signInBody')}</p>
             <div className="order-entry-buttons">
-              <button type="button" className="order-entry-primary" onClick={() => setAuthMode('login')}>
+              <button type="button" className="order-entry-primary" onClick={() => openAuth('login')}>
                 {t('nav.signIn')}<span aria-hidden="true">↗</span>
               </button>
-              <button type="button" className="order-entry-secondary" onClick={() => setAuthMode('register')}>{t('reg.submit')}</button>
+              <button type="button" className="order-entry-secondary" onClick={() => openAuth('register')}>{t('reg.submit')}</button>
             </div>
           </div>
           <div className="order-entry-art" aria-hidden="true">
@@ -454,7 +453,6 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
           </div>
           <div className="order-entry-footer"><span>AI-VHRS</span><span>{t('lp.eyebrow')}</span></div>
         </main>
-        {authMode && <SignInDialog initialMode={authMode} onClose={() => setAuthMode(null)} />}
       </div>
     )
   }
