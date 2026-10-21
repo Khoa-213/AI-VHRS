@@ -1,4 +1,7 @@
 import { API_BASE, ApiError, api } from './api'
+import {
+  MOCK_ORDER_ID, isMockOrder, isMockPayment, mockApprove, mockCancel, mockCheckoutResult, mockDecidePrivacy, mockOrder, mockPayments, mockPolicy,
+  mockQuotation, mockStartDeposit } from './mockOrder'
 
 /**
  * Customer side of the order API: catalog, estimate, draft editing, submit,
@@ -268,7 +271,13 @@ export async function listOrders(opts: { status?: OrderStatus | OrderStatus[]; p
   return { items: r.items.map(toOrder), total: r.total, page: r.page, pageSize: r.page_size }
 }
 
-export const getOrder = async (id: number): Promise<Order> => toOrder(await api<RawOrder>(`/orders/${id}`))
+export const getOrder = async (id: number): Promise<Order> => {
+  const real = id === MOCK_ORDER_ID ? undefined : toOrder(await api<RawOrder>(`/orders/${id}`))
+  return isMockOrder(id) ? mockOrder(id, real) : real!
+}
+
+/** Dev mock: change the local state, then read the order back with it laid over. */
+const mocked = async (id: number, change: () => void): Promise<Order> => { change(); return getOrder(id) }
 
 export const createOrder = async (type: OrderType, quantity = 1): Promise<Order> =>
   toOrder(await api<RawOrder>('/orders', { method: 'POST', body: { order_type: type, quantity } }))
@@ -337,7 +346,7 @@ export const provideInfo = async (id: number): Promise<Order> =>
   toOrder(await api<RawOrder>(`/orders/${id}/provide-info`, { method: 'POST', body: { terms_accepted: true } }))
 
 export const cancelOrder = async (id: number, reason: string): Promise<Order> =>
-  toOrder(await api<RawOrder>(`/orders/${id}/cancel`, { method: 'POST', body: { reason } }))
+  isMockOrder(id) ? mocked(id, () => mockCancel(id)) : toOrder(await api<RawOrder>(`/orders/${id}/cancel`, { method: 'POST', body: { reason } }))
 
 // ---------- privacy and quotation ----------
 
@@ -347,10 +356,11 @@ export interface PrivacyPolicy {
   body: string
 }
 
-export const getPrivacyPolicy = () => api<PrivacyPolicy>('/privacy-policy', { auth: false })
+export const getPrivacyPolicy = (forOrder?: number) =>
+  forOrder !== undefined && isMockOrder(forOrder) ? Promise.resolve(mockPolicy()) : api<PrivacyPolicy>('/privacy-policy', { auth: false })
 
 export const decidePrivacy = async (id: number, accept: boolean): Promise<Order> =>
-  toOrder(await api<RawOrder>(`/orders/${id}/privacy`, { method: 'POST', body: { accept } }))
+  isMockOrder(id) ? mocked(id, () => mockDecidePrivacy(id, accept)) : toOrder(await api<RawOrder>(`/orders/${id}/privacy`, { method: 'POST', body: { accept } }))
 
 export interface QuotationLine {
   option: number
@@ -406,6 +416,7 @@ interface RawQuotation {
 }
 
 export async function getQuotation(id: number): Promise<Quotation> {
+  if (isMockOrder(id)) return mockQuotation(id)
   const q = await api<RawQuotation>(`/orders/${id}/quotation`)
   return {
     id: q.id, version: q.version, status: q.status,
@@ -426,7 +437,7 @@ export const requestChanges = async (id: number, note: string): Promise<void> =>
 }
 
 export const approveQuotation = async (id: number, body: { option?: number; deposit_pct?: number }): Promise<Order> =>
-  toOrder(await api<RawOrder>(`/orders/${id}/quotation/approve`, { method: 'POST', body }))
+  isMockOrder(id) ? mocked(id, () => mockApprove(id, body.deposit_pct)) : toOrder(await api<RawOrder>(`/orders/${id}/quotation/approve`, { method: 'POST', body }))
 
 // ---------- deposit (mock gateway) ----------
 
@@ -452,15 +463,18 @@ export const toPayment = (p: RawPayment): Payment => ({
 })
 
 export const startDeposit = async (id: number, gateway: Gateway): Promise<Payment> =>
-  toPayment(await api<RawPayment>(`/orders/${id}/payments/deposit`, { method: 'POST', body: { gateway } }))
+  isMockOrder(id) ? mockStartDeposit(id, gateway) : toPayment(await api<RawPayment>(`/orders/${id}/payments/deposit`, { method: 'POST', body: { gateway } }))
 
 export const mockCheckout = (paymentId: number, result: 'SUCCESS' | 'FAILED') =>
-  api<{ result: string; status: string; order_status: OrderStatus }>(`/payments/${paymentId}/mock-checkout`, {
-    method: 'POST',
-    body: { result },
-  })
+  isMockPayment(paymentId)
+    ? Promise.resolve(mockCheckoutResult(paymentId, result))
+    : api<{ result: string; status: string; order_status: OrderStatus }>(`/payments/${paymentId}/mock-checkout`, {
+      method: 'POST',
+      body: { result },
+    })
 
 export const listPayments = async (id: number): Promise<Payment[]> => {
+  if (isMockOrder(id)) return mockPayments(id)
   const r = await api<RawPayment[] | { items: RawPayment[] }>(`/orders/${id}/payments`)
   return (Array.isArray(r) ? r : r.items).map(toPayment)
 }

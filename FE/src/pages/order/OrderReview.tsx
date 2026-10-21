@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
 import Chat from '../../components/ui/Chat'
 import OrderPreview from '../../components/ui/OrderPreview'
@@ -13,6 +13,8 @@ import {
   orderErrorKey, requestChanges, type Order, errText } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { fmt } from '../../utils/format'
+import MockWorkshopBar from './MockWorkshopBar'
+import PrivacyDialog from './PrivacyDialog'
 import './order.css'
 
 const HAS_QUOTE = ['QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED']
@@ -30,7 +32,7 @@ export default function OrderReview({ id }: { id: string | null }) {
   const pens = useAsync(() => getPens(), [])
   const inks = useAsync(() => (order?.penId ? getInks(order.penId) : Promise.resolve([])), [order?.penId])
   const quote = useAsync(() => (status && HAS_QUOTE.includes(status) ? getQuotation(orderId) : Promise.resolve(null)), [orderId, status])
-  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy() : Promise.resolve(null)), [status])
+  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy(orderId) : Promise.resolve(null)), [status])
 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -38,6 +40,17 @@ export default function OrderReview({ id }: { id: string | null }) {
   const [text, setText] = useState('')
   const [option, setOption] = useState<number | null>(null)
   const [pct, setPct] = useState<number | null>(null)
+  const [policyOpen, setPolicyOpen] = useState(false)
+  const autoOpened = useRef(false)
+
+  // The policy opens by itself the first time the order lands on the privacy step.
+  useEffect(() => {
+    if (status !== 'AWAITING_PRIVACY') autoOpened.current = false
+    else if (policy.data && !autoOpened.current) {
+      autoOpened.current = true
+      setPolicyOpen(true)
+    }
+  }, [status, policy.data])
 
   const run = async (job: Job, after?: () => void) => {
     if (busy) return
@@ -130,6 +143,7 @@ export default function OrderReview({ id }: { id: string | null }) {
 
   return (
     <Page label="Order Review">
+      {import.meta.env.DEV && <MockWorkshopBar order={order} onChange={() => void q.reload()} />}
       <div className="ov">
         <div className="vh-head">
           <div className="vh-head-text">
@@ -152,13 +166,6 @@ export default function OrderReview({ id }: { id: string | null }) {
                 {quotation.sketch.estimatedWritingSec !== null && (
                   <p className="or-copy">{t('ov.writingTime', { min: Math.max(1, Math.round(quotation.sketch.estimatedWritingSec / 60)) })}</p>
                 )}
-              </div>
-            )}
-
-            {status === 'AWAITING_PRIVACY' && policy.data && (
-              <div className="vh-stack" style={{ gap: 10 }}>
-                <span className="vh-label">{policy.data.title ?? t('ov.privacyTitle')} · v{policy.data.version}</span>
-                <div className="ov-policy" tabIndex={0}>{policy.data.body}</div>
               </div>
             )}
 
@@ -249,8 +256,17 @@ export default function OrderReview({ id }: { id: string | null }) {
                   ) : (
                     <div className="or-actions">
                       <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => setPanel('decline')}>{t('ov.decline')}</button>
-                      <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || !policy.data} onClick={() => void run(() => decidePrivacy(orderId, true))}>{t('ov.agree')}</button>
+                      <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || !policy.data} onClick={() => setPolicyOpen(true)}>{t('ov.privacyRead')}</button>
                     </div>
+                  )}
+                  {policyOpen && policy.data && (
+                    <PrivacyDialog
+                      policy={policy.data}
+                      busy={busy}
+                      onClose={() => setPolicyOpen(false)}
+                      onDecline={() => { setPolicyOpen(false); setPanel('decline') }}
+                      onAgree={() => void run(() => decidePrivacy(orderId, true), () => setPolicyOpen(false))}
+                    />
                   )}
                 </>
               )}

@@ -21,6 +21,7 @@ import RobotPreview from './pages/tech/RobotPreview'
 import RequireStaff from './pages/staff/RequireStaff'
 import Deposit from './pages/order/Deposit'
 import OrderReview from './pages/order/OrderReview'
+import PrivacyPreview from './pages/order/PrivacyPreview'
 import { matchOrderRoute, navigate, useInterceptLinks, usePath } from './router/router'
 import { useEffect } from 'react'
 import { useUser } from './store/store'
@@ -110,6 +111,7 @@ function Routes() {
       </RequireStaff>
     )
   }
+  if (import.meta.env.DEV && path === '/dev/privacy') return <PrivacyPreview />
   const review = matchOrderRoute(path, 'review')
   if (review) return <OrderReview key={review} id={review} />
   const deposit = matchOrderRoute(path, 'deposit')

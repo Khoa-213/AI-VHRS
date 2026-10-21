@@ -58,7 +58,6 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [suggest, setSuggest] = useState(false)
   const [qty, setQty] = useState(1)
   const [note, setNote] = useState('')
-  const [terms, setTerms] = useState(false)
   const [err, setErr] = useState('')
   const [notice, setNotice] = useState('')
   const [closed, setClosed] = useState<InputMode[]>([])
@@ -137,7 +136,6 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     setOrder(null)
     setStep(0)
     setMaxStep(0)
-    setTerms(false)
     setErr('')
     setEst(null)
     if (given === null) {
@@ -386,13 +384,12 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const valid = (i: number) => {
     if (i === 0) return mode === 'text' ? text.trim().length > 0 && templateId !== null : mode === 'upload' ? photos.length > 0 : strokes > 0
     if (i === 1) return materialsOk && qty >= 1
-    return terms
+    return true
   }
   const ok = valid(step) && !busy && uploading === 0
   const hints = [
     t(mode === 'text' ? 'co.hint0.text' : mode === 'upload' ? 'co.hint0.upload' : 'co.hint0.draw'),
     t(!materialsOk ? (!paperId ? 'co.hint1.paper' : !penId ? 'co.hint1.pen' : 'co.hint1.ink') : 'co.hint1.qty'),
-    t('co.hint2'),
   ]
 
   const goTo = (i: number) => {
@@ -402,7 +399,6 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   }
 
   const submit = async () => {
-    if (!terms) return
     setErr('')
     setBusy(true)
     try {
@@ -811,13 +807,6 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                       {order.warnings.map((w) => <span key={w}>{t(`warn.${w}`)}</span>)}
                     </div>
                   )}
-                  <label className="co-switch">
-                    <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} />
-                    <span className="co-switch-text">
-                      <span className="co-opt-name">{t('co.terms')}</span>
-                      <span className="co-opt-sub">{t('co.termsSub')}</span>
-                    </span>
-                  </label>
                 </>
               )}
             </div>
