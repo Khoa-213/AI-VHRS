@@ -1,8 +1,6 @@
 import { useState } from 'react'
+import Shell from '../../components/ws/Shell'
 import type { Job as JobFn } from '../../services/async'
-import SkipLink from '../../components/ui/SkipLink'
-import ThemeToggle from '../../components/ui/ThemeToggle'
-import LanguageToggle from '../../components/ui/LanguageToggle'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link, navigate } from '../../router/router'
@@ -10,10 +8,6 @@ import { orderErrorKey, errText } from '../../services/orders'
 import {
   listJobs, listRobots, listTechnicians, orderJobs, rescheduleJob, scheduleOrder, scheduleQueue, scheduleSuggestion, unscheduleJob, type Job,
 } from '../../services/workshop'
-import StaffRail from './StaffRail'
-import './dashboard.css'
-import './polish.css'
-import './workshop.css'
 
 /** Manager only: paid orders waiting for a robot, a technician and a time slot (FR-40 to FR-42). This only writes the schedule; nothing contacts a robot. */
 export default function Schedule({ id }: { id?: number }) {
@@ -21,49 +15,35 @@ export default function Schedule({ id }: { id?: number }) {
   const queue = useAsync(() => scheduleQueue(), [], 30000)
   const rows = queue.data?.items ?? []
   return (
-    <div className="sd">
-      <SkipLink />
-      <StaffRail active="schedule" />
-      <main className="sd-body" id="main">
-        <header className="sd-top">
-          <div>
-            <h1>{t('wk.scheduleTitle')}</h1>
-            <p>{t('wk.scheduleLede')}</p>
-          </div>
-          <div className="sd-top-right">
-            <ThemeToggle className="vh-icon-btn" />
-            <LanguageToggle className="vh-icon-btn" />
-          </div>
-        </header>
-        <div className="wk-layout">
-          <aside className="wk-list" aria-label={t('wk.scheduleQueue')}>
-            <h2 className="wk-list-title">{t('wk.scheduleQueue')}</h2>
-            {!!queue.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(queue.error))}</p>}
-            {queue.loading && !queue.data && <p className="sd-sub" role="status">{t('co.loading')}</p>}
-            <ul>
-              {rows.map((r) => (
-                <li key={r.orderId}>
-                  <Link to={`/staff/schedule/${r.orderId}`} className={`wk-item${r.orderId === id ? ' on' : ''}`}>
-                    <span className="wk-item-main">
-                      <b>{r.code}</b>
-                      <span>{r.customerName} · {t(`ot.${r.type}`)} × {r.quantity}</span>
-                    </span>
-                    <span className="wk-item-side">
-                      <span className="vh-chip">{t(`ps.${r.production}`)}</span>
-                      {r.durationMin !== null && <span className="vh-mono">{t('wk.minutes', { n: r.durationMin })}</span>}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-              {queue.data && !rows.length && <li className="sd-none">{t('wk.scheduleNone')}</li>}
-            </ul>
-          </aside>
-          <section className="wk-detail">
-            {id ? <ScheduleOrder key={id} id={id} onChanged={() => void queue.reload()} /> : <UpcomingJobs />}
-          </section>
-        </div>
-      </main>
-    </div>
+    <Shell area="manager" active="schedule" title={t('wk.scheduleTitle')} lede={t('wk.scheduleLede')}>
+      <div className="wk-layout">
+        <aside className="wk-list" aria-label={t('wk.scheduleQueue')}>
+          <h2 className="wk-list-title">{t('wk.scheduleQueue')}</h2>
+          {!!queue.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(queue.error))}</p>}
+          {queue.loading && !queue.data && <p className="sd-sub" role="status">{t('co.loading')}</p>}
+          <ul>
+            {rows.map((r) => (
+              <li key={r.orderId}>
+                <Link to={`/staff/schedule/${r.orderId}`} className={`wk-item${r.orderId === id ? ' on' : ''}`}>
+                  <span className="wk-item-main">
+                    <b>{r.code}</b>
+                    <span>{r.customerName} · {t(`ot.${r.type}`)} × {r.quantity}</span>
+                  </span>
+                  <span className="wk-item-side">
+                    <span className="chip info">{t(`ps.${r.production}`)}</span>
+                    {r.durationMin !== null && <span className="mono">{t('wk.minutes', { n: r.durationMin })}</span>}
+                  </span>
+                </Link>
+              </li>
+            ))}
+            {queue.data && !rows.length && <li className="sd-sub">{t('wk.scheduleNone')}</li>}
+          </ul>
+        </aside>
+        <section className="wk-detail">
+          {id ? <ScheduleOrder key={id} id={id} onChanged={() => void queue.reload()} /> : <UpcomingJobs />}
+        </section>
+      </div>
+    </Shell>
   )
 }
 

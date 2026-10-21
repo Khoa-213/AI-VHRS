@@ -21,13 +21,13 @@ interface TokenOut {
   account: Account
 }
 
-/** Backend roles mapped onto the three areas of the site. */
+/** Backend roles mapped onto the four areas of the site. */
 const AREA: Record<string, Role> = {
   CUSTOMER: 'customer',
   TECHNICAL_STAFF: 'technician',
   STAFF: 'staff',
   MANAGER: 'staff',
-  ADMIN: 'staff',
+  ADMIN: 'admin',
 }
 
 export function toUser(a: Account): User {
@@ -45,6 +45,13 @@ export function toUser(a: Account): User {
 /** `POST /auth/login`: stores the tokens and returns the user. */
 export async function apiLogin(email: string, password: string): Promise<User> {
   const r = await api<TokenOut>('/auth/login', { method: 'POST', body: { email, password }, auth: false })
+  setTokens({ access: r.access_token, refresh: r.refresh_token })
+  return toUser(r.account)
+}
+
+/** `POST /auth/google`: customers only. The backend verifies the Google ID token; a first sign-in creates the account. */
+export async function apiGoogleLogin(idToken: string): Promise<User> {
+  const r = await api<TokenOut>('/auth/google', { method: 'POST', body: { id_token: idToken }, auth: false })
   setTokens({ access: r.access_token, refresh: r.refresh_token })
   return toUser(r.account)
 }

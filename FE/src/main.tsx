@@ -6,6 +6,7 @@ import './styles/shell.css'
 import './store/theme'
 import App from './App.tsx'
 import { startSession } from './store/store'
+import './styles/responsive.css'
 
 // Check the saved sign-in against the backend before the first render settles.
 startSession()

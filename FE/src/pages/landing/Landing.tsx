@@ -4,15 +4,16 @@ import Showcase from './components/Showcase'
 import Modes from './components/Modes'
 import Cta from './components/Cta'
 import './landing.css'
+import './landing-redesign.css'
 
 export default function Landing() {
   return (
-    <>
+    <div className="lp-root">
       <Header />
       <Hero />
       <Modes />
       <Showcase />
       <Cta />
-    </>
+    </div>
   )
 }

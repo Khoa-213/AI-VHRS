@@ -4,8 +4,8 @@ from sqlalchemy import text
 
 from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
-from app.api.v1 import (acceptance, admin, auth, catalog, customer_quotes, manager, manager_ops, me, messages, orders,
-                        payments, pricing, scheduling, technician, workshop)
+from app.api.v1 import (admin, auth, catalog, customer_quotes, manager, manager_ops, me, messages, orders, payments,
+                        pricing, scheduling, workshop)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 
@@ -35,8 +35,6 @@ TAGS = [
     {"name": "Manager", "description": "UC-44, UC-47 · FR-30, FR-39, FR-41, FR-42. Chỉ MANAGER: phân công Staff, duyệt điều chỉnh giá, vật tư, mẫu chữ, robot, bảng giá có phiên bản."},
     {"name": "Payments", "description": "FR-17..20 · UC-16. Đặt cọc qua cổng thanh toán MOCK (không có tiền thật) + webhook có chữ ký."},
     {"name": "Scheduling", "description": "FR-37, FR-40 · BR-18. Manager: hàng đợi, gợi ý và xếp lịch sản xuất, đổi lịch."},
-    {"name": "Technician", "description": "UC-31..39 · FR-43..49 · BR-19. Chỉ TECHNICAL_STAFF, chỉ job được giao: tải gói job (hash), chuẩn bị, hiệu chuẩn, kết quả mô phỏng, bắt đầu/kết thúc viết, sự kiện an toàn, sự cố. Chưa kết nối robot (chỉ làm khi chủ dự án yêu cầu)."},
-    {"name": "Acceptance", "description": "UC-18 · FR-28 · BR-13. Khách xem ảnh sản phẩm thật, nghiệm thu hoặc yêu cầu viết lại (1 lần miễn phí); tự nghiệm thu sau 7 ngày."},
     {"name": "Admin", "description": "FR-51 · UC-48, UC-51. Chỉ vai trò ADMIN."},
     {"name": "System", "description": "Kiểm tra sức khoẻ dịch vụ."},
 ]
@@ -87,8 +85,6 @@ v1.include_router(workshop.router)
 v1.include_router(manager.router)
 v1.include_router(manager_ops.router)
 v1.include_router(scheduling.router)
-v1.include_router(technician.router)
-v1.include_router(acceptance.router)
 v1.include_router(payments.router)
 v1.include_router(admin.router)
 

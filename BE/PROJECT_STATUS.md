@@ -16,6 +16,12 @@
 | Phase kế tiếp | 4c (thanh toán cuối + giao hàng MOCK, đề xuất tách 4c-1 / 4c-2), 4d (huỷ sau cọc + hoàn tiền, ETA), 4e (thông báo in-app + email), 5 |
 | Nhánh làm việc | `BE` (nhánh chính là `main`) |
 | Việc chờ chủ dự án | trả lời giả định 15–18 ở mục 8; xoay secret Supabase |
+| Cập nhật lần cuối | 2026-10-16 (Phase 3 code xong, **295 test pass trên Supabase**, seed Phase 3 đã áp dụng) |
+| Phase hiện tại | **Phase 3 – Cọc & Manager vận hành**: code xong, toàn bộ suite pass; **chưa commit** (chờ chủ dự án review) |
+| Đã commit | Phase 1 (khách đặt đơn), Phase 2 (xưởng tiếp nhận → báo giá) – commit `e7d0fbf` trên `origin/BE` và đã vào `main` |
+| Phase kế tiếp | Phase 4 – Sản xuất (web scope A), nghiệm thu, thanh toán cuối, giao hàng, thông báo |
+| Nhánh làm việc | `BE` (nhánh chính là `main`) |
+| Việc chờ chủ dự án | review + commit Phase 3 → rồi mới bắt đầu Phase 4 (xem mục 10) |
 
 Dự án: backend của **AI-VHRS – Xưởng Nét Việt** (đồ án): khách đặt viết/sao chép chữ viết tay tiếng Việt, xưởng làm phác thảo bằng AI,
 báo giá, thu cọc, xếp lịch cho robot cánh tay Fairino FR3 viết lên giấy. **Chỉ làm BE** (`/BE`); không đụng `FE/`, `Mobile/`.
@@ -46,19 +52,19 @@ Tài khoản demo trên Supabase: `customer@example.com`, `khach@example.com`, `
 | 4c | Thanh toán cuối `(G−D)+F_ship` (2 dòng FINAL + SHIPPING), giao hàng (carrier MOCK, webhook `DELIVERED` → `COMPLETED`), nhận tại xưởng | ⬜ chưa làm |
 | 4d | Huỷ sau cọc + hoàn tiền (BR-14/16), xử lý khoản `needs_refund`, ETA & dời ETA (BR-15/16) | ⬜ chưa làm |
 | 4e | Notification center (in-app) + email thay hook `notify()` | ⬜ chưa làm |
+| **3** | Khách duyệt báo giá + chọn % cọc, **cọc qua cổng MOCK + webhook ký HMAC idempotent**, khách huỷ khi chưa cọc; Manager: giấy/bút/mực/tồn kho/tương thích, mẫu chữ, duyệt bộ nét, robot, **bảng giá có phiên bản** (gồm ngưỡng BR-09 & % cọc tối thiểu), **lập lịch sản xuất** (gợi ý, xếp, đổi, gỡ, xếp lại khi FAILED) | ✅ code xong + test pass (295/295 toàn suite), **chưa commit** |
+| 4 | Technical Staff (web scope A: xem/tải gói job + hash, Calibration dạng bản ghi, JobEvent, Incident, ảnh sản phẩm + QC ≥2 ảnh BR-21, trừ kho khi WRITTEN), nghiệm thu / viết lại ≤1 lần free (BR-13), thanh toán cuối + giao hàng (carrier MOCK), ETA & dời ETA (BR-15/16), **huỷ sau cọc + hoàn tiền (BR-14/16)**, notification center + email, xử lý khoản `needs_refund` | ⬜ chưa làm |
 | 5 | Admin (tích hợp, `system_settings`, dashboard hệ thống), báo cáo Manager, **scheduled jobs** (hết hạn báo giá chủ động, nhắc/tự nghiệm thu, xoá ảnh 90 ngày BR-23, huỷ cọc quá hạn), OTP SMS, showcase, review | ⬜ chưa làm |
 
 ## 4. Bản đồ code (`BE/app`)
 
 ```
 api/v1/*        route mỏng: auth, me, catalog, pricing, orders, customer_quotes, messages, payments,
-                workshop (Staff+Manager), manager (phân công, duyệt giá), manager_ops (vật tư/giá/robot), scheduling (+ nhật ký job, sự cố),
-                technician (sàn sản xuất + ảnh/QC), acceptance (khách nghiệm thu), admin
-api/*schemas.py Pydantic in/out (tách khỏi ORM): schemas, order_schemas, staff_schemas, ops_schemas, photo_schemas
+                workshop (Staff+Manager), manager (phân công, duyệt giá), manager_ops (vật tư/giá/robot), scheduling, admin
+api/*schemas.py Pydantic in/out (tách khỏi ORM): schemas, order_schemas, staff_schemas, ops_schemas
 services/       nghiệp vụ: orders, pricing(thuần), quotations, payments, manager_catalog, scheduling, staff_orders, sketches,
-                messages, notifications(hook, chưa gửi), audit, workshop_access(phân quyền bản ghi), technician (vòng đời job),
-                product_photos (ảnh + QC, nộp ảnh, QC fail), acceptance (nghiệm thu, viết lại, tự nghiệm thu), stroke_ai/ (AI thật)
-domain/         luật thuần (không DB): quotation_rules, payment_rules, pricing_config_rules, scheduling_rules, job_rules, photo_rules (ảnh/QC/nghiệm thu)
+                messages, notifications(hook, chưa gửi), audit, workshop_access(phân quyền bản ghi), stroke_ai/ (AI thật)
+domain/         luật thuần (không DB): quotation_rules, payment_rules, pricing_config_rules, scheduling_rules
 repositories/   truy cập dữ liệu (không nghiệp vụ): accounts, catalog, orders, workshop, ops
 models/         ORM ánh xạ bảng có sẵn: account, catalog, order, sketch, ops   (schema do SQL migration sở hữu)
 integrations/   storage (Supabase Storage + InMemoryStorage cho test), payment_gateway (MOCK), mailer (console)
@@ -69,7 +75,7 @@ tests/          conftest.py (dọn dữ liệu tiền tố pytest_) + test_* (xe
 ```
 Luồng một request: `api` → `services` → `repositories` → `models`. **Trạng thái đơn do trigger DB `fn_order_state_guard` quyết định**
 (service chỉ UPDATE; sai → lỗi `P0409` → HTTP 409 `STATE_CONFLICT`); không nhân đôi luật chuyển trạng thái ở Python.
-Trạng thái báo giá/job **không** có trigger: do service kiểm tra (job: `domain/job_rules.py`; mỗi bước job đổi kèm `production_status` của đơn trong cùng giao dịch, BR-17).
+Trạng thái báo giá/job **không** có trigger: do service kiểm tra.
 
 ## 5. Quyết định kiến trúc đã chốt (không đổi nếu chưa hỏi chủ dự án)
 
@@ -78,7 +84,7 @@ Trạng thái báo giá/job **không** có trigger: do service kiểm tra (job: 
 - Phân quyền bản ghi: đơn của người khác → **404**; sai vai trò → **403**. Staff thấy đơn được giao + pool `SUBMITTED` chưa ai nhận (chỉ đọc tới khi nhận); Manager thấy mọi đơn không phải `DRAFT`.
 - **Manager không xử lý đơn như Staff** (chủ dự án chọn 2026-10-17): Manager chỉ **đọc** mọi đơn, phân công Staff, duyệt/từ chối giá vượt ngưỡng, quản vật tư/mẫu chữ/robot/bảng giá/ngưỡng %, lập lịch; mọi lệnh ghi trong `/workshop/*` (accept, reject, phác thảo, báo giá, điều chỉnh, gửi) là **STAFF only**; Manager **được** nhắn tin với khách trong chat để xử lý khiếu nại; Manager không tự duyệt giá của chính mình. Ma trận quyền toàn API được test tự động ở `tests/test_permission_matrix.py`.
 - **Admin chỉ quản trị hệ thống** (tài khoản, tích hợp, tham số, audit); **không** xem/sửa đơn, giá, sản xuất (override Report 3). Manager lo đơn/sản xuất/giá/vật tư.
-- **Kết nối robot thật (SDK Fairino, Robot Agent, serial/IoT) thuộc phạm vi BE nhưng CHƯA làm: chỉ làm khi chủ dự án yêu cầu rõ.** Mặc định chừa lại, làm các luồng tương tác với web app trước. Trong lúc chưa kết nối: không gọi SDK/serial/lệnh chuyển động, kết quả mô phỏng và dữ liệu lực/tiến độ do client báo lên (hoặc nhập thủ công) và BE chỉ ghi nhận. (Chủ dự án xác nhận 2026-10-18: việc kết nối robot vẫn do BE làm, nhưng chỉ khi họ yêu cầu.) Cổng thanh toán/vận chuyển là **MOCK** có nhãn `mode=MOCK`; mô phỏng không bao giờ được báo như thao tác thật.
+- **Không kết nối robot thật** (không SDK Fairino, serial, lệnh chuyển động). Cổng thanh toán/vận chuyển là **MOCK** có nhãn `mode=MOCK`; mô phỏng không bao giờ được báo như thao tác thật.
 - AI là thật nhưng **cổ điển, không gọi dịch vụ ngoài**: OT-1 (CV: thinning Zhang-Suen, đồ thị nét…), OT-3 (font một nét Hershey + ghép dấu tiếng Việt NFD). OT-2 không sinh tự động (R&D).
 - Loại đơn khách được đặt: `system_settings.order_types_enabled` = `["OT1_COPY_RESTORE","OT3_TEMPLATE"]` (OT-2 tắt).
 - Nguồn ngưỡng điều chỉnh giá (BR-09) và % cọc tối thiểu (BR-10): **`pricing_configs`** (có phiên bản, mỗi báo giá giữ snapshot). Khoá `system_settings.price_adjust_threshold_pct` (migration 0002) **không được code đọc**.
@@ -101,8 +107,6 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 | `test_api_payments.py` | Phase 3: duyệt báo giá, cọc MOCK, webhook, huỷ | có |
 | `test_api_manager_ops.py` | Phase 3: vật tư, tồn kho, mẫu chữ, bộ nét, robot, bảng giá | có |
 | `test_api_scheduling.py` | Phase 3: lịch sản xuất, xung đột, đổi/gỡ, FAILED | có |
-| `test_job_rules.py` | Phase 4a: luật thuần của job (máy trạng thái, sự kiện máy trạm, hiệu chuẩn, mô phỏng, tồn kho) | không |
-| `test_api_technician.py` | Phase 4a: BR-19, tải gói + hash, vòng đời job, đồng thời, sự cố + xếp lại, đơn bị huỷ/robot bảo trì | có |
 | `test_storage_live.py` | Supabase Storage thật | có + service key |
 
 **Kết quả gần nhất (ghi lại sau mỗi lần chạy toàn bộ):**
@@ -133,17 +137,9 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 5. Từ chối chính sách riêng tư = **huỷ đơn**. Khách huỷ được khi `QUOTED`/`AWAITING_DEPOSIT` (chưa trả tiền); sau cọc chưa huỷ online được.
 6. Báo giá nhiều phương án vật tư **không** điều chỉnh giá được; báo giá thiếu logo xưởng (chỉ header chữ; đặt `app/assets/logo.png` để in logo).
 7. Hết hạn báo giá chạy **lười** (khi có người đọc đơn); scheduler chủ động ở Phase 5. Cọc quá hạn chưa tự huỷ đơn (Phase 5).
-8. Thông báo (MSG07/08/10, `DEPOSIT_PAID`, `JOB_ASSIGNED`, `JOB_SAFETY_STOP`, `INCIDENT_REPORTED`) mới chỉ ghi log qua hook `services/notifications.notify()`; gửi thật ở Phase 4. Mã `DEPOSIT_PAID`/`JOB_ASSIGNED` do AI đặt tên vì chưa có bảng mã MSG đầy đủ.
+8. Thông báo (MSG07/08/10, `DEPOSIT_PAID`, `JOB_ASSIGNED`) mới chỉ ghi log qua hook `services/notifications.notify()`; gửi thật ở Phase 4. Mã `DEPOSIT_PAID`/`JOB_ASSIGNED` do AI đặt tên vì chưa có bảng mã MSG đầy đủ.
 9. Webhook MOCK ký bằng khoá dẫn xuất từ `JWT_SECRET`; cổng thật sẽ có khoá riêng (Phase 5 – tích hợp).
-10. ~~Đường REWRITE_REQUIRED của lập lịch chưa có test đầu-cuối~~ → **đã có** ở Phase 4b (`test_api_photos_acceptance.py`: viết lại → Manager xếp lại → job mới `is_rewrite` → ảnh → nghiệm thu).
-11. **Phase 4a (AI chọn, cần xác nhận):** checklist hiệu chuẩn gồm `frame_mounted`, `paper_clamped`, `pen_installed`, `force_zeroed` (SRS chỉ nói "khung/giấy/bút + zero lực"); điểm dò ≥ 3 và P0, P1, P2 không thẳng hàng; mỗi lần hiệu chuẩn lại thì phải mô phỏng lại.
-12. **Tồn kho khi `WRITTEN`** (SRS chỉ nói "trừ tồn kho"): giấy = số lượng × số trang trong quỹ đạo, bút 1, mực 1 mỗi job; tồn không đủ thì về 0, ghi `shortfall` vào sự kiện `WRITTEN` và **không chặn** việc đã viết xong. Viết lại (job mới) trừ thêm.
-13. **Chưa kết nối robot (theo quyết định 2026-10-18, mục 5):** BE hiện chỉ nhận kết quả mô phỏng và các sự kiện tiến độ/an toàn do client (web/app) báo lên; BE chưa tự mô phỏng/kiểm tra động học và chưa gửi lệnh nào tới robot. Khi chủ dự án yêu cầu kết nối, các endpoint `/technician/*` giữ nguyên hợp đồng, chỉ thêm adapter Robot Agent phía sau (cổng `integrations/` + mock, như thanh toán). Có thể bắt đầu chuẩn bị trước `slot_start` (không ép giờ). Robot không được đổi sang `BUSY` khi job chạy (để lịch tương lai của robot vẫn xếp được).
-14. Sự cố chưa đính kèm ảnh (cột `photo_urls` để trống tới bước ảnh, 4b). Sự cố chỉ báo được khi job đã `PREPARING`/`WRITING`/`PAUSED`; job `SCHEDULED` thì Manager tự gỡ/đổi lịch.
-15. **Phase 4b (AI chọn, cần xác nhận):** ảnh sản phẩm chỉ jpg/png, ≤ `max_upload_mb`, cạnh dài ≥ 1280 px, tối đa 10 ảnh/job (SRS chỉ nói ≥ 2 ảnh); mỗi ảnh còn hiện phải QC = PASS (trigger DB yêu cầu); ảnh QC FAIL phải ghi lý do và phải xoá (xoá mềm) hoặc đổi sang PASS trước khi nộp.
-16. **Viết lại (BR-13):** yêu cầu của khách được **duyệt tự động** (bắt buộc chọn `WORKSHOP_ERROR`/`DIFFERS_FROM_SKETCH` + mô tả ≥ 5 ký tự), vì DB không có trạng thái "chờ duyệt viết lại"; Staff/Manager chỉ được thông báo. Lần 2 → `409 REWRITE_LIMIT_REACHED`. **QC không đạt do xưởng** (`/technician/jobs/{id}/qc-fail`) **không** tiêu lượt miễn phí của khách. Viết lại trừ kho vật tư thêm một lần nữa (giả định #12). Tính phí viết lại lần 2: chưa có chính sách giá.
-17. **Tự nghiệm thu:** kiểm tra "lười" khi khách đọc `product-photos`/`accept`/`rewrite` (giống hết hạn báo giá); hạn = `awaiting_acceptance_at` + `system_settings.auto_accept_days` (7). Chưa có tiến trình nền, chưa nhắc sau 3 ngày (`accept_reminder_days`) → Phase 5 / 4e. Đơn không ai đọc thì vẫn `AWAITING_ACCEPTANCE` cho tới khi scheduler chạy.
-18. `overlay_url` (ảnh chồng phác thảo) **không** do BE tạo (cần căn chỉnh giấy, NFR-04); client tự chồng `sketch_preview_url`. ETA không tự dời khi viết lại (Phase 4d).
+10. Đường REWRITE_REQUIRED của lập lịch có code (`is_rewrite`) nhưng **chưa có test đầu-cuối** (cần luồng nghiệm thu của Phase 4).
 
 ## 9. Changelog (mới nhất trước)
 
@@ -153,6 +149,8 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 
 - **2026-10-18 – Tài liệu gốc vào repo** (commit `bae2a48`): thêm `docs/source/` (chép markdown từ Report 1, 2, 3/SRS, danh sách chức năng & entity bản 2, phiếu đăng ký đề tài, và bản UI 3-actor đã đánh dấu lỗi thời) + `README.md` chỉ mục, bảng quyết định đã override, luật Phase 4–5 đã có đáp án và các điểm tài liệu còn mơ hồ; cập nhật `CLAUDE.md`, `AI_PLAYBOOK.md` mục 0.
 - **2026-10-18 – Biến môi trường Google**: `GOOGLE_CLIENT` là tên chính (khớp Render), `GOOGLE_CLIENT_ID` vẫn được đọc (`core/config.py` dùng `AliasChoices`); cập nhật `.env.example`, `DEPLOY.md`, `FE_API_GUIDE.md`. Đã chạy lại toàn bộ suite trên Supabase sau thay đổi này: 323 passed (xem mục 6).
+- **2026-10-18 – Tài liệu gốc vào repo** (chưa commit): thêm `docs/source/` (chép markdown từ Report 1, 2, 3/SRS, danh sách chức năng & entity bản 2, phiếu đăng ký đề tài, và bản UI 3-actor đã đánh dấu lỗi thời) + `README.md` chỉ mục, bảng quyết định đã override, luật Phase 4–5 đã có đáp án và các điểm tài liệu còn mơ hồ; cập nhật `CLAUDE.md`, `AI_PLAYBOOK.md` mục 0.
+- **2026-10-18 – Biến môi trường Google**: `GOOGLE_CLIENT` là tên chính (khớp Render), `GOOGLE_CLIENT_ID` vẫn được đọc (`core/config.py` dùng `AliasChoices`); cập nhật `.env.example`, `DEPLOY.md`, `FE_API_GUIDE.md`. Chưa chạy lại toàn bộ suite trên Supabase sau thay đổi này (lần chạy 2026-10-18 bị ngắt giữa chừng); đã chạy trên Postgres cục bộ trước khi đổi: 322 passed, 1 skipped.
 
 - **2026-10-17 – Chọn vật tư**: `GET /catalog/suggest-materials?paper_type_id=` (bút tương thích + mực, công khai); "để xưởng chọn" giữ nguyên lựa chọn của khách, Staff chỉ điền phần thiếu và vẫn theo luật tương thích (`MATERIAL_LOCKED_BY_CUSTOMER`); `GET /workshop/orders/{id}/material-suggestions` liệt kê tổ hợp còn đề xuất được; `MaterialOptionIn` các trường đều tuỳ chọn. Không đổi schema, không thêm cảnh báo chất lượng. Tương thích giấy–bút–mực là **bảng quy tắc do con người thiết lập** (không có AI nhận diện): seed ban đầu theo BR-06, Manager chỉnh qua `/manager/compatibility`.
 - **2026-10-17 – Đăng nhập Google**: `POST /auth/google {id_token}` (`integrations/google_auth.py` xác minh qua Google tokeninfo: aud/iss/exp/email_verified; `AuthService.login_google`). **Không đổi schema**: khớp tài khoản theo email đã xác minh, chỉ khách hàng (email nội bộ → 403 `GOOGLE_NOT_ALLOWED`), tạo `CUSTOMER` mới nếu chưa có. Cần env `GOOGLE_CLIENT_ID` (Web client từ Google Cloud Console); chưa có thì endpoint trả 503. Test: luật xác minh trên verifier thật với transport giả lập, logic tài khoản trên DB thật; **chưa thử với token Google thật**.
@@ -168,3 +166,7 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 2. **Phase 4b**: ảnh sản phẩm + QC (upload qua storage, `product_photos`, trigger BR-21 đã chặn sẵn) → `PHOTO_UPLOADED` → `AWAITING_ACCEPTANCE`; khách nghiệm thu / yêu cầu viết lại (1 lần miễn phí; lần 2 báo "liên hệ xưởng"); đường `REWRITE_REQUIRED` → xếp lại (giả định #10 cần test đầu-cuối). Sau đó 4c (thanh toán cuối + giao hàng), 4d (huỷ sau cọc, hoàn tiền, ETA), 4e (thông báo). Mỗi phần: đọc `docs/source/README.md` (luật đã có sẵn đáp án), trình bày kế hoạch, chờ "duyệt".
 3. Việc tồn của chủ dự án: **xoay (rotate) `service_role` key, `JWT_SECRET`, mật khẩu DB Supabase** (đã bị dán vào chat), xác nhận đơn mồ côi, duyệt chính sách riêng tư, nhập giá/tồn thật, gửi lại Report 3 EN bản "theo phiếu mới" (có FR-52/BR-25, bảng trạng thái 2.5.x), đổi mật khẩu demo trước khi deploy.
 4. Chỗ nợ kỹ thuật nhỏ: `conftest.py` còn vài `SyntaxWarning` (`'\_'`) từ trước; FE cần poll vì chưa có thông báo đẩy; chưa có DB Supabase riêng cho test (chủ dự án chọn tiếp tục dùng Supabase thật).
+1. Chủ dự án review + commit Phase 3 (AI **không** tự commit/push).
+2. Khi bắt đầu Phase 4: đọc `AI_PLAYBOOK.md`, trình bày kế hoạch (phạm vi FR/UC, endpoint, entity, file đổi, test, giả định), **chờ "duyệt"**, rồi code. Ưu tiên: Technical Staff (job/gói job/JobEvent/Incident/ảnh+QC), nghiệm thu & viết lại, thanh toán cuối + giao hàng MOCK, huỷ sau cọc + hoàn tiền (kể cả xử lý `needs_refund`), ETA/dời ETA, notification center + email.
+3. Việc tồn của chủ dự án: **xoay (rotate) `service_role` key Supabase** (từng bị dán vào chat), xác nhận đơn mồ côi, duyệt chính sách riêng tư, nhập giá/tồn thật, gửi lại Report 3 EN bản mới + BR-25 nếu muốn đối chiếu, đổi mật khẩu demo trước khi deploy.
+4. Chỗ nợ kỹ thuật nhỏ: `conftest.py` còn vài `SyntaxWarning` (`'\_'`) từ trước; FE cần poll vì chưa có thông báo đẩy.

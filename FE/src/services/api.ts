@@ -156,6 +156,11 @@ export function authErrorKey(e: unknown): string {
   if (!(e instanceof ApiError)) return 'auth.err.unknown'
   switch (e.code) {
     case 'INVALID_CREDENTIALS': return 'auth.err.credentials'
+    case 'GOOGLE_TOKEN_INVALID': return 'auth.err.googleInvalid'
+    case 'GOOGLE_EMAIL_NOT_VERIFIED': return 'auth.err.googleUnverified'
+    case 'GOOGLE_NOT_ALLOWED': return 'auth.err.googleNotAllowed'
+    case 'GOOGLE_NOT_CONFIGURED':
+    case 'GOOGLE_UNAVAILABLE': return 'auth.err.googleDown'
     case 'ACCOUNT_DISABLED': return 'auth.err.disabled'
     case 'ACCOUNT_TEMP_LOCKED': return 'auth.err.locked'
     case 'RATE_LIMITED': return 'auth.err.rate'

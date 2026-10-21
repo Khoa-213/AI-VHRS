@@ -1,0 +1,104 @@
+/* Workshop building blocks (order list and detail, quotation, sketch, schedule, catalog) in the Paperpillar look. */
+.ws .wk-layout{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+.ws .wk-list{flex:0 1 380px;min-width:300px;background:#fff;border-radius:26px;padding:22px 24px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px}
+.ws .wk-list-title{margin:0;font-size:18px;font-weight:600}
+.ws .wk-list ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.ws .wk-search{height:48px;border-radius:24px;background:var(--field);border:none;padding:0 20px}
+.ws .wk-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.ws .wk-filters .vh-select{flex:1 1 140px;height:40px}
+.ws .wk-check{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink2)}
+.ws .wk-check input{accent-color:var(--acc);width:18px;height:18px}
+.ws .wk-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 4px;border-bottom:1px solid var(--line);color:inherit}
+.ws .wk-item:hover{background:var(--field);border-radius:14px}
+.ws .wk-item.on{background:var(--acc-soft);border-radius:16px;padding-left:12px;padding-right:12px;border-bottom-color:transparent}
+.ws .wk-item-main{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ws .wk-item-main b{font-weight:600;font-size:14px}
+.ws .wk-item-main span{font-size:12px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws .wk-item-side{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:12px;color:var(--ink2);flex:none}
+.ws .wk-detail{flex:999 1 640px;min-width:0}
+.ws .wk-page{display:flex;flex-direction:column;gap:18px}
+.ws .wk-order{display:flex;flex-direction:column;gap:18px}
+.ws .wk-order-head,.ws .wk-block{background:#fff;border-radius:26px;padding:22px 24px;box-shadow:var(--shadow);min-width:0}
+.ws .wk-order-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.ws .wk-order-head h2,.ws .wk-order-head h3{margin:0;font-size:22px;font-weight:600}
+.ws .wk-order-head h3{font-size:17px}
+.ws .wk-block{display:flex;flex-direction:column;gap:14px}
+.ws .wk-block>h3{margin:0;font-size:18px;font-weight:600}
+.ws .wk-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.55;color:var(--ink)}
+.ws .wk-warn{margin:0;border-radius:14px;padding:11px 14px;background:var(--beige1);color:var(--beige3);font-weight:600;font-size:13px}
+.ws .wk-rows{margin:0;display:flex;flex-direction:column;gap:11px}
+.ws .wk-rows>div{display:flex;justify-content:space-between;gap:16px;font-size:14px}
+.ws .wk-rows dt{color:var(--ink3)}
+.ws .wk-rows dd{margin:0;font-weight:600;text-align:right;overflow-wrap:anywhere}
+.ws .wk-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 14px}
+.ws .wk-form .vh-label{min-width:140px}
+.ws .wk-grow{flex:1 1 220px}
+.ws .wk-self{align-self:flex-start}
+.ws .wk-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.ws .wk-link{align-self:flex-start}
+.ws .wk-sketches{display:flex;flex-direction:column;gap:14px}
+.ws .wk-sketch{display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:20px;background:var(--field)}
+.ws .wk-sketch.final{background:var(--acc-soft)}
+.ws .wk-sketch header{display:flex;align-items:center;justify-content:space-between}
+.ws .wk-final{font-size:12px;font-weight:700;color:var(--green3)}
+.ws .wk-previews{display:flex;flex-wrap:wrap;gap:8px}
+.ws .wk-previews img{max-width:100%;max-height:320px;background:#fbfaf5;border-radius:6px}
+.ws .wk-status{font-weight:700}
+.ws .wk-options{margin:0;padding-left:18px;font-size:13px;color:var(--ink2)}
+.ws .wk-lines summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--ink2)}
+.ws .wk-jobs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.ws .wk-jobs li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:16px;background:var(--field);font-size:14px}
+.ws .wk-job{flex-direction:column;align-items:stretch}
+.ws .wk-job-main{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ws .wk-inline{display:flex;gap:8px;align-items:center}
+.ws .wk-inline .vh-input{height:36px;width:200px}
+.ws .wk-tabs{display:inline-flex;flex-wrap:wrap;gap:4px;padding:5px;border-radius:26px;background:#fff;box-shadow:var(--shadow);align-self:flex-start}
+.ws .wk-tabs button{padding:9px 18px;border:none;border-radius:21px;background:transparent;color:var(--ink2);font-family:inherit;font-size:13px;font-weight:600}
+.ws .wk-tabs button.on{background:var(--ink);color:#fff}
+/* catalog (manager) */
+.ws .mg{max-width:none}
+.ws .mg-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.ws .mg-rows>li{display:flex;flex-direction:column;gap:8px;padding:12px 16px;border-radius:18px;background:var(--field)}
+.ws .mg-rows>li.off{opacity:.55}
+.ws .mg-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.ws .mg-name{display:flex;flex-direction:column;gap:2px;min-width:200px;flex:1 1 220px}
+.ws .mg-name small{font-size:12px;color:var(--ink3)}
+.ws .mg-inline{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink3)}
+.ws .mg-inline .vh-input,.ws .mg-inline .vh-select{width:110px;height:36px}
+.ws .mg-stock{font-size:12px;color:var(--ink2)}
+.ws .mg-color{width:44px;height:36px;padding:0;border:none;background:none;cursor:pointer}
+.ws .mg-reason{flex:1 1 180px;height:36px}
+.ws .mg-cats{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+.ws .mg-price .vh-label{flex:1 1 150px}
+.ws .co-ink-dot{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px}
+/* shared controls from the app, in the workshop look */
+.ws .vh-btn{border-radius:23px;font-family:inherit}
+.ws .vh-btn--primary{background:var(--acc);color:#fff;border:none}
+.ws .vh-btn--ghost{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1.5px #d6d4cd;border:none}
+.ws .vh-btn--white{background:#fff;color:var(--ink);border:none;box-shadow:inset 0 0 0 1.5px #d6d4cd}
+.ws .vh-input,.ws .vh-select,.ws .vh-textarea{background:var(--field);border:none;border-radius:14px;color:var(--ink);font-family:inherit}
+.ws .vh-select{height:44px;padding:0 14px}
+.ws .vh-input{height:44px}
+.ws .vh-textarea{border-radius:16px}
+.ws .vh-input:focus,.ws .vh-select:focus,.ws .vh-textarea:focus{outline:2px solid var(--acc);outline-offset:0;border:none}
+.ws .vh-label{font-size:12px;font-weight:600;color:var(--ink3)}
+.ws .vh-link{color:var(--acc);font-weight:700;background:none;border:none;padding:0;font-family:inherit;cursor:pointer}
+.ws .lg-error{margin:0;font-size:13px;font-weight:600;color:var(--red3)}
+.ws .vh-callout{border-radius:16px;padding:14px 16px;background:var(--beige1)}
+.ws .vh-callout--red{background:var(--red1)}
+.ws .vh-callout--teal,.ws .vh-callout--green{background:var(--green1)}
+.ws .vh-callout b{color:var(--ink)}
+.ws .vh-callout span{color:var(--ink2)}
+.ws .opv{background:var(--field);border-radius:20px}
+.ws .chat-log{background:var(--field)}
+.ws .chat-msg{background:#fff}
+.ws .chat-msg.mine{background:var(--acc-soft)}
+.ws .chat-title{font-size:18px;font-weight:600}
+.ws .chat-unread{background:var(--acc);color:#fff;border-radius:10px}
+.ws .vh-stack{display:flex;flex-direction:column;gap:8px}
+.ws .cmp{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.ws .cmp .c2{display:flex;flex-direction:column;gap:2px}
+.ws .cmp .c2 b{font-size:26px;font-weight:600}
+
+body:has(.ws){background:#ebe9e4}
+.ws{min-height:100dvh}

@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
+import Shell from '../../components/ws/Shell'
 import type { Job as JobFn } from '../../services/async'
-import SkipLink from '../../components/ui/SkipLink'
-import ThemeToggle from '../../components/ui/ThemeToggle'
-import LanguageToggle from '../../components/ui/LanguageToggle'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import {
@@ -13,12 +11,8 @@ import {
 } from '../../services/manage'
 import { errText, orderErrorKey } from '../../services/orders'
 import { fmt } from '../../utils/format'
-import StaffRail from './StaffRail'
-import './dashboard.css'
-import './polish.css'
-import './workshop.css'
 
-const TABS = ['papers', 'pens', 'inks', 'compat', 'templates', 'styles', 'robots', 'pricing'] as const
+const TABS = ['papers', 'pens', 'inks', 'compat', 'templates', 'styles', 'robots'] as const
 type Tab = (typeof TABS)[number]
 
 /** Runs a change with one busy flag and one error line for the whole tab. */
@@ -48,37 +42,22 @@ export default function Catalog() {
   const t = useT()
   const [tab, setTab] = useState<Tab>('papers')
   return (
-    <div className="sd">
-      <SkipLink />
-      <StaffRail active="catalog" />
-      <main className="sd-body" id="main">
-        <header className="sd-top">
-          <div>
-            <h1>{t('mg.title')}</h1>
-            <p>{t('mg.lede')}</p>
-          </div>
-          <div className="sd-top-right">
-            <ThemeToggle className="vh-icon-btn" />
-            <LanguageToggle className="vh-icon-btn" />
-          </div>
-        </header>
-        <div className="wk-page mg">
-          <div className="wk-tabs" role="tablist">
-            {TABS.map((x) => (
-              <button key={x} role="tab" aria-selected={tab === x} className={tab === x ? 'on' : ''} onClick={() => setTab(x)}>{t(`mg.tab.${x}`)}</button>
-            ))}
-          </div>
-          {tab === 'papers' && <Papers />}
-          {tab === 'pens' && <Pens />}
-          {tab === 'inks' && <Inks />}
-          {tab === 'compat' && <Compat />}
-          {tab === 'templates' && <Templates />}
-          {tab === 'styles' && <Styles />}
-          {tab === 'robots' && <Robots />}
-          {tab === 'pricing' && <Pricing />}
+    <Shell area="manager" active="catalog" title={t('mg.title')} lede={t('mg.lede')}>
+      <div className="wk-page mg">
+        <div className="wk-tabs" role="tablist">
+          {TABS.map((x) => (
+            <button key={x} role="tab" aria-selected={tab === x} className={tab === x ? 'on' : ''} onClick={() => setTab(x)}>{t(`mg.tab.${x}`)}</button>
+          ))}
         </div>
-      </main>
-    </div>
+        {tab === 'papers' && <Papers />}
+        {tab === 'pens' && <Pens />}
+        {tab === 'inks' && <Inks />}
+        {tab === 'compat' && <Compat />}
+        {tab === 'templates' && <Templates />}
+        {tab === 'styles' && <Styles />}
+        {tab === 'robots' && <Robots />}
+      </div>
+    </Shell>
   )
 }
 
@@ -477,17 +456,17 @@ const FIELDS: { key: keyof PriceList; api: string; label: string; money?: boolea
   { key: 'canvasMmPerChar', api: 'canvas_mm_per_char', label: 'mg.p.canvas' },
 ]
 
-function Pricing() {
+export function PricingPanel() {
   const t = useT()
   const locale = useLocale()
   const list = useAsync(priceVersions, [])
+  const [edit, setEdit] = useState<Record<string, string>>({})
+  const [note, setNote] = useState('')
   const { busy, err, run } = useRun(() => {
     setEdit({})
     setNote('')
     void list.reload()
   })
-  const [edit, setEdit] = useState<Record<string, string>>({})
-  const [note, setNote] = useState('')
   const [tiers, setTiers] = useState<{ minQty: string; pct: string }[] | null>(null)
   const versions = list.data ?? []
   const cur = versions.find((v) => v.active) ?? versions[0]

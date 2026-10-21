@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { Order, Profile, OrderStatus, QcReport, User } from '../types'
 import { getTokens, onSessionExpired } from '../services/api'
-import { apiLogin, apiLogout, apiMe, apiUpdateMe } from '../services/auth'
+import { apiGoogleLogin, apiLogin, apiLogout, apiMe, apiUpdateMe } from '../services/auth'
 
 /**
  * App state in small subscribable stores. The signed-in user comes from the
@@ -161,6 +161,14 @@ export function useOrder(id: string | null): Order | null {
 /** Signs in against the backend. Throws an `ApiError` (see `authErrorKey`). */
 export async function signInWithPassword(email: string, password: string): Promise<User> {
   const user = await apiLogin(email.trim(), password)
+  expiredStore.set(false)
+  userStore.set(user)
+  return user
+}
+
+/** Signs in with a Google ID token (customers). Throws an `ApiError`. */
+export async function signInWithGoogle(idToken: string): Promise<User> {
+  const user = await apiGoogleLogin(idToken)
   expiredStore.set(false)
   userStore.set(user)
   return user

@@ -139,7 +139,7 @@ export interface Profile {
   payMethod: string | null
 }
 
-export type Role = 'customer' | 'staff' | 'technician'
+export type Role = 'customer' | 'staff' | 'technician' | 'admin'
 
 export interface User {
   name: string

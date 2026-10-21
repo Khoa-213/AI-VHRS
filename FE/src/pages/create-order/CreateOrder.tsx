@@ -16,7 +16,14 @@ import { fmt } from '../../utils/format'
 import { ApiError } from '../../services/api'
 import { draftPathFor, drawPathFor } from './draft'
 import PhotoRow from './PhotoRow'
+import TemplateCard from './TemplateCard'
+import SignInDialog from './SignInDialog'
+import Header from '../landing/components/Header'
+import fr3Arm from '../../assets/fr3-arm.png'
+import '../landing/landing.css'
+import '../landing/landing-redesign.css'
 import './create-order.css'
+import './order-entry.css'
 
 const MODES: InputMode[] = ['text', 'upload', 'draw']
 const STEPS = ['co.step.0', 'co.step.1', 'co.step.2']
@@ -34,6 +41,7 @@ function initialMode(): InputMode | null {
 export default function CreateOrder({ orderId: given = null }: { orderId?: number | null }) {
   const t = useT()
   const user = useUser()
+  const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null)
 
   const [order, setOrder] = useState<Order | null>(null)
   const orderRef = useRef<Order | null>(null)
@@ -56,6 +64,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [notice, setNotice] = useState('')
   const [closed, setClosed] = useState<InputMode[]>([])
   const [sizeFilter, setSizeFilter] = useState('')
+  // Templates whose preview the backend refuses cannot be sketched either, so they are not offered.
+  const [broken, setBroken] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(0)
   const [est, setEst] = useState<Estimate | null>(null)
@@ -168,8 +178,10 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   // First template is the default, so typing text is enough to start a draft.
   useEffect(() => {
-    if (templateId === null && templates.data?.length) setTemplateId(templates.data[0].id)
-  }, [templates.data, templateId])
+    const ok = templates.data?.find((x) => !broken.includes(x.id))
+    if (templateId === null && ok) setTemplateId(ok.id)
+    if (templateId !== null && broken.includes(templateId)) setTemplateId(ok?.id ?? null)
+  }, [templates.data, templateId, broken])
 
   // A paper change can make the chosen pen or ink invalid.
   useEffect(() => {
@@ -421,13 +433,29 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   if (!user) {
     return (
-      <Page label="Create Order" width={720}>
-        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
-          <h1 className="vh-h1">{t('co.signInTitle')}</h1>
-          <p className="vh-lede">{t('co.signInBody')}</p>
-          <button className="vh-btn vh-btn--primary" onClick={() => navigate(`/login?next=${encodeURIComponent('/create-order')}`)}>{t('nav.signIn')}</button>
-        </div>
-      </Page>
+      <div className="lp-root order-entry">
+        <Header />
+        <main className="order-entry-hero" aria-labelledby="order-entry-title">
+          <div className="order-entry-orbit" aria-hidden="true"><span /></div>
+          <div className="order-entry-copy">
+            <span className="order-entry-eyebrow">{t('lp.eyebrow')}</span>
+            <h1 id="order-entry-title">{t('co.signInTitle')}</h1>
+            <p>{t('co.signInBody')}</p>
+            <div className="order-entry-buttons">
+              <button type="button" className="order-entry-primary" onClick={() => setAuthMode('login')}>
+                {t('nav.signIn')}<span aria-hidden="true">↗</span>
+              </button>
+              <button type="button" className="order-entry-secondary" onClick={() => setAuthMode('register')}>{t('reg.submit')}</button>
+            </div>
+          </div>
+          <div className="order-entry-art" aria-hidden="true">
+            <span className="order-entry-brand">AI-VHRS</span>
+            <img src={fr3Arm} alt="" draggable={false} />
+          </div>
+          <div className="order-entry-footer"><span>AI-VHRS</span><span>{t('lp.eyebrow')}</span></div>
+        </main>
+        {authMode && <SignInDialog initialMode={authMode} onClose={() => setAuthMode(null)} />}
+      </div>
     )
   }
   if (user.role !== 'customer') {
@@ -555,15 +583,15 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                         <span className="co-group-label">{t('co.styleLabel')}</span>
                         <div className="co-tray co-tray--3 co-tray--keep">
                           {(templates.data ?? []).map((s) => (
-                            <button key={s.id} className={`co-opt co-font${templateId === s.id ? ' on' : ''}`} onClick={() => setTemplateId(s.id)}>
-                              <img
-                                className="co-font-preview"
-                                src={templatePreviewUrl(s.id, dText || t('co.fontSample'))}
-                                alt={t('co.templateAlt', { name: s.name })}
-                                loading="lazy"
-                              />
-                              <span className="co-font-name">{s.name}</span>
-                            </button>
+                            <TemplateCard
+                              key={s.id}
+                              template={s}
+                              text={dText || t('co.fontSample')}
+                              on={templateId === s.id}
+                              onPick={() => setTemplateId(s.id)}
+                              onBroken={() => setBroken((b) => (b.includes(s.id) ? b : [...b, s.id]))}
+                              broken={broken.includes(s.id)}
+                            />
                           ))}
                           {templates.loading && <span className="co-hint">{t('co.loading')}</span>}
                           {!!templates.error && <span className="co-hint">{errText(t, orderErrorKey(templates.error))}</span>}

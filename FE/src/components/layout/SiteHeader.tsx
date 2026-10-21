@@ -20,18 +20,21 @@ export default function SiteHeader() {
           <Link to="/#modes">{t('nav.penmanship')}</Link>
           <Link to="/#queue">{t('nav.orderQueue')}</Link>
           {user?.role === 'staff' && <Link to="/staff">{t('nav.staffDash')}</Link>}
+          {user?.role === 'admin' && <Link to="/admin">{t('nav.adminDash')}</Link>}
           {user?.role === 'technician' && <Link to="/tech">{t('nav.techDesk')}</Link>}
         </nav>
         <div className="vh-actions">
-          <button className="vh-icon-btn" aria-label={t('nav.search')}>
-            <svg width="19" height="19" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-          </button>
-          <ThemeToggle className="vh-icon-btn" />
-          <LanguageToggle className="vh-icon-btn" />
-          <AccountButton buttonClassName="vh-icon-btn" avatarClassName="vh-avatar" />
+          <div className="vh-tools">
+            <button className="vh-icon-btn" aria-label={t('nav.search')}>
+              <svg width="19" height="19" viewBox="0 0 24 24" strokeWidth="2" {...svgProps}>
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+            </button>
+            <ThemeToggle className="vh-icon-btn" />
+            <LanguageToggle className="vh-icon-btn" />
+            <AccountButton buttonClassName="vh-icon-btn" avatarClassName="vh-avatar" />
+          </div>
           <Link to={ORDER_HREF} className="vh-btn vh-btn--primary vh-btn--sm vh-start">{t('nav.startWriting')}</Link>
         </div>
       </div>
