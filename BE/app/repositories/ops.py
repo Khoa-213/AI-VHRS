@@ -32,6 +32,17 @@ class PaymentRepository:
         return list(self.s.scalars(select(Payment).where(Payment.order_id == order_id)
                                    .order_by(Payment.created_at, Payment.id)))
 
+    def by_group(self, order_id: int, group_txn: str) -> list[Payment]:
+        """Rows paid together in one gateway transaction (FINAL + SHIPPING share `gateway_payload.group_txn`)."""
+        return list(self.s.scalars(select(Payment).where(
+            Payment.order_id == order_id, Payment.gateway_payload["group_txn"].astext == group_txn).order_by(Payment.id)))
+
+    def pending_final(self, order_id: int) -> list[Payment]:
+        """Open FINAL / SHIPPING rows (the final payment is one transaction made of these two)."""
+        return list(self.s.scalars(select(Payment).where(
+            Payment.order_id == order_id, Payment.type.in_((PaymentType.FINAL, PaymentType.SHIPPING)),
+            Payment.status == PaymentStatus.PENDING).order_by(Payment.id)))
+
     def pending(self, order_id: int, ptype: PaymentType) -> list[Payment]:
         return list(self.s.scalars(select(Payment).where(
             Payment.order_id == order_id, Payment.type == ptype, Payment.status == PaymentStatus.PENDING)

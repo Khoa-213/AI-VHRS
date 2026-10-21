@@ -143,9 +143,19 @@ class PaymentService:
             raise AppError(404, "PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch.")
         if (payment.gateway_payload or {}).get("mode") != self.gateway.mode:
             raise AppError(409, "NOT_A_MOCK_PAYMENT", "Giao dịch này không phải giao dịch mô phỏng.")
-        body = gw.webhook_body(txn_id=payment.gateway_txn_id, order_code=order.code, amount=int(payment.amount),
+        body = gw.webhook_body(txn_id=payment.gateway_txn_id, order_code=order.code,
+                               amount=int(self._group_total(payment)),
                                result=result, paid_at=_now() if result == "SUCCESS" else None)
         return self.handle_webhook(payment.gateway, body, self.gateway.sign(body))
+
+    # ---- one gateway transaction can settle several rows (final payment = FINAL + SHIPPING) ----
+    def _group(self, payment: Payment) -> list[Payment]:
+        group_txn = (payment.gateway_payload or {}).get("group_txn")
+        rows = self.payments.by_group(payment.order_id, group_txn) if group_txn else []
+        return rows or [payment]
+
+    def _group_total(self, payment: Payment) -> Decimal:
+        return sum((p.amount for p in self._group(payment)), Decimal(0))
 
     # ---- gateway side (webhook) ----
     def handle_webhook(self, gateway: PaymentGateway, body: bytes, signature: str | None) -> dict[str, Any]:
@@ -162,7 +172,8 @@ class PaymentService:
         if payment is None:
             raise AppError(404, "PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch.")
         order = self.orders.get(payment.order_id, lock=True)
-        if order.code != code or int(payment.amount) != amount:
+        group = self._group(payment)
+        if order.code != code or int(sum((p.amount for p in group), Decimal(0))) != amount:
             audit.record(self.session, actor_id=None, action="PAYMENT_MISMATCH", entity_type="payment",
                          entity_id=payment.id, new={"order_code": code, "amount": amount})
             self.session.commit()                      # keep the security trail although the request itself fails
@@ -172,17 +183,33 @@ class PaymentService:
         if payment.status == PaymentStatus.CANCELLED:
             return {"result": "IGNORED", "status": payment.status.value}
 
-        payload = {**(payment.gateway_payload or {}), "webhook": data}
         if result == "FAILED":
-            payment.status, payment.gateway_payload = PaymentStatus.FAILED, payload
+            for row in group:
+                row.status, row.gateway_payload = PaymentStatus.FAILED, {**(row.gateway_payload or {}), "webhook": data}
             self.session.flush()
             audit.record(self.session, actor_id=None, action="PAYMENT_FAILED", entity_type="payment",
                          entity_id=payment.id, new={"order_id": order.id})
             return {"result": "PROCESSED", "status": "FAILED"}
 
-        payment.status, payment.paid_at, payment.gateway_payload = PaymentStatus.SUCCESS, _now(), payload
+        paid_at = _now()
+        for row in group:
+            row.status, row.paid_at = PaymentStatus.SUCCESS, paid_at
+            row.gateway_payload = {**(row.gateway_payload or {}), "webhook": data}
         self.session.flush()
-        if order.order_status == OrderStatus.AWAITING_DEPOSIT:
+        if payment.type in (PaymentType.FINAL, PaymentType.SHIPPING) and order.order_status == OrderStatus.AWAITING_FINAL_PAYMENT:
+            # Final payment (FR-18): production is already FINISHED, so only the order status moves (BR-17).
+            set_actor(self.session, None, "Thanh toán cuối thành công")
+            order.order_status = OrderStatus.READY_TO_DELIVER
+            self.session.flush()
+            audit.record(self.session, actor_id=None, action="PAYMENT_SUCCESS", entity_type="payment",
+                         entity_id=payment.id, new={"order_id": order.id, "amount": str(sum((p.amount for p in group), Decimal(0))),
+                                                    "types": [p.type.value for p in group]})
+            notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="FINAL_PAID", code=order.code)
+            if order.assigned_staff_id:
+                notifications.notify(account_id=order.assigned_staff_id, order_id=order.id, msg_code="ORDER_READY_TO_DELIVER",
+                                     code=order.code)
+            return {"result": "PROCESSED", "status": "SUCCESS", "order_status": "READY_TO_DELIVER"}
+        if payment.type == PaymentType.DEPOSIT and order.order_status == OrderStatus.AWAITING_DEPOSIT:
             set_actor(self.session, None, "Đặt cọc thành công")
             order.order_status, order.production_status = OrderStatus.CONFIRMED, ProductionStatus.PENDING_SCHEDULE
             self.session.flush()
@@ -193,7 +220,8 @@ class PaymentService:
             return {"result": "PROCESSED", "status": "SUCCESS", "order_status": "CONFIRMED"}
         # Money arrived for an order that is no longer waiting for it (cancelled meanwhile): keep the record
         # and flag it, the refund is handled with the cancellation/refund flow (BR-14, BR-16).
-        payment.gateway_payload = {**payload, "needs_refund": True}
+        for row in group:
+            row.gateway_payload = {**(row.gateway_payload or {}), "needs_refund": True}
         self.session.flush()
         audit.record(self.session, actor_id=None, action="PAYMENT_ORPHAN", entity_type="payment",
                      entity_id=payment.id, new={"order_id": order.id, "order_status": order.order_status.value})

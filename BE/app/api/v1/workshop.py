@@ -12,9 +12,11 @@ from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.order_schemas import InputOut
+from app.api.delivery_schemas import PickupConfirmIn
+from app.api.order_schemas import OrderOut
 from app.api.ops_schemas import JobOut, PaymentOut
 from app.api.photo_schemas import WorkshopPhotoOut
-from app.api.schemas import Page
+from app.api.schemas import ErrorOut, Page
 from app.api.staff_schemas import (AcceptIn, AdjustIn, FileLinkOut, OptionSummary, QuotationCreateIn, QuotationOut, RejectIn,
                                    RequestInfoIn, SketchDetailOut, SketchGenerateIn, SketchManualIn, SketchOut,
                                    SketchPatchIn, WorkshopInputOut, WorkshopOrderDetail, WorkshopOrderRow)
@@ -26,6 +28,7 @@ from app.models.sketch import Quotation, Sketch
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.repositories.ops import JobRepository
 from app.services.acceptance import workshop_photos
+from app.services.delivery import PickupService
 from app.services.payments import PaymentService
 from app.services.workshop_access import WorkshopAccess
 from app.services.quotations import QuotationService, option_summaries
@@ -230,6 +233,15 @@ def order_payments(order_id: int, session: SessionDep, actor: WorkshopDep) -> li
     from app.api.v1.payments import payment_out
     order = WorkshopAccess(session, actor).order(order_id)
     return [payment_out(p) for p in PaymentService(session).for_workshop(order.id)]
+
+
+@router.post("/orders/{order_id}/pickup/confirm", dependencies=STAFF_ONLY, response_model=OrderOut,
+             summary="FR-23 Bàn giao tại xưởng: đối chiếu mã đơn + số điện thoại người nhận → đơn COMPLETED (chỉ Staff của đơn)",
+             responses={409: {"model": ErrorOut, "description": "PICKUP_NOT_EXPECTED"},
+                        422: {"model": ErrorOut, "description": "PICKUP_PHONE_MISMATCH"}})
+def confirm_pickup(order_id: int, body: PickupConfirmIn, session: SessionDep, actor: WorkshopDep,
+                   request: Request) -> OrderOut:
+    return OrderOut.model_validate(PickupService(session, actor, client_ip(request)).confirm(order_id, body.phone))
 
 
 @router.get("/orders/{order_id}/product-photos", response_model=list[WorkshopPhotoOut],
