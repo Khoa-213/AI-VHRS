@@ -1,12 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { orderErrorKey, errText } from '../../services/orders'
 import { CHAT_IMAGES, CHAT_MAX_MB, listMessages, markMessagesRead, sendMessage } from '../../services/workshop'
 import './chat.css'
 
-/** The conversation on one order, shared by the customer and the workshop. New messages are picked up every 10 seconds. */
-export default function Chat({ orderId, closed = false }: { orderId: number; closed?: boolean }) {
+/**
+ * The conversation on one order, shared by the customer and the workshop. New messages are picked up every 10 seconds.
+ * `card` is shown in the log at its time (the order card of the floating chat); `bare` drops the heading.
+ */
+export default function Chat({ orderId, closed = false, card, bare = false }: {
+  orderId: number
+  closed?: boolean
+  card?: { at: string; node: ReactNode }
+  bare?: boolean
+}) {
   const t = useT()
   const locale = useLocale()
   const list = useAsync(() => listMessages(orderId), [orderId], 10000)
@@ -24,7 +32,7 @@ export default function Chat({ orderId, closed = false }: { orderId: number; clo
   }, [unread, orderId])
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'nearest' })
-  }, [messages.length])
+  }, [messages.length, card?.at])
 
   const pick = (f: File | undefined) => {
     if (!f) return
@@ -50,23 +58,30 @@ export default function Chat({ orderId, closed = false }: { orderId: number; clo
     }
   }
 
+  // The card goes before the first message that is newer than it.
+  const newer = card ? messages.findIndex((m) => Date.parse(m.createdAt) > Date.parse(card.at)) : -1
+  const cardAt = !card ? -1 : newer === -1 ? messages.length : newer
   const when = (iso: string) => new Date(iso).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
   return (
     <section className="chat" aria-label={t('chat.title')}>
-      <h2 className="chat-title">{t('chat.title')}{unread > 0 && <b className="chat-unread vh-mono">{unread}</b>}</h2>
+      {!bare && <h2 className="chat-title">{t('chat.title')}{unread > 0 && <b className="chat-unread vh-mono">{unread}</b>}</h2>}
       <div className="chat-log" role="log" aria-live="polite">
         {!!list.error && !list.data && <p className="chat-note">{errText(t, orderErrorKey(list.error))}</p>}
-        {list.data && !messages.length && <p className="chat-note">{t('chat.empty')}</p>}
-        {messages.map((m) => (
-          <div key={m.id} className={`chat-msg${m.mine ? ' mine' : ''}`}>
-            {m.body && <p>{m.body}</p>}
-            {m.attachments.map((a) => (
-              <a key={a.url} href={a.url} target="_blank" rel="noreferrer"><img src={a.url} alt={t('chat.image')} /></a>
-            ))}
-            <span className="chat-time vh-mono">{when(m.createdAt)}</span>
-          </div>
+        {list.data && !messages.length && !card && <p className="chat-note">{t('chat.empty')}</p>}
+        {messages.map((m, i) => (
+          <Fragment key={m.id}>
+            {i === cardAt && card?.node}
+            <div className={`chat-msg${m.mine ? ' mine' : ''}`}>
+              {m.body && <p>{m.body}</p>}
+              {m.attachments.map((a) => (
+                <a key={a.url} href={a.url} target="_blank" rel="noreferrer"><img src={a.url} alt={t('chat.image')} /></a>
+              ))}
+              <span className="chat-time vh-mono">{when(m.createdAt)}</span>
+            </div>
+          </Fragment>
         ))}
+        {cardAt === messages.length && card?.node}
         <div ref={end} />
       </div>
 

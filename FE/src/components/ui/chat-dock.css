@@ -1,0 +1,65 @@
+/* Floating customer chat: button bottom right, panel with the order threads on the left and the open thread on the right. */
+.cd{position:fixed;right:clamp(16px,2.4vw,28px);bottom:clamp(16px,2.4vw,28px);z-index:80;display:flex;flex-direction:column;align-items:flex-end;gap:14px;pointer-events:none}
+.cd>*{pointer-events:auto}
+
+.cd-fab{position:relative;width:58px;height:58px;border:none;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);cursor:pointer;box-shadow:0 10px 30px var(--sh-45);transition:background .2s,transform .2s}
+.cd-fab:hover{background:var(--accent-hover);transform:translateY(-2px)}
+.cd-fab:focus-visible{outline:2px solid var(--t1);outline-offset:3px}
+.cd-badge{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:11px;font-weight:800;line-height:18px;text-align:center;flex:none}
+.cd-fab-badge{position:absolute;top:-2px;right:-2px;background:var(--danger);color:#fff;box-shadow:0 0 0 2px var(--bg)}
+
+.cd-panel{width:min(720px,calc(100vw - 32px));height:min(540px,calc(100vh - 120px));display:flex;flex-direction:column;background:var(--pop);border:1px solid var(--fx-1);border-radius:18px;box-shadow:0 24px 60px var(--sh-5);overflow:hidden;outline:none;animation:cd-in .2s ease-out}
+@keyframes cd-in{from{opacity:0;transform:translateY(12px) scale(.98)}}
+@media (prefers-reduced-motion:reduce){.cd-panel{animation:none}.cd-fab{transition:none}}
+
+.cd-head{display:flex;align-items:center;gap:10px;padding:14px 14px 14px 18px;border-bottom:1px solid var(--fx-08)}
+.cd-head-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cd-head-t b{font-size:15px;font-weight:800;color:var(--t1)}
+.cd-head-t span{font-size:12px;color:var(--t5)}
+.cd-icon{width:34px;height:34px;border:none;border-radius:50%;display:grid;place-items:center;background:transparent;color:var(--t3);cursor:pointer}
+.cd-icon:hover{background:var(--fx-06);color:var(--t1)}
+.cd-back{display:none}
+
+.cd-body{flex:1;min-height:0;display:grid;grid-template-columns:240px minmax(0,1fr)}
+.cd-list{overflow:auto;border-right:1px solid var(--fx-08);padding:6px}
+.cd-item{width:100%;display:flex;flex-direction:column;gap:5px;padding:10px 12px;border:none;border-radius:12px;background:transparent;text-align:left;font:inherit;color:var(--t2);cursor:pointer}
+.cd-item:hover{background:var(--fx-04)}
+.cd-item.on{background:var(--tray-on)}
+.cd-item-top,.cd-item-bot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cd-item-top b{font-size:13px;color:var(--t1)}
+.cd-item-time{font-size:11px;color:var(--t5);white-space:nowrap}
+.cd-item-mid .vh-chip{font-size:11px}
+.cd-item-last{min-width:0;font-size:12px;color:var(--t5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.cd-thread{min-width:0;display:flex;flex-direction:column}
+.cd-thread-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--fx-08)}
+.cd-thread-head div{min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.cd-thread-head b{font-size:13px;color:var(--t1)}
+.cd-thread-head span{font-size:12px;color:var(--t5)}
+.cd-thread .chat{flex:1;min-height:0;padding:0 12px 12px;gap:10px}
+.cd-thread .chat-log{flex:1;max-height:none;margin:0 -12px;padding:14px 16px}
+.cd-thread .chat-compose .vh-textarea{min-height:0}
+
+.cd-note{margin:0;padding:16px;font-size:13px;line-height:1.5;color:var(--t5)}
+.cd-note p{margin:0 0 8px}
+.cd-pick{margin:auto;max-width:280px;text-align:center}
+
+/* order card the customer drops into a thread */
+.cd-card{gap:8px;min-width:220px;border:1px solid var(--fx-12)}
+.cd-card-tag{font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--accent-text)}
+.cd-card-body{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:10px;background:var(--pop)}
+.cd-card-body b{font-size:14px;color:var(--t1)}
+.cd-card-body>span{font-size:12px;color:var(--t4)}
+.cd-card-meta{color:var(--t5)}
+.cd-card-link{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--accent-text)}
+
+@media (max-width:640px){
+  .cd{right:16px;bottom:16px}
+  .cd-panel{position:fixed;inset:0;width:auto;height:auto;border-radius:0;border:none}
+  .cd-panel+.cd-fab{display:none}
+  .cd-body{grid-template-columns:minmax(0,1fr)}
+  .cd-list{border-right:none}
+  .cd-panel--thread .cd-list{display:none}
+  .cd-panel:not(.cd-panel--thread) .cd-thread{display:none}
+  .cd-panel--thread .cd-back{display:grid}
+}

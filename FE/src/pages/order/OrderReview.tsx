@@ -1,6 +1,6 @@
+import { ChatCircleDots } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
-import Chat from '../../components/ui/Chat'
 import OrderPreview from '../../components/ui/OrderPreview'
 import { OrderTimeline, SpecRows } from '../../components/ui/OrderParts'
 import { ORDER_HREF } from '../../constants'
@@ -13,6 +13,7 @@ import {
   orderErrorKey, requestChanges, type Order, errText } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { fmt } from '../../utils/format'
+import { openChat } from '../../store/chatDock'
 import MockWorkshopBar from './MockWorkshopBar'
 import PrivacyDialog from './PrivacyDialog'
 import './order.css'
@@ -194,13 +195,18 @@ export default function OrderReview({ id }: { id: string | null }) {
                 <p className="or-copy">{quotation.note}</p>
               </div>
             )}
-            {status !== 'DRAFT' && <Chat orderId={orderId} closed={['REJECTED', 'CANCELLED', 'COMPLETED'].includes(status)} />}
           </section>
 
           <aside className="vh-aside">
             <div className="ov-rail-body">
               <span className="ov-rail-title">{t('or.details')}</span>
               <SpecRows rows={rows} />
+              {status !== 'DRAFT' && (
+                <button type="button" className="vh-btn vh-btn--ghost vh-btn--sm ov-ask" onClick={() => openChat(order.id)}>
+                  <ChatCircleDots size={18} aria-hidden />
+                  {t('cd.askAbout')}
+                </button>
+              )}
 
               {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
 

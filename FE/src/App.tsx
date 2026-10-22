@@ -19,6 +19,7 @@ import PreviewOrders from './pages/tech/PreviewOrders'
 import QualityCheck from './pages/tech/QualityCheck'
 import RobotPreview from './pages/tech/RobotPreview'
 import RequireStaff from './pages/staff/RequireStaff'
+import ChatDock from './components/ui/ChatDock'
 import Deposit from './pages/order/Deposit'
 import OrderReview from './pages/order/OrderReview'
 import PrivacyPreview from './pages/order/PrivacyPreview'
@@ -123,5 +124,5 @@ function Routes() {
 export default function App() {
   useInterceptLinks()
   const auth = useAuthDialog()
-  return <><Routes />{auth && <SignInDialog initialMode={auth.mode} next={auth.next} onClose={closeAuth} />}</>
+  return <><Routes /><ChatDock />{auth && <SignInDialog initialMode={auth.mode} next={auth.next} onClose={closeAuth} />}</>
 }
