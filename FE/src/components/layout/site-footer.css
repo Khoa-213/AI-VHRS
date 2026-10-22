@@ -8,7 +8,7 @@
 /* left: brand, lede, social, copyright */
 .sf-left{flex:0 1 560px;min-width:0;display:flex;flex-direction:column;gap:192px}
 .sf-about{display:flex;flex-direction:column;gap:32px}
-.sf .sf-logo{display:inline-flex;align-items:center;gap:8px;height:24px;color:var(--footer-ink);font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;letter-spacing:-.03em}
+.sf .sf-logo{display:inline-flex;align-items:center;gap:8px;height:auto;color:var(--footer-ink);font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;letter-spacing:-.03em}
 .sf-logo-mark{width:22px;height:22px;border-radius:50%;border:5px solid var(--accent);box-sizing:border-box;background:var(--footer-ink);flex:none}
 .sf-about-body{display:flex;flex-direction:column;align-items:flex-start;gap:16px}
 .sf-lede{margin:0;max-width:420px;font-size:16px;line-height:1.4}

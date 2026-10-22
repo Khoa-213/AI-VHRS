@@ -1,0 +1,2 @@
+.brand-logo{display:block;flex:none;width:144px;height:auto;aspect-ratio:1070/420;overflow:hidden}
+@media(max-width:560px){.brand-logo{width:112px}}
