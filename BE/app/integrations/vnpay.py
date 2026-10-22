@@ -14,6 +14,7 @@ real run must confirm: the signature accepted by the payment page, the IPN signa
 from __future__ import annotations
 
 import hashlib
+import logging
 import hmac
 import re
 import unicodedata
@@ -28,6 +29,7 @@ import httpx
 from app.core.errors import AppError
 from app.integrations.payment_gateway import GatewayResult, InvalidSignature, MalformedCallback, PaymentLink
 
+log = logging.getLogger(__name__)
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")          # VNPay timestamps are GMT+7
 VERSION = "2.1.0"
 _SECURE_KEYS = ("vnp_SecureHash", "vnp_SecureHashType")
@@ -123,6 +125,7 @@ class VnpayGateway:
                 r = http.post(self.api_url, json=body)
             data = r.json()
         except (httpx.HTTPError, ValueError) as exc:
+            log.warning("VNPay querydr failed for %s: %s: %s", txn_ref, type(exc).__name__, exc)
             raise AppError(502, "GATEWAY_UNAVAILABLE", "Không hỏi được trạng thái giao dịch từ VNPay.") from exc
         # The answer comes straight from VNPay over HTTPS in reply to our own request; its own hash is not re-checked here.
         if r.status_code != 200 or not isinstance(data, dict) or data.get("vnp_ResponseCode") != "00":

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
@@ -28,6 +29,7 @@ import httpx
 from app.core.errors import AppError
 from app.integrations.payment_gateway import GatewayResult, InvalidSignature, MalformedCallback, PaymentLink
 
+log = logging.getLogger(__name__)
 CREATE_PATH = "/v2/gateway/api/create"
 QUERY_PATH = "/v2/gateway/api/query"
 REQUEST_TYPE = "captureWallet"
@@ -62,6 +64,7 @@ class MomoGateway:
                 r = http.post(self.endpoint + path, json=body)
             data = r.json()
         except (httpx.HTTPError, ValueError) as exc:
+            log.warning("MoMo %s failed: %s: %s", path, type(exc).__name__, exc)
             raise AppError(502, "GATEWAY_UNAVAILABLE", "Không kết nối được tới MoMo, vui lòng thử lại.") from exc
         if not isinstance(data, dict):
             raise AppError(502, "GATEWAY_UNAVAILABLE", "MoMo trả về dữ liệu không hợp lệ.")
