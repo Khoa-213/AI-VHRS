@@ -10,12 +10,12 @@
 
 | Mục | Giá trị |
 |---|---|
-| Cập nhật lần cuối | 2026-10-22 (**Phase 4c-2 code xong**: cổng thanh toán thật VNPay/MoMo, khách chọn dịch vụ vận chuyển, vận đơn GHN/GHTK; **476 test pass trên Postgres cục bộ, toàn suite CHƯA chạy trên Supabase**; chưa commit) |
+| Cập nhật lần cuối | 2026-10-22 (Phase 4c-2 đã commit `db3b108` + deploy lên Render; **VNPay sandbox đã thử thật thành công**; MoMo/GHN/GHTK chưa; xem mục 10.0 để tiếp tục) |
 | Phase hiện tại | **Phase 4c-2 (a: thanh toán thật, b: chọn dịch vụ vận chuyển, c: vận đơn)**: code + 65 test mới xong, **chưa commit**. Có **migration 0004** (3 cột `orders.shipping_*`, đã áp dụng lên Supabase 2026-10-22, 21 đơn thật không đổi). Mặc định `PAYMENT_MODE=mock`, `CARRIER_MODE=mock`: hành vi cũ không đổi. **Adapter thật chưa chạy với VNPay/MoMo/GHN/GHTK thật** |
 | Đã commit | Phase 1, Phase 2 (`e7d0fbf`), Phase 3 + Google + vật tư + ma trận quyền (`be0d2f0`), tài liệu gốc `docs/source/` (`bae2a48`), Phase 4a (`34d0fb4`), Phase 4b (`9cb5daf`, `f07c8bc`), khôi phục sau sự cố (`c209fe5`, PR #21 → `main` `c99e27e`) |
 | Phase kế tiếp | thử cổng/hãng thật ở `sandbox` (cần tài khoản, xem `DEPLOY.md` mục 1b), rồi 4d (huỷ sau cọc + hoàn tiền qua API cổng, ETA), 4e (thông báo in-app + email), 5 |
 | Nhánh làm việc | `BE` (nhánh chính là `main`). **Trước khi `git pull`/merge/Sync trên `BE`, kiểm tra `git ls-tree origin/main BE/app/services/technician.py` còn file** (xem sự cố mục 9) |
-| Việc chờ chủ dự án | review + commit Phase 4c-2; **tạo tài khoản sandbox VNPay, MoMo, GHN, GHTK và điền khoá vào `.env`/Render** (`DEPLOY.md` mục 1b); chạy toàn suite trên Supabase thật khi ở lại tới khi xong; xác nhận giả định 20–24 ở mục 8; xoay secret Supabase (đã bị dán vào chat nhiều lần); quyết định chuyển Supabase sang Singapore |
+| Việc chờ chủ dự án | đăng ký MoMo / GHN / GHTK (mục 10.0); hỏi VNPay về whitelist IP Render; FE làm trang `/payment/result` + `vercel.json` + các màn thanh toán cuối/vận chuyển; xoay secret Supabase; chạy kịch bản kiểm tra IPN trên `vnpaygw-sit-testing` |
 
 Dự án: backend của **AI-VHRS – Xưởng Nét Việt** (đồ án): khách đặt viết/sao chép chữ viết tay tiếng Việt, xưởng làm phác thảo bằng AI,
 báo giá, thu cọc, xếp lịch cho robot cánh tay Fairino FR3 viết lên giấy. **Chỉ làm BE** (`/BE`); không đụng `FE/`, `Mobile/`.
@@ -167,7 +167,7 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 23. **Đơn từ trước 4c-2** chưa có `shipping_carrier`: nếu đơn giao hàng như vậy đã tới `READY_TO_DELIVER` thì Staff không tạo được vận đơn (`SHIPPING_SERVICE_NOT_CHOSEN`). Hiện DB thật không có đơn nào ở giai đoạn đó (21 đơn: nháp/đã gửi/đã tiếp nhận/đã huỷ).
 24. `PUT /orders/{id}/delivery` bỏ trống `carrier`/`service_code` = BE chọn dịch vụ **rẻ nhất** (để FE cũ vẫn chạy); FE mới nên luôn gửi lựa chọn của khách.
 
-25. **VNPay sandbox đã chạy thật (2026-10-22):** một cọc 3.007.000đ (tiền thử) qua `PAYMENT_MODE=sandbox` trên Render: VNPay chấp nhận chữ ký tạo giao dịch, gọi IPN, giao dịch `PENDING` → `SUCCESS` và đơn `AWAITING_DEPOSIT` → `CONFIRMED` đúng. **Chưa kiểm chứng:** `POST /payments/{id}/refresh` (truy vấn `querydr`: Codespace không kết nối được `sandbox.vnpayment.vn`, trên Render trả 502 chưa rõ nguyên nhân; từ nay adapter ghi lý do vào log), nhánh khách huỷ/thất bại trên trang VNPay, thanh toán cuối (FINAL + SHIPPING), kịch bản kiểm tra IPN của VNPay (`vnpaygw-sit-testing`). MoMo, GHN, GHTK vẫn chưa thử. Trang `/payment/result` và `vercel.json` của FE chưa có (trả 404 sau khi trả tiền; xem `docs/FE_API_GUIDE.md` mục 5.3b).
+25. **VNPay sandbox đã chạy thật (2026-10-22):** một cọc 3.007.000đ (tiền thử) qua `PAYMENT_MODE=sandbox` trên Render: VNPay chấp nhận chữ ký tạo giao dịch, gọi IPN, giao dịch `PENDING` → `SUCCESS` và đơn `AWAITING_DEPOSIT` → `CONFIRMED` đúng. Nhánh khách huỷ trên trang VNPay cũng đã thử: IPN báo huỷ → giao dịch `FAILED`, đơn giữ `AWAITING_DEPOSIT`. **`POST /payments/{id}/refresh` (truy vấn `querydr`) KHÔNG dùng được với VNPay từ máy chủ ở nước ngoài:** cả Codespace lẫn Render đều `ConnectTimeout` tới `sandbox.vnpayment.vn/merchant_webapi` (trong khi trang thanh toán và IPN vẫn chạy), nên luồng chính chỉ dựa vào IPN (VNPay tự gửi lại nếu BE không đáp). Cần hỏi VNPay có phải đăng ký (whitelist) IP máy chủ Render để gọi API truy vấn/hoàn tiền không; **bắt buộc xử lý trước Phase 4d (hoàn tiền) và trước khi chạy `live`**. **Chưa kiểm chứng:** thanh toán cuối (FINAL + SHIPPING), kịch bản kiểm tra IPN của VNPay (`vnpaygw-sit-testing`). MoMo, GHN, GHTK vẫn chưa thử. Trang `/payment/result` và `vercel.json` của FE chưa có (trả 404 sau khi trả tiền; xem `docs/FE_API_GUIDE.md` mục 5.3b).
 
 ## 9. Changelog (mới nhất trước)
 
@@ -192,6 +192,23 @@ Chạy trên **Supabase thật**, chỉ tạo/xoá dữ liệu tiền tố `pyte
 - Trước đó: Phase 0–1 (auth, tài khoản, đặt đơn, upload).
 
 ## 10. Việc kế tiếp (thứ tự)
+
+
+### 10.0 Bàn giao tiến độ thử cổng/hãng thật (cập nhật 2026-10-22; người làm tiếp đọc mục này đầu tiên)
+
+**Trạng thái trên Render (`https://ai-vhrs.onrender.com`, FE `https://ai-vhrs.vercel.app`):** code 4c-2 đã deploy. Đã đặt `PUBLIC_BASE_URL`, `PAYMENT_RETURN_URL=https://ai-vhrs.vercel.app/payment/result`, `PAYMENT_MODE=sandbox`, `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` (khoá VNPay sandbox của chủ dự án, **không ghi vào repo**). IPN URL đã đăng ký ở `sandbox.vnpayment.vn/vnpaygw-sit-testing` (mục "Cấu hình IPN URL"; ở Merchant Admin không có ô này). Xưởng: Xưởng Nét Việt, 0888320822, Lô E2a-7 Đường D1 Khu Công nghệ cao, P. Long Thạnh Mỹ, TP. Thủ Đức, TP.HCM (các biến `WORKSHOP_*`: hỏi chủ dự án xem đã đặt chưa). `CARRIER_MODE` còn `mock`; chưa có khoá MoMo/GHN/GHTK; `integrations_enabled` trong DB còn `false`.
+
+| Hạng mục | Tình trạng |
+|---|---|
+| VNPay: tạo link, IPN thành công → `CONFIRMED` | **Đã thử thật** (cọc 3.007.000đ) |
+| VNPay: khách huỷ → `FAILED`, đơn giữ `AWAITING_DEPOSIT` | **Đã thử thật** |
+| VNPay: `POST /payments/{id}/refresh` | **Không dùng được**: `ConnectTimeout` từ Render và Codespace tới `sandbox.vnpayment.vn/merchant_webapi`. Hỏi VNPay về whitelist IP Render (bắt buộc cho hoàn tiền 4d và `live`) |
+| VNPay: thanh toán cuối (FINAL+SHIPPING), kịch bản `vnpaygw-sit-testing` | Chưa thử |
+| MoMo | Chưa có khoá (cần `partnerCode`, `accessKey`, `secretKey` test); thử theo `DEPLOY.md` 1b |
+| GHN / GHTK | Chưa có tài khoản; cần token, shop id, `district_id`/`ward_code` của xưởng, đăng ký callback `?key=` / `?hash=` với hãng; rồi đặt `CARRIER_MODE=sandbox` và `integrations_enabled` |
+| FE | Chưa có `/payment/result`, `vercel.json`, nút chuyển tới `pay_url`, màn thanh toán cuối / chọn dịch vụ vận chuyển / vận đơn: xem `docs/FE_API_GUIDE.md` 5.3b, 7d, 7e |
+
+**Cách thử thanh toán thật (đã dùng, lặp lại được):** tạo file tạm `tests/zz_*_probe.py` (không commit; xoá khi xong) dùng các fixture `cust, staff, wcat, policy, store` của `tests/test_api_workshop.py` và `_approved`, `_deposit` của `tests/test_api_payments.py` để đưa một đơn `pytest_` tới `AWAITING_DEPOSIT`, gọi `_deposit(..., "VNPAY")`, in `pay_url`, rồi vòng lặp `time.sleep(10)` đọc `payments.status` bằng `_sql` tới khi hết `PENDING` (IPN cập nhật DB). Chạy với biến môi trường `PAYMENT_MODE=sandbox VNPAY_TMN_CODE=... VNPAY_HASH_SECRET=... PUBLIC_BASE_URL=... PAYMENT_RETURN_URL=...` ở dòng lệnh (không ghi vào `.env` hay file). Chủ dự án mở `pay_url`, trả bằng thẻ test NCB (9704198526191432198, NGUYEN VAN A, 07/15, OTP 123456 theo tài liệu VNPay) hoặc bấm Huỷ. Phiên pytest tự dọn `pytest_*` khi kết thúc. **Cấm chạy pytest nào khác (kể cả test thuần) trong lúc đó**: mỗi phiên pytest chạy `_cleanup` đầu/cuối và xoá luôn đơn thử đang dùng (xem `AI_PLAYBOOK.md` mục 8, 2026-10-22). Link VNPay hết hạn sau 15 phút: báo chủ dự án có mặt trước khi tạo.
 
 0. **Phase 4c-2 xong code, chờ review + commit.** Migration `0004` đã chạy lên Supabase nên có thể deploy ngay (code mới đọc cột đã có). Mặc định vẫn mock, nên deploy không đổi hành vi cho tới khi bạn đặt biến môi trường.
 1. **Thử thật ở `sandbox`** theo `DEPLOY.md` mục 1b: tạo tài khoản VNPay, MoMo, GHN, GHTK; điền khoá; đăng ký địa chỉ IPN/callback; làm một cọc và một thanh toán cuối qua mỗi cổng, một vận đơn qua mỗi hãng; xác nhận các điểm trong ghi chú "VERIFICATION STATUS" của từng adapter và sửa nếu khác. Chưa bật `live` trước khi xong bước này.
