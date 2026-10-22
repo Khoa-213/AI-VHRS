@@ -502,7 +502,7 @@ READY_TO_DELIVER ──Staff tạo vận đơn (CREATED)──▶ hãng lấy h�
 | `INVALID_DEPOSIT` | 422 | % cọc ngoài khoảng | hiện `details.min_deposit_pct` |
 | `OPTION_REQUIRED`, `INVALID_OPTION` | 422 | Chưa chọn phương án | bắt chọn |
 | `DEPOSIT_NOT_EXPECTED`, `DEPOSIT_ALREADY_PAID` | 409 | Sai thời điểm đặt cọc | tải lại đơn |
-| `ORDER_CANCEL_UNSUPPORTED` | 409 | Không huỷ online được | "Liên hệ xưởng" |
+| `ORDER_CANCEL_UNSUPPORTED` | 409 | Không huỷ online được (kể cả khi cọc vừa được xác nhận đúng lúc khách bấm huỷ: hãy tải lại đơn, nó đang `CONFIRMED`) | "Liên hệ xưởng" |
 | `UNSUPPORTED_CHARS`, `TEXT_TOO_LONG`, `FONT_TOO_LARGE`, `CANVAS_OUT_OF_PAPER` | 422 | Nội dung không sinh được nét | nêu lỗi, cho sửa |
 | `SLOT_CONFLICT`, `ROBOT_UNAVAILABLE`, `ROBOT_NOT_SUITABLE` | 409/422 | Lịch sản xuất | đổi robot/giờ |
 | `JOB_STATE_CONFLICT`, `JOB_NOT_ACTIVE`, `ORDER_NOT_ACTIVE` | 409 | Job/đơn không ở bước đó (xem mục 7b) | tải lại job, vô hiệu nút |

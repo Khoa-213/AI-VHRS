@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0006 (alembic head), generated 2026-10-22 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0007 (alembic head), generated 2026-10-22 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0006);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0006;
+--      baseline schema and every migration up to 0007);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0007;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, and the default system settings.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -1788,6 +1788,13 @@ ALTER TABLE ONLY public.production_jobs
     ADD CONSTRAINT ex_job_robot_overlap EXCLUDE USING gist (robot_id WITH =, tstzrange(slot_start, slot_end) WITH &&) WHERE ((status = ANY (ARRAY['SCHEDULED'::public.job_status, 'PREPARING'::public.job_status, 'WRITING'::public.job_status, 'PAUSED'::public.job_status])));
 
 --
+-- Name: production_jobs ex_job_technician_overlap; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_jobs
+    ADD CONSTRAINT ex_job_technician_overlap EXCLUDE USING gist (technician_id WITH =, tstzrange(slot_start, slot_end) WITH &&) WHERE ((status = ANY (ARRAY['SCHEDULED'::public.job_status, 'PREPARING'::public.job_status, 'WRITING'::public.job_status, 'PAUSED'::public.job_status])));
+
+--
 -- Name: handwriting_styles handwriting_styles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3118,7 +3125,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0006');
+INSERT INTO alembic_version (version_num) VALUES ('0007');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9
