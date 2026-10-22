@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
@@ -198,11 +199,24 @@ class SchedulingService:
             set_actor(self.session, self.manager.id, "Xếp lại lịch sản xuất")
             order.production_status = ProductionStatus.PENDING_SCHEDULE
             self.session.flush()
-        job = self.jobs.add(ProductionJob(
-            order_id=order.id, sketch_id=sketch.id, robot_id=robot.id, technician_id=tech.id,
-            scheduled_by=self.manager.id, status=JobStatus.SCHEDULED, is_rewrite=rewrite, slot_start=slot_start,
-            slot_end=slot_end, estimated_duration_min=minutes, package_uri=sketch.trajectory_uri,
-            package_hash=sketch.content_hash, packaged_at=_now()))                       # FR-38: the job's package
+        tech_name, robot_code = tech.full_name, robot.code       # read now: after a failed flush the session cannot load anything
+        try:
+            job = self.jobs.add(ProductionJob(
+                order_id=order.id, sketch_id=sketch.id, robot_id=robot.id, technician_id=tech.id,
+                scheduled_by=self.manager.id, status=JobStatus.SCHEDULED, is_rewrite=rewrite, slot_start=slot_start,
+                slot_end=slot_end, estimated_duration_min=minutes, package_uri=sketch.trajectory_uri,
+                package_hash=sketch.content_hash, packaged_at=_now()))                   # FR-38: the job's package
+        except IntegrityError as exc:
+            # The checks above read the schedule without a lock on the technician, so a concurrent request can still slip a
+            # booking in between; the database's exclusion constraints are the authority and decide here.
+            text_ = str(exc.orig)
+            if "ex_job_technician_overlap" in text_:
+                raise AppError(409, "SLOT_CONFLICT", f"{tech_name} đã có job trong khung giờ này.",
+                               {"resource": "technician"}) from exc
+            if "ex_job_robot_overlap" in text_:
+                raise AppError(409, "SLOT_CONFLICT", f"Robot {robot_code} đã có job trong khung giờ này (BR-18).",
+                               {"resource": "robot"}) from exc
+            raise
         set_actor(self.session, self.manager.id, note or "Xếp lịch sản xuất")
         order.production_status = ProductionStatus.SCHEDULED
         if order.eta is None:

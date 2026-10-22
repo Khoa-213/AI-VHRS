@@ -101,6 +101,19 @@ def _fresh_rate_limits():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_real_provider_credentials(monkeypatch):
+    """The tests must never reach a real payment gateway or carrier. `BE/.env` may hold real keys (payOS, VNPay sandbox...): without
+    this, a test that expects "not configured" would call the real API (a payOS test once created a real payment link), and the
+    gateway-list tests would depend on whoever runs them. Tests that need a provider switch it on explicitly or use test doubles."""
+    from app.core.config import get_settings
+    s = get_settings()
+    for name in ("payos_client_id", "payos_api_key", "payos_checksum_key", "vnpay_tmn_code", "vnpay_hash_secret",
+                 "momo_partner_code", "momo_access_key", "momo_secret_key", "ghn_token", "ghn_shop_id", "ghtk_token",
+                 "ghtk_client_source", "carrier_webhook_secret"):
+        monkeypatch.setattr(s, name, None)
+
+
 @pytest.fixture(scope="session")
 def client():
     with TestClient(app) as c:
