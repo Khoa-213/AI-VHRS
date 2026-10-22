@@ -190,6 +190,7 @@ class DeliveryService:
         order.delivery_method = method
         for stale in self.payments.pending_final(order.id):          # their amount belonged to the previous choice
             stale.status = PaymentStatus.CANCELLED
+            checkout.close(stale)
         self.session.flush()
         audit.record(self.session, actor_id=self.customer.id, action="DELIVERY_CHOOSE", entity_type="order",
                      entity_id=order.id, new={"method": method.value, "carrier": order.shipping_carrier,
@@ -217,6 +218,7 @@ class DeliveryService:
             return open_rows, due, order                              # same intent: reuse the open transaction
         for stale in open_rows:
             stale.status = PaymentStatus.CANCELLED
+            checkout.close(stale)
         self.session.flush()
 
         if due.total == 0:                                            # fully paid by the deposit, collecting at the workshop

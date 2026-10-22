@@ -33,6 +33,7 @@ class PaymentStatus(str, enum.Enum):
 class PaymentGateway(str, enum.Enum):
     VNPAY = "VNPAY"
     MOMO = "MOMO"
+    PAYOS = "PAYOS"
 
 
 class RobotStatus(str, enum.Enum):

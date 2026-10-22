@@ -125,13 +125,14 @@ def _query(url: str) -> dict:
 def test_gateways_endpoint_follows_the_mode_and_the_configuration(client, cust, real):
     url = f"{API}/payments/gateways"
     assert client.get(url).status_code == 401
+    off = {"gateway": "PAYOS", "mode": "LIVE", "enabled": False}                # payOS needs its keys, whatever the mode
     assert client.get(url, headers=cust).json() == [{"gateway": "VNPAY", "mode": "MOCK", "enabled": True},
-                                                    {"gateway": "MOMO", "mode": "MOCK", "enabled": True}]
+                                                    {"gateway": "MOMO", "mode": "MOCK", "enabled": True}, off]
     real.on()
     assert client.get(url, headers=cust).json() == [{"gateway": "VNPAY", "mode": "SANDBOX", "enabled": True},
-                                                    {"gateway": "MOMO", "mode": "SANDBOX", "enabled": True}]
+                                                    {"gateway": "MOMO", "mode": "SANDBOX", "enabled": True}, off]
     gw.use_adapters(None)                                   # sandbox mode without credentials on the server
-    assert [g["enabled"] for g in client.get(url, headers=cust).json()] == [False, False]
+    assert [g["enabled"] for g in client.get(url, headers=cust).json()] == [False, False, False]
     for role in ("STAFF", "MANAGER", "TECHNICAL_STAFF", "ADMIN"):
         assert client.get(url, headers=auth(client, role)).status_code == 403
 
@@ -148,7 +149,7 @@ def test_vnpay_deposit_from_link_to_confirmed_order(client, cust, staff, wcat, r
     assert datetime.fromisoformat(p["pay_url_expires_at"]) > datetime.now(timezone.utc)
     link = _query(p["pay_url"])
     assert link["vnp_Amount"] == str(int(deposit) * 100) and link["vnp_TxnRef"] == p["gateway_txn_id"]
-    assert link["vnp_ReturnUrl"] == RETURN_URL and code in link["vnp_OrderInfo"] and real.vn.verify(link)
+    assert link["vnp_ReturnUrl"] == f"{RETURN_URL}?order_id={oid}" and code in link["vnp_OrderInfo"] and real.vn.verify(link)
     assert _start(client, cust, oid, "VNPAY")["id"] == p["id"]                  # same intent while the link lives: reused
     txn = p["gateway_txn_id"]
 
@@ -197,7 +198,7 @@ def test_momo_deposit_from_link_to_confirmed_order(client, cust, staff, wcat, re
     p = _start(client, cust, oid, "MOMO")
     assert p["mode"] == "SANDBOX" and p["pay_url"] == f"https://test-payment.momo.vn/pay/{p['gateway_txn_id']}"
     sent = real.sent["momo_create"][-1]
-    assert sent["amount"] == int(deposit) and sent["orderId"] == p["gateway_txn_id"] and sent["redirectUrl"] == RETURN_URL
+    assert sent["amount"] == int(deposit) and sent["orderId"] == p["gateway_txn_id"] and sent["redirectUrl"] == f"{RETURN_URL}?order_id={oid}"
     assert sent["ipnUrl"] == f"{BASE}/api/v1/webhooks/payments/momo/ipn" and sent["partnerCode"] == "MOMOTEST"
     assert _start(client, cust, oid, "MOMO")["id"] == p["id"] and len(real.sent["momo_create"]) == 1     # reused, MoMo not asked again
     txn = p["gateway_txn_id"]

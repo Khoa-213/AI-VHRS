@@ -127,9 +127,20 @@ def real_adapter(gateway: Any, *, strict: bool = True) -> RealGateway | None:
     With `strict`, a real mode with missing credentials is an error (503) so no payment can start half-configured; the IPN
     endpoints ask with strict=False and simply cannot verify anything then."""
     s = get_settings()
+    name = str(getattr(gateway, "value", gateway)).upper()
+    if name == "PAYOS":
+        # Real bank transfers only, no mock and no test environment: available whenever its keys are set, in any PAYMENT_MODE.
+        if name in _overrides:
+            return _overrides[name]
+        if s.payos_client_id and s.payos_api_key and s.payos_checksum_key:
+            from app.integrations.payos import PayosGateway
+            return PayosGateway(client_id=s.payos_client_id, api_key=s.payos_api_key, checksum_key=s.payos_checksum_key,
+                                base_url=s.payos_base_url)
+        if strict:
+            raise AppError(503, "GATEWAY_NOT_CONFIGURED", "Cổng thanh toán PAYOS chưa được cấu hình trên máy chủ.")
+        return None
     if s.payment_mode == "mock":
         return None
-    name = str(getattr(gateway, "value", gateway)).upper()
     if name in _overrides:
         return _overrides[name]
     mode = MODE_LABEL[s.payment_mode]
@@ -161,4 +172,9 @@ def gateway_status() -> list[dict[str, Any]]:
         except AppError:
             enabled = False
         out.append({"gateway": name, "mode": mode, "enabled": enabled})
+    try:
+        payos_on = real_adapter("PAYOS") is not None
+    except AppError:
+        payos_on = False
+    out.append({"gateway": "PAYOS", "mode": "LIVE", "enabled": payos_on})      # a real transfer, whatever PAYMENT_MODE is
     return out

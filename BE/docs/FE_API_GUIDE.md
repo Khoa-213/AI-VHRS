@@ -220,6 +220,32 @@ POST /payments/{id}/refresh                      → {result, status, order_stat
 - Lỗi riêng: `503 GATEWAY_NOT_CONFIGURED` (cổng chưa cấu hình trên máy chủ), `502 GATEWAY_UNAVAILABLE` / `502 GATEWAY_REJECTED` (cổng lỗi hoặc từ chối tạo giao dịch; không tạo giao dịch nào), `403 MOCK_WEBHOOK_DISABLED` (webhook mô phỏng bị tắt khi dùng cổng thật), `409 NOT_A_REAL_PAYMENT` (refresh giao dịch mô phỏng).
 - FE **không** gọi các IPN: `GET /webhooks/payments/vnpay/ipn` và `POST /webhooks/payments/momo/ipn` là của cổng (xem mục 9).
 
+### 5.3c Chuyển khoản VietQR qua payOS (Phase 4c-2d) — cổng thứ ba, `gateway = "PAYOS"`
+
+Khách quét mã VietQR bằng app ngân hàng; tiền về **thẳng tài khoản ngân hàng của chủ xưởng**; payOS báo cho BE bằng webhook. **Không có môi trường test: mọi giao dịch PAYOS là chuyển khoản thật** (`mode = "LIVE"`), và cổng này bật ngay khi máy chủ có đủ khoá, bất kể `PAYMENT_MODE` (chế độ đó chỉ áp dụng cho VNPay/MoMo).
+
+```
+GET  /payments/gateways                       → thêm {"gateway":"PAYOS","mode":"LIVE","enabled":true|false}
+POST /orders/{id}/payments/deposit   {"gateway":"PAYOS"}        → PaymentOut (cọc)
+POST /orders/{id}/payments/final     {"gateway":"PAYOS", ...}   → thanh toán cuối (FINAL + SHIPPING trong MỘT mã QR, mục 7d)
+GET  /orders/{id}/payments                    → trạng thái hiện tại (poll)
+```
+
+`PaymentOut` của PAYOS (khi còn `PENDING`) có thêm:
+- `pay_url`: trang thanh toán của payOS (có QR và thông tin chuyển khoản). **Cách đơn giản nhất (đã chọn): `window.location.assign(pay_url)`.** payOS đưa khách về `PAYMENT_RETURN_URL?order_id=<id>` khi xong (thêm tham số `cancelled=1` nếu khách bấm huỷ trên trang payOS).
+- `qr_code`: chuỗi VietQR (EMV), để FE **tự vẽ mã QR** sau này nếu muốn (thư viện QR bất kỳ, nội dung chính là chuỗi này). Số tiền và nội dung chuyển khoản đã nằm trong mã.
+- `bank`: `{bin, account_number, account_name, amount, content}`: hiển thị cạnh mã QR để khách đối chiếu hoặc chuyển tay. **`amount` là số tiền phải chuyển (với thanh toán cuối là tổng FINAL + SHIPPING), `content` là nội dung chuyển khoản: phải đúng cả hai.**
+- `pay_url_expires_at`: hạn của mã (mặc định 15 phút); hết hạn thì gọi lại endpoint để tạo mã mới.
+
+Luồng giống mục 5.3b: sau khi khách chuyển khoản, **FE poll `GET /orders/{id}`** mỗi 2–3 giây (tới ~60 giây; ngân hàng có thể trễ vài chục giây) tới khi `order_status` đổi (`CONFIRMED` sau cọc, `READY_TO_DELIVER` sau thanh toán cuối). Kết quả thật chỉ tới BE qua webhook của payOS; trang kết quả chỉ để hiển thị. Gọi lại `POST /orders/{id}/payments/deposit` khi mã cũ còn hạn sẽ trả lại **đúng mã đó**; đổi cổng hoặc mã hết hạn thì mã cũ bị đóng (cả bên payOS).
+
+Các tình huống cần UI xử lý:
+- **Khách chuyển sai số tiền hoặc sửa nội dung:** tuỳ app ngân hàng có cho sửa hay không (BE không kiểm soát được). Chuyển **sai nội dung**: payOS không ghép được vào đơn, đơn không đổi, khách phải liên hệ xưởng hoặc tạo mã mới. Chuyển **sai số tiền** (thiếu hoặc thừa): đơn **không** được xác nhận, giao dịch giữ `PENDING` và có `needs_refund: true` (hiện "Liên hệ xưởng để được hoàn/bù tiền"); khách vẫn có thể chuyển đúng số tiền qua cùng mã trước khi hết hạn.
+- **Hoàn tiền không tự động** (payOS không có API hoàn tiền cho chuyển khoản): Staff chuyển khoản ngược rồi xử lý theo quy trình hoàn tiền (Phase 4d).
+- **Mã hết hạn / khách huỷ:** payOS chỉ báo webhook khi **đã nhận tiền**, nên `FAILED` không tự tới; FE hiện "Mã đã hết hạn" theo `pay_url_expires_at` rồi cho tạo mã mới. `POST /payments/{id}/refresh` hỏi thẳng payOS (trạng thái `EXPIRED`/`CANCELLED` → giao dịch `FAILED`; `PAID` → xác nhận), dùng khi nghi webhook trễ.
+- Lỗi riêng: `503 GATEWAY_NOT_CONFIGURED` (máy chủ chưa có khoá payOS, `enabled:false` trong `/payments/gateways`: ẩn lựa chọn này), `502 GATEWAY_UNAVAILABLE` / `502 GATEWAY_REJECTED` (payOS lỗi hoặc từ chối tạo mã; không tạo giao dịch).
+- FE **không** gọi webhook `POST /webhooks/payments/payos` (của payOS, mục 9).
+
 ### 5.4 Chat trong đơn
 ```
 GET  /orders/{id}/messages?page=&page_size=     → {items[{id,mine,body,attachments[{url,mime}],read_at,created_at}], total, unread}
@@ -464,6 +490,8 @@ Tất cả do **bên ngoài** gọi vào BE; FE chỉ cần poll `GET /orders/{i
 | `POST /webhooks/shipments/{GHN\|GHTK}` | hãng vận chuyển | MOCK: `X-Signature`; GHN: `?key=<mã bí mật>`; GHTK: `?hash=<mã bí mật>` | Idempotent; callback cũ/trùng → `ALREADY_PROCESSED` |
 
 Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thật, địa chỉ IPN/callback phải là `https` công khai (`PUBLIC_BASE_URL`), và phải được đăng ký với từng bên (xem `DEPLOY.md`).
+
+- **payOS:** `POST /webhooks/payments/payos` (JSON có `signature` HMAC-SHA256 bằng Checksum Key, trả 200 cho mọi webhook hợp lệ, kể cả trùng lặp hoặc giao dịch lạ). Đăng ký địa chỉ một lần bằng `scripts/register_payos_webhook.py`.
 
 ## 10. Chưa có / sẽ có (đừng chờ ở Phase này)
 

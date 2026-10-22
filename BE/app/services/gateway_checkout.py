@@ -40,7 +40,8 @@ def attach(rows: list[Payment], gateway: PaymentGateway, order: Order, *, total:
         return_url=return_url(s.payment_return_url, order), ipn_url=gw.ipn_url(gateway.value), expire_minutes=s.payment_expire_minutes)
     for row in rows:
         row.gateway_payload = {**(row.gateway_payload or {}), "pay_url": link.url,
-                               "pay_url_expires_at": link.expires_at.isoformat(), "gateway_meta": link.meta}
+                               "pay_url_expires_at": link.expires_at.isoformat(),
+                               "gateway_meta": {**link.meta, "transfer_amount": int(total)}}
 
 
 def return_url(base: str, order: Order) -> str:
@@ -48,6 +49,16 @@ def return_url(base: str, order: Order) -> str:
     parts = urlsplit(base)
     query = urlencode([*parse_qsl(parts.query), ("order_id", order.id)])
     return urlunsplit(parts._replace(query=query))
+
+
+def close(row: Payment) -> None:
+    """Best effort: close a payment link that is being replaced, so the customer cannot still pay the old one. Only payOS needs
+    it (a bank transfer cannot be refused once the QR is scanned); the card gateways' links just expire."""
+    if row.gateway != PaymentGateway.PAYOS or (row.gateway_payload or {}).get("mode") == "MOCK":
+        return
+    adapter = gw.real_adapter(row.gateway, strict=False)
+    if adapter is not None:
+        adapter.cancel(group_ref(row))
 
 
 def usable(row: Payment) -> bool:
