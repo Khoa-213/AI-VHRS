@@ -8,6 +8,9 @@ code that has POST /api/v1/webhooks/payments/payos. Prints payOS's answer (never
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))      # so it runs from anywhere: python scripts/...
 
 from app.core.config import get_settings
 from app.integrations import payment_gateway as gw
