@@ -122,6 +122,7 @@ class PaymentService:
             if old.gateway == gateway and old.amount == order.deposit_amount and checkout.usable(old):
                 return old                                              # same intent: reuse the open transaction
             old.status = PaymentStatus.CANCELLED
+            checkout.close(old)
         self.session.flush()
         txn_ref, mode = checkout.begin(gateway)
         row = self.payments.add(Payment(
@@ -162,6 +163,8 @@ class PaymentService:
     def handle_webhook(self, gateway: PaymentGateway, body: bytes, signature: str | None) -> dict[str, Any]:
         """The MOCK gateway's webhook. Its key is derived from JWT_SECRET, so once real payments are on (sandbox/live) this
         door is shut: nobody holding that key may be able to mark a real payment as paid."""
+        if gateway == PaymentGateway.PAYOS:
+            raise AppError(404, "NOT_FOUND", "Không có webhook mô phỏng cho PAYOS.")    # its webhook is POST /webhooks/payments/payos
         if get_settings().payment_mode != "mock":
             raise AppError(403, "MOCK_WEBHOOK_DISABLED", "Webhook mô phỏng đã tắt khi dùng cổng thanh toán thật.")
         if not self.gateway.verify(body, signature):
@@ -291,6 +294,32 @@ class PaymentService:
         if not result.final:
             return {"result": "IGNORED", "status": "PENDING"}
         return self._settle(PaymentGateway.MOMO, txn_id=result.txn_ref, code=None, amount=result.amount,
+                            ok=result.success, raw=result.raw)
+
+    def handle_payos_webhook(self, body: dict[str, Any]) -> dict[str, Any]:
+        """payOS POSTs JSON for every transfer it matched to one of our links and expects HTTP 200. The envelope is answered 200
+        for everything that is validly signed (so payOS does not retry), including a transaction we do not know: that is how
+        payOS's own test message succeeds when the webhook address is registered."""
+        adapter: Any = gw.real_adapter(PaymentGateway.PAYOS, strict=False)
+        if adapter is None:
+            raise AppError(401, "INVALID_SIGNATURE", "Chữ ký webhook không hợp lệ.")
+        try:
+            result = adapter.parse_webhook(body)
+        except gw.InvalidSignature as exc:
+            raise AppError(401, "INVALID_SIGNATURE", "Chữ ký webhook không hợp lệ.") from exc
+        except gw.MalformedCallback as exc:
+            raise AppError(422, "INVALID_WEBHOOK", "Nội dung webhook không hợp lệ.") from exc
+        payment = self.payments.by_txn(PaymentGateway.PAYOS, result.txn_ref, lock=True)
+        if payment is None:
+            return {"result": "UNKNOWN_TRANSACTION", "status": "IGNORED"}
+        expected = int(self._group_total(payment))
+        if result.success and result.amount != expected and payment.status == PaymentStatus.PENDING:
+            # The customer sent a different amount than the link asks for. The money is here, but it is not this payment:
+            # keep the record for the refund flow and leave the payment pending (it expires or the customer pays correctly).
+            order = self.orders.get(payment.order_id, lock=True)
+            self._flag_orphan(order, payment, self._group(payment), f"paid {result.amount}, expected {expected}")
+            return {"result": "AMOUNT_MISMATCH", "status": "PENDING", "needs_refund": True}
+        return self._settle(PaymentGateway.PAYOS, txn_id=result.txn_ref, code=None, amount=result.amount,
                             ok=result.success, raw=result.raw)
 
     # ---- real gateways: ask the gateway when the IPN is late or lost ----

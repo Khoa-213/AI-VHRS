@@ -35,6 +35,7 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/webhooks/shipments/\{carrier\}$", ALL, SIGNED),                      # authenticated by the carrier's secret / signature
     (r"^/webhooks/payments/vnpay/ipn$", ALL, VNPAY_IPN),
     (r"^/webhooks/payments/momo/ipn$", ALL, SIGNED),
+    (r"^/webhooks/payments/payos$", ALL, SIGNED),
     (r"^/webhooks/payments/\{gateway\}$", ALL, SIGNED),                      # no token: authenticated by the HMAC signature
     (r"^/auth/logout$", ALL, ANY),
     (r"^/me", ALL, ANY),

@@ -308,7 +308,8 @@ def test_mock_mode_has_no_real_adapter(settings):
     assert gw.real_adapter(PaymentGateway.VNPAY) is None and gw.real_adapter("MOMO") is None
     assert gw.mode_label() == "MOCK"
     assert gw.gateway_status() == [{"gateway": "VNPAY", "mode": "MOCK", "enabled": True},
-                                   {"gateway": "MOMO", "mode": "MOCK", "enabled": True}]
+                                   {"gateway": "MOMO", "mode": "MOCK", "enabled": True},
+                                   {"gateway": "PAYOS", "mode": "LIVE", "enabled": False}]
 
 
 def test_real_modes_need_credentials(settings, monkeypatch):
@@ -318,14 +319,15 @@ def test_real_modes_need_credentials(settings, monkeypatch):
     assert exc.value.status == 503 and exc.value.code == "GATEWAY_NOT_CONFIGURED"
     assert gw.real_adapter("MOMO", strict=False) is None                       # IPN endpoints just cannot verify anything
     assert gw.gateway_status() == [{"gateway": "VNPAY", "mode": "SANDBOX", "enabled": False},
-                                   {"gateway": "MOMO", "mode": "SANDBOX", "enabled": False}]
+                                   {"gateway": "MOMO", "mode": "SANDBOX", "enabled": False},
+                                   {"gateway": "PAYOS", "mode": "LIVE", "enabled": False}]
 
     monkeypatch.setattr(settings, "vnpay_tmn_code", "TMN1")
     monkeypatch.setattr(settings, "vnpay_hash_secret", "s")
     v = gw.real_adapter(PaymentGateway.VNPAY)
     assert isinstance(v, VnpayGateway) and v.mode == "SANDBOX" and v.tmn_code == "TMN1"
     assert gw.real_adapter("MOMO", strict=False) is None
-    assert [g["enabled"] for g in gw.gateway_status()] == [True, False]
+    assert [g["enabled"] for g in gw.gateway_status()] == [True, False, False]
 
     for k, val in (("momo_partner_code", "P"), ("momo_access_key", "A")):
         monkeypatch.setattr(settings, k, val)
@@ -357,3 +359,21 @@ def test_return_url_carries_the_order_id():
     order = SimpleNamespace(id=42)
     assert return_url("https://app.example/payment/result", order) == "https://app.example/payment/result?order_id=42"
     assert return_url("https://app.example/r?lang=vi", order) == "https://app.example/r?lang=vi&order_id=42"
+
+
+def test_payos_needs_its_three_keys_and_ignores_the_payment_mode(settings, monkeypatch):
+    for mode in ("mock", "sandbox", "live"):
+        monkeypatch.setattr(settings, "payment_mode", mode)
+        monkeypatch.setattr(settings, "payos_client_id", None)
+        with pytest.raises(AppError) as exc:
+            gw.real_adapter("PAYOS")
+        assert exc.value.status == 503 and exc.value.code == "GATEWAY_NOT_CONFIGURED"
+        assert gw.real_adapter(PaymentGateway.PAYOS, strict=False) is None
+        monkeypatch.setattr(settings, "payos_client_id", "cid")
+        monkeypatch.setattr(settings, "payos_api_key", "k")
+        assert gw.real_adapter("PAYOS", strict=False) is None                   # the checksum key is still missing
+        monkeypatch.setattr(settings, "payos_checksum_key", "c")
+        adapter = gw.real_adapter("PAYOS")                                      # in mock mode too: a transfer is always real
+        assert adapter.name == "PAYOS" and adapter.mode == "LIVE"
+        assert {g["gateway"]: g for g in gw.gateway_status()}["PAYOS"] == {"gateway": "PAYOS", "mode": "LIVE", "enabled": True}
+        monkeypatch.setattr(settings, "payos_checksum_key", None)

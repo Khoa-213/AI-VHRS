@@ -55,6 +55,10 @@ class PaymentOut(_ORM):
     checkout_path: str | None = Field(default=None, description="MOCK only: where the simulated gateway page lives while PENDING.")
     pay_url: str | None = Field(default=None, description="SANDBOX/LIVE: send the customer's browser here while PENDING.")
     pay_url_expires_at: datetime | None = Field(default=None, description="After this the link is dead: start the payment again.")
+    qr_code: str | None = Field(default=None, description="PAYOS: the VietQR string (EMV) to draw as a QR code while PENDING. "
+                                "The amount and the transfer content are inside it.")
+    bank: dict | None = Field(default=None, description="PAYOS: who receives the transfer and what it must say "
+                              "({bin, account_number, account_name, amount, content}); show it next to the QR as a fallback.")
     needs_refund: bool = False
 
 

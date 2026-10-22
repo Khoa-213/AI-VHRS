@@ -6,7 +6,7 @@ the gateway reports the result to POST /webhooks/payments/{gateway} (signed, ide
 customer presses pay / fail on POST /payments/{id}/mock-checkout, which posts that same signed webhook.
 """
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 
@@ -34,6 +34,11 @@ def payment_out(p: Payment) -> PaymentOut:
             out.checkout_path = get_gateway().checkout_path(p.id)
         else:
             out.pay_url = payload.get("pay_url")
+            meta = payload.get("gateway_meta") or {}
+            if meta.get("qr_code"):                                  # payOS: the VietQR to draw, and who gets the money
+                out.qr_code = meta.get("qr_code")
+                out.bank = {"bin": meta.get("bin"), "account_number": meta.get("account_number"),
+                            "account_name": meta.get("account_name"), "amount": int(meta.get("transfer_amount") or p.amount), "content": meta.get("description")}
             if payload.get("pay_url_expires_at"):
                 out.pay_url_expires_at = datetime.fromisoformat(payload["pay_url_expires_at"])
     return out
@@ -58,6 +63,22 @@ def start_deposit(order_id: int, body: StartDepositIn, session: SessionDep, cust
 def mock_checkout(payment_id: int, body: MockCheckoutIn, session: SessionDep, customer: CustomerDep,
                   request: Request) -> WebhookResult:
     return WebhookResult(**PaymentService(session, customer, client_ip(request)).mock_checkout(payment_id, body.result))
+
+
+@router.post("/webhooks/payments/payos", status_code=status.HTTP_200_OK,
+             dependencies=[Depends(rate_limit("payment_webhook", 120, 60))],
+             summary="Webhook của payOS (POST JSON có `signature` HMAC-SHA256). Trả 200 cho mọi webhook hợp lệ, kể cả trùng lặp",
+             responses={401: {"model": ErrorOut, "description": "INVALID_SIGNATURE"},
+                        422: {"model": ErrorOut, "description": "INVALID_WEBHOOK"}})
+async def payos_webhook(request: Request, session: SessionDep) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise AppError(422, "INVALID_WEBHOOK", "Nội dung webhook không hợp lệ.") from exc
+    if not isinstance(body, dict):
+        raise AppError(422, "INVALID_WEBHOOK", "Nội dung webhook không hợp lệ.")
+    out = PaymentService(session, None, client_ip(request)).handle_payos_webhook(body)
+    return {"success": True, **out}
 
 
 @router.post("/webhooks/payments/{gateway}", response_model=WebhookResult,

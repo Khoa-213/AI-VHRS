@@ -43,6 +43,7 @@ exists before the new code reads the order's `shipping_*` columns.
 | `VNPAY_PAY_URL`, `VNPAY_API_URL` | default to the sandbox addresses; set the production ones for `live` |
 | `MOMO_PARTNER_CODE`, `MOMO_ACCESS_KEY`, `MOMO_SECRET_KEY` | from MoMo for Business (test environment keys differ from production keys) |
 | `MOMO_ENDPOINT` | default `https://test-payment.momo.vn`; `https://payment.momo.vn` for `live` |
+| `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` | payOS (VietQR bank transfer): my.payos.vn → Kênh thanh toán → the channel's integration info. **payOS has no test environment: every payment is a real transfer**, so it is available as soon as the three keys are set, whatever `PAYMENT_MODE` says. `PAYOS_BASE_URL` defaults to `https://api-merchant.payos.vn` |
 | `CARRIER_MODE` | `mock` (default) / `sandbox` / `live` |
 | `CARRIER_WEBHOOK_SECRET` | long random string placed in the carriers' callback address (`?key=` for GHN, `?hash=` for GHTK); neither signs its callbacks by default |
 | `GHN_TOKEN`, `GHN_SHOP_ID`, `GHN_FROM_DISTRICT_ID`, `GHN_FROM_WARD_CODE` | GHN API token and shop id; the workshop's GHN district id and ward code |
@@ -52,6 +53,11 @@ exists before the new code reads the order's `shipping_*` columns.
 
 Also switch the carriers' APIs on in the database: `system_settings.integrations_enabled` (`{"GHN": true, "GHTK": true, ...}`).
 While a carrier's flag is `false` it is offered with one option priced from the fallback fee table.
+
+**payOS first:** run `alembic upgrade head` (migration `0005` adds `PAYOS` to the `payment_gateway` enum; the deploy does it), set the
+three `PAYOS_*` keys and `PUBLIC_BASE_URL`, redeploy, then register the webhook once from a shell that has the same environment:
+`python scripts/register_payos_webhook.py` (payOS posts a test message to `POST /api/v1/webhooks/payments/payos` and the API answers 200).
+Do it again if `PUBLIC_BASE_URL` changes.
 
 **Register the callbacks with each provider** (they cannot be set from this API):
 

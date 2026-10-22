@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     momo_access_key: str | None = None
     momo_secret_key: str | None = None
     momo_endpoint: str = "https://test-payment.momo.vn"
+    # payOS (VietQR bank transfer). It has no test environment: every payment is a real transfer, so it is available whenever
+    # its three keys are set, whatever PAYMENT_MODE says (that switch only governs VNPay and MoMo).
+    payos_client_id: str | None = None
+    payos_api_key: str | None = None
+    payos_checksum_key: str | None = None
+    payos_base_url: str = "https://api-merchant.payos.vn"
     # ---- carriers (GHN, GHTK) --------------------------------------------------------------------------------------
     # mock    = simulated carriers (default). sandbox = the carriers' TEST environments. live = production waybills.
     carrier_mode: Literal["mock", "sandbox", "live"] = "mock"
