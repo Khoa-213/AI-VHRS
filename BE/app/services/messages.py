@@ -7,18 +7,19 @@ as order inputs) and referenced by path; the path must live under the sender's o
 from __future__ import annotations  # methods named `list` would otherwise shadow the builtin in later annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.integrations.storage import ObjectStorage, UploadTarget
-from app.models.account import Account, RoleCode
+from app.models.account import Account, AccountStatus, RoleCode
 from app.models.order import Order, OrderStatus
 from app.models.sketch import Message
 from app.repositories.orders import OrderRepository
-from app.repositories.workshop import MessageRepository
+from app.repositories.workshop import ConversationRepository, MessageRepository
 from app.services import notifications
 from app.services.handwriting_image import sniff_mime
 from app.services.workshop_access import WorkshopAccess
@@ -27,7 +28,8 @@ MAX_BODY = 2000
 MAX_ATTACHMENTS = 5
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 IMAGE_MIMES = {"image/jpeg": "jpg", "image/png": "png"}
-CLOSED = {OrderStatus.REJECTED, OrderStatus.CANCELLED}
+CLOSED = {OrderStatus.REJECTED, OrderStatus.CANCELLED}        # COMPLETED stays open on purpose: the customer can still complain
+CARD_WINDOW = timedelta(minutes=10)                              # one order card per order per window (anti-spam)
 
 
 class MessageService:
@@ -90,8 +92,13 @@ class MessageService:
         return out
 
     # ---- chat ----
-    def post(self, order_id: int, body: str | None, attachments: list[dict[str, str]]) -> Message:
+    def post(self, order_id: int, body: str | None, attachments: list[dict[str, str]],
+             kind: str = "TEXT") -> tuple[Message, Order, bool]:
+        """Returns (message, order, created). `created` is False when an order card was asked for again within the window and
+        the earlier card is handed back instead of a new one."""
         order = self._order(order_id, write=True)
+        if kind == "ORDER_CARD":
+            return self._post_card(order, body, attachments)
         text = (body or "").strip()
         if len(text) > MAX_BODY:
             raise AppError(422, "MESSAGE_TOO_LONG", f"Tin nhắn tối đa {MAX_BODY} ký tự.")
@@ -99,15 +106,41 @@ class MessageService:
         if not text and not files:
             raise AppError(422, "EMPTY_MESSAGE", "Tin nhắn trống.")
         row = self.repo.add(Message(order_id=order.id, sender_id=self.actor.id, body=text or None, attachments=files))
-        recipient = order.customer_id if self.role != RoleCode.CUSTOMER.value else order.assigned_staff_id
-        if recipient:
-            notifications.notify(account_id=recipient, order_id=order.id, msg_code="MESSAGE", code=order.code)
-        return row
+        self._notify(order)
+        return row, order, True
 
-    def list(self, order_id: int, page: int, page_size: int) -> tuple[list[Message], int, int]:
+    def _post_card(self, order: Order, body: str | None, attachments: list[dict[str, str]]) -> tuple[Message, Order, bool]:
+        if self.role != RoleCode.CUSTOMER.value:
+            raise AppError(403, "CARD_CUSTOMER_ONLY", "Chỉ khách hàng gửi được thẻ đơn hàng.")
+        if (body or "").strip() or attachments:
+            raise AppError(422, "INVALID_CARD", "Thẻ đơn hàng không kèm nội dung hoặc ảnh.")
+        self.orders.get(order.id, lock=True)                      # two simultaneous requests (a double tap) take turns: one card
+        recent = self.repo.recent_card(order.id, datetime.now(timezone.utc) - CARD_WINDOW)
+        if recent is not None:
+            return recent, order, False                           # asked again too soon: the same card, no new message, no new alert
+        row = self.repo.add(Message(order_id=order.id, sender_id=self.actor.id, body=None, attachments=[], kind="ORDER_CARD"))
+        self._notify(order)
+        return row, order, True
+
+    def _notify(self, order: Order) -> None:
+        if self.role != RoleCode.CUSTOMER.value:
+            notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="MESSAGE", code=order.code)
+        elif order.assigned_staff_id:
+            notifications.notify(account_id=order.assigned_staff_id, order_id=order.id, msg_code="MESSAGE", code=order.code)
+        else:
+            # Nobody has claimed the order, so there is no assigned Staff to tell. Every active Manager is told instead (they may
+            # answer any order); otherwise the customer's message would sit unseen until someone happened to open the pool.
+            for manager_id in self._managers():
+                notifications.notify(account_id=manager_id, order_id=order.id, msg_code="MESSAGE_UNCLAIMED", code=order.code)
+
+    def _managers(self) -> list[int]:
+        return list(self.session.scalars(select(Account.id).join(Account.role).where(
+            Account.status == AccountStatus.ACTIVE, Account.role.has(code=RoleCode.MANAGER.value))))
+
+    def list(self, order_id: int, page: int, page_size: int) -> tuple[list[Message], int, int, Order]:
         order = self._order(order_id, write=False)
         rows, total = self.repo.list(order.id, offset=(page - 1) * page_size, limit=page_size)
-        return rows, total, self.repo.unread_count(order.id, self.actor.id)
+        return rows, total, self.repo.unread_count(order.id, self.actor.id), order
 
     def mark_read(self, order_id: int) -> int:
         order = self._order(order_id, write=False)
@@ -117,3 +150,16 @@ class MessageService:
         if self.storage is None:
             return []
         return [{"url": self.storage.create_download_url(a["path"], 600), "mime": a["mime"]} for a in row.attachments]
+
+    # ---- the chat lists (no order id: the caller's whole inbox) ----
+    def conversations(self, page: int, page_size: int) -> tuple[list[dict[str, Any]], int]:
+        rows, total = ConversationRepository(self.session).page(self.role, self.actor.id, offset=(page - 1) * page_size,
+                                                                 limit=page_size)
+        if self.role == RoleCode.CUSTOMER.value:
+            for r in rows:
+                r["customer_name"] = None                         # the customer knows who they are
+        return rows, total
+
+    def unread_total(self) -> int:
+        return ConversationRepository(self.session).unread_total(self.role, self.actor.id)
+

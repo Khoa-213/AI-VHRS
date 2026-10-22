@@ -9,7 +9,7 @@
 Tóm tắt luật (chi tiết ở `AI_PLAYBOOK.md`):
 - Giao tiếp tiếng Việt, giữ thuật ngữ kỹ thuật tiếng Anh; báo cáo trung thực việc đã chạy / chưa chạy.
 - Chỉ làm trong `BE/`. Kết nối robot thật là việc của BE nhưng **chỉ làm khi chủ dự án yêu cầu rõ** (mặc định chừa lại, làm luồng web app trước). Cổng thanh toán/vận chuyển là MOCK có nhãn `mode=MOCK`. Dữ liệu seed thật, không hard-code giả.
-- Không đổi schema/migration khi chưa được duyệt; không commit/push khi chưa được yêu cầu; không `--force` lên nhánh chung; **không thêm `Co-Authored-By: Claude`**.
+- Không đổi schema/migration khi chưa được duyệt (chủ dự án đã uỷ quyền 2026-10-22: việc đã duyệt cần đổi DB thì tự chạy migration lên Supabase, kiểm tra trước/sau và báo lại); **mỗi thay đổi database phải tạo lại `database/AI-VHRS_database_full.sql` bằng `scripts/build_database_script.py` (script DB tổng để chủ dự án nộp, xem `PROJECT_STATUS.md`)**; không commit/push khi chưa được yêu cầu; không `--force` lên nhánh chung; **không thêm `Co-Authored-By: Claude`**.
 - Không in/commit secret (`BE/.env`).
 - Chạy lệnh trong `BE/` (`source .venv/bin/activate`). Code xong phải **chạy test trên Supabase thật** (file mới → toàn bộ suite) rồi **cập nhật `PROJECT_STATUS.md`, `docs/FE_API_GUIDE.md`** (và `AI_PLAYBOOK.md` mục 8 nếu có bài học mới) trong cùng lượt làm việc.
 - Phase mới: trình bày kế hoạch và chờ chủ dự án "duyệt" (trừ khi họ đã uỷ quyền rõ ràng cho phase đó).

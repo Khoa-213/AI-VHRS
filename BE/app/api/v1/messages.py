@@ -3,14 +3,15 @@
 The Manager takes part in a conversation to resolve complaints. TECHNICAL_STAFF and ADMIN have no access."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.staff_schemas import (AttachmentOut, MessageIn, MessageOut, MessagePage, MessageUploadIn,
-                                   MessageUploadOut)
+from app.api.staff_schemas import (AttachmentOut, MessageIn, MessageOut, MessagePage, MessageUploadIn, MessageUploadOut,
+                                   OrderCardOut)
 from app.api.v1.orders import optional_storage
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
+from app.models.order import Order
 from app.models.sketch import Message
 from app.services.messages import MessageService
 
@@ -34,21 +35,32 @@ Svc = Annotated[MessageService, Depends(_svc)]                  # read
 WriteSvc = Annotated[MessageService, Depends(_writer_svc)]      # post / upload / mark read
 
 
-def _out(svc: MessageService, row: Message) -> MessageOut:
-    return MessageOut(id=row.id, sender_id=row.sender_id, mine=row.sender_id == svc.actor.id, body=row.body,
-                      attachments=[AttachmentOut(**a) for a in svc.attachment_urls(row)], read_at=row.read_at,
-                      created_at=row.created_at)
+def _out(svc: MessageService, row: Message, order: Order) -> MessageOut:
+    card = None
+    if row.kind == "ORDER_CARD":                                  # always the order's state NOW, never a copy made at send time
+        card = OrderCardOut(code=order.code, order_type=order.order_type, order_status=order.order_status,
+                            quantity=order.quantity, total_amount=order.total_amount)
+    return MessageOut(id=row.id, sender_id=row.sender_id, mine=row.sender_id == svc.actor.id, kind=row.kind, order_card=card,
+                      body=row.body, attachments=[AttachmentOut(**a) for a in svc.attachment_urls(row)],
+                      read_at=row.read_at, created_at=row.created_at)
 
 
 @router.get("", response_model=MessagePage, summary="Tin nhắn của đơn (cũ → mới) + số tin chưa đọc")
 def list_messages(order_id: int, svc: Svc, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=100)) -> MessagePage:
-    rows, total, unread = svc.list(order_id, page, page_size)
-    return MessagePage(items=[_out(svc, r) for r in rows], total=total, page=page, page_size=page_size, unread=unread)
+    rows, total, unread, order = svc.list(order_id, page, page_size)
+    return MessagePage(items=[_out(svc, r, order) for r in rows], total=total, page=page, page_size=page_size, unread=unread)
 
 
-@router.post("", response_model=MessageOut, status_code=status.HTTP_201_CREATED, summary="Gửi tin nhắn (có thể kèm ảnh)")
-def post_message(order_id: int, body: MessageIn, svc: WriteSvc) -> MessageOut:
-    return _out(svc, svc.post(order_id, body.body, [a.model_dump() for a in body.attachments]))
+@router.post("", response_model=MessageOut, status_code=status.HTTP_201_CREATED,
+             summary="Gửi tin nhắn (có thể kèm ảnh) hoặc thẻ đơn hàng (`kind: ORDER_CARD`, chỉ khách)",
+             description="`kind: ORDER_CARD`: khách gửi thẻ của chính đơn này, không có `body`/`attachments`. Nếu đơn đã có thẻ trong "
+                         "10 phút gần nhất, trả lại **thẻ cũ** với HTTP **200** (không tạo tin mới); gửi mới thì 201.",
+             responses={403: {"description": "CARD_CUSTOMER_ONLY"}, 422: {"description": "INVALID_CARD"}})
+def post_message(order_id: int, body: MessageIn, svc: WriteSvc, response: Response) -> MessageOut:
+    row, order, created = svc.post(order_id, body.body, [a.model_dump() for a in body.attachments], body.kind)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return _out(svc, row, order)
 
 
 @router.post("/upload-url", response_model=MessageUploadOut, status_code=status.HTTP_201_CREATED,

@@ -5,7 +5,7 @@ from sqlalchemy import text
 from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
 from app.api.v1 import (acceptance, admin, auth, catalog, customer_quotes, delivery, manager, manager_ops, me,
-                        messages, orders, payments, pricing, scheduling, shipments, technician, workshop)
+                        conversations, messages, orders, payments, pricing, scheduling, shipments, technician, workshop)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 
@@ -85,6 +85,8 @@ v1.include_router(pricing.router)
 v1.include_router(orders.router)
 v1.include_router(customer_quotes.router)
 v1.include_router(messages.router)
+v1.include_router(conversations.customer_router)
+v1.include_router(conversations.workshop_router)
 v1.include_router(workshop.router)
 v1.include_router(manager.router)
 v1.include_router(manager_ops.router)
