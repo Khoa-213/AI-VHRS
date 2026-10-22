@@ -4,7 +4,7 @@ import { STATUS_COLOR } from '../../constants/orderStatus'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link, matchOrderRoute, orderPath, usePath } from '../../router/router'
-import { listConversations, type Conversation } from '../../services/chat'
+import { listConversations, listWorkConversations, type Conversation } from '../../services/chat'
 import type { Order } from '../../services/orders'
 import { closeChat, openChat, showThread, useChatDock } from '../../store/chatDock'
 import { useUser } from '../../store/store'
@@ -41,10 +41,13 @@ function OrderCard({ order, at }: { order: Order; at: string }) {
 }
 
 /**
- * Floating chat for signed-in customers, bottom right on the customer site. One thread per sent order. Opening it from
- * an order page drops that order's card into its thread, so the studio sees which order the question is about.
+ * Floating chat, bottom right. One thread per sent order.
+ * - `customer` (mounted in App): the customer's orders. Opening it from an order page drops that order's card into its
+ *   thread, so the studio sees which order the question is about.
+ * - `workshop` (mounted in the workshop Shell): the orders a Staff holds, or every sent order for a Manager, with the
+ *   customer's name. Opening it from an order in the workbench goes to that thread.
  */
-export default function ChatDock() {
+export default function ChatDock({ side = 'customer' }: { side?: 'customer' | 'workshop' }) {
   const t = useT()
   const locale = useLocale()
   const user = useUser()
@@ -52,11 +55,20 @@ export default function ChatDock() {
   const dock = useChatDock()
   const panel = useRef<HTMLElement>(null)
   const fab = useRef<HTMLButtonElement>(null)
-  const customer = user?.role === 'customer'
-  const list = useAsync(() => (customer ? listConversations() : Promise.resolve([])), [customer], dock.open ? 15000 : 60000)
+  const workshop = side === 'workshop'
+  const manager = user?.apiRole === 'MANAGER'
+  const allowed = workshop ? user?.role === 'staff' : user?.role === 'customer'
+  const list = useAsync(
+    () => (!allowed ? Promise.resolve([]) : workshop ? listWorkConversations(user?.id, manager) : listConversations()),
+    [allowed, workshop, manager, user?.id],
+    dock.open ? 15000 : 60000,
+  )
   const convos = list.data ?? []
   const unread = convos.reduce((n, c) => n + c.unread, 0)
-  const here = Number(matchOrderRoute(path, 'review') ?? matchOrderRoute(path, 'deposit') ?? NaN)
+  const here = Number(workshop
+    ? /^\/staff\/review\/(\d+)\/?$/.exec(path)?.[1] ?? NaN
+    : matchOrderRoute(path, 'review') ?? matchOrderRoute(path, 'deposit') ?? NaN)
+  const orderHref = (id: number) => (workshop ? `/staff/review/${id}` : orderPath(id, 'review'))
   const active = convos.find((c) => c.order.id === dock.orderId) ?? null
   const inThread = !!active || (dock.orderId !== null && list.loading)
 
@@ -72,13 +84,13 @@ export default function ChatDock() {
     return () => window.removeEventListener('keydown', onKey)
   }, [dock.open])
 
-  if (!customer || HIDDEN.test(path)) return null
+  if (!allowed || (!workshop && HIDDEN.test(path))) return null
 
   const toggle = () => {
     if (dock.open) return closeChat()
     // On an order page, ask about that order even before the list has loaded; a draft simply has no thread to show.
     const draft = !list.loading && !convos.some((c) => c.order.id === here)
-    if (Number.isFinite(here) && !draft) openChat(here)
+    if (Number.isFinite(here) && !draft) openChat(here, !workshop)
     else openChat()
   }
 
@@ -97,7 +109,7 @@ export default function ChatDock() {
           tabIndex={-1}
           className={`cd-panel${inThread ? ' cd-panel--thread' : ''}`}
           role="dialog"
-          aria-label={t('cd.title')}
+          aria-label={t(workshop ? 'cd.ws.title' : 'cd.title')}
         >
           <header className="cd-head">
             {inThread && (
@@ -106,8 +118,8 @@ export default function ChatDock() {
               </button>
             )}
             <div className="cd-head-t">
-              <b>{t('cd.title')}</b>
-              <span>{t('cd.sub')}</span>
+              <b>{t(workshop ? 'cd.ws.title' : 'cd.title')}</b>
+              <span>{t(workshop ? (manager ? 'cd.ws.subManager' : 'cd.ws.sub') : 'cd.sub')}</span>
             </div>
             <button type="button" className="cd-icon" onClick={() => closeChat()} aria-label={t('common.close')} title={t('common.close')}>
               <X size={18} aria-hidden />
@@ -119,8 +131,8 @@ export default function ChatDock() {
               {list.loading && !list.data && <p className="cd-note">{t('cd.loading')}</p>}
               {list.data && !convos.length && (
                 <div className="cd-note">
-                  <p>{t('cd.noOrders')}</p>
-                  <Link to="/create-order" className="vh-link" onClick={() => closeChat()}>{t('nav.startWriting')}</Link>
+                  <p>{t(workshop ? 'cd.ws.none' : 'cd.noOrders')}</p>
+                  {!workshop && <Link to="/create-order" className="vh-link" onClick={() => closeChat()}>{t('nav.startWriting')}</Link>}
                 </div>
               )}
               {convos.map((c) => (
@@ -135,6 +147,7 @@ export default function ChatDock() {
                     <b className="vh-mono">{c.order.code}</b>
                     <span className="cd-item-time">{time(c)}</span>
                   </span>
+                  {c.customerName && <span className="cd-item-who">{c.customerName}</span>}
                   <span className="cd-item-mid">
                     <span className="vh-chip" style={{ color: STATUS_COLOR[c.order.status] }}>{t(`os.${c.order.status}`)}</span>
                   </span>
@@ -151,21 +164,22 @@ export default function ChatDock() {
                 <>
                   <div className="cd-thread-head">
                     <div>
+                      {active.customerName && <b>{active.customerName}</b>}
                       <b className="vh-mono">{active.order.code}</b>
                       <span>{t(`ot.${active.order.type}`)}</span>
                     </div>
-                    <Link to={orderPath(active.order.id, 'review')} className="vh-link">{t('cd.viewOrder')}</Link>
+                    <Link to={orderHref(active.order.id)} className="vh-link">{t('cd.viewOrder')}</Link>
                   </div>
                   <Chat
                     key={active.order.id}
                     orderId={active.order.id}
                     bare
                     closed={CLOSED.includes(active.order.status)}
-                    card={dock.cards[active.order.id] ? { at: dock.cards[active.order.id], node: <OrderCard order={active.order} at={dock.cards[active.order.id]} /> } : undefined}
+                    card={!workshop && dock.cards[active.order.id] ? { at: dock.cards[active.order.id], node: <OrderCard order={active.order} at={dock.cards[active.order.id]} /> } : undefined}
                   />
                 </>
               ) : (
-                <p className="cd-note cd-pick">{list.loading ? t('cd.loading') : convos.length ? t('cd.pick') : t('cd.howTo')}</p>
+                <p className="cd-note cd-pick">{list.loading ? t('cd.loading') : convos.length ? t('cd.pick') : t(workshop ? 'cd.ws.howTo' : 'cd.howTo')}</p>
               )}
             </div>
           </div>
@@ -177,8 +191,8 @@ export default function ChatDock() {
         type="button"
         className="cd-fab"
         aria-expanded={dock.open}
-        aria-label={unread ? t('cd.openUnread', { n: unread }) : t('cd.open')}
-        title={t('cd.open')}
+        aria-label={unread ? t(workshop ? 'cd.ws.openUnread' : 'cd.openUnread', { n: unread }) : t(workshop ? 'cd.ws.title' : 'cd.open')}
+        title={t(workshop ? 'cd.ws.title' : 'cd.open')}
         onClick={toggle}
       >
         {dock.open ? <X size={24} aria-hidden /> : <ChatCircleDots size={26} weight="fill" aria-hidden />}

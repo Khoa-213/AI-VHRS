@@ -89,6 +89,8 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
 - The order chat (`components/ui/Chat.tsx`) is shared by the customer and the workshop. Customers reach it only through the floating
   button `components/ui/ChatDock.tsx` (mounted in `App.tsx`, state in `store/chatDock.ts`, list in `services/chat.ts`): one thread per sent
   order, and opening it from an order page drops that order's card into the thread. The card is FE-only until the backend stores an order-card message.
+  The workshop gets the same dock (`<ChatDock side="workshop" />` in `Shell.tsx`, Staff and Manager): threads of the orders a Staff holds,
+  or every sent order for a Manager, with the customer's name; the order detail opens it with "Message the customer".
 - The technician screens (`src/pages/tech/`) still use the local mock (`store.ts`, `pages/staff/technicians.ts`, `evaluate.ts`, `telemetry.ts`). Wire them when backend phase 4 adds jobs, QC and photos, and delete that mock as you go.
 
 ## Account area

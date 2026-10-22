@@ -6,6 +6,7 @@ import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
 import { phaseOf, useNow } from '../../pages/tech/phase'
 import { signOut, useAllStaffOrders, useUser } from '../../store/store'
+import ChatDock from '../ui/ChatDock'
 import LanguageToggle from '../ui/LanguageToggle'
 import SkipLink from '../ui/SkipLink'
 import './ws.css'
@@ -138,6 +139,7 @@ export default function Shell({
           {children}
         </main>
       </div>
+      {(area === 'staff' || area === 'manager') && <ChatDock side="workshop" />}
     </div>
   )
 }

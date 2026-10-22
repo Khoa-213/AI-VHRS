@@ -63,3 +63,6 @@
   .cd-panel:not(.cd-panel--thread) .cd-thread{display:none}
   .cd-panel--thread .cd-back{display:grid}
 }
+
+/* workshop side: who the thread is with */
+.cd-item-who{font-size:13px;font-weight:700;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

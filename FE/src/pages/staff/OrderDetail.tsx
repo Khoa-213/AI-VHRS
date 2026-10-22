@@ -1,6 +1,6 @@
+import { ChatCircleDots } from '@phosphor-icons/react'
 import { useState } from 'react'
 import type { Job } from '../../services/async'
-import Chat from '../../components/ui/Chat'
 import OrderPreview from '../../components/ui/OrderPreview'
 import { STATUS_COLOR } from '../../constants/orderStatus'
 import { useAsync } from '../../hooks/useAsync'
@@ -12,6 +12,7 @@ import {
   REJECT_REASONS, acceptOrder, assignStaff, claimOrder, getStaffDirectory, getWork, orderJobs, orderPayments, rejectOrder, requestInfo,
   type RejectReason,
 } from '../../services/workshop'
+import { openChat } from '../../store/chatDock'
 import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
 import { isManagerRole } from './RequireStaff'
@@ -223,7 +224,12 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         <Link to={`/staff/schedule/${order.id}`} className="vh-btn vh-btn--primary vh-btn--md wk-link">{t('wk.goSchedule')}</Link>
       )}
 
-      {order.status !== 'DRAFT' && <Chat orderId={id} closed={['REJECTED', 'CANCELLED', 'COMPLETED'].includes(order.status)} />}
+      {order.status !== 'DRAFT' && (mine || manager) && (
+        <button type="button" className="vh-btn vh-btn--ghost vh-btn--md wk-link" onClick={() => openChat(order.id, false)}>
+          <ChatCircleDots size={18} aria-hidden />
+          {t('cd.ws.ask')}
+        </button>
+      )}
     </div>
   )
 }
