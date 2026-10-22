@@ -1,3 +1,4 @@
+import BrandLogo from '../ui/BrandLogo'
 import { ORDER_HREF } from '../../constants'
 import { LANGS, setLang, useLang, useT } from '../../i18n'
 import { Link } from '../../router/router'
@@ -38,8 +39,7 @@ export default function SiteFooter({ framed = false }: { framed?: boolean }) {
         <div className="sf-left">
           <div className="sf-about">
             <Link to="/" className="sf-logo">
-              <span className="sf-logo-mark" aria-hidden />
-              <span>AI-VHRS</span>
+              <BrandLogo theme="dark" />
             </Link>
             <div className="sf-about-body">
               <p className="sf-lede">{t('ft.lede')}</p>
