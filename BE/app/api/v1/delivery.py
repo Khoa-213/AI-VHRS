@@ -7,7 +7,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 
-from app.api.delivery_schemas import (DeliveryIn, DeliveryOptionOut, DeliveryQuoteOut, FinalPaymentIn, FinalPaymentOut)
+from app.api.delivery_schemas import (DeliveryIn, DeliveryOptionOut, DeliveryQuoteOut, FinalPaymentIn, FinalPaymentOut,
+                                      ServiceOptionOut, QuoteIn)
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.order_schemas import OrderOut
 from app.api.schemas import ErrorOut
@@ -29,12 +30,27 @@ Svc = Annotated[DeliveryService, Depends(_svc)]
 
 @router.get("/orders/{order_id}/delivery-quote", response_model=DeliveryQuoteOut,
             summary="FR-21 Phí nhận hàng của hai cách (giao hàng / nhận tại xưởng) và số tiền phải trả một lần (G − D) + phí ship",
-            description="Phí lấy từ **bảng phí dự phòng** (`is_fallback_fee = true`); API hãng vận chuyển chưa được nối (Phase 4c-2).",
+            description="`services` liệt kê các dịch vụ vận chuyển của từng hãng cho địa chỉ đã lưu trên đơn (chưa có địa chỉ: chỉ phí dự phòng). "
+                         "Dùng `POST /orders/{id}/delivery-quote` để xem trước cho một địa chỉ chưa lưu.",
             responses={**STATE, 503: {"model": ErrorOut, "description": "SHIPPING_FEE_UNAVAILABLE"}})
 def quote(order_id: int, svc: Svc) -> DeliveryQuoteOut:
-    data = svc.quote(order_id)
+    return _quote_out(svc.quote(order_id))
+
+
+def _quote_out(data: dict) -> DeliveryQuoteOut:
     data["options"] = {k: DeliveryOptionOut(**v) for k, v in data["options"].items()}
+    data["services"] = [ServiceOptionOut(**s) for s in data["services"]]
+    data["chosen_service"] = ServiceOptionOut(**data["chosen_service"]) if data["chosen_service"] else None
     return DeliveryQuoteOut(**data)
+
+
+@router.post("/orders/{order_id}/delivery-quote", response_model=DeliveryQuoteOut,
+             summary="FR-21 Báo phí và dịch vụ vận chuyển của các hãng cho một địa chỉ CHƯA lưu (khách xem rồi mới chọn)",
+             description="Không đổi dữ liệu. Mỗi hãng trả các dịch vụ {service_code, tên, phí, ngày giao dự kiến}; hãng nào API đang tắt/lỗi "
+                         "chỉ có một dịch vụ `STANDARD` tính theo bảng phí dự phòng (`is_fallback_fee = true`).",
+             responses={**STATE, 503: {"model": ErrorOut, "description": "SHIPPING_FEE_UNAVAILABLE"}})
+def quote_for_address(order_id: int, body: QuoteIn, svc: Svc) -> DeliveryQuoteOut:
+    return _quote_out(svc.quote(order_id, body.address.model_dump()))
 
 
 @router.put("/orders/{order_id}/delivery", response_model=OrderOut,
@@ -44,7 +60,7 @@ def choose(order_id: int, body: DeliveryIn, svc: Svc) -> OrderOut:
     return OrderOut.model_validate(svc.choose(
         order_id, body.method, address=body.address.model_dump() if body.address else None,
         slot_start=body.pickup_slot_start, slot_end=body.pickup_slot_end, contact_phone=body.contact_phone,
-        receiver=body.receiver))
+        receiver=body.receiver, carrier=body.carrier, service_code=body.service_code))
 
 
 @router.post("/orders/{order_id}/payments/final", response_model=FinalPaymentOut, status_code=status.HTTP_201_CREATED,
@@ -53,7 +69,7 @@ def choose(order_id: int, body: DeliveryIn, svc: Svc) -> OrderOut:
                          "thì `payment_required = false` và đơn sang `READY_TO_DELIVER` ngay.",
              responses=STATE)
 def start_final(order_id: int, body: FinalPaymentIn, svc: Svc) -> FinalPaymentOut:
-    rows, due, order = svc.start_final_payment(order_id, body.gateway)
+    rows, due, order = svc.start_final_payment(order_id, body.gateway, body.expected_total)
     return FinalPaymentOut(payment_required=bool(rows), total_due=due.total, order_status=order.order_status.value,
                            payments=[payment_out(p) for p in rows])
 

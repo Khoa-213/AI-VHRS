@@ -46,6 +46,10 @@ class Address(BaseModel):
     province_code: str  # codes follow the carrier's (GHN/GHTK) location tables (FR-02)
     district_code: str
     ward_code: str
+    # Names are needed by carriers that address by name (GHTK); GHN uses the codes above.
+    province_name: str | None = Field(default=None, max_length=100)
+    district_name: str | None = Field(default=None, max_length=100)
+    ward_name: str | None = Field(default=None, max_length=100)
     is_default: bool = False
 
 

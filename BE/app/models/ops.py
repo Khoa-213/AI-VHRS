@@ -91,6 +91,21 @@ class IncidentType(str, enum.Enum):
     OTHER = "OTHER"
 
 
+class Carrier(str, enum.Enum):
+    GHN = "GHN"
+    GHTK = "GHTK"
+
+
+class ShipmentStatus(str, enum.Enum):
+    CREATED = "CREATED"
+    PICKED_UP = "PICKED_UP"
+    DELIVERING = "DELIVERING"
+    DELIVERED = "DELIVERED"
+    FAILED = "FAILED"
+    RETURNED = "RETURNED"
+    CANCELLED = "CANCELLED"
+
+
 # Statuses in which a job occupies its robot / technician (mirrors the EXCLUDE constraint ex_job_robot_overlap).
 ACTIVE_JOB_STATUSES = (JobStatus.SCHEDULED, JobStatus.PREPARING, JobStatus.WRITING, JobStatus.PAUSED)
 
@@ -226,3 +241,32 @@ class ProductPhoto(Base):
     qc_note: Mapped[str | None] = mapped_column(Text)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+
+
+class Shipment(Base):
+    """One waybill of one order (FR-21..23). A failed or cancelled waybill stays as history; at most one is alive."""
+    __tablename__ = "shipments"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    carrier: Mapped[Carrier] = mapped_column(Enum(Carrier, name="carrier", create_type=False))
+    service_code: Mapped[str | None] = mapped_column(String(30))
+    waybill_code: Mapped[str | None] = mapped_column(String(60))
+    fee: Mapped[Decimal] = mapped_column(Numeric(14, 0))
+    is_fallback_fee: Mapped[bool] = mapped_column(Boolean, default=False)
+    package_type: Mapped[str | None] = mapped_column(String(20))
+    weight_g: Mapped[int | None] = mapped_column(Integer)
+    to_address: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    status: Mapped[ShipmentStatus] = mapped_column(Enum(ShipmentStatus, name="shipment_status", create_type=False),
+                                                   default=ShipmentStatus.CREATED)
+    carrier_status_raw: Mapped[str | None] = mapped_column(String(60))
+    label_url: Mapped[str | None] = mapped_column(Text)               # storage path of the label PDF
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    picked_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue(),
+                                                 server_onupdate=FetchedValue())
+
+
+# A shipment in one of these still belongs to the order (FAILED may still be delivered by a second attempt).
+LIVE_SHIPMENT_STATUSES = (ShipmentStatus.CREATED, ShipmentStatus.PICKED_UP, ShipmentStatus.DELIVERING, ShipmentStatus.FAILED)

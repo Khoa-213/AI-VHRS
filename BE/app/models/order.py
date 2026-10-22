@@ -127,6 +127,10 @@ class Order(Base):
     delivery_address: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     pickup_slot_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     pickup_slot_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The carrier service the customer chose for DELIVERY (Phase 4c-2b); all NULL for PICKUP.
+    shipping_carrier: Mapped[str | None] = mapped_column(ENUM("GHN", "GHTK", name="carrier", create_type=False))
+    shipping_service_code: Mapped[str | None] = mapped_column(String(30))
+    shipping_eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     received_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")

@@ -28,11 +28,13 @@ def _cleanup() -> None:
             or (entity_type = 'order' and entity_id in {_TEST_ORDERS})
             or (entity_type = 'quotation' and entity_id in (select id from quotations where order_id in {_TEST_ORDERS}))
             or (entity_type = 'sketch' and entity_id in (select id from sketches where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'shipment' and entity_id in (select id from shipments where order_id in {_TEST_ORDERS}))
             or (entity_type = 'incident' and entity_id in (select id from incidents where reported_by in {_TEST_IDS}
                  or robot_id in (select id from robots where code like 'pytest\\_%')))"""))
         # orders (cascade: inputs, sketches, quotations, messages, status_histories) before accounts;
         # test catalog rows after the orders
         # payments / production jobs do not cascade from orders; jobs must go before the test robots
+        c.execute(text(f"delete from shipments where order_id in {_TEST_ORDERS}"))   # no cascade from orders
         c.execute(text(f"delete from payments where order_id in {_TEST_ORDERS}"))
         # product_photos.job_id does not cascade, so photos go before their jobs
         c.execute(text(f"delete from product_photos where order_id in {_TEST_ORDERS}"))

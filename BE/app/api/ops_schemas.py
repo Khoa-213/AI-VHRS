@@ -50,9 +50,23 @@ class PaymentOut(_ORM):
     status: PaymentStatus
     paid_at: datetime | None
     created_at: datetime
-    mode: str = Field(default="MOCK", description="MOCK = simulated payment, no real money moved.")
-    checkout_path: str | None = Field(default=None, description="Where the (mock) gateway page lives while PENDING.")
+    mode: str = Field(default="MOCK", description="MOCK = simulated, no money. SANDBOX = the gateway's test environment. "
+                                                  "LIVE = real money.")
+    checkout_path: str | None = Field(default=None, description="MOCK only: where the simulated gateway page lives while PENDING.")
+    pay_url: str | None = Field(default=None, description="SANDBOX/LIVE: send the customer's browser here while PENDING.")
+    pay_url_expires_at: datetime | None = Field(default=None, description="After this the link is dead: start the payment again.")
     needs_refund: bool = False
+
+
+class GatewayInfo(BaseModel):
+    gateway: PaymentGateway
+    mode: str = Field(description="MOCK | SANDBOX | LIVE")
+    enabled: bool = Field(description="False = not configured on the server: do not offer it to the customer.")
+
+
+class VnpayIpnAck(BaseModel):
+    RspCode: str
+    Message: str
 
 
 class WebhookResult(BaseModel):

@@ -85,6 +85,9 @@ def check_address(address: dict[str, Any]) -> dict[str, Any]:
         raise DeliveryRuleError("INVALID_ADDRESS", "Địa chỉ giao hàng thiếu thông tin.", {"missing": missing})
     if address.get("label"):
         clean["label"] = str(address["label"]).strip()[:50]
+    for key in ("province_name", "district_name", "ward_name"):          # optional: GHTK addresses by name
+        if str(address.get(key) or "").strip():
+            clean[key] = str(address[key]).strip()[:100]
     return clean
 
 

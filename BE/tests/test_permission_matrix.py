@@ -21,6 +21,7 @@ from tests.conftest import auth
 CUSTOMER, STAFF, TECH, MANAGER, ADMIN = "CUSTOMER", "STAFF", "TECHNICAL_STAFF", "MANAGER", "ADMIN"
 ROLES = [CUSTOMER, STAFF, TECH, MANAGER, ADMIN]
 PUBLIC, ANY, SIGNED = "PUBLIC", "ANY_AUTHENTICATED", "SIGNED_WEBHOOK"
+VNPAY_IPN = "VNPAY_IPN"            # signed by VNPay; answers HTTP 200 with RspCode 97 when the signature is missing/invalid
 READ = {"GET"}
 WRITE = {"POST", "PUT", "PATCH", "DELETE"}
 ALL = READ | WRITE
@@ -31,13 +32,16 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/(catalog/(papers|pens|templates|suggest-materials)|privacy-policy)", READ, PUBLIC),
     (r"^/pricing/estimate$", ALL, {CUSTOMER}),
     (r"^/auth/(register|login|google|refresh|token|password-reset/(request|confirm))$", ALL, PUBLIC),
+    (r"^/webhooks/shipments/\{carrier\}$", ALL, SIGNED),                      # authenticated by the carrier's secret / signature
+    (r"^/webhooks/payments/vnpay/ipn$", ALL, VNPAY_IPN),
+    (r"^/webhooks/payments/momo/ipn$", ALL, SIGNED),
     (r"^/webhooks/payments/\{gateway\}$", ALL, SIGNED),                      # no token: authenticated by the HMAC signature
     (r"^/auth/logout$", ALL, ANY),
     (r"^/me", ALL, ANY),
     (r"^/catalog/my-styles$", READ, {CUSTOMER}),
     (r"^/orders/\{order_id\}/messages", ALL, {CUSTOMER, STAFF, MANAGER}),    # the Manager joins chats to resolve complaints
     (r"^/orders", ALL, {CUSTOMER}),
-    (r"^/payments/\{payment_id\}/mock-checkout$", ALL, {CUSTOMER}),
+    (r"^/payments/", ALL, {CUSTOMER}),                                       # gateways list, refresh, mock-checkout
     (r"^/workshop/", READ, {STAFF, MANAGER}),
     (r"^/workshop/", WRITE, {STAFF}),                                        # accept, reject, sketch, quote, send: Staff only
     (r"^/technician/", ALL, {TECH}),                                         # only the technician, and only their own jobs (BR-19)
@@ -70,7 +74,7 @@ def _routes() -> list[tuple[str, str]]:
 
 
 def _url(path: str) -> str:
-    return "/api/v1" + re.sub(r"\{(\w+)\}", lambda m: "VNPAY" if m.group(1) == "gateway" else "999999999", path)
+    return "/api/v1" + re.sub(r"\{(\w+)\}", lambda m: {"gateway": "VNPAY", "carrier": "GHN"}.get(m.group(1), "999999999"), path)
 
 
 @pytest.fixture(scope="module")
@@ -99,6 +103,12 @@ def test_permission_matrix_is_enforced_on_every_route(client, tokens):
                 r = client.request(method, url, json=body, headers=headers)
                 if r.status_code != 401 or _code(r) != "INVALID_SIGNATURE":
                     problems.append(f"{method} {path}: unsigned call got {r.status_code} {_code(r)}")
+            continue
+        if who is VNPAY_IPN:
+            for headers in ({}, tokens[MANAGER], tokens[ADMIN]):
+                r = client.request(method, url, json=body, headers=headers)
+                if r.status_code != 200 or (r.json() or {}).get("RspCode") != "97":
+                    problems.append(f"{method} {path}: unsigned VNPay IPN got {r.status_code} {r.text[:80]}")
             continue
         if who is PUBLIC:
             if anon.status_code in (401, 403):
