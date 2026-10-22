@@ -54,6 +54,11 @@ Cho tới khi có, nguồn thực tế là trigger DB `fn_order_state_guard` và
 - **Scheduled jobs (SRS 3.1.4 #15)**: hủy báo giá hết hạn, nhắc nghiệm thu, tự nghiệm thu, xóa ảnh sau 90 ngày kể từ khi hoàn tất (BR-23, trừ khi khách đồng ý lưu bộ nét).
 - **Đánh giá (FR-58, UC-20/59)**: khách đánh giá sau khi đơn hoàn thành; mỗi đơn 1 đánh giá (bảng `reviews`, `review_photos` đã có).
 
+## Quyết định đã chốt 2026-10-22 (Phase 4c-2, người quyết định: chủ dự án)
+- **Khách chọn hãng + dịch vụ vận chuyển** (như Shopee) ở màn Delivery Options; lưu `orders.shipping_carrier/service_code/shipping_eta` (**migration 0004**, đã áp dụng lên Supabase). Staff tạo vận đơn đúng dịch vụ khách chọn.
+- Thanh toán thật VNPay/MoMo và hãng thật GHN/GHTK nằm cùng phase, mặc định vẫn MOCK (`PAYMENT_MODE`, `CARRIER_MODE`). Adapter thật **chưa chạy với bên thật** (tài liệu chính thức không truy cập được lúc viết).
+- Giao thất bại/hoàn hàng giữ đơn ở `DELIVERING`; callback hãng `DELIVERED` → `COMPLETED`.
+
 ## Điểm tài liệu còn **không nói** hoặc mơ hồ (cần hỏi chủ dự án khi gặp)
 1. Phí `S_type` bị trừ khi hoàn tiền (BR-14): lấy từ snapshot báo giá nào? (báo giá `APPROVED`).
 2. *(đã chốt 2026-10-18, xem bảng trên)* viết lại lần 2 · giao thất bại · xác nhận nhận hàng.

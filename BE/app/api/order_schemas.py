@@ -127,6 +127,9 @@ class OrderOut(_ORM):
     delivery_address: dict[str, Any] | None = None
     pickup_slot_start: datetime | None = None
     pickup_slot_end: datetime | None = None
+    shipping_carrier: str | None = None
+    shipping_service_code: str | None = None
+    shipping_eta: datetime | None = None
     received_confirmed_at: datetime | None = None
     completed_at: datetime | None = None
     last_saved_at: datetime

@@ -190,3 +190,15 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 
 ### 2026-10-18 · Dữ liệu test còn sót làm lệch test khác trong cùng một phiên (robot cho gợi ý lịch)
 **Bối cảnh:** `test_queue_suggestion_and_schedule_validation` pass khi chạy riêng nhưng đỏ ở đúng ~31% mỗi lần chạy cả suite (`assert 188 in [46, 179, 180, 181, 182]`). Gợi ý lịch của Manager chỉ trả tối đa 5 robot (`MAX_SUGGESTIONS`), cùng giờ rảnh thì xếp theo id nhỏ; fixture `robot` để robot test `AVAILABLE` tới hết phiên (dữ liệu test chỉ xoá lúc bắt đầu/kết thúc phiên), và các test Phase 4b thêm đủ robot rảnh để robot của test này bị cắt. **Cách làm đúng:** (1) fixture tạo dữ liệu "dùng chung toàn cục" (robot, giấy, bút...) phải trả về trạng thái trung tính sau mỗi test (`yield` + `update ... status='MAINTENANCE'`), không chờ `_cleanup`; (2) test phụ thuộc vào "tập hợp toàn bộ X trong DB" dễ vỡ khi thêm test ở file khác — thêm test mới thì chạy cả suite; (3) khi chạy cả suite để tìm lỗi lẻ, **lưu toàn bộ log vào file** (`-v --tb=long > file`), đừng `| tail -40`: traceback nằm cuối phiên và chỉ cần một lần chạy để biết nguyên nhân.
+
+### 2026-10-22 · Vận đơn/incidents không cascade; mã vận đơn trong fake phải duy nhất (Phase 4c-2)
+**Bối cảnh:** `shipments` tham chiếu `orders` không `ON DELETE CASCADE`; fake GHN trả cùng một mã vận đơn ở nhiều test làm vỡ unique `(carrier, waybill_code)` (lỗi chung `409 CONFLICT`, khó đoán nguyên nhân). **Cách làm đúng:** `_cleanup` xoá `shipments` (và audit `entity_type='shipment'`) **trước** payments/orders/robots/accounts; fake của hãng nhận tham số mã và test dùng uuid riêng cho mỗi lần.
+
+### 2026-10-22 · Cổng thật mở thêm cửa: đóng cửa webhook mô phỏng
+**Bối cảnh:** webhook thanh toán mô phỏng không cần chữ ký hợp lệ của cổng thật; để mở khi `PAYMENT_MODE=sandbox|live` thì ai biết mã giao dịch cũng "trả tiền" được. **Cách làm đúng:** khi thêm adapter thật, rà mọi đường vào MOCK và tắt chúng ở chế độ thật (`MOCK_WEBHOOK_DISABLED`, `mock-event` chỉ cho vận đơn MOCK), kèm test. Callback "tiền về" cho giao dịch đã huỷ không được xác nhận đơn: ghi `needs_refund` + `PAYMENT_ORPHAN` và vẫn trả cổng "đã nhận".
+
+### 2026-10-22 · Adapter chưa chạy với bên thật phải tự nói thẳng
+**Bối cảnh:** tài liệu VNPay/MoMo/GHN/GHTK không truy cập được lúc viết; test chỉ chứng minh adapter nhất quán với chính nó (HTTP giả `MockTransport`). **Cách làm đúng:** mỗi adapter có ghi chú "VERIFICATION STATUS" liệt kê điều phải xác nhận ở lần chạy sandbox đầu; báo cáo cuối phase ghi rõ "chưa chạy với bên thật"; mặc định giữ mock.
+
+### 2026-10-22 · Chạy nhanh bằng Postgres Docker cục bộ
+**Bối cảnh:** Supabase ở Tokyo ~1 s/truy vấn, suite ~70 phút và Codespace tự tắt sau 30 phút im lặng. **Cách làm đúng:** vòng lặp sửa-chạy dùng Postgres Docker cục bộ (chạy migration lên đó, đặt `DATABASE_URL`/`JWT_SECRET` trong môi trường, không sửa `.env`): 476 test trong ~2m20s. Vẫn chạy toàn suite trên Supabase khi chủ dự án ở lại, trước khi báo "đã kiểm chứng" (S06).

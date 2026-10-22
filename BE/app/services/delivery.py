@@ -9,6 +9,7 @@ State changes are plain UPDATEs judged by the DB trigger `fn_order_state_guard`.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -17,18 +18,21 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.db.session import set_actor
+from app.integrations import carrier as cx
+from app.domain import carrier_rules as cr
 from app.domain import delivery_rules as dr
 from app.domain.scheduling_rules import NoSlotError, WorkCalendar
-from app.integrations import payment_gateway as gw
 from app.models.account import Account
 from app.models.ops import Payment, PaymentGateway, PaymentStatus, PaymentType
 from app.models.order import DeliveryMethod, Order, OrderStatus
 from app.repositories.catalog import CatalogRepository
-from app.repositories.ops import PaymentRepository
+from app.repositories.ops import JobRepository, PaymentRepository
 from app.repositories.orders import OrderRepository
-from app.services import audit, notifications
+from app.services import audit, gateway_checkout as checkout, notifications
+from app.services import parcel as parcel_svc
 from app.services.workshop_access import WorkshopAccess
 
+log = logging.getLogger("app")
 _STATUS = {"SLOT_IN_PAST": 422, "SHIPPING_FEE_UNAVAILABLE": 503}      # every other DeliveryRuleError is a 422
 
 
@@ -45,8 +49,8 @@ class DeliveryService:
         self.session, self.customer, self.ip = session, customer, ip
         self.orders = OrderRepository(session)
         self.payments = PaymentRepository(session)
+        self.jobs = JobRepository(session)
         self.catalog = CatalogRepository(session)
-        self.gateway = gw.get_gateway()
 
     # ------------------------------------------------------------------ helpers
     def _own(self, order_id: int) -> Order:
@@ -72,13 +76,8 @@ class DeliveryService:
                        {"order_status": order.order_status.value})
 
     def _package(self, order: Order) -> tuple[str, str]:
-        paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
-        if paper is None:
-            raise AppError(409, "DELIVERY_NOT_READY", "Đơn chưa có loại giấy để xác định gói hàng.")
-        try:
-            return paper.size.value, dr.package_type(paper.size.value)
-        except dr.DeliveryRuleError as exc:
-            raise _rule_error(exc) from exc
+        _, size, package = parcel_svc.paper_and_package(self.catalog, order)
+        return size, package
 
     def _fee(self, order: Order) -> Decimal:
         _, package = self._package(order)
@@ -99,27 +98,82 @@ class DeliveryService:
         except (ValueError, NoSlotError) as exc:
             raise AppError(503, "WORKING_HOURS_INVALID", "Cấu hình giờ làm việc (working_hours) không hợp lệ.") from exc
 
+    # ------------------------------------------------------------------ the parcel and the carriers' services
+    def _parcel(self, order: Order) -> cr.Parcel:
+        return parcel_svc.build_parcel(self.catalog, self.jobs, order)
+
+    def _quotes(self, order: Order, address: dict[str, Any] | None) -> list[cr.ServiceQuote]:
+        """What each carrier offers for this parcel and address. A carrier whose API is off (or fails) is offered with one option
+        priced from the fallback table (FR-21); a carrier that cannot address this destination is left out."""
+        base = self._fee(order)
+        fee_table = self.catalog.setting("fallback_shipping_fees", None)
+        flags = self.catalog.setting("integrations_enabled", {})
+        parcel = self._parcel(order)
+        out: list[cr.ServiceQuote] = []
+        for carrier in cx.CARRIERS:
+            if address and cx.api_enabled(carrier, flags):
+                try:
+                    found = cx.get_adapter(carrier, fee_table=fee_table).quote(parcel=parcel, to=address, order_code=order.code)
+                    if found:
+                        out.extend(found)
+                        continue
+                except AppError as exc:
+                    if exc.code in ("ADDRESS_NAMES_REQUIRED", "INVALID_ADDRESS"):
+                        continue
+                    if exc.code not in ("CARRIER_UNAVAILABLE", "CARRIER_REJECTED", "CARRIER_NOT_CONFIGURED",
+                                        "SHIPPING_FEE_UNAVAILABLE"):
+                        raise
+                    log.warning("carrier %s quote failed (%s): fallback fee used", carrier, exc.code)
+            out.append(cr.fallback_quote(carrier, base))
+        return out
+
+    def _current_fee(self, order: Order) -> Decimal:
+        """The fee of the service the customer chose, asked again now (an order from before carriers were offered: the table)."""
+        if order.shipping_carrier is None:
+            return self._fee(order)
+        try:
+            return Decimal(cr.pick_service(self._quotes(order, order.delivery_address), order.shipping_carrier,
+                                           order.shipping_service_code).fee)
+        except cr.CarrierRuleError as exc:
+            raise AppError(409, exc.code, exc.message, exc.details) from exc
+
     # ------------------------------------------------------------------ FR-21: what it costs
-    def quote(self, order_id: int) -> dict[str, Any]:
+    def quote(self, order_id: int, address: dict[str, Any] | None = None) -> dict[str, Any]:
         order = self._own(order_id)
         self._awaiting(order)
         size, package = self._package(order)
-        fee = self._fee(order)
-        options = {m: {"fee": f, "total_due": self._due(order, m, f).total}
-                   for m, f in (("DELIVERY", fee), ("PICKUP", Decimal(0)))}
-        return {"paper_size": size, "package_type": package, "balance": order.total_amount - order.deposit_amount,
-                "is_fallback_fee": True, "options": options, "chosen": order.delivery_method}
+        try:
+            use = dr.check_address(address) if address else (
+                order.delivery_address if order.delivery_method == DeliveryMethod.DELIVERY else None)
+        except dr.DeliveryRuleError as exc:
+            raise _rule_error(exc) from exc
+        quotes = self._quotes(order, use)
+        balance = order.total_amount - order.deposit_amount
+        services = [{"carrier": q.carrier, "service_code": q.service_code, "service_name": q.service_name, "fee": Decimal(q.fee),
+                     "total_due": self._due(order, "DELIVERY", Decimal(q.fee)).total, "eta": q.eta,
+                     "is_fallback_fee": q.is_fallback, "mode": q.mode} for q in quotes]
+        cheapest = min(services, key=lambda s: s["fee"])
+        chosen = next((s for s in services if (s["carrier"], s["service_code"]) ==
+                       (order.shipping_carrier, order.shipping_service_code)), None)
+        options = {"DELIVERY": {"fee": (chosen or cheapest)["fee"], "total_due": (chosen or cheapest)["total_due"]},
+                   "PICKUP": {"fee": Decimal(0), "total_due": self._due(order, "PICKUP", Decimal(0)).total}}
+        return {"paper_size": size, "package_type": package, "balance": balance,
+                "is_fallback_fee": bool((chosen or cheapest)["is_fallback_fee"]), "options": options,
+                "chosen": order.delivery_method, "services": services, "chosen_service": chosen}
 
     # ------------------------------------------------------------------ FR-21 / FR-23: how to receive it
     def choose(self, order_id: int, method: DeliveryMethod, *, address: dict[str, Any] | None,
                slot_start: datetime | None, slot_end: datetime | None, contact_phone: str | None,
-               receiver: str | None) -> Order:
+               receiver: str | None, carrier: str | None = None, service_code: str | None = None) -> Order:
         order = self._lock(order_id)
         self._awaiting(order)
         try:
             if method == DeliveryMethod.DELIVERY:
                 order.delivery_address = dr.check_address(address or {})
                 order.pickup_slot_start = order.pickup_slot_end = None
+                picked = cr.pick_service(self._quotes(order, order.delivery_address), carrier, service_code)
+                order.shipping_carrier, order.shipping_service_code, order.shipping_eta = (
+                    picked.carrier, picked.service_code, picked.eta)
             else:
                 assert slot_start is not None and slot_end is not None
                 dr.check_pickup_slot(slot_start, slot_end, _now(), self._calendar())
@@ -128,30 +182,38 @@ class DeliveryService:
                 order.delivery_address = {"receiver": (receiver or self.customer.full_name).strip(),
                                           "phone": dr.normalize_phone(contact_phone)}
                 order.pickup_slot_start, order.pickup_slot_end = slot_start, slot_end
+                order.shipping_carrier = order.shipping_service_code = order.shipping_eta = None
         except dr.DeliveryRuleError as exc:
             raise _rule_error(exc) from exc
+        except cr.CarrierRuleError as exc:
+            raise AppError(422, exc.code, exc.message, exc.details) from exc
         order.delivery_method = method
         for stale in self.payments.pending_final(order.id):          # their amount belonged to the previous choice
             stale.status = PaymentStatus.CANCELLED
         self.session.flush()
         audit.record(self.session, actor_id=self.customer.id, action="DELIVERY_CHOOSE", entity_type="order",
-                     entity_id=order.id, new={"method": method.value}, ip=self.ip)
+                     entity_id=order.id, new={"method": method.value, "carrier": order.shipping_carrier,
+                                              "service": order.shipping_service_code}, ip=self.ip)
         return order
 
     # ------------------------------------------------------------------ FR-18: the final payment
-    def start_final_payment(self, order_id: int, gateway: PaymentGateway) -> tuple[list[Payment], dr.AmountDue, Order]:
+    def start_final_payment(self, order_id: int, gateway: PaymentGateway,
+                            expected_total: Decimal | None = None) -> tuple[list[Payment], dr.AmountDue, Order]:
         order = self._lock(order_id)
         self._awaiting(order)
         if order.delivery_method is None:
             raise AppError(409, "DELIVERY_NOT_CHOSEN", "Hãy chọn giao hàng hoặc nhận tại xưởng trước khi thanh toán.")
         method = order.delivery_method.value
-        due = self._due(order, method, self._fee(order) if method == "DELIVERY" else Decimal(0))
+        due = self._due(order, method, self._current_fee(order) if method == "DELIVERY" else Decimal(0))
+        if expected_total is not None and expected_total != due.total:
+            raise AppError(409, "FEE_CHANGED", "Số tiền phải trả đã thay đổi so với lúc bạn xem. Vui lòng kiểm tra lại.",
+                           {"expected_total": str(expected_total), "current_total": str(due.total)})
 
         wanted = sorted((ptype.value, amount) for ptype, amount in
                         ((PaymentType.FINAL, due.final), (PaymentType.SHIPPING, due.shipping)) if amount > 0)
         open_rows = self.payments.pending_final(order.id)
         if open_rows and sorted((p.type.value, p.amount) for p in open_rows) == wanted and all(
-                p.gateway == gateway for p in open_rows):
+                p.gateway == gateway and checkout.usable(p) for p in open_rows):
             return open_rows, due, order                              # same intent: reuse the open transaction
         for stale in open_rows:
             stale.status = PaymentStatus.CANCELLED
@@ -166,7 +228,7 @@ class DeliveryService:
             self._notify_ready(order)
             return [], due, order
 
-        txn = self.gateway.new_txn_id(gateway.value)
+        txn, mode = checkout.begin(gateway)
         rows: list[Payment] = []
         for ptype, amount in ((PaymentType.FINAL, due.final), (PaymentType.SHIPPING, due.shipping)):
             if amount <= 0:
@@ -175,10 +237,11 @@ class DeliveryService:
             txn_id = txn if not rows else f"{txn}:SHIP"
             rows.append(self.payments.add(Payment(
                 order_id=order.id, type=ptype, amount=amount, gateway=gateway, gateway_txn_id=txn_id,
-                status=PaymentStatus.PENDING, gateway_payload={"mode": self.gateway.mode, "group_txn": txn})))
+                status=PaymentStatus.PENDING, gateway_payload={"mode": mode, "group_txn": txn})))
+        checkout.attach(rows, gateway, order, total=due.total, ip=self.ip)
         audit.record(self.session, actor_id=self.customer.id, action="PAYMENT_START", entity_type="payment",
                      entity_id=rows[0].id, new={"order_id": order.id, "final": str(due.final), "shipping": str(due.shipping),
-                                                "gateway": gateway.value, "mode": self.gateway.mode}, ip=self.ip)
+                                                "gateway": gateway.value, "mode": mode}, ip=self.ip)
         return rows, due, order
 
     def _notify_ready(self, order: Order) -> None:

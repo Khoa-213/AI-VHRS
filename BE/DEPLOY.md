@@ -26,6 +26,46 @@ Target: Render web service (Docker, Singapore) + Supabase Postgres (Tokyo) + FE 
 
 3. Deploy. Each deploy first runs `alembic upgrade head` (pre-deploy), then starts one instance.
 
+## 1b. Real payments and carriers (optional; default is simulated)
+
+Out of the box (`PAYMENT_MODE=mock`, `CARRIER_MODE=mock`) nothing leaves the server: payments and waybills are simulated and
+labelled `MOCK`. To use the real VNPay / MoMo / GHN / GHTK APIs, add these variables in **Render → Environment** (they are not
+in `render.yaml`; they are secrets) and redeploy. **Run `alembic upgrade head` first** (the deploy does it) so migration `0004`
+exists before the new code reads the order's `shipping_*` columns.
+
+| Variable | Meaning |
+|---|---|
+| `PUBLIC_BASE_URL` | public `https` address of this API, e.g. `https://ai-vhrs-be.onrender.com` (no trailing slash). The gateways and carriers call back to it |
+| `PAYMENT_MODE` | `mock` (default) / `sandbox` (the gateways' TEST environments, test money) / `live` (**real money**: only with production credentials and the owner's say-so) |
+| `PAYMENT_RETURN_URL` | web-app page the customer is sent back to after paying, e.g. `https://<app>.vercel.app/payment/result` (display only) |
+| `PAYMENT_EXPIRE_MINUTES` | payment link lifetime, default 15 |
+| `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | from VNPay (sandbox: email after registering at sandbox.vnpayment.vn/devreg) |
+| `VNPAY_PAY_URL`, `VNPAY_API_URL` | default to the sandbox addresses; set the production ones for `live` |
+| `MOMO_PARTNER_CODE`, `MOMO_ACCESS_KEY`, `MOMO_SECRET_KEY` | from MoMo for Business (test environment keys differ from production keys) |
+| `MOMO_ENDPOINT` | default `https://test-payment.momo.vn`; `https://payment.momo.vn` for `live` |
+| `CARRIER_MODE` | `mock` (default) / `sandbox` / `live` |
+| `CARRIER_WEBHOOK_SECRET` | long random string placed in the carriers' callback address (`?key=` for GHN, `?hash=` for GHTK); neither signs its callbacks by default |
+| `GHN_TOKEN`, `GHN_SHOP_ID`, `GHN_FROM_DISTRICT_ID`, `GHN_FROM_WARD_CODE` | GHN API token and shop id; the workshop's GHN district id and ward code |
+| `GHN_BASE_URL` | default is GHN staging; `https://online-gateway.ghn.vn/shiip/public-api` for `live` |
+| `GHTK_TOKEN`, `GHTK_CLIENT_SOURCE`, `GHTK_BASE_URL` | GHTK API token, shop/partner code, host (default staging; `https://services.giaohangtietkiem.vn` for `live`) |
+| `WORKSHOP_NAME`, `WORKSHOP_PHONE`, `WORKSHOP_ADDRESS`, `WORKSHOP_PROVINCE`, `WORKSHOP_DISTRICT`, `WORKSHOP_WARD` | the workshop's pick-up address (GHTK wants names) |
+
+Also switch the carriers' APIs on in the database: `system_settings.integrations_enabled` (`{"GHN": true, "GHTK": true, ...}`).
+While a carrier's flag is `false` it is offered with one option priced from the fallback fee table.
+
+**Register the callbacks with each provider** (they cannot be set from this API):
+
+| Provider | Address | Where / how |
+|---|---|---|
+| VNPay | `https://<PUBLIC_BASE_URL>/api/v1/webhooks/payments/vnpay/ipn` | IPN URL in the VNPay merchant admin (sandbox: the merchant portal link in the registration email) |
+| MoMo | sent with every payment (`ipnUrl`); no registration | the address must be public `https`; allow MoMo's source IPs if you filter |
+| GHN | `https://<PUBLIC_BASE_URL>/api/v1/webhooks/shipments/GHN?key=<CARRIER_WEBHOOK_SECRET>` | ask GHN support: send your client id, the callback address, the environment and that you want the `key` query parameter checked; allow up to ~15 minutes |
+| GHTK | `https://<PUBLIC_BASE_URL>/api/v1/webhooks/shipments/GHTK?hash=<CARRIER_WEBHOOK_SECRET>` | ask GHTK how to register the callback address for your shop |
+
+**First real run (nothing has been run against the providers yet):** use `sandbox`, make one small deposit with each gateway and
+one waybill with each carrier, and check the Render logs. The adapters' notes (`integrations/vnpay.py`, `momo.py`, `ghn.py`,
+`ghtk.py`: "VERIFICATION STATUS") list exactly which signatures, paths and fields to confirm. Do not set `live` before that.
+
 ## 2. Verify
 
 ```bash

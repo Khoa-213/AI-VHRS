@@ -12,10 +12,11 @@ import json
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, Mapping
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db.session import set_actor
 from app.domain import payment_rules as rules
@@ -28,7 +29,7 @@ from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import PaymentRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository
-from app.services import audit, notifications, quotations
+from app.services import audit, gateway_checkout as checkout, notifications, quotations
 
 log = logging.getLogger("app")
 
@@ -118,18 +119,18 @@ class PaymentService:
         if self.payments.success(order.id, PaymentType.DEPOSIT) is not None:
             raise AppError(409, "DEPOSIT_ALREADY_PAID", "Đơn đã được đặt cọc.")
         for old in self.payments.pending(order.id, PaymentType.DEPOSIT):
-            if old.gateway == gateway and old.amount == order.deposit_amount:
+            if old.gateway == gateway and old.amount == order.deposit_amount and checkout.usable(old):
                 return old                                              # same intent: reuse the open transaction
             old.status = PaymentStatus.CANCELLED
         self.session.flush()
+        txn_ref, mode = checkout.begin(gateway)
         row = self.payments.add(Payment(
             order_id=order.id, type=PaymentType.DEPOSIT, amount=order.deposit_amount, deposit_pct=order.deposit_pct,
-            gateway=gateway, gateway_txn_id=self.gateway.new_txn_id(gateway.value), status=PaymentStatus.PENDING,
-            gateway_payload={"mode": self.gateway.mode}))
+            gateway=gateway, gateway_txn_id=txn_ref, status=PaymentStatus.PENDING, gateway_payload={"mode": mode}))
+        checkout.attach([row], gateway, order, total=order.deposit_amount, ip=self.ip)
         audit.record(self.session, actor_id=self.customer.id if self.customer else None, action="PAYMENT_START",
                      entity_type="payment", entity_id=row.id,
-                     new={"order_id": order.id, "amount": str(row.amount), "gateway": gateway.value,
-                          "mode": self.gateway.mode}, ip=self.ip)
+                     new={"order_id": order.id, "amount": str(row.amount), "gateway": gateway.value, "mode": mode}, ip=self.ip)
         return row
 
     def mock_checkout(self, payment_id: int, result: str) -> dict[str, Any]:
@@ -159,6 +160,10 @@ class PaymentService:
 
     # ---- gateway side (webhook) ----
     def handle_webhook(self, gateway: PaymentGateway, body: bytes, signature: str | None) -> dict[str, Any]:
+        """The MOCK gateway's webhook. Its key is derived from JWT_SECRET, so once real payments are on (sandbox/live) this
+        door is shut: nobody holding that key may be able to mark a real payment as paid."""
+        if get_settings().payment_mode != "mock":
+            raise AppError(403, "MOCK_WEBHOOK_DISABLED", "Webhook mô phỏng đã tắt khi dùng cổng thanh toán thật.")
         if not self.gateway.verify(body, signature):
             raise AppError(401, "INVALID_SIGNATURE", "Chữ ký webhook không hợp lệ.")
         try:
@@ -168,12 +173,17 @@ class PaymentService:
             raise AppError(422, "INVALID_WEBHOOK", "Nội dung webhook không hợp lệ.") from exc
         if result not in {"SUCCESS", "FAILED"}:
             raise AppError(422, "INVALID_WEBHOOK", "Kết quả giao dịch không hợp lệ.")
+        return self._settle(gateway, txn_id=txn_id, code=code, amount=amount, ok=result == "SUCCESS", raw=data)
+
+    # ---- the one place that turns a gateway's answer into SUCCESS / FAILED (mock webhook, VNPay/MoMo IPN, query) ----
+    def _settle(self, gateway: PaymentGateway, *, txn_id: str, code: str | None, amount: int, ok: bool,
+                raw: dict[str, Any]) -> dict[str, Any]:
         payment = self.payments.by_txn(gateway, txn_id, lock=True)
         if payment is None:
             raise AppError(404, "PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch.")
         order = self.orders.get(payment.order_id, lock=True)
         group = self._group(payment)
-        if order.code != code or int(sum((p.amount for p in group), Decimal(0))) != amount:
+        if (code is not None and order.code != code) or int(sum((p.amount for p in group), Decimal(0))) != amount:
             audit.record(self.session, actor_id=None, action="PAYMENT_MISMATCH", entity_type="payment",
                          entity_id=payment.id, new={"order_code": code, "amount": amount})
             self.session.commit()                      # keep the security trail although the request itself fails
@@ -181,11 +191,13 @@ class PaymentService:
         if payment.status in (PaymentStatus.SUCCESS, PaymentStatus.FAILED):
             return {"result": "ALREADY_PROCESSED", "status": payment.status.value}      # idempotent (NFR-06)
         if payment.status == PaymentStatus.CANCELLED:
+            if ok:                                      # the customer paid an intent we had already closed: real money, keep a record
+                self._flag_orphan(order, payment, group, "cancelled payment paid")
             return {"result": "IGNORED", "status": payment.status.value}
 
-        if result == "FAILED":
+        if not ok:
             for row in group:
-                row.status, row.gateway_payload = PaymentStatus.FAILED, {**(row.gateway_payload or {}), "webhook": data}
+                row.status, row.gateway_payload = PaymentStatus.FAILED, {**(row.gateway_payload or {}), "webhook": raw}
             self.session.flush()
             audit.record(self.session, actor_id=None, action="PAYMENT_FAILED", entity_type="payment",
                          entity_id=payment.id, new={"order_id": order.id})
@@ -194,7 +206,7 @@ class PaymentService:
         paid_at = _now()
         for row in group:
             row.status, row.paid_at = PaymentStatus.SUCCESS, paid_at
-            row.gateway_payload = {**(row.gateway_payload or {}), "webhook": data}
+            row.gateway_payload = {**(row.gateway_payload or {}), "webhook": raw}
         self.session.flush()
         if payment.type in (PaymentType.FINAL, PaymentType.SHIPPING) and order.order_status == OrderStatus.AWAITING_FINAL_PAYMENT:
             # Final payment (FR-18): production is already FINISHED, so only the order status moves (BR-17).
@@ -228,6 +240,81 @@ class PaymentService:
         log.warning("Deposit received for order %s in status %s: refund needed", order.code, order.order_status.value)
         return {"result": "PROCESSED", "status": "SUCCESS", "order_status": order.order_status.value,
                 "needs_refund": True}
+
+    def _flag_orphan(self, order: Order, payment: Payment, group: list[Payment], why: str) -> None:
+        """Money reached us for a payment that no longer counts. Keep the record and flag it for the refund flow (BR-14/16)."""
+        if any((r.gateway_payload or {}).get("needs_refund") for r in group):
+            return
+        for row in group:
+            row.gateway_payload = {**(row.gateway_payload or {}), "needs_refund": True}
+        self.session.flush()
+        audit.record(self.session, actor_id=None, action="PAYMENT_ORPHAN", entity_type="payment", entity_id=payment.id,
+                     new={"order_id": order.id, "order_status": order.order_status.value, "reason": why})
+        log.warning("Money received for order %s (%s): refund needed", order.code, why)
+
+    # ---- real gateways: their own callbacks (IPN) ----
+    def handle_vnpay_ipn(self, params: Mapping[str, str]) -> dict[str, str]:
+        """VNPay calls this with GET and expects a JSON {RspCode, Message} with HTTP 200 whatever the outcome."""
+        adapter: Any = gw.real_adapter(PaymentGateway.VNPAY, strict=False)
+        try:
+            if adapter is None:
+                raise gw.InvalidSignature()
+            result = adapter.parse_ipn(params)
+        except gw.InvalidSignature:
+            return {"RspCode": "97", "Message": "Invalid signature"}
+        except gw.MalformedCallback:
+            return {"RspCode": "99", "Message": "Invalid request"}
+        try:
+            out = self._settle(PaymentGateway.VNPAY, txn_id=result.txn_ref, code=None, amount=result.amount,
+                               ok=result.success, raw=result.raw)
+        except AppError as exc:
+            if exc.code == "PAYMENT_NOT_FOUND":
+                return {"RspCode": "01", "Message": "Order not found"}
+            if exc.code == "PAYMENT_MISMATCH":
+                return {"RspCode": "04", "Message": "Invalid amount"}
+            raise
+        if out["result"] == "ALREADY_PROCESSED":
+            return {"RspCode": "02", "Message": "Order already confirmed"}
+        return {"RspCode": "00", "Message": "Confirm Success"}
+
+    def handle_momo_ipn(self, body: dict[str, Any]) -> dict[str, Any]:
+        """MoMo POSTs JSON and expects HTTP 204 (within 15 s). Errors are signalled with a 4xx."""
+        adapter: Any = gw.real_adapter(PaymentGateway.MOMO, strict=False)
+        if adapter is None:
+            raise AppError(401, "INVALID_SIGNATURE", "Chữ ký IPN không hợp lệ.")
+        try:
+            result = adapter.parse_ipn(body)
+        except gw.InvalidSignature as exc:
+            raise AppError(401, "INVALID_SIGNATURE", "Chữ ký IPN không hợp lệ.") from exc
+        except gw.MalformedCallback as exc:
+            raise AppError(422, "INVALID_WEBHOOK", "Nội dung IPN không hợp lệ.") from exc
+        if not result.final:
+            return {"result": "IGNORED", "status": "PENDING"}
+        return self._settle(PaymentGateway.MOMO, txn_id=result.txn_ref, code=None, amount=result.amount,
+                            ok=result.success, raw=result.raw)
+
+    # ---- real gateways: ask the gateway when the IPN is late or lost ----
+    def refresh(self, payment_id: int) -> dict[str, Any]:
+        assert self.customer is not None
+        payment = self.payments.get(payment_id)
+        order = self.orders.get_owned(payment.order_id, self.customer.id) if payment else None
+        if payment is None or order is None:
+            raise AppError(404, "PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch.")
+        if payment.status != PaymentStatus.PENDING:
+            return {"result": "ALREADY_PROCESSED", "status": payment.status.value, "order_status": order.order_status.value}
+        payload = payment.gateway_payload or {}
+        if payload.get("mode") == "MOCK":
+            raise AppError(409, "NOT_A_REAL_PAYMENT", "Giao dịch mô phỏng không có cổng để hỏi; dùng mock-checkout.")
+        adapter: Any = gw.real_adapter(payment.gateway)
+        ref = checkout.group_ref(payment)
+        result = adapter.query(txn_ref=ref, meta=payload.get("gateway_meta") or {}, client_ip=self.ip)
+        if result is None or not result.final:
+            return {"result": "IGNORED", "status": "PENDING", "order_status": order.order_status.value}
+        return self._settle(payment.gateway, txn_id=ref, code=None, amount=result.amount, ok=result.success, raw=result.raw)
+
+    @staticmethod
+    def gateways() -> list[dict[str, Any]]:
+        return gw.gateway_status()
 
     # ---- workshop read-only view ----
     def for_workshop(self, order_id: int) -> list[Payment]:

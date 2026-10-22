@@ -1,5 +1,6 @@
 """Application settings, read from environment / BE/.env (never hardcoded)."""
 from functools import lru_cache
+from typing import Literal
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
@@ -35,6 +36,45 @@ class Settings(BaseSettings):
     supabase_service_key: str | None = None
     storage_bucket: str = "order-inputs"
     upload_url_ttl_seconds: int = 7200
+    # ---- online payments (VNPay, MoMo) ---------------------------------------------------------------------
+    # mock    = simulated payments only (default; tests and local work). No call leaves the server.
+    # sandbox = the gateways' TEST environments: real API calls, test money.
+    # live    = production: REAL MONEY. Needs production credentials; switch only on the project owner's say.
+    payment_mode: Literal["mock", "sandbox", "live"] = "mock"
+    # Where the gateways send the customer back after paying (a page of the web app). Display only: the order is
+    # only ever updated by the gateway's IPN, never by this redirect.
+    payment_return_url: str = "http://localhost:5173/payment/result"
+    # Public base URL of this API (e.g. https://ai-vhrs-be.onrender.com); the gateways call back to {base}/api/v1/webhooks/...
+    public_base_url: str | None = None
+    payment_expire_minutes: int = 15
+    vnpay_tmn_code: str | None = None
+    vnpay_hash_secret: str | None = None
+    vnpay_pay_url: str = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"
+    vnpay_api_url: str = "https://sandbox.vnpayment.vn/merchant_webapi/api/transaction"
+    momo_partner_code: str | None = None
+    momo_access_key: str | None = None
+    momo_secret_key: str | None = None
+    momo_endpoint: str = "https://test-payment.momo.vn"
+    # ---- carriers (GHN, GHTK) --------------------------------------------------------------------------------------
+    # mock    = simulated carriers (default). sandbox = the carriers' TEST environments. live = production waybills.
+    carrier_mode: Literal["mock", "sandbox", "live"] = "mock"
+    # Shared secret the carriers put in the callback address (`?key=...`); neither GHN nor GHTK signs its webhook by default.
+    carrier_webhook_secret: str | None = None
+    ghn_token: str | None = None
+    ghn_shop_id: str | None = None
+    ghn_base_url: str = "https://dev-online-gateway.ghn.vn/shiip/public-api"
+    ghn_from_district_id: int | None = None          # where the workshop ships from (GHN location ids)
+    ghn_from_ward_code: str | None = None
+    ghtk_token: str | None = None
+    ghtk_client_source: str | None = None            # the shop / partner code
+    ghtk_base_url: str = "https://services-staging.ghtklab.com"
+    # The workshop's pick-up address (GHTK wants names; shown on labels).
+    workshop_name: str = "Xuong Net Viet"
+    workshop_phone: str | None = None
+    workshop_address: str | None = None
+    workshop_province: str | None = None
+    workshop_district: str | None = None
+    workshop_ward: str | None = None
     # Google sign-in: OAuth *Web* client id(s) from Google Cloud Console, comma separated. Empty = the endpoint answers 503.
     # Env name GOOGLE_CLIENT (what Render uses); GOOGLE_CLIENT_ID is still accepted.
     google_client_id: str | None = Field(default=None, validation_alias=AliasChoices("GOOGLE_CLIENT", "GOOGLE_CLIENT_ID"))

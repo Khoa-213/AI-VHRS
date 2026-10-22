@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models.ops import (ACTIVE_JOB_STATUSES, Calibration, Incident, JobEvent, JobStatus, Payment, PaymentGateway,
-                            PaymentStatus, PaymentType, ProductionJob, ProductPhoto, Robot, RobotStatus)
+from app.models.ops import (ACTIVE_JOB_STATUSES, LIVE_SHIPMENT_STATUSES, Calibration, Carrier, Incident, JobEvent, JobEventType, JobStatus,
+                            Payment, PaymentGateway, PaymentStatus, PaymentType, ProductionJob, ProductPhoto, Robot, RobotStatus,
+                            Shipment)
 
 
 class PaymentRepository:
@@ -94,6 +95,16 @@ class JobRepository:
     def for_order(self, order_id: int) -> list[ProductionJob]:
         return list(self.s.scalars(select(ProductionJob).where(ProductionJob.order_id == order_id)
                                    .order_by(ProductionJob.id)))
+
+    def written_pages(self, order_id: int) -> int | None:
+        """Sheets per copy of the last finished job (recorded when it reached WRITTEN), for the parcel's weight."""
+        payload = self.s.execute(select(JobEvent.payload).join(ProductionJob, ProductionJob.id == JobEvent.job_id).where(
+            ProductionJob.order_id == order_id, JobEvent.event_type == JobEventType.WRITTEN)
+            .order_by(JobEvent.id.desc()).limit(1)).scalar()
+        try:
+            return max(int(payload["stock"]["pages"]), 1)
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def active_for_order(self, order_id: int) -> ProductionJob | None:
         return self.s.scalar(select(ProductionJob).where(ProductionJob.order_id == order_id,
@@ -240,3 +251,29 @@ class PhotoRepository:
     def soft_delete(self, row: ProductPhoto) -> None:
         row.deleted_at = datetime.now(timezone.utc)
         self.s.flush()
+
+
+class ShipmentRepository:
+    def __init__(self, session: Session):
+        self.s = session
+
+    def add(self, row: Shipment) -> Shipment:
+        self.s.add(row)
+        self.s.flush()
+        self.s.refresh(row)
+        return row
+
+    def get(self, shipment_id: int, *, lock: bool = False) -> Shipment | None:
+        stmt = select(Shipment).where(Shipment.id == shipment_id)
+        return self.s.scalar(stmt.with_for_update() if lock else stmt)
+
+    def by_waybill(self, carrier: Carrier, waybill_code: str, *, lock: bool = False) -> Shipment | None:
+        stmt = select(Shipment).where(Shipment.carrier == carrier, Shipment.waybill_code == waybill_code)
+        return self.s.scalar(stmt.with_for_update() if lock else stmt)
+
+    def for_order(self, order_id: int) -> list[Shipment]:
+        return list(self.s.scalars(select(Shipment).where(Shipment.order_id == order_id).order_by(Shipment.id)))
+
+    def live_for_order(self, order_id: int) -> Shipment | None:
+        return self.s.scalar(select(Shipment).where(Shipment.order_id == order_id,
+                                                    Shipment.status.in_(LIVE_SHIPMENT_STATUSES)).order_by(Shipment.id.desc()))
