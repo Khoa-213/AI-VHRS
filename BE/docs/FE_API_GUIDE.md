@@ -248,12 +248,36 @@ Các tình huống cần UI xử lý:
 
 ### 5.4 Chat trong đơn
 ```
-GET  /orders/{id}/messages?page=&page_size=     → {items[{id,mine,body,attachments[{url,mime}],read_at,created_at}], total, unread}
-POST /orders/{id}/messages {body?, attachments?:[{path}]}
+GET  /orders/{id}/messages?page=&page_size=     → {items[{id,mine,kind,order_card,body,attachments[{url,mime}],read_at,created_at}], total, unread}
+POST /orders/{id}/messages {body?, attachments?:[{path}]}        → 201 MessageOut (tin chữ / ảnh)
+POST /orders/{id}/messages {kind:"ORDER_CARD"}                   → 201 thẻ mới | 200 thẻ cũ (chỉ khách; xem dưới)
 POST /orders/{id}/messages/read                  (đánh dấu đã đọc tin của bên kia)
 POST /orders/{id}/messages/upload-url {mime_type:"image/jpeg"|"image/png", size_bytes ≤ 5MB} → {path, upload_url, method, expires_in}
 ```
-Gửi ảnh: xin `upload-url` → `PUT` file → `POST messages` với `attachments:[{path}]`. Chat chỉ dùng được sau khi đơn đã gửi (`409 ORDER_NOT_SUBMITTED` nếu chưa) và còn mở (`409 ORDER_CLOSED` khi đơn đã đóng); Staff phải nhận đơn trước khi nhắn (`409 ORDER_NOT_CLAIMED`). Tối đa 2000 ký tự và 5 ảnh mỗi tin.
+Gửi ảnh: xin `upload-url` → `PUT` file → `POST messages` với `attachments:[{path}]`. Chat chỉ dùng được sau khi đơn đã gửi (`409 ORDER_NOT_SUBMITTED` nếu chưa) và còn mở (`409 ORDER_CLOSED` khi đơn bị **từ chối hoặc huỷ**); Staff phải nhận đơn trước khi nhắn (`409 ORDER_NOT_CLAIMED`). Tối đa 2000 ký tự và 5 ảnh mỗi tin.
+
+**Đơn `COMPLETED` vẫn nhắn được** (BE giữ nguyên: chỉ `REJECTED` và `CANCELLED` là đã đóng) để khách còn khiếu nại sau khi nhận hàng. **FE không được khoá ô nhập khi đơn `COMPLETED`**; chỉ khoá khi `order_status` là `REJECTED`/`CANCELLED` (hoặc khi gọi gửi bị `409 ORDER_CLOSED`).
+
+**Thẻ đơn hàng (`kind = "ORDER_CARD"`)** — thay cho state tạm ở `store/chatDock.ts`:
+- Chỉ **khách** gửi được và luôn là thẻ của **chính đơn này** (`403 CARD_CUSTOMER_ONLY` nếu Staff/Manager gửi; `422 INVALID_CARD` nếu kèm `body` hoặc `attachments`). Không cần `body`.
+- **Chống spam:** nếu đơn đã có thẻ trong **10 phút** gần nhất, BE trả lại **thẻ cũ** với HTTP **200** (không tạo tin mới, không báo lại cho xưởng); gửi mới thì **201**. FE cứ gọi, đừng cần tự chống trùng. Bấm đúp chỉ ra một thẻ.
+- Mỗi tin trong danh sách có `kind` (`"TEXT"` hoặc `"ORDER_CARD"`). Với thẻ: `body = null`, `attachments = []`, và `order_card = {code, order_type, order_status, quantity, total_amount}` đọc từ **trạng thái hiện tại của đơn** (không phải bản sao lúc gửi), nên thẻ luôn khớp với đơn; `total_amount` là `null` tới khi báo giá được duyệt. **Cả hai phía thấy thẻ** (Staff/Manager đọc cùng `GET /orders/{id}/messages`).
+- Với tin `TEXT`, `order_card` là `null`.
+
+**Danh sách cuộc chat (một truy vấn, thay cho việc gọi `/messages` từng đơn):**
+```
+GET /me/conversations?page=&page_size=                   (khách)           → {items[], total, page, page_size}
+GET /workshop/conversations?page=&page_size=             (Staff, Manager)  → như trên
+GET /me/conversations/unread-count                       (khách)           → {unread: n}
+GET /workshop/conversations/unread-count                 (Staff, Manager)  → {unread: n}
+```
+- Mỗi dòng: `{order_id, code, order_type, order_status, customer_name, last_message:{body, kind, has_attachment, created_at, mine}, unread}`. Chỉ có **đơn đã có ít nhất một tin nhắn**, sắp theo tin mới nhất trước; `page_size` mặc định 20, tối đa 100. `customer_name` chỉ có ở phía xưởng (`null` với khách). `last_message.body` là `null` khi tin cuối là thẻ hoặc chỉ có ảnh (dùng `kind` / `has_attachment` để hiện "[Thẻ đơn hàng]" / "[Hình ảnh]").
+- Phạm vi: khách thấy đơn của mình (đã gửi); **Staff thấy đơn mình phụ trách và các đơn chưa ai nhận (`SUBMITTED`)**; Manager thấy mọi đơn đã gửi. Vì vậy **FE Staff không nên ẩn các đơn chưa ai nhận** nữa.
+- `unread-count` chỉ là một con số (một truy vấn đếm, có chỉ mục): gọi thoải mái cho badge nút chat (15–60 giây/lần). `unread` đếm tin của **bên kia** chưa `read_at`; `POST /orders/{id}/messages/read` đánh dấu đã đọc. Lưu ý: `read_at` gắn vào tin nhắn, không theo từng người đọc, nên khi Staff và Manager cùng xem một đơn thì một người đọc là cả hai thấy đã đọc.
+
+**Khách nhắn khi đơn chưa có Staff nhận:** tin vẫn được lưu; BE báo cho **mọi Manager đang hoạt động** (mã thông báo `MESSAGE_UNCLAIMED`; thông báo in-app/email ở Phase 4e, hiện mới ghi log). Staff đọc được nhưng **chưa nhắn được** cho tới khi nhận đơn (`409 ORDER_NOT_CLAIMED`); Manager trả lời được. FE khách có thể hiện dòng "Đơn chưa có nhân viên nhận, xưởng sẽ trả lời sớm".
+
+**Chưa có:** thông báo tức thời (SSE/WebSocket): FE vẫn poll `unread-count` và `GET /orders/{id}/messages`.
 
 ## 6. Luồng Staff (`/workshop/*`; Manager chỉ đọc ở nhóm này)
 
@@ -496,6 +520,7 @@ Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thậ
 ## 10. Chưa có / sẽ có (đừng chờ ở Phase này)
 
 - Technical Staff: **đã có** xem job, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố (mục 7b), ảnh sản phẩm + QC và nộp ảnh (mục 7c). Ảnh chồng phác thảo do client tự làm.
+- Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4); **chưa có** đẩy tức thời (SSE/WebSocket).
 - Khách: **đã có** xem ảnh, nghiệm thu, viết lại 1 lần, tự nghiệm thu sau 7 ngày (mục 7c). Thanh toán cuối + nhận tại xưởng **đã có** (mục 7d). Chọn dịch vụ vận chuyển, vận đơn và giao hàng qua hãng **đã có** (mục 7e). **Chưa có**: huỷ sau cọc + hoàn tiền (kể cả khoản `needs_refund`), dời ETA, **thông báo (in-app + email)** (Phase 4d/4e).
 - Cổng thanh toán và hãng vận chuyển **thật** (VNPay, MoMo, GHN, GHTK) đã có code nhưng **chưa được thử với môi trường thật của họ**; mặc định vẫn là MOCK cho tới khi có tài khoản và cấu hình (xem `DEPLOY.md`).
 - Admin: tích hợp, tham số hệ thống, dashboard, OTP SMS, showcase, review (Phase 5).

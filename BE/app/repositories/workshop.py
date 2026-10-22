@@ -2,8 +2,9 @@
 from __future__ import annotations  # methods named `list` would otherwise shadow the builtin in later annotations
 
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.models.sketch import AdjustmentStatus, Message, Quotation, QuotationStatus, Sketch
@@ -108,3 +109,51 @@ class MessageRepository:
         res = self.s.execute(update(Message).where(Message.order_id == order_id, Message.sender_id != reader_id,
                                                    Message.read_at.is_(None)).values(read_at=now))
         return res.rowcount
+
+    def recent_card(self, order_id: int, since: datetime) -> Message | None:
+        """The newest order card of this order created at or after `since` (anti-spam: one card per window)."""
+        return self.s.scalars(select(Message).where(Message.order_id == order_id, Message.kind == "ORDER_CARD",
+                                                    Message.created_at >= since)
+                              .order_by(Message.created_at.desc(), Message.id.desc()).limit(1)).first()
+
+
+# Which orders each role may see in the chat lists: the same rule as WorkshopAccess (a Manager sees every non-draft order, a
+# Staff the orders assigned to them plus the unclaimed SUBMITTED pool, a customer their own non-draft orders).
+_SCOPE = {
+    "CUSTOMER": "o.customer_id = :me AND o.order_status <> 'DRAFT'",
+    "MANAGER": "o.order_status <> 'DRAFT'",
+    "STAFF": "o.order_status <> 'DRAFT' AND (o.assigned_staff_id = :me OR (o.assigned_staff_id IS NULL AND o.order_status = 'SUBMITTED'))",
+}
+
+
+class ConversationRepository:
+    """The chat lists in two queries (a count and one page), never one query per order."""
+
+    def __init__(self, session: Session):
+        self.s = session
+
+    def page(self, role: str, me: int, *, offset: int, limit: int) -> tuple[list[dict[str, Any]], int]:
+        scope = _SCOPE[role]
+        total = self.s.execute(text(f"SELECT count(*) FROM orders o WHERE {scope} "
+                                    "AND EXISTS (SELECT 1 FROM messages m WHERE m.order_id = o.id)"), {"me": me}).scalar() or 0
+        rows = self.s.execute(text(f"""
+            SELECT o.id AS order_id, o.code, o.order_type::text AS order_type, o.order_status::text AS order_status,
+                   a.full_name AS customer_name,
+                   l.body AS last_body, l.kind AS last_kind, (jsonb_array_length(l.attachments) > 0) AS last_has_attachment,
+                   l.created_at AS last_created_at, (l.sender_id = :me) AS last_mine, COALESCE(u.unread, 0) AS unread
+            FROM orders o
+            JOIN accounts a ON a.id = o.customer_id
+            JOIN LATERAL (SELECT m.body, m.kind, m.attachments, m.created_at, m.sender_id, m.id
+                          FROM messages m WHERE m.order_id = o.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) l ON true
+            LEFT JOIN LATERAL (SELECT count(*) AS unread FROM messages m
+                               WHERE m.order_id = o.id AND m.sender_id <> :me AND m.read_at IS NULL) u ON true
+            WHERE {scope}
+            ORDER BY l.created_at DESC, l.id DESC, o.id DESC
+            OFFSET :off LIMIT :lim"""), {"me": me, "off": offset, "lim": limit}).mappings().all()
+        return [dict(r) for r in rows], int(total)
+
+    def unread_total(self, role: str, me: int) -> int:
+        return int(self.s.execute(text(f"""
+            SELECT count(*) FROM messages m JOIN orders o ON o.id = m.order_id
+            WHERE {_SCOPE[role]} AND m.sender_id <> :me AND m.read_at IS NULL"""), {"me": me}).scalar() or 0)
+

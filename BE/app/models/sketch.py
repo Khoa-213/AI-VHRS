@@ -100,5 +100,6 @@ class Message(Base):
     sender_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     body: Mapped[str | None] = mapped_column(Text)
     attachments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    kind: Mapped[str] = mapped_column(String(20), default="TEXT", server_default="TEXT")     # TEXT | ORDER_CARD
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())

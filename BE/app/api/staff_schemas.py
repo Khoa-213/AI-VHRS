@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.api.order_schemas import InputOut, OrderOut, _ORM
-from app.models.order import ComplexityLevel
+from app.models.order import ComplexityLevel, OrderStatus, OrderType
 from app.models.sketch import AdjustmentStatus, QuotationStatus
 
 PaperSizeLit = Literal["A6", "A5", "A4"]
@@ -172,6 +172,8 @@ class AttachmentRef(BaseModel):
 
 
 class MessageIn(BaseModel):
+    kind: Literal["TEXT", "ORDER_CARD"] = Field(default="TEXT", description="`ORDER_CARD`: the customer shares this order's card "
+                                                "(no body, no attachments; the card always shows the order's current state).")
     body: str | None = Field(default=None, max_length=2000)
     attachments: list[AttachmentRef] = Field(default_factory=list, max_length=5)
 
@@ -193,10 +195,21 @@ class AttachmentOut(BaseModel):
     mime: str
 
 
+class OrderCardOut(BaseModel):
+    code: str
+    order_type: OrderType
+    order_status: OrderStatus
+    quantity: int
+    total_amount: Decimal | None = Field(default=None, description="null until a quotation has been approved")
+
+
 class MessageOut(BaseModel):
     id: int
     sender_id: int
     mine: bool
+    kind: Literal["TEXT", "ORDER_CARD"] = "TEXT"
+    order_card: OrderCardOut | None = Field(default=None, description="Only for `ORDER_CARD`: read from the order's CURRENT state, "
+                                            "so the card never disagrees with the order.")
     body: str | None
     attachments: list[AttachmentOut]
     read_at: datetime | None
@@ -209,6 +222,36 @@ class MessagePage(BaseModel):
     page: int
     page_size: int
     unread: int
+
+
+# ---- conversation list (one row per order that has messages) --------------------------------------------
+class LastMessageOut(BaseModel):
+    body: str | None
+    kind: Literal["TEXT", "ORDER_CARD"]
+    has_attachment: bool
+    created_at: datetime
+    mine: bool
+
+
+class ConversationOut(BaseModel):
+    order_id: int
+    code: str
+    order_type: OrderType
+    order_status: OrderStatus
+    customer_name: str | None = Field(default=None, description="Workshop side only; null for the customer")
+    last_message: LastMessageOut
+    unread: int
+
+
+class ConversationPage(BaseModel):
+    items: list[ConversationOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class UnreadCountOut(BaseModel):
+    unread: int = Field(description="Messages from the other side not yet read, across all the caller's conversations")
 
 
 # ---- customer: privacy + viewing the quote (UC-15, FR-52) ------------------------------------------

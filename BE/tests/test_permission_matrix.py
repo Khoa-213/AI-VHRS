@@ -38,6 +38,7 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/webhooks/payments/payos$", ALL, SIGNED),
     (r"^/webhooks/payments/\{gateway\}$", ALL, SIGNED),                      # no token: authenticated by the HMAC signature
     (r"^/auth/logout$", ALL, ANY),
+    (r"^/me/conversations", ALL, {CUSTOMER}),                                # the customer's chat inbox and unread badge
     (r"^/me", ALL, ANY),
     (r"^/catalog/my-styles$", READ, {CUSTOMER}),
     (r"^/orders/\{order_id\}/messages", ALL, {CUSTOMER, STAFF, MANAGER}),    # the Manager joins chats to resolve complaints
