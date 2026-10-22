@@ -31,13 +31,13 @@
 .cd-item-mid .vh-chip{font-size:11px}
 .cd-item-last{min-width:0;font-size:12px;color:var(--t5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-.cd-thread{min-width:0;display:flex;flex-direction:column}
+.cd-thread{min-width:0;min-height:0;display:flex;flex-direction:column}
 .cd-thread-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--fx-08)}
 .cd-thread-head div{min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .cd-thread-head b{font-size:13px;color:var(--t1)}
 .cd-thread-head span{font-size:12px;color:var(--t5)}
 .cd-thread .chat{flex:1;min-height:0;padding:0 12px 12px;gap:10px}
-.cd-thread .chat-log{flex:1;max-height:none;margin:0 -12px;padding:14px 16px}
+.cd-thread .chat-log{flex:1;min-height:0;max-height:none;margin:0 -12px;padding:14px 16px}
 .cd-thread .chat-compose .vh-textarea{min-height:0}
 
 .cd-note{margin:0;padding:16px;font-size:13px;line-height:1.5;color:var(--t5)}

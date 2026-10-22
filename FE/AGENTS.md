@@ -86,11 +86,12 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   `Approvals`, `Schedule` and `Catalog` (Manager only; materials, ink colors, stock, compatibility, templates, robots, price list via `services/manage.ts`). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
 - Errors from the API go through `orderErrorKey` / `errText` (`services/orders.ts`): known codes have translated text, any other code shows the backend's own message. Add a code to `ERROR_KEYS` and `err.*` when you want it translated.
 - Workshop screens (Staff, Manager, Technician) all render inside `components/ws/Shell.tsx`: the icon pill, the header and a language button. Their look is `components/ws/ws.css` (generated from the Figma-based design, everything under `.ws`, light only, no theme toggle) and `workshop.css`; the accent is the `--acc` variable. Use the shared pieces in `components/ws/parts.tsx` and `charts.tsx` before adding new markup.
-- The order chat (`components/ui/Chat.tsx`) is shared by the customer and the workshop. Customers reach it only through the floating
-  button `components/ui/ChatDock.tsx` (mounted in `App.tsx`, state in `store/chatDock.ts`, list in `services/chat.ts`): one thread per sent
-  order, and opening it from an order page drops that order's card into the thread. The card is FE-only until the backend stores an order-card message.
-  The workshop gets the same dock (`<ChatDock side="workshop" />` in `Shell.tsx`, Staff and Manager): threads of the orders a Staff holds,
-  or every sent order for a Manager, with the customer's name; the order detail opens it with "Message the customer".
+- The order chat (`components/ui/Chat.tsx`) is shared by the customer and the workshop, and is reached only through the floating
+  `components/ui/ChatDock.tsx`: `side="customer"` in `App.tsx`, `side="workshop"` in `Shell.tsx` (Staff, Manager). The list and badge come from
+  `services/chat.ts` (`/me/conversations`, `/workshop/conversations`, `.../unread-count`). Opening the customer chat from an order sends
+  an `ORDER_CARD` message (the backend returns the same card within 10 minutes); both sides render it from `order_card`.
+  Read only only when the order is `REJECTED` or `CANCELLED` (a `COMPLETED` order stays open for complaints), or for a Staff who has not
+  claimed the order. Contract: `BE/docs/FE_API_GUIDE.md` section 5.4.
 - The technician screens (`src/pages/tech/`) still use the local mock (`store.ts`, `pages/staff/technicians.ts`, `evaluate.ts`, `telemetry.ts`). Wire them when backend phase 4 adds jobs, QC and photos, and delete that mock as you go.
 
 ## Account area
