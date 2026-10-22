@@ -124,6 +124,11 @@
   --sh-45: rgba(0, 0, 0, 0.45);
   --sh-5: rgba(0, 0, 0, 0.5);
   --sh-55: rgba(0, 0, 0, 0.55);
+
+  /* site footer: dark in both themes (its icons are white discs), so only defined here */
+  --footer-bg: #0c1518;
+  --footer-ink: #ffffff;
+  --footer-muted: #8f9fa3;
 }
 
 :root[data-theme='light'] {

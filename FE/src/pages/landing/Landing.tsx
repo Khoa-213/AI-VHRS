@@ -3,6 +3,7 @@ import Hero from './components/Hero'
 import Showcase from './components/Showcase'
 import Modes from './components/Modes'
 import Cta from './components/Cta'
+import SiteFooter from '../../components/layout/SiteFooter'
 import './landing.css'
 import './landing-redesign.css'
 
@@ -14,6 +15,7 @@ export default function Landing() {
       <Modes />
       <Showcase />
       <Cta />
+      <SiteFooter framed />
     </div>
   )
 }

@@ -1,0 +1,55 @@
+/* Customer site footer. Layout from the Figma "footer" frame (133:14634); colours are the --footer-* tokens. */
+.sf{background:var(--footer-bg);color:var(--footer-muted);padding:56px clamp(16px,4.5vw,64px)}
+.sf--framed{margin:0 clamp(8px,1.1vw,16px) clamp(8px,1.1vw,16px);border-radius:clamp(14px,1.8vw,24px)}
+.sf a{color:inherit;transition:color .2s}
+.sf a:hover{color:var(--footer-ink)}
+.sf-inner{max-width:1312px;margin:0 auto;display:flex;justify-content:space-between;gap:48px}
+
+/* left: brand, lede, social, copyright */
+.sf-left{flex:0 1 560px;min-width:0;display:flex;flex-direction:column;gap:192px}
+.sf-about{display:flex;flex-direction:column;gap:32px}
+.sf .sf-logo{display:inline-flex;align-items:center;gap:8px;height:24px;color:var(--footer-ink);font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;letter-spacing:-.03em}
+.sf-logo-mark{width:22px;height:22px;border-radius:50%;border:5px solid var(--accent);box-sizing:border-box;background:var(--footer-ink);flex:none}
+.sf-about-body{display:flex;flex-direction:column;align-items:flex-start;gap:16px}
+.sf-lede{margin:0;max-width:420px;font-size:16px;line-height:1.4}
+.sf .sf-more{display:inline-flex;align-items:center;gap:12px;color:var(--footer-ink);font-size:12px;font-weight:600;line-height:1.5}
+.sf-dot{width:10px;height:10px;border-radius:50%;background:currentColor;transition:transform .2s}
+.sf-more:hover .sf-dot{transform:translateX(3px)}
+.sf-left-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.sf-social{display:flex;align-items:flex-end;gap:10px}
+.sf-social-col{display:flex;flex-direction:column;gap:10px}
+.sf-social a{display:block;width:40px;height:40px;border-radius:50%;transition:opacity .2s}
+.sf-social a:hover{opacity:.8}
+.sf-social img{display:block}
+.sf-copy{margin:0;font-size:12px;line-height:1.4}
+
+/* right: nav, contact, location, languages */
+.sf-right{flex:0 1 560px;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:64px}
+.sf-nav{display:flex;flex-wrap:wrap;gap:12px 41px;font-size:16px;line-height:1.4}
+.sf-nav a::after{content:"."}
+.sf-nav a:lang(ja)::after{content:none}
+.sf-right-foot{max-width:530px;display:flex;align-items:flex-end;justify-content:space-between;gap:32px;flex-wrap:wrap}
+.sf-blocks{display:flex;flex-direction:column;gap:48px}
+.sf-block{display:flex;flex-direction:column;gap:16px}
+.sf-block h2{margin:0;color:var(--footer-ink);font-size:20px;font-weight:500;line-height:1.1;letter-spacing:-.01em}
+.sf-block p{margin:0;font-size:14px;line-height:1.6}
+.sf-langs{display:flex;flex-direction:column;align-items:flex-end;gap:15px}
+.sf-langs p{margin:0;color:var(--footer-ink);font-size:12px;font-weight:600;line-height:1.4}
+.sf-langs div{display:flex;gap:20px}
+.sf-langs button{border:none;background:none;padding:0;color:var(--footer-muted);font:inherit;font-size:14px;font-weight:500;line-height:1.6;cursor:pointer;transition:color .2s}
+.sf-langs button:hover,.sf-langs button.on{color:var(--footer-ink)}
+.sf :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+
+@media (max-width:900px){
+  .sf-inner{flex-direction:column;gap:48px}
+  .sf-left,.sf-right{display:contents}
+  .sf-about{order:1}
+  .sf-nav{order:2}
+  .sf-right-foot{order:3;max-width:none}
+  .sf-left-foot{order:4}
+}
+@media (max-width:560px){
+  .sf{padding:40px 16px}
+  .sf-nav{gap:10px 24px}
+  .sf-langs{align-items:flex-start}
+}
