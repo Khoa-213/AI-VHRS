@@ -1,8 +1,31 @@
 # AI-VHRS – Hướng dẫn kết nối API cho Frontend
 
 > Dành cho: đội FE (web + Flutter) cần biết **gọi API nào, theo thứ tự nào, nhận gì về** để nối giao diện.
-> Cập nhật lần cuối: **Phase 3** (xem `../PROJECT_STATUS.md` để biết dự án đang tới đâu).
+> Cập nhật lần cuối: **2026-10-22, tới Phase 4f** (thanh toán VNPay/MoMo/payOS, chọn dịch vụ vận chuyển, vận đơn, chat; xem `../PROJECT_STATUS.md` để biết dự án đang tới đâu).
 > Nguồn sự thật tuyệt đối là Swagger (`/docs`): file này giải thích **luồng** và **quy ước**, Swagger cho **schema chi tiết**.
+
+## 0. DANH SÁCH VIỆC FE CẦN LÀM (BE đã xong, FE chưa làm; cập nhật 2026-10-22)
+
+Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
+
+**Thanh toán (mục 5.3b, 5.3c, 7d)**
+- [ ] **Thêm `vercel.json`** với rewrite SPA `{"rewrites":[{"source":"/(.*)","destination":"/index.html"}]}`: thiếu thì `/payment/result` và mọi đường dẫn sâu bị 404 trên Vercel.
+- [ ] **Trang `/payment/result`** (cổng đưa khách về đây kèm `?order_id=<id>`): poll `GET /orders/{id}` tới ~60 giây, gọi `POST /payments/{id}/refresh` một lần nếu còn `PENDING` (bỏ qua lỗi 502 của VNPay), rồi đưa khách về đơn. Không tin tham số của cổng.
+- [ ] **`pages/order/Deposit.tsx`:** thêm lựa chọn **PAYOS** (đọc `GET /payments/gateways`, chỉ hiện cổng `enabled`); khi `PaymentOut.pay_url` có giá trị thì `window.location.assign(pay_url)` và không chạy luồng mock; nhãn "MOCK" chỉ hiện khi `mode === "MOCK"`; thêm `pay_url`, `pay_url_expires_at`, `qr_code`, `bank`, `needs_refund` vào kiểu `Payment` trong `services/orders.ts`.
+- [ ] **payOS:** hiện hạn của mã (`pay_url_expires_at`) và cho tạo mã mới khi hết hạn; thông báo "đã chuyển sai số tiền" khi `needs_refund`. Khi test, trang `pay.payos.vn/web/<id>` từng không mở được trên trình duyệt của chủ dự án (nghi sao chép sai đường dẫn): hãy thử luồng redirect thật và báo lại BE nếu vẫn lỗi. Tuỳ chọn: tự vẽ QR từ `qr_code`.
+- [ ] **Màn thanh toán cuối** (`POST /orders/{id}/payments/final`, mục 7d).
+
+**Giao hàng (mục 7d, 7e)**
+- [ ] Màn **chọn hãng + dịch vụ vận chuyển** (`POST /orders/{id}/delivery-quote`, rồi `PUT /orders/{id}/delivery` với `carrier`, `service_code`), xử lý `FEE_CHANGED`.
+- [ ] Màn **xem vận đơn** của khách (`GET /orders/{id}/shipment`) và màn Staff tạo vận đơn / nhãn PDF (`/workshop/orders/{id}/shipment`).
+
+**Chat (mục 5.4)**
+- [ ] **Gửi thẻ đơn qua API** (`POST /orders/{id}/messages {kind:"ORDER_CARD"}`) thay cho state tạm trong `store/chatDock.ts`; hiển thị tin `ORDER_CARD` (từ `order_card`) cho **cả khách và Staff/Manager**.
+- [ ] `services/chat.ts` dùng **`GET /me/conversations`** (khách) và **`GET /workshop/conversations`** (Staff/Manager) thay cho gọi `/messages` từng đơn; badge nút chat dùng **`GET /me/conversations/unread-count`** (hoặc `/workshop/...`).
+- [ ] **Bỏ việc khoá ô nhập khi đơn `COMPLETED`** (BE vẫn cho nhắn; chỉ `REJECTED`/`CANCELLED` là đã đóng).
+- [ ] **Staff: ngừng ẩn các đơn chưa ai nhận** trong danh sách chat (BE trả cả đơn mình phụ trách lẫn đơn `SUBMITTED` chưa ai nhận). Khi khách nhắn đơn chưa ai nhận, FE khách có thể hiện "Đơn chưa có nhân viên nhận, xưởng sẽ trả lời sớm" (Manager trả lời được, Staff chưa nhắn được).
+
+**Chưa có ở BE (đừng chờ):** đẩy tức thời (SSE/WebSocket), thông báo in-app và email, huỷ sau cọc và hoàn tiền (xem mục 10).
 
 ## 1. Kết nối nhanh
 
