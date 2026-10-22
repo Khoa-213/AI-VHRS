@@ -1,17 +1,16 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * State of the floating chat (customer side): open or not, which order thread is shown, and the order cards the
- * customer attached by opening the chat from an order. Cards live only in this tab until the backend stores them as
- * messages (planned `ORDER_CARD` message kind).
+ * State of the floating chat: open or not, and which order thread is shown. `ask` is set when a customer opens the chat
+ * from an order: the dock then sends that order's card (`ORDER_CARD`) into the thread.
  */
 export interface DockState {
   open: boolean
   orderId: number | null
-  cards: Record<number, string>
+  ask: number | null
 }
 
-let state: DockState = { open: false, orderId: null, cards: {} }
+let state: DockState = { open: false, orderId: null, ask: null }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<DockState>) => {
   state = { ...state, ...patch }
@@ -27,11 +26,12 @@ export const useChatDock = () =>
     () => state,
   )
 
-/** Opens the chat. With an order, opens its thread and drops that order's card at the bottom, like asking about it. */
-export function openChat(orderId?: number, attach = true) {
+/** Opens the chat. With an order, opens its thread; with `ask`, also shares that order's card, like asking about it. */
+export function openChat(orderId?: number, ask = true) {
   if (orderId === undefined) return set({ open: true })
-  set({ open: true, orderId, cards: attach ? { ...state.cards, [orderId]: new Date().toISOString() } : state.cards })
+  set({ open: true, orderId, ask: ask ? orderId : null })
 }
 
 export const showThread = (orderId: number | null) => set({ orderId })
 export const closeChat = () => set({ open: false })
+export const doneAsking = () => set({ ask: null })

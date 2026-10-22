@@ -224,7 +224,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         <Link to={`/staff/schedule/${order.id}`} className="vh-btn vh-btn--primary vh-btn--md wk-link">{t('wk.goSchedule')}</Link>
       )}
 
-      {order.status !== 'DRAFT' && (mine || manager) && (
+      {order.status !== 'DRAFT' && (
         <button type="button" className="vh-btn vh-btn--ghost vh-btn--md wk-link" onClick={() => openChat(order.id, false)}>
           <ChatCircleDots size={18} aria-hidden />
           {t('cd.ws.ask')}

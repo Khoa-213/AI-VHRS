@@ -44,14 +44,8 @@
 .cd-note p{margin:0 0 8px}
 .cd-pick{margin:auto;max-width:280px;text-align:center}
 
-/* order card the customer drops into a thread */
-.cd-card{gap:8px;min-width:220px;border:1px solid var(--fx-12)}
-.cd-card-tag{font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--accent-text)}
-.cd-card-body{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:10px;background:var(--pop)}
-.cd-card-body b{font-size:14px;color:var(--t1)}
-.cd-card-body>span{font-size:12px;color:var(--t4)}
-.cd-card-meta{color:var(--t5)}
-.cd-card-link{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--accent-text)}
+/* order card error above the thread */
+.cd-ask-err{margin:8px 16px 0}
 
 @media (max-width:640px){
   .cd{right:16px;bottom:16px}

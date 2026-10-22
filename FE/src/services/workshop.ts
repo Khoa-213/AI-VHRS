@@ -1,7 +1,7 @@
 import { ApiError, api } from './api'
 import {
   num, toOrder, toPayment,
-  type Order, type OrderStatus, type Page, type Payment, type RawOrder, type RawPayment,
+  type Order, type OrderStatus, type OrderType, type Page, type Payment, type RawOrder, type RawPayment,
 } from './orders'
 
 /**
@@ -368,9 +368,22 @@ export async function listJobs(opts: { status?: JobStatus[]; page?: number } = {
 
 // ---------- chat (customer and workshop share these) ----------
 
+export type MessageKind = 'TEXT' | 'ORDER_CARD'
+
+/** The order a customer shared with `kind = ORDER_CARD`, as it is now (not a copy from when it was sent). */
+export interface OrderCard {
+  code: string
+  type: OrderType
+  status: OrderStatus
+  quantity: number
+  total: number | null
+}
+
 export interface Message {
   id: number
   mine: boolean
+  kind: MessageKind
+  card: OrderCard | null
   body: string | null
   attachments: { url: string; mime: string }[]
   readAt: string | null
@@ -384,12 +397,16 @@ export interface MessagePage {
 }
 
 interface RawMessage {
-  id: number; mine: boolean; body: string | null; attachments: { url: string; mime: string }[]
+  id: number; mine: boolean; kind?: MessageKind; body: string | null; attachments: { url: string; mime: string }[]
+  order_card?: { code: string; order_type: OrderType; order_status: OrderStatus; quantity: number; total_amount: string | null } | null
   read_at: string | null; created_at: string
 }
 
 const toMessage = (m: RawMessage): Message => ({
-  id: m.id, mine: m.mine, body: m.body, attachments: m.attachments, readAt: m.read_at, createdAt: m.created_at,
+  id: m.id, mine: m.mine, kind: m.kind ?? 'TEXT', body: m.body, attachments: m.attachments, readAt: m.read_at, createdAt: m.created_at,
+  card: m.order_card
+    ? { code: m.order_card.code, type: m.order_card.order_type, status: m.order_card.order_status, quantity: m.order_card.quantity, total: num(m.order_card.total_amount) }
+    : null,
 })
 
 export const CHAT_IMAGES = ['image/jpeg', 'image/png']
@@ -417,6 +434,10 @@ export async function sendMessage(orderId: number, body: string, image?: File): 
     body: { body: body.trim() || null, ...(attachments ? { attachments } : {}) },
   }))
 }
+
+/** Customer only: shares this order's card in its chat. Sending again within 10 minutes returns the same card. */
+export const sendOrderCard = async (orderId: number): Promise<Message> =>
+  toMessage(await api<RawMessage>(`/orders/${orderId}/messages`, { method: 'POST', body: { kind: 'ORDER_CARD' } }))
 
 export const markMessagesRead = (orderId: number) => api(`/orders/${orderId}/messages/read`, { method: 'POST' })
 
