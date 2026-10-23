@@ -1,15 +1,21 @@
+
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
+
 import Shell from '../../components/ws/Shell'
+import { useAsync } from '../../hooks/useAsync'
 import { Link } from '../../router/router'
+
 import { errText, orderErrorKey } from '../../services/orders'
 import { listMyJobs, type JobStatus, type TechJob } from '../../services/technician'
+
 import '../staff/dashboard.css'
 import '../staff/polish.css'
 import './tech.css'
 import { jobTone } from './jobs'
 
 type Mode = 'preview' | 'qc'
+
 
 /** Which jobs each tab lists. Photo and QC opens once the job is WRITTEN; every earlier step happens on the run page. */
 const STATUSES: Record<Mode, JobStatus[]> = {
@@ -63,4 +69,5 @@ export default function PreviewOrders({ mode = 'preview' }: { mode?: Mode }) {
       ) : null}
     </Shell>
   )
+
 }

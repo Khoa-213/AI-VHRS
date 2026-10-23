@@ -103,3 +103,53 @@
 
 .po-cta{border:none}
 .po-cta.vh-btn--ghost{background:var(--fx-06)}
+
+/* Keep the existing panels and cards, allow long job codes and translated labels to wrap. */
+.ws .tech-job-row{flex-wrap:wrap;color:inherit}
+.ws .tech-job-row .t{min-width:140px;overflow-wrap:anywhere}
+.ws .tech-job-row>.mono{white-space:normal;text-align:end}
+.ws .tech-time-bar{flex:0 1 180px;min-width:80px}
+.ws .tech-workload{flex:1 1 140px;box-shadow:none;background:var(--field)}
+.ws .tech-detail-panel{flex:1 1 360px}
+.ws .tech-feedback{margin-bottom:16px;align-items:flex-start}
+.ws .po-card .po-top{flex-wrap:wrap;gap:8px}
+.ws .po-card .po-id,.ws .po-card dd{overflow-wrap:anywhere}
+@media(max-width:560px){.ws .tech-job-row>.mono{text-align:start}.ws .tech-time-bar{flex:1 1 100px}.ws .tech-detail-panel .wk-rows>div{flex-wrap:wrap}.ws .tech-detail-panel .wk-rows dd{text-align:start}}
+
+/* Backend workflow: extend the same workshop panels, without altering the shared shell. */
+.ws .tech-workflow{display:flex;flex-direction:column;gap:18px}
+.ws .tech-form,.ws .tech-form fieldset{display:flex;flex-direction:column;gap:14px;min-width:0}
+.ws .tech-form fieldset{border:0;padding:0;margin:0}
+.ws .tech-form legend{font-size:13px;font-weight:600;margin-bottom:12px}
+.ws .tech-form .wk-check{white-space:normal}
+.ws .tech-form .vh-input,.ws .tech-form .vh-select{min-height:42px;height:auto;max-width:100%}
+.ws .tech-form .vh-textarea{min-height:80px;width:100%;box-sizing:border-box}
+.ws .tech-form .sd-btn{align-self:flex-start;white-space:normal;height:auto;min-height:40px}
+.ws .tech-form summary,.ws .tech-event-list summary{cursor:pointer;font-size:13px}
+.ws .tech-form details>.vh-label{margin-top:12px}
+.ws .tech-form fieldset:disabled{opacity:.65}
+.ws .tech-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.ws .tech-probe-grid{display:flex;flex-direction:column;gap:12px;max-height:400px;overflow:auto}
+.ws .tech-probe-row{display:grid;grid-template-columns:30px repeat(3,minmax(0,1fr));gap:10px;align-items:center}
+.ws .tech-probe-row .vh-input{padding:8px;min-width:0}
+.ws .tech-probe-row .sd-btn{grid-column:2/-1}
+.ws .tech-gates{list-style:none;display:flex;gap:12px;flex-wrap:wrap;margin:0;padding:0}
+.ws .tech-gates li{display:flex;align-items:center;gap:8px;font-size:13px}
+.ws .tech-hash,.ws .tech-json,.ws .tech-error{overflow-wrap:anywhere;white-space:pre-wrap;max-width:100%}
+.ws .tech-hash{font-size:11px;background:var(--field);border-radius:10px;padding:12px}
+.ws .tech-trajectory{height:320px;padding:12px;display:flex;justify-content:center;background:var(--field);border-radius:16px}
+.ws .tech-trajectory svg{max-width:100%;height:100%;background:var(--bg);border-radius:4px;box-shadow:var(--shadow)}
+.ws .tech-trajectory path{stroke:var(--ink);stroke-width:.4;fill:none}
+.ws .tech-photo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:18px}
+.ws .tech-photo{padding:16px;border-radius:16px;background:var(--field);display:flex;flex-direction:column;gap:12px;min-width:0}
+.ws .tech-photo img{width:100%;height:220px;object-fit:contain;border-radius:10px;background:var(--bg)}
+.ws .tech-photo-missing{min-height:140px;display:grid;place-items:center;text-align:center;font-size:13px}
+.ws .tech-photo .chip{align-self:flex-start}
+.ws .tech-event-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}
+.ws .tech-event-list>li{border-bottom:1px solid var(--line);padding-bottom:12px}
+.ws .tech-event-list time{font-size:12px;color:var(--ink3)}
+.ws .tech-json{padding:12px;background:var(--field);border-radius:10px;font-size:11px;max-height:260px;overflow:auto}
+.ws .tech-workflow button:disabled{cursor:not-allowed;opacity:.5}
+@media(max-width:560px){.ws .tech-gates{flex-direction:column}.ws .tech-trajectory{height:250px}.ws .tech-probe-row{gap:6px}.ws .tech-event-list .ph{flex-wrap:wrap}}
+/* On mobile the technical rail is a toolbar, not a viewport-height sidebar. */
+@media(max-width:900px){.ws.ws-tech .rail-col{height:auto;position:static;top:auto;align-self:auto}.ws.ws-tech .app2{align-content:flex-start}}

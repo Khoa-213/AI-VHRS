@@ -1,9 +1,11 @@
 import { ClipboardText, PlayCircle, Timer } from '@phosphor-icons/react'
+import { useState } from 'react'
 import { Kpi } from '../../components/ws/parts'
 import Shell from '../../components/ws/Shell'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
+
 import { errText, orderErrorKey } from '../../services/orders'
 import { OPEN_STATUSES, listMyJobs, type JobStatus, type TechJob } from '../../services/technician'
 import { useUser } from '../../store/store'
@@ -17,10 +19,12 @@ const GROUPS: { id: 'qc' | 'live' | 'ready'; statuses: JobStatus[] }[] = [
 ]
 
 /** The technician's day: the jobs the Manager scheduled for you. */
+
 export default function TechDashboard() {
   const t = useT()
   const locale = useLocale()
   const user = useUser()
+
   const jobs = useAsync(async () => (await listMyJobs({ status: OPEN_STATUSES })).items, [], 30000)
   const mine = [...(jobs.data ?? [])].sort((a, b) => a.slotStart.localeCompare(b.slotStart))
   const inGroup = (g: (typeof GROUPS)[number]) => mine.filter((j) => g.statuses.includes(j.status))
@@ -91,4 +95,5 @@ function JobRow({ job: j, when }: { job: TechJob; when: string }) {
       <span className="mono sub">{j.robotCode} · {t('td.min', { n: j.durationMin })}</span>
     </Link>
   )
+
 }

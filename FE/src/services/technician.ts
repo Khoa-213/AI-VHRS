@@ -1,4 +1,5 @@
 import { ApiError, api } from './api'
+
 import { num, type Page } from './orders'
 import type { JobStatus } from './workshop'
 
@@ -19,6 +20,7 @@ export const OPEN_STATUSES: JobStatus[] = ['SCHEDULED', 'PREPARING', 'WRITING', 
 
 // ---------- jobs ----------
 
+
 export interface TechJob {
   id: number
   orderId: number
@@ -30,12 +32,15 @@ export interface TechJob {
   slotStart: string
   slotEnd: string
   durationMin: number
+
   packageHash: string | null
   progressPct: number | null
+
   downloadedAt: string | null
   startedAt: string | null
   finishedAt: string | null
   simulationPassed: boolean | null
+
 }
 
 export interface Incident {
@@ -51,12 +56,14 @@ export interface Calibration {
   isValid: boolean
   forceZeroOffset: number | null
   createdAt: string
+
 }
 
 export interface TechJobDetail extends TechJob {
   orderType: string
   quantity: number
   eta: string | null
+
   paperName: string | null
   penName: string | null
   inkName: string | null
@@ -244,3 +251,4 @@ export const submitPhotos = (jobId: number) => post(jobId, 'photos/submit')
 
 /** The product is not good enough: the job goes back to the Manager's queue to be scheduled again. */
 export const failQc = (jobId: number, note: string) => post(jobId, 'qc-fail', { note })
+

@@ -4,7 +4,9 @@ import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
+
 import { listMyJobs } from '../../services/technician'
+
 import { signOut, useUser } from '../../store/store'
 import ChatDock from '../ui/ChatDock'
 import LanguageToggle from '../ui/LanguageToggle'
@@ -25,6 +27,7 @@ interface Item {
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'
 
+
 /** Counts that wait for this person, all from the API: the workshop queues, or a technician's written jobs. */
 function useCounts(area: Area) {
   const api = useAsync(
@@ -42,6 +45,7 @@ function useCounts(area: Area) {
     area === 'admin' ? undefined : 60000,
   )
   return api.data ?? { intake: 0, approvals: 0, schedule: 0, qc: 0 }
+
 }
 
 /**
@@ -60,7 +64,9 @@ export default function Shell({
 }) {
   const t = useT()
   const user = useUser()
+
   const c = useCounts(area)
+
   const icon = (I: typeof SquaresFour) => <I size={22} weight="regular" aria-hidden />
 
   const items: (Item | 'gap')[] =
@@ -94,7 +100,7 @@ export default function Shell({
   const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
 
   return (
-    <div className="ws">
+    <div className={area === 'tech' ? 'ws ws-tech' : 'ws'}>
       <SkipLink />
       <div className="app2">
         <div className="rail-col">
