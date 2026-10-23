@@ -454,8 +454,10 @@ class CustomerQuoteService:
             raise AppError(404, "ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.")
         if lock:
             order = self.orders.get(order.id, lock=True)
+            self.session.refresh(order)                            # loaded before the lock: see what others committed meanwhile
         if expire_and_persist(self.session, order) and lock:
             order = self.orders.get(order.id, lock=True)           # the commit released the row lock
+            self.session.refresh(order)
         return order
 
     def policy(self) -> dict[str, Any]:

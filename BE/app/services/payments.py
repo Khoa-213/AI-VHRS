@@ -107,7 +107,11 @@ class PaymentService:
         order = self.orders.get_owned(order_id, self.customer.id)
         if order is None:
             raise AppError(404, "ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.")
-        return self.orders.get(order.id, lock=True) if lock else order
+        if not lock:
+            return order
+        locked = self.orders.get(order.id, lock=True)
+        self.session.refresh(locked)                 # loaded before the lock: re-read what other requests committed meanwhile
+        return locked
 
     def list_for_order(self, order_id: int) -> list[Payment]:
         return self.payments.for_order(self._own_order(order_id).id)
@@ -178,13 +182,30 @@ class PaymentService:
             raise AppError(422, "INVALID_WEBHOOK", "Kết quả giao dịch không hợp lệ.")
         return self._settle(gateway, txn_id=txn_id, code=code, amount=amount, ok=result == "SUCCESS", raw=data)
 
+    def _lock_payment(self, gateway: PaymentGateway, txn_id: str) -> tuple[Payment | None, Order | None]:
+        """Lock the ORDER first, then the payment. Every other money path (cancel, start a deposit, choose delivery, the final
+        payment) takes the order lock and only then touches the payment rows; taking them the other way round here made a
+        webhook and a customer action on the same order deadlock (Postgres aborted one of them with a 500: audit F-03).
+        Both rows are re-read after their lock, because the unlocked read below may be older than what others committed."""
+        probe = self.payments.by_txn(gateway, txn_id)                  # unlocked: only to learn which order it belongs to
+        if probe is None:
+            return None, None
+        order = self.orders.get(probe.order_id, lock=True)
+        if order is None:
+            return None, None
+        self.session.refresh(order)
+        payment = self.payments.by_txn(gateway, txn_id, lock=True)
+        if payment is None:
+            return None, None
+        self.session.refresh(payment)
+        return payment, order
+
     # ---- the one place that turns a gateway's answer into SUCCESS / FAILED (mock webhook, VNPay/MoMo IPN, query) ----
     def _settle(self, gateway: PaymentGateway, *, txn_id: str, code: str | None, amount: int, ok: bool,
                 raw: dict[str, Any]) -> dict[str, Any]:
-        payment = self.payments.by_txn(gateway, txn_id, lock=True)
-        if payment is None:
+        payment, order = self._lock_payment(gateway, txn_id)
+        if payment is None or order is None:
             raise AppError(404, "PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch.")
-        order = self.orders.get(payment.order_id, lock=True)
         group = self._group(payment)
         if (code is not None and order.code != code) or int(sum((p.amount for p in group), Decimal(0))) != amount:
             audit.record(self.session, actor_id=None, action="PAYMENT_MISMATCH", entity_type="payment",
@@ -309,14 +330,13 @@ class PaymentService:
             raise AppError(401, "INVALID_SIGNATURE", "Chữ ký webhook không hợp lệ.") from exc
         except gw.MalformedCallback as exc:
             raise AppError(422, "INVALID_WEBHOOK", "Nội dung webhook không hợp lệ.") from exc
-        payment = self.payments.by_txn(PaymentGateway.PAYOS, result.txn_ref, lock=True)
-        if payment is None:
+        payment, order = self._lock_payment(PaymentGateway.PAYOS, result.txn_ref)
+        if payment is None or order is None:
             return {"result": "UNKNOWN_TRANSACTION", "status": "IGNORED"}
         expected = int(self._group_total(payment))
         if result.success and result.amount != expected and payment.status == PaymentStatus.PENDING:
             # The customer sent a different amount than the link asks for. The money is here, but it is not this payment:
             # keep the record for the refund flow and leave the payment pending (it expires or the customer pays correctly).
-            order = self.orders.get(payment.order_id, lock=True)
             self._flag_orphan(order, payment, self._group(payment), f"paid {result.amount}, expected {expected}")
             return {"result": "AMOUNT_MISMATCH", "status": "PENDING", "needs_refund": True}
         return self._settle(PaymentGateway.PAYOS, txn_id=result.txn_ref, code=None, amount=result.amount,

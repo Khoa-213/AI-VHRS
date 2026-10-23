@@ -24,7 +24,7 @@ from app.models.sketch import QuotationStatus
 from app.repositories.ops import PaymentRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository
-from app.services import audit
+from app.services import audit, gateway_checkout as checkout
 from app.services.handwriting_image import analyze_image, sniff_mime
 from app.services.pricing import (MaterialPrices, PricingParams, canvas_chars, compute_price, count_text_chars,
                                   parse_tiers)
@@ -247,12 +247,16 @@ class OrderService:
         if order.order_status not in CANCELLABLE_ONLINE:
             raise AppError(409, "ORDER_CANCEL_UNSUPPORTED", "Đơn ở trạng thái này chưa thể hủy trực tuyến.")
         order = self.orders.get(order.id, lock=True)
+        self.session.refresh(order)          # the object was loaded before the lock: a deposit confirmed meanwhile must be seen
+        if order.order_status not in CANCELLABLE_ONLINE:
+            raise AppError(409, "ORDER_CANCEL_UNSUPPORTED", "Đơn ở trạng thái này chưa thể hủy trực tuyến.")
         if order.order_status in (OrderStatus.QUOTED, OrderStatus.AWAITING_DEPOSIT):
             live = QuotationRepository(self.session).latest(order.id, (QuotationStatus.SENT,))
             if live is not None:
                 live.status, live.customer_responded_at = QuotationStatus.CANCELLED, datetime.now(timezone.utc)
             for pay in PaymentRepository(self.session).pending(order.id, PaymentType.DEPOSIT):
                 pay.status = PaymentStatus.CANCELLED
+                checkout.close(pay)          # a payOS QR would otherwise stay payable until it expires
         set_actor(self.session, self.customer.id, reason)
         order.order_status = OrderStatus.CANCELLED
         order.cancel_reason = reason
