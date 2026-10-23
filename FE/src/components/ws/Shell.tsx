@@ -4,8 +4,8 @@ import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
-import { phaseOf, useNow } from '../../pages/tech/phase'
-import { signOut, useAllStaffOrders, useUser } from '../../store/store'
+import { listTechJobs } from '../../services/technician'
+import { signOut, useUser } from '../../store/store'
 import ChatDock from '../ui/ChatDock'
 import LanguageToggle from '../ui/LanguageToggle'
 import SkipLink from '../ui/SkipLink'
@@ -25,23 +25,20 @@ interface Item {
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'
 
-/** Counts that wait for this person, from the API for the workshop and from the local store for technicians. */
-function useCounts(area: Area, techId?: string) {
-  const orders = useAllStaffOrders()
-  const now = useNow(1000)
-  const api = useAsync(
-    async () => (area === 'tech' || area === 'admin'
-      ? null
-      : {
-        intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
-        approvals: area === 'manager' ? (await pendingApprovals()).total : 0,
-        schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
-      }),
-    [area],
-    area === 'tech' || area === 'admin' ? undefined : 60000,
-  )
-  const qc = orders.filter((o) => o.assignment?.techId === techId && phaseOf(o, now) === 'qc').length
-  return { ...(api.data ?? { intake: 0, approvals: 0, schedule: 0 }), qc }
+/** Counts come from the role's API; technician QC is based on WRITTEN jobs. */
+function useCounts(area: Area, accountId?: number) {
+  const result = useAsync(async () => {
+    if (area === 'admin') return { intake: 0, approvals: 0, schedule: 0, qc: 0 }
+    if (area === 'tech') return { intake: 0, approvals: 0, schedule: 0,
+      qc: (await listTechJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
+    return {
+      intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
+      approvals: area === 'manager' ? (await pendingApprovals()).total : 0,
+      schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
+      qc: 0,
+    }
+  }, [area, accountId], area === 'admin' ? undefined : area === 'tech' ? 30000 : 60000)
+  return result.data ?? { intake: 0, approvals: 0, schedule: 0, qc: 0 }
 }
 
 /**
@@ -60,7 +57,7 @@ export default function Shell({
 }) {
   const t = useT()
   const user = useUser()
-  const c = useCounts(area, user?.techId)
+  const c = useCounts(area, user?.id)
   const icon = (I: typeof SquaresFour) => <I size={22} weight="regular" aria-hidden />
 
   const items: (Item | 'gap')[] =
@@ -94,7 +91,7 @@ export default function Shell({
   const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
 
   return (
-    <div className="ws">
+    <div className={area === 'tech' ? 'ws ws-tech' : 'ws'}>
       <SkipLink />
       <div className="app2">
         <div className="rail-col">

@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "i18n:check": "node scripts/check-i18n.mjs"
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "test:technician": "node scripts/check-technician.mjs",
+    "test:technician:browser": "npm run build && node scripts/check-technician-browser.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
