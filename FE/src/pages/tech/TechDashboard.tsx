@@ -1,138 +1,99 @@
 import { ClipboardText, PlayCircle, Timer } from '@phosphor-icons/react'
+import { useState } from 'react'
 import { Kpi } from '../../components/ws/parts'
 import Shell from '../../components/ws/Shell'
-import { useLocale, useT, useTn } from '../../i18n'
+import { useAsync } from '../../hooks/useAsync'
+import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
-import { useAllStaffOrders, useUser } from '../../store/store'
-import type { Order } from '../../types'
-import { STATE_LABEL, loadOf, roster } from '../staff/technicians'
-import { phaseOf, useNow, type Phase } from './phase'
+import { ACTIVE_JOB_STATUSES, allTechJobs, jobPath, jobTone, type TechJob, type JobStatus } from '../../services/technician'
+import { useUser } from '../../store/store'
+import JobFeedback from './JobFeedback'
+import './tech.css'
 
-const minutesOf = (o: Order) => Math.max(1, (o.spec.mins || 4) * (o.spec.qty || 1))
-
-/** Labels are English catalog names, shown through the name translator. */
-const GROUPS: { id: Phase; label: string; note: string }[] = [
-  { id: 'qc', label: 'Photo and QC', note: 'Robot finished, check and send' },
-  { id: 'live', label: 'Writing now', note: 'Robot is running' },
-  { id: 'ready', label: 'Ready to preview', note: 'Deposit paid' },
-  { id: 'wait', label: 'Waiting for deposit', note: 'Preview allowed' },
-  { id: 'done', label: 'Finished', note: 'Written and shipped' },
+const GROUPS: { key: string; statuses: JobStatus[] }[] = [
+  { key: 'qc', statuses: ['WRITTEN'] },
+  { key: 'live', statuses: ['WRITING', 'PAUSED'] },
+  { key: 'ready', statuses: ['SCHEDULED', 'PREPARING'] },
+  { key: 'attention', statuses: ['FAILED', 'REWRITE_REQUIRED'] },
+  { key: 'history', statuses: ['PHOTO_UPLOADED', 'DONE', 'CANCELLED'] },
 ]
 
-const RCHIP = { idle: 'good', writing: 'orange', calibrating: 'info', offline: 'mute' } as const
-
-/** The technician's day. The jobs and robots here still come from the local mock until the backend has technician endpoints (phase 4). */
 export default function TechDashboard() {
   const t = useT()
-  const tn = useTn()
   const locale = useLocale()
   const user = useUser()
-  const all = useAllStaffOrders()
-  const now = useNow(1000)
-  const tech = roster().find((r) => r.id === user?.techId)
-  const mine = all.filter((o) => o.assignment?.techId === user?.techId)
-  const robots = tech?.robots ?? []
-  const inPhase = (p: Phase) => mine.filter((o) => phaseOf(o, now) === p)
-  const counts = { qc: inPhase('qc').length, live: inPhase('live').length, ready: inPhase('ready').length, wait: inPhase('wait').length }
-  const open = mine.filter((o) => ['qc', 'live', 'ready', 'wait'].includes(phaseOf(o, now) ?? ''))
-  const queueMinutes = open.reduce((a, o) => a + minutesOf(o), 0)
-  const maxMin = Math.max(1, ...open.map(minutesOf))
-  const robotJob = (id: string) => mine.find((o) => phaseOf(o, now) === 'live' && o.run?.robotId === id)
-  const today = new Date().toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })
+  const [openedAt] = useState(() => new Date())
+  const q = useAsync(allTechJobs, [user?.id], 30000)
+  const mine = q.data ?? []
+  const inStatus = (statuses: JobStatus[]) => mine.filter((j) => statuses.includes(j.status))
+  const qc = inStatus(['WRITTEN']).length
+  const live = inStatus(['WRITING', 'PAUSED']).length
+  const ready = inStatus(['SCHEDULED', 'PREPARING']).length
+  const open = inStatus(ACTIVE_JOB_STATUSES)
+  const queued = inStatus(['SCHEDULED', 'PREPARING'])
+  const queueMinutes = queued.reduce((total, job) => total + job.durationMin, 0)
+  const maxMin = Math.max(1, ...queued.map((j) => j.durationMin))
+  const robots = [...new Map(open.map((j) => [j.robotId, { id: j.robotId, code: j.robotCode }])).values()]
+  const stamp = (s: string) => new Date(s).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })
+  const today = openedAt.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })
+  const count = (n: number) => q.data ? n : '...'
 
-  return (
-    <Shell area="tech" active="dashboard" title={t('wk.hello', { name: user?.name ?? t('td.technician') })} lede={`${today} · ${tn(tech?.shift ?? 'Technician desk')}`}>
-      <div className="row3">
-        <Kpi icon={<ClipboardText size={20} aria-hidden />} tone="a" title={t('td.kpi.qc')} value={counts.qc} note={t('td.kpi.qcHint')} to="/tech/qc" />
-        <Kpi icon={<PlayCircle size={20} aria-hidden />} tone="p" title={t('td.kpi.live')} value={counts.live} note={t('td.kpi.liveHint')} to="/tech/preview" />
-        <Kpi icon={<Timer size={20} aria-hidden />} tone="b" title={t('td.kpi.ready')} value={counts.ready} note={t('td.kpi.readyHint')} to="/tech/preview" />
-      </div>
-
-      <div className="flex">
-        <section className="panel" style={{ flex: '2 1 560px' }} aria-labelledby="td-orders-h">
-          <div className="ph"><h2 id="td-orders-h">{t('td.myOrders')}</h2><span className="sub">{t('td.assigned', { n: mine.length })} · {t('td.queueTime')} {t('td.min', { n: queueMinutes })}</span></div>
-          {GROUPS.map((g) => {
-            const rows = inPhase(g.id)
-            if (!rows.length) return null
-            return (
-              <div key={g.id} className="list">
-                <div className="ph" style={{ padding: '6px 2px' }}><b>{tn(g.label)}</b><span className="sub">{tn(g.note)}</span></div>
-                {rows.map((o) => <TechRow key={o.id} order={o} group={g.id} />)}
-              </div>
-            )
-          })}
-          {!mine.length && (
-            <div className="sd-empty">
-              <b>{t('td.none')}</b>
-              <span>{t('td.noneBody')}</span>
-            </div>
-          )}
-        </section>
-
-        <section className="panel" style={{ flex: '1 1 340px' }} aria-labelledby="td-robots-h">
-          <div className="ph"><h2 id="td-robots-h">{t('td.myRobots')}</h2><span className="sub">{t('td.robotsState', { n: robots.length, state: t(counts.live ? 'td.stWriting' : 'td.stReady') })}</span></div>
-          <div className="list">
-            {robots.map((r) => {
-              const job = robotJob(r.id)
-              return (
-                <div key={r.id} className="item">
-                  <div className="t">
-                    <b>{r.id}</b>
-                    <span>{job ? job.id : mine.some((o) => o.assignment?.robotId === r.id && phaseOf(o, now) !== 'done') ? t('td.orderWaiting') : t('td.noOrder')}</span>
-                  </div>
-                  <div style={{ width: 90 }} role="progressbar" aria-valuenow={r.ink} aria-valuemin={0} aria-valuemax={100} aria-label={t('td.inkAria', { id: r.id })}><div className="bar"><i style={{ width: `${r.ink}%` }} /></div></div>
-                  <span className={`chip ${RCHIP[r.state]}`}>{tn(STATE_LABEL[r.state])}</span>
-                </div>
-              )
-            })}
-            {!robots.length && <p className="sub">{t('td.noRobots')}</p>}
-          </div>
-        </section>
-      </div>
-
-      <div className="flex">
-        <section className="panel" style={{ flex: '1 1 440px' }} aria-labelledby="td-queue-h">
-          <div className="ph"><h2 id="td-queue-h">{t('td.queueTitle')}</h2></div>
-          {open.length ? (
-            <div className="list">
-              {open.map((o) => (
-                <div key={o.id} className="item">
-                  <div className="t"><b>{o.id}</b></div>
-                  <div style={{ width: 200 }}><div className="bar"><i style={{ width: `${(minutesOf(o) / maxMin) * 100}%` }} /></div></div>
-                  <b className="mono">{minutesOf(o)}m</b>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="sub">{t('td.noOpen')}</p>
-          )}
-          <p className="sub">{t('td.queueNote')}</p>
-        </section>
-
-        <section className="panel" style={{ flex: '1 1 440px' }} aria-labelledby="td-load-h">
-          <div className="ph"><h2 id="td-load-h">{t('td.workload')}</h2></div>
-          <div className="flex">
-            <div className="k" style={{ flex: '1 1 160px', boxShadow: 'none', background: 'var(--field)' }}><div className="num"><b>{tech ? loadOf(tech.id, all) : 0}</b></div><span className="sub">{t('td.inQueue')}</span></div>
-            <div className="k" style={{ flex: '1 1 160px', boxShadow: 'none', background: 'var(--field)' }}><div className="num"><b>{robots.filter((r) => r.state === 'idle').length}</b></div><span className="sub">{t('td.idleRobots')}</span></div>
-          </div>
-          <p className="sub">{tech ? tech.skills.map((k) => tn(k)).join(' · ') : ''}</p>
-        </section>
-      </div>
-    </Shell>
-  )
+  return <Shell area="tech" active="dashboard" title={t('wk.hello', { name: user?.name ?? t('td.technician') })} lede={today}
+    tools={<button type="button" className="sd-btn" onClick={() => void q.reload()}>{t('td.api.reload')}</button>}>
+    <JobFeedback loading={q.loading && !q.data} error={q.error} retry={q.reload} />
+    <div className="row3">
+      <Kpi icon={<ClipboardText size={20} aria-hidden />} tone="a" title={t('td.kpi.qc')} value={count(qc)} note={t('td.kpi.qcHint')} to="/tech/qc" />
+      <Kpi icon={<PlayCircle size={20} aria-hidden />} tone="p" title={t('td.api.live')} value={count(live)} note={t('td.api.liveHint')} to="/tech/preview" />
+      <Kpi icon={<Timer size={20} aria-hidden />} tone="b" title={t('td.api.ready')} value={count(ready)} note={t('td.api.readyHint')} to="/tech/preview" />
+    </div>
+    <div className="flex">
+      <section className="panel" style={{ flex: '2 1 560px' }} aria-labelledby="td-orders-h">
+        <div className="ph"><h2 id="td-orders-h">{t('td.api.myJobs')}</h2>{q.data && <span className="sub">{t('td.assigned', { n: mine.length })}</span>}</div>
+        {GROUPS.map((g) => {
+          const rows = inStatus(g.statuses)
+          return rows.length ? <div key={g.key} className="list">
+            <div className="ph"><b>{t(`td.api.group.${g.key}`)}</b><span className="sub">{rows.length}</span></div>
+            {rows.map((j) => <JobRow key={j.id} job={j} />)}
+          </div> : null
+        })}
+        {q.data && !q.error && !mine.length && <div className="sd-empty"><b>{t('td.none')}</b><span>{t('td.api.noneBody')}</span></div>}
+      </section>
+      <section className="panel" style={{ flex: '1 1 340px' }} aria-labelledby="td-robots-h">
+        <div className="ph"><h2 id="td-robots-h">{t('td.api.assignedRobots')}</h2></div>
+        <div className="list">{robots.map((r) => <div key={r.id} className="item tech-job-row">
+          <div className="t"><b>{r.code || r.id}</b>{open.filter((j) => j.robotId === r.id).map((j) => <Link key={j.id} to={jobPath(j.id)}>{j.orderCode || j.orderId} / {t(`js.${j.status}`)}</Link>)}</div>
+        </div>)}</div>
+        {q.data && !q.error && !robots.length && <p className="sub">{t('td.noRobots')}</p>}
+        <p className="sub">{t('td.api.robotNote')}</p>
+      </section>
+    </div>
+    <div className="flex">
+      <section className="panel" style={{ flex: '1 1 440px' }} aria-labelledby="td-queue-h">
+        <div className="ph"><h2 id="td-queue-h">{t('td.queueTitle')}</h2></div>
+        <div className="list">{queued.map((j) => <Link key={j.id} to={jobPath(j.id)} className="item tech-job-row">
+          <div className="t"><b>{j.orderCode || j.orderId}</b><span>{stamp(j.slotStart)}</span></div>
+          <div className="tech-time-bar"><div className="bar"><i style={{ width: `${j.durationMin / maxMin * 100}%` }} /></div></div>
+          <b className="mono">{t('td.min', { n: j.durationMin })}</b>
+        </Link>)}</div>
+        {q.data && !q.error && !queued.length && <p className="sub">{t('td.api.noQueued')}</p>}
+        <p className="sub">{t('td.api.queueNote')}</p>
+      </section>
+      <section className="panel" style={{ flex: '1 1 440px' }} aria-labelledby="td-load-h">
+        <div className="ph"><h2 id="td-load-h">{t('td.workload')}</h2></div>
+        <div className="flex">
+          <div className="k tech-workload"><div className="num"><b>{count(open.length)}</b></div><span className="sub">{t('td.api.activeJobs')}</span></div>
+          <div className="k tech-workload"><div className="num"><b>{count(queueMinutes)}</b></div><span className="sub">{t('td.api.queuedMinutes')}</span></div>
+        </div>
+      </section>
+    </div>
+  </Shell>
 }
 
-function TechRow({ order: o, group }: { order: Order; group: Phase }) {
+function JobRow({ job: j }: { job: TechJob }) {
   const t = useT()
-  const tn = useTn()
-  const label = group === 'done' ? t(`status.${o.status}`) : t(`td.row.${group}`)
-  const tone = group === 'qc' || group === 'live' ? 'orange' : group === 'ready' ? 'good' : group === 'wait' ? 'warn' : 'mute'
-  const to = group === 'qc' ? `/tech/qc/${encodeURIComponent(o.id)}` : `/tech/preview/${encodeURIComponent(o.id)}`
-  return (
-    <Link to={to} className="item">
-      <div className="t"><b>{tn(o.title)}</b><span>{o.id} · {o.name || t('common.customer')}</span></div>
-      <span className={`chip ${tone}`}>{label}</span>
-      <span className="mono sub">{o.assignment?.robotId} · {t('td.min', { n: minutesOf(o) })}</span>
-    </Link>
-  )
+  return <Link to={jobPath(j.id)} className="item tech-job-row">
+    <div className="t"><b>{j.orderCode || j.orderId}</b><span>{t('td.api.jobId', { id: j.id })}{j.isRewrite ? ` / ${t('wk.rewrite')}` : ''}</span></div>
+    <span className={`chip ${jobTone(j.status)}`}>{t(`js.${j.status}`)}</span>
+    <span className="mono sub">{j.robotCode || j.robotId} / {t('td.min', { n: j.durationMin })}</span>
+  </Link>
 }

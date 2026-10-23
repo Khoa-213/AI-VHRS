@@ -6,7 +6,7 @@ import { apiGoogleLogin, apiLogin, apiLogout, apiMe, apiUpdateMe } from '../serv
 /**
  * App state in small subscribable stores. The signed-in user comes from the
  * backend (services/auth.ts); the customer's orders come from the API
- * (services/orders.ts). The orders kept here are the staff and technician screens' own, until those are wired in.
+ * (services/orders.ts). The orders kept here belong to legacy prototype modules; active workshop and technician routes use API services.
  */
 
 const KEYS = {

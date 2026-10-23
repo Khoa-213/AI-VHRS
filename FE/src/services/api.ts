@@ -29,12 +29,14 @@ export class ApiError extends Error {
   /** Backend code, e.g. `INVALID_CREDENTIALS`; `NETWORK` or `TIMEOUT` when the request never got an answer. */
   readonly code: string
   readonly details: unknown
+  readonly retryAfterMs?: number
 
-  constructor(status: number, code: string, message: string, details?: unknown) {
+  constructor(status: number, code: string, message: string, details?: unknown, retryAfterMs?: number) {
     super(message)
     this.status = status
     this.code = code
     this.details = details
+    this.retryAfterMs = retryAfterMs
   }
 }
 
@@ -108,7 +110,10 @@ async function toError(res: Response): Promise<ApiError> {
   } catch {
     // Not JSON: keep the status text.
   }
-  return new ApiError(res.status, code, message, details)
+  const retry = res.headers.get('Retry-After')
+  const retryAfterMs = retry === null ? undefined : Math.max(0,
+    Number.isFinite(Number(retry)) ? Number(retry) * 1000 : Date.parse(retry) - Date.now())
+  return new ApiError(res.status, code, message, details, Number.isFinite(retryAfterMs) ? retryAfterMs : undefined)
 }
 
 // One refresh at a time: parallel 401s wait for the same promise.

@@ -10,7 +10,7 @@ export const isWorkshop = (apiRole?: string) => apiRole === 'STAFF' || apiRole =
 export const isManagerRole = (apiRole?: string) => apiRole === 'MANAGER'
 
 /**
- * Role gate. With `role="admin"` it needs an Admin account. With `role="technician"` it lets technicians in (the technician screens are not wired to the API yet).
+ * Role gate. With `role="admin"` it needs an Admin account. With `role="technician"` it lets technicians in.
  * For the workshop it needs a Staff or Manager account, plus a Manager one when `manager` is set.
  */
 export default function RequireStaff({ children, role = 'staff', manager = false }: { children: ReactNode; role?: Role; manager?: boolean }) {
