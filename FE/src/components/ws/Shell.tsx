@@ -5,7 +5,7 @@ import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
 
-import { listMyJobs } from '../../services/technician'
+import { listTechJobs } from '../../services/technician'
 
 import { signOut, useUser } from '../../store/store'
 import ChatDock from '../ui/ChatDock'
@@ -34,7 +34,7 @@ function useCounts(area: Area) {
     async () => (area === 'admin'
       ? null
       : area === 'tech'
-        ? { intake: 0, approvals: 0, schedule: 0, qc: (await listMyJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
+        ? { intake: 0, approvals: 0, schedule: 0, qc: (await listTechJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
         : {
           intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
           approvals: area === 'manager' ? (await pendingApprovals()).total : 0,

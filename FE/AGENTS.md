@@ -94,7 +94,7 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   an `ORDER_CARD` message (the backend returns the same card within 10 minutes); both sides render it from `order_card`.
   Read only only when the order is `REJECTED` or `CANCELLED` (a `COMPLETED` order stays open for complaints), or for a Staff who has not
   claimed the order. Contract: `BE/docs/FE_API_GUIDE.md` section 5.4.
-- The technician screens (`src/pages/tech/`) run on the API (`services/technician.ts`): jobs, run steps (`JobRun`), photos and QC. `sim.ts` and `SimCanvas.tsx` are the old text-based arm simulation, not used by any screen yet.
+- The technician screens (`src/pages/tech/`) run on the API (`services/technician.ts`): jobs, the job screen (`JobDetail` and its workflow, preparation, events and photo parts, also reached at `/tech/preview/:id` and `/tech/qc/:id`). Details in `docs/TECHNICAL_STAFF_INTEGRATION.md`. `sim.ts` and `SimCanvas.tsx` are the old text-based arm simulation, not used by any screen.
 
 
 ## Account area
