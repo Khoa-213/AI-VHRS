@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { PencilSimple } from '@phosphor-icons/react'
 import type { Job, Run } from '../../services/async'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
@@ -8,21 +9,34 @@ import {
   COMPLEXITIES, finalizeSketch, generateSketch, listSketches, patchSketch, sketchTrajectory, uploadTrajectory,
   type Complexity, type Sketch, type WorkOrder,
 } from '../../services/workshop'
+import SketchEditor from './SketchEditor'
+import { blankPage, pagesFromTrajectory, trajectoryFromPages, type EditorPage } from './sketchPages'
 
 const SIZES = ['', 'A6', 'A5', 'A4'] as const
+/** Preview links last 10 minutes; ask again before they run out. */
+const REFRESH_MS = 8 * 60_000
 
 /** The AI sketch of an accepted order: generate versions, adjust complexity and notes, and finalize one (BR-22 needs this before a quotation). */
 export default function SketchPanel({ order, onChanged }: { order: WorkOrder; onChanged: () => void }) {
   const t = useT()
-  const list = useAsync(() => listSketches(order.id), [order.id])
+  const list = useAsync(() => listSketches(order.id), [order.id], REFRESH_MS)
   const [size, setSize] = useState<(typeof SIZES)[number]>('')
   const file = useRef<HTMLInputElement>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [detail, setDetail] = useState('')
+  const [editing, setEditing] = useState<EditorPage[] | null>(null)
   const sketches = [...(list.data ?? [])].sort((a, b) => b.version - a.version)
   const unsupported = order.type === 'OT2_LEARNED_STYLE'
+
+  // A broken preview usually means its link expired. Ask once in a while, so a link that never works cannot loop.
+  const lastRefresh = useRef(0)
+  const refreshLinks = () => {
+    if (Date.now() - lastRefresh.current < 30_000) return
+    lastRefresh.current = Date.now()
+    void list.reload()
+  }
 
   const run = async (job: Job) => {
     if (busy) return
@@ -48,6 +62,9 @@ export default function SketchPanel({ order, onChanged }: { order: WorkOrder; on
       <p className="sd-sub">{t(unsupported ? 'wk.sketchOt2' : 'wk.sketchLede')}</p>
 
       <div className="wk-actions">
+        <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy || !!editing} onClick={() => setEditing([blankPage()])}>
+          <PencilSimple size={16} /> {t('wk.draw')}
+        </button>
         <input
           ref={file}
           type="file"
@@ -62,6 +79,17 @@ export default function SketchPanel({ order, onChanged }: { order: WorkOrder; on
         />
         <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => file.current?.click()}>{t('wk.uploadTrajectory')}</button>
       </div>
+      {editing && (
+        <SketchEditor
+          initial={editing}
+          busy={busy}
+          onCancel={() => setEditing(null)}
+          onSave={(pages) => void run(async () => {
+            await uploadTrajectory(order.id, trajectoryFromPages(pages), note)
+            setEditing(null)
+          })}
+        />
+      )}
       {!unsupported && (
         <div className="wk-form">
           <label className="vh-label">
@@ -88,14 +116,16 @@ export default function SketchPanel({ order, onChanged }: { order: WorkOrder; on
       {list.loading && !list.data && <p className="sd-sub" role="status">{t('co.loading')}</p>}
 
       <div className="wk-sketches">
-        {sketches.map((s) => <SketchCard key={s.id} s={s} orderId={order.id} busy={busy} run={run} />)}
+        {sketches.map((s) => <SketchCard key={s.id} s={s} orderId={order.id} busy={busy || !!editing} run={run} onEdit={setEditing} onExpired={refreshLinks} />)}
       </div>
       {list.data && !sketches.length && !unsupported && <p className="sd-sub">{t('wk.noSketch')}</p>}
     </section>
   )
 }
 
-function SketchCard({ s, orderId, busy, run }: { s: Sketch; orderId: number; busy: boolean; run: Run }) {
+function SketchCard({ s, orderId, busy, run, onEdit, onExpired }: {
+  s: Sketch; orderId: number; busy: boolean; run: Run; onEdit: (pages: EditorPage[]) => void; onExpired: () => void
+}) {
   const t = useT()
   const [note, setNote] = useState(s.note ?? '')
   return (
@@ -105,7 +135,7 @@ function SketchCard({ s, orderId, busy, run }: { s: Sketch; orderId: number; bus
         {s.isFinal && <span className="wk-final">{t('wk.final')}</span>}
       </header>
       <div className="wk-previews">
-        {s.previewUrls.map((u, i) => <img key={u} src={u} alt={t('opv.sketch', { n: i + 1 })} />)}
+        {s.previewUrls.map((u, i) => <img key={u} src={u} alt={t('opv.sketch', { n: i + 1 })} onError={onExpired} />)}
         {!s.previewUrls.length && <span className="sd-sub">{t('wk.noPreview')}</span>}
       </div>
       <dl className="wk-rows">
@@ -134,6 +164,7 @@ function SketchCard({ s, orderId, busy, run }: { s: Sketch; orderId: number; bus
         </label>
         <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy || note === (s.note ?? '')} onClick={() => void run(() => patchSketch(orderId, s.version, { approach_note: note.trim() || null }))}>{t('wk.saveNote')}</button>
         <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => void run(async () => download(orderId, s.version))}>{t('wk.downloadTrajectory')}</button>
+        <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => void run(async () => onEdit(pagesFromTrajectory(await sketchTrajectory(orderId, s.version))))}>{t('wk.editVersion')}</button>
         {!s.isFinal && <button className="vh-btn vh-btn--primary vh-btn--sm" disabled={busy} onClick={() => void run(() => finalizeSketch(orderId, s.version))}>{t('wk.finalize')}</button>}
       </div>
     </article>

@@ -85,3 +85,5 @@
 .qc-slots--big .qc-empty.req svg{color:var(--accent-text)}
 .qc-slots--big .qc-empty:hover{background:var(--bg);box-shadow:inset 0 0 0 2px var(--accent)}
 .qc-slots--big .qc-shot img{height:210px}
+
+.qc-photo{display:flex;flex-direction:column;gap:8px}

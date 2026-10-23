@@ -4,7 +4,9 @@ import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
-import { listTechJobs } from '../../services/technician'
+
+import { listMyJobs } from '../../services/technician'
+
 import { signOut, useUser } from '../../store/store'
 import ChatDock from '../ui/ChatDock'
 import LanguageToggle from '../ui/LanguageToggle'
@@ -25,20 +27,25 @@ interface Item {
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'
 
-/** Counts come from the role's API; technician QC is based on WRITTEN jobs. */
-function useCounts(area: Area, accountId?: number) {
-  const result = useAsync(async () => {
-    if (area === 'admin') return { intake: 0, approvals: 0, schedule: 0, qc: 0 }
-    if (area === 'tech') return { intake: 0, approvals: 0, schedule: 0,
-      qc: (await listTechJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
-    return {
-      intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
-      approvals: area === 'manager' ? (await pendingApprovals()).total : 0,
-      schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
-      qc: 0,
-    }
-  }, [area, accountId], area === 'admin' ? undefined : area === 'tech' ? 30000 : 60000)
-  return result.data ?? { intake: 0, approvals: 0, schedule: 0, qc: 0 }
+
+/** Counts that wait for this person, all from the API: the workshop queues, or a technician's written jobs. */
+function useCounts(area: Area) {
+  const api = useAsync(
+    async () => (area === 'admin'
+      ? null
+      : area === 'tech'
+        ? { intake: 0, approvals: 0, schedule: 0, qc: (await listMyJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
+        : {
+          intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
+          approvals: area === 'manager' ? (await pendingApprovals()).total : 0,
+          schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
+          qc: 0,
+        }),
+    [area],
+    area === 'admin' ? undefined : 60000,
+  )
+  return api.data ?? { intake: 0, approvals: 0, schedule: 0, qc: 0 }
+
 }
 
 /**
@@ -57,7 +64,9 @@ export default function Shell({
 }) {
   const t = useT()
   const user = useUser()
-  const c = useCounts(area, user?.id)
+
+  const c = useCounts(area)
+
   const icon = (I: typeof SquaresFour) => <I size={22} weight="regular" aria-hidden />
 
   const items: (Item | 'gap')[] =

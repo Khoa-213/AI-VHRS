@@ -17,7 +17,7 @@ import {
   saveAccount, signOut, updateProfile, useProfile, useUser,
 } from '../../store/store'
 import { fmt } from '../../utils/format'
-import { shrinkImage } from '../tech/phase'
+import { shrinkImage } from '../../utils/shrinkImage'
 import DraftsSection from './DraftsSection'
 import './account.css'
 
