@@ -2,39 +2,61 @@ import { useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowsClockwise, Camera, Check, PaperPlaneTilt, Warning, X } from '@phosphor-icons/react'
 import { useT, useTn } from '../../i18n'
 import Shell from '../../components/ws/Shell'
+import { ApiError } from '../../services/api'
+import type { Job } from '../../services/async'
+import { useAsync } from '../../hooks/useAsync'
 import { Link } from '../../router/router'
-import { failQc, submitQc, useAllStaffOrders, useUser } from '../../store/store'
-import type { QcPhoto } from '../../types'
-import { MODE_LABEL } from '../staff/evaluate'
+import { MAX_UPLOAD_MB, errText, orderErrorKey } from '../../services/orders'
+import {
+  MAX_PHOTOS, MIN_LONG_SIDE_PX, failQc, getMyJob, listPhotos, removePhoto, setPhotoQc, submitPhotos, uploadPhoto,
+  type Photo, type PhotoKind,
+} from '../../services/technician'
 import { PHOTO_SLOTS, QC_FAIL_REASONS, qcGroups } from './qcItems'
-import { runDone, shrinkImage, useNow } from './phase'
 import '../staff/dashboard.css'
 import '../staff/staff.css'
 import '../staff/polish.css'
 import './tech.css'
 import './qc.css'
 
-export default function QualityCheck({ id }: { id: string }) {
+/** Phone photos are often HEIC or tiny; the backend refuses both, so say so before uploading. */
+async function checkFile(file: File): Promise<void> {
+  if (file.type !== 'image/jpeg' && file.type !== 'image/png') throw new Error('qc.err.type')
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) throw new Error('err.fileTooLarge')
+  let side = 0
+  try {
+    const bmp = await createImageBitmap(file)
+    side = Math.max(bmp.width, bmp.height)
+    bmp.close()
+  } catch {
+    throw new Error('qc.err.format')
+  }
+  if (side < MIN_LONG_SIDE_PX) throw new Error('qc.err.small')
+}
+
+/** Photo and QC of a written job: tick the checklist, take the photos, mark each one, then send them to the customer. */
+export default function QualityCheck({ id }: { id: number }) {
   const t = useT()
   const tn = useTn()
-  const user = useUser()
-  const orders = useAllStaffOrders()
-  const now = useNow(1000)
-  const order = orders.find((o) => o.id === id)
+  const jobQ = useAsync(() => getMyJob(id), [id])
+  // Signed photo links last 10 minutes, so the list is asked again before they run out.
+  const photoQ = useAsync(() => listPhotos(id), [id], 8 * 60_000)
+  const job = jobQ.data
+  const photos = photoQ.data ?? []
 
   const [ticked, setTicked] = useState<Record<string, boolean>>({})
-  const [photos, setPhotos] = useState<Record<string, string>>({})
-  const [note, setNote] = useState('')
   const [confirm, setConfirm] = useState(false)
   const [tab, setTab] = useState<'qc' | 'photos'>('qc')
   const [failing, setFailing] = useState(false)
   const [reasons, setReasons] = useState<string[]>([])
   const [failNote, setFailNote] = useState('')
+  const [markFail, setMarkFail] = useState<{ id: number; note: string } | null>(null)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [sent, setSent] = useState<'ok' | 'failed' | null>(null)
   const inputs = useRef<Record<string, HTMLInputElement | null>>({})
+  const lastRefresh = useRef(0)
 
-  const groups = useMemo(() => (order ? qcGroups(order, t, tn) : []), [order, t, tn])
+  const groups = useMemo(() => (job ? qcGroups(job, t) : []), [job, t])
   const all = groups.flatMap((g) => g.items)
   const done = all.filter((i) => ticked[i.id]).length
 
@@ -42,79 +64,94 @@ export default function QualityCheck({ id }: { id: string }) {
     <Shell
       area="tech"
       active="qc"
-      title={order ? t('qc.title', { id: order.id }) : t('qc.titleShort')}
-      lede={order ? t('qc.subtitle', { title: tn(order.title), name: order.name || t('qc.theCustomer') }) : t('qc.notFound')}
+      title={job ? t('qc.title', { id: job.orderCode }) : t('qc.titleShort')}
+      lede={job ? t('qc.subtitleJob', { robot: job.robotCode }) : undefined}
       tools={<Link to="/tech/qc" className="sd-btn">{t('qc.another')}</Link>}
     >
       {body}
     </Shell>
   )
 
-  if (!order) {
+  if (!job) {
+    const missing = jobQ.error instanceof ApiError && jobQ.error.status === 404
     return shell(
-      <section className="sd-card"><div className="sd-empty"><b>{t('qc.notFound')}</b><span>{t('qc.notFoundBody', { id })}</span></div></section>,
+      jobQ.loading
+        ? <p className="sd-sub" role="status">{t('co.loading')}</p>
+        : <section className="sd-card"><div className="sd-empty"><b>{t('jr.notFound')}</b><span>{missing ? t('jr.notFoundBody') : errText(t, orderErrorKey(jobQ.error))}</span></div></section>,
     )
   }
-  const asg = order.assignment
-  if (!asg || asg.techId !== user?.techId) {
+  if (!sent && job.status !== 'WRITTEN') {
+    const early = ['SCHEDULED', 'PREPARING', 'WRITING', 'PAUSED'].includes(job.status)
     return shell(
       <section className="sd-card">
         <div className="sd-empty">
-          <b>{t('qc.notYours')}</b>
-          <span>{asg ? t('qc.belongsTo', { id: order.id, name: asg.techName }) : t('qc.noTech', { id: order.id })}</span>
-        </div>
-      </section>,
-    )
-  }
-  if (!sent && !runDone(order, now)) {
-    return shell(
-      <section className="sd-card">
-        <div className="sd-empty">
-          <b>{t(order.run ? 'qc.stillWriting' : 'qc.notWritten')}</b>
-          <span>{t('qc.opensAfter')}</span>
-          <Link to={`/tech/preview/${encodeURIComponent(order.id)}`} className="vh-link">{t('qc.openSim')}</Link>
+          <b>{t(early ? 'qc.stillWriting' : 'qc.notOpen')}</b>
+          <span>{t(early ? 'qc.opensAfter' : 'qc.notOpenBody', { status: t(`js.${job.status}`) })}</span>
+          {early && <Link to={`/tech/preview/${job.id}`} className="vh-link">{t('qc.openRun')}</Link>}
         </div>
       </section>,
     )
   }
 
-  const sp = order.spec
-  const missingPhotos = PHOTO_SLOTS.filter((s) => s.required && !photos[s.id])
-  const ready = done === all.length && !missingPhotos.length
+  const kindPhotos = (k: PhotoKind) => photos.filter((p) => p.kind === k)
+  const passes = (k: PhotoKind) => kindPhotos(k).some((p) => p.qc === 'PASS')
+  const missing = PHOTO_SLOTS.filter((s) => s.required && !passes(s.kind))
+  const blocked = photos.some((p) => p.qc !== 'PASS')
+  const ready = done === all.length && !missing.length && !blocked
+  const requiredTotal = PHOTO_SLOTS.filter((s) => s.required).length
+  const requiredDone = requiredTotal - missing.length
+  const qcDone = done === all.length
 
-  const addPhoto = async (slot: string, file: File | undefined) => {
-    if (!file) return
+  /** Runs one request with the page's busy and error handling; true when it worked. */
+  const run = async (work: Job) => {
+    if (busy) return false
+    setBusy(true)
     setError('')
     try {
-      const url = await shrinkImage(file)
-      setPhotos((p) => ({ ...p, [slot]: url }))
+      await work()
+      return true
     } catch (e) {
-      setError(e instanceof Error && e.message.startsWith('qc.err.') ? t(e.message) : t('qc.photoErr'))
+      setError(e instanceof Error && !(e instanceof ApiError) && /^(qc|err)\./.test(e.message) ? e.message : orderErrorKey(e))
+      return false
+    } finally {
+      setBusy(false)
     }
   }
 
-  const send = () => {
-    const list: QcPhoto[] = PHOTO_SLOTS.filter((s) => photos[s.id]).map((s) => ({ slot: s.label, url: photos[s.id] }))
-    submitQc(order.id, {
-      checked: all.filter((i) => ticked[i.id]).map((i) => i.id),
-      total: all.length,
-      photos: list,
-      note: note.trim(),
-      by: user?.name ?? t('td.technician'),
-      at: new Date().toISOString(),
+  const addPhoto = (kind: PhotoKind, file: File | undefined) => {
+    if (!file) return
+    void run(async () => {
+      await checkFile(file)
+      // The checklist is ticked before this step, so a new photo starts as PASS; "Mark failed" changes it.
+      await uploadPhoto(job.id, file, kind, { result: 'PASS' })
+      await photoQ.reload()
     })
-    setConfirm(false)
-    setSent('ok')
   }
+  const drop = (p: Photo) => void run(async () => { await removePhoto(job.id, p.id); await photoQ.reload() })
+  const setQc = (p: Photo, result: 'PASS' | 'FAIL', note?: string) => void run(async () => {
+    await setPhotoQc(job.id, p.id, result, note)
+    setMarkFail(null)
+    await photoQ.reload()
+  })
+  const brokenLink = () => {
+    if (Date.now() - lastRefresh.current < 30_000) return
+    lastRefresh.current = Date.now()
+    void photoQ.reload()
+  }
+
+  const send = () => void run(async () => {
+    await submitPhotos(job.id)
+    setSent('ok')
+  }).then(() => setConfirm(false))
 
   if (sent) {
     return shell(
       <section className="qc-sent" role="status">
-        <b>{sent === 'ok' ? t('qc.sentOk', { name: order.name || t('qc.theCustomer') }) : t('qc.sentFail')}</b>
+        <b>{sent === 'ok' ? t('qc.sentOk', { name: t('qc.theCustomer') }) : t('qc.sentFail')}</b>
         <span>
           {sent === 'ok'
-            ? t('qc.sentOkBody', { id: order.id, photos: t(Object.keys(photos).length === 1 ? 'qc.photoOne' : 'qc.photoMany', { n: Object.keys(photos).length }) })
-            : t('qc.sentFailBody', { id: order.id })}
+            ? t('qc.sentOkBody', { id: job.orderCode, photos: t(photos.length === 1 ? 'qc.photoOne' : 'qc.photoMany', { n: photos.length }) })
+            : t('qc.sentFailBody', { id: job.orderCode })}
         </span>
         <div className="qc-sent-actions">
           <Link to="/tech" className="vh-btn vh-btn--primary vh-btn--md">{t('qc.toDash')}</Link>
@@ -124,13 +161,8 @@ export default function QualityCheck({ id }: { id: string }) {
     )
   }
 
-  const photoCount = PHOTO_SLOTS.filter((s) => photos[s.id]).length
-  const requiredDone = PHOTO_SLOTS.filter((s) => s.required && photos[s.id]).length
-  const requiredTotal = PHOTO_SLOTS.filter((s) => s.required).length
-  const qcDone = done === all.length
-
-  const tick = (id: string, on: boolean) => {
-    const next = { ...ticked, [id]: on }
+  const tick = (itemId: string, on: boolean) => {
+    const next = { ...ticked, [itemId]: on }
     setTicked(next)
     // The last box moves the technician straight on to the photos.
     if (on && all.every((i) => next[i.id])) setTab('photos')
@@ -157,14 +189,14 @@ export default function QualityCheck({ id }: { id: string }) {
   const reference = (
     <section className="qc-ref">
       <h2 className="tp-h">{t('qc.compare')}</h2>
-      <p className="qc-text-ref">{(sp.mode === 'text' ? sp.text : order.ocrText ?? sp.text) || t('qc.noText')}</p>
       <dl className="tp-opts">
-        <div><dt>{t('qc.input')}</dt><dd>{tn(MODE_LABEL[sp.mode])}</dd></div>
-        <div><dt>{t('qc.paperRow')}</dt><dd><i className="tp-sw" style={{ background: sp.paperColor }} />{tn(sp.paper)}</dd></div>
-        <div><dt>{t('qc.inkRow')}</dt><dd><i className="tp-sw" style={{ background: sp.inkColor }} />{tn(sp.ink)}</dd></div>
-        <div><dt>{t('qc.piecesRow')}</dt><dd>{sp.qty || 1}</dd></div>
-        <div><dt>{t('qc.robotRow')}</dt><dd>{asg.robotId}</dd></div>
+        <div><dt>{t('qc.paperRow')}</dt><dd>{job.paperName ?? '-'}</dd></div>
+        <div><dt>{t('po.pen')}</dt><dd>{job.penName ?? '-'}</dd></div>
+        <div><dt>{t('qc.inkRow')}</dt><dd>{job.inkName ?? '-'}</dd></div>
+        <div><dt>{t('qc.piecesRow')}</dt><dd>{job.quantity}</dd></div>
+        <div><dt>{t('qc.robotRow')}</dt><dd>{job.robotCode}</dd></div>
       </dl>
+      {job.approachNote && <p className="qc-text-ref">{job.approachNote}</p>}
     </section>
   )
 
@@ -175,13 +207,11 @@ export default function QualityCheck({ id }: { id: string }) {
           <div className="sc-modal-card" role="dialog" aria-modal="true" aria-labelledby="qc-confirm-h" onClick={(e) => e.stopPropagation()}>
             <span className="sc-modal-mark sc-modal-mark--accent" aria-hidden="true" />
             <div className="sc-modal-head">
-              <h2 id="qc-confirm-h">{t('qc.confirmTitle', { name: order.name || t('qc.theCustomer') })}</h2>
-              <p>
-                {t('qc.confirmBody', { photos: t(photoCount === 1 ? 'qc.photoOne' : 'qc.photoMany', { n: photoCount }), note: note.trim() ? t('qc.andNote') : '' })}
-              </p>
+              <h2 id="qc-confirm-h">{t('qc.confirmTitle', { name: t('qc.theCustomer') })}</h2>
+              <p>{t('qc.confirmBodyJob', { photos: t(photos.length === 1 ? 'qc.photoOne' : 'qc.photoMany', { n: photos.length }) })}</p>
             </div>
             <div className="sc-modal-actions">
-              <button className="vh-btn vh-btn--primary" onClick={send}>{t('qc.sendCustomer')}</button>
+              <button className="vh-btn vh-btn--primary" disabled={busy} onClick={send}>{t('qc.sendCustomer')}</button>
               <button className="vh-btn vh-btn--ghost vh-btn--sm" onClick={() => setConfirm(false)}>{t('qc.notYet')}</button>
             </div>
           </div>
@@ -249,14 +279,17 @@ export default function QualityCheck({ id }: { id: string }) {
                     {t('qc.scheduleNote')}
                     <textarea className="vh-textarea" rows={2} value={failNote} onChange={(e) => setFailNote(e.target.value)} />
                   </label>
+                  {error && <p className="lg-error" role="alert">{errText(t, error)}</p>}
                   <div className="sc-row">
                     <button
                       className="vh-btn vh-btn--md qc-danger"
-                      disabled={!reasons.length}
-                      onClick={() => {
-                        failQc(order.id, reasons, failNote.trim())
+                      disabled={busy || !reasons.length}
+                      onClick={() => void run(async () => {
+                        // The backend keeps one note; the reasons are catalog names, stored in English like the rest.
+                        const note = [reasons.join(', '), failNote.trim()].filter(Boolean).join(': ').slice(0, 500)
+                        await failQc(job.id, note)
                         setSent('failed')
-                      }}
+                      })}
                     >
                       <ArrowsClockwise size={18} /> {t('qc.rescheduleBtn')}
                     </button>
@@ -276,56 +309,78 @@ export default function QualityCheck({ id }: { id: string }) {
           <div className="tp-main qc-main">
             <div className="qc-lede">
               <h2 className="tp-h">{t('qc.photosFor')}</h2>
-              <p>{t('qc.photosBody')}</p>
+              <p>{t('qc.photosBodyJob', { n: MIN_LONG_SIDE_PX })}</p>
             </div>
 
             <ul className="qc-slots qc-slots--big">
-              {PHOTO_SLOTS.map((s) => (
-                <li key={s.id} className={s.required ? 'req' : ''}>
-                  <input
-                    ref={(el) => { inputs.current[s.id] = el }}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    aria-label={t('qc.photoLabel', { label: tn(s.label) })}
-                    onChange={(e) => {
-                      void addPhoto(s.id, e.target.files?.[0])
-                      e.target.value = ''
-                    }}
-                  />
-                  <div className="qc-slot-head">
-                    <b>{tn(s.label)}</b>
-                    <span className={`qc-tag${s.required ? ' req' : ''}${photos[s.id] ? ' ok' : ''}`}>
-                      {photos[s.id] ? t('qc.added') : s.required ? t('qc.required') : t('qc.optional')}
-                    </span>
-                  </div>
-                  {photos[s.id] ? (
-                    <div className="qc-shot">
-                      <img src={photos[s.id]} alt={t('rs.photoAlt', { slot: tn(s.label), id: order.id })} />
-                      <div className="qc-shot-bar">
-                        <span>{tn(s.hint)}</span>
-                        <button type="button" aria-label={t('qc.retake', { label: tn(s.label) })} onClick={() => inputs.current[s.id]?.click()}>
-                          <ArrowsClockwise size={16} />
-                        </button>
-                        <button type="button" aria-label={t('qc.removePhoto', { label: tn(s.label) })} onClick={() => setPhotos((p) => { const n = { ...p }; delete n[s.id]; return n })}>
-                          <X size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button type="button" className={`qc-empty${s.required ? ' req' : ''}`} onClick={() => inputs.current[s.id]?.click()}>
-                      <Camera size={28} />
-                      <span className="qc-empty-text">
-                        <b>{t('qc.takePhoto')}</b>
-                        <span>{tn(s.hint)}</span>
+              {PHOTO_SLOTS.map((s) => {
+                const list = kindPhotos(s.kind)
+                return (
+                  <li key={s.kind} className={s.required ? 'req' : ''}>
+                    <input
+                      ref={(el) => { inputs.current[s.kind] = el }}
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      capture="environment"
+                      hidden
+                      aria-label={t('qc.photoLabel', { label: tn(s.label) })}
+                      onChange={(e) => {
+                        addPhoto(s.kind, e.target.files?.[0])
+                        e.target.value = ''
+                      }}
+                    />
+                    <div className="qc-slot-head">
+                      <b>{tn(s.label)}</b>
+                      <span className={`qc-tag${s.required ? ' req' : ''}${passes(s.kind) ? ' ok' : ''}`}>
+                        {passes(s.kind) ? t('qc.added') : s.required ? t('qc.required') : t('qc.optional')}
                       </span>
-                    </button>
-                  )}
-                </li>
-              ))}
+                    </div>
+                    {list.map((p) => (
+                      <div key={p.id} className="qc-photo">
+                        <div className="qc-shot">
+                          {p.url && <img src={p.url} alt={t('rs.photoAlt', { slot: tn(s.label), id: job.orderCode })} onError={brokenLink} />}
+                          <div className="qc-shot-bar">
+                            <span>{p.qc === 'FAIL' ? t('qc.markedFail') : p.qc === 'PASS' ? t('qc.markedPass') : tn(s.hint)}</span>
+                            <button type="button" disabled={busy} aria-label={t('qc.removePhoto', { label: tn(s.label) })} onClick={() => drop(p)}>
+                              <X size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        {markFail?.id === p.id ? (
+                          <div className="qc-fail-body">
+                            <label className="qc-label">
+                              {t('qc.failWhy')}
+                              <textarea className="vh-textarea" rows={2} value={markFail.note} onChange={(e) => setMarkFail({ id: p.id, note: e.target.value })} />
+                            </label>
+                            <div className="sc-row">
+                              <button className="vh-btn vh-btn--md qc-danger" disabled={busy || markFail.note.trim().length < 3} onClick={() => setQc(p, 'FAIL', markFail.note.trim())}>{t('qc.markFail')}</button>
+                              <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={() => setMarkFail(null)}>{t('qc.cancel')}</button>
+                            </div>
+                          </div>
+                        ) : p.qc === 'PASS' ? (
+                          <button type="button" className="qc-link" disabled={busy} onClick={() => setMarkFail({ id: p.id, note: '' })}>{t('qc.markFail')}</button>
+                        ) : (
+                          <div className="qc-fail-body">
+                            {p.note && <span>{p.note}</span>}
+                            <button type="button" className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => setQc(p, 'PASS')}>{t('qc.markPass')}</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {!list.length && (
+                      <button type="button" className={`qc-empty${s.required ? ' req' : ''}`} disabled={busy || photos.length >= MAX_PHOTOS} onClick={() => inputs.current[s.kind]?.click()}>
+                        <Camera size={28} />
+                        <span className="qc-empty-text">
+                          <b>{busy ? t('qc.uploading') : t('qc.takePhoto')}</b>
+                          <span>{tn(s.hint)}</span>
+                        </span>
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
-            {error && <p className="lg-error" role="alert">{error}</p>}
+            {error && <p className="lg-error" role="alert">{errText(t, error)}</p>}
           </div>
 
           <aside className="tp-side" aria-label={t('qc.send')}>
@@ -338,22 +393,14 @@ export default function QualityCheck({ id }: { id: string }) {
             </section>
             {reference}
             <section aria-label={t('qc.send')}>
-              <label className="qc-label">
-                {t('qc.customerNote')}
-                <textarea
-                  className="vh-textarea"
-                  rows={3}
-                  value={note}
-                  placeholder={t('qc.notePh')}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </label>
               <p className="qc-need" aria-live="polite">
                 {ready
                   ? t('qc.allIn')
-                  : t('qc.addPhotos', { list: missingPhotos.map((s) => tn(s.label).toLowerCase()).join(t('qc.and')), s: missingPhotos.length > 1 ? 's' : '' })}
+                  : blocked
+                    ? t('qc.fixPhotos')
+                    : t('qc.addPhotos', { list: missing.map((s) => tn(s.label).toLowerCase()).join(t('qc.and')), s: missing.length > 1 ? 's' : '' })}
               </p>
-              <button className="vh-btn vh-btn--primary vh-btn--md qc-send" disabled={!ready} onClick={() => setConfirm(true)}>
+              <button className="vh-btn vh-btn--primary vh-btn--md qc-send" disabled={!ready || busy} onClick={() => setConfirm(true)}>
                 <PaperPlaneTilt size={18} weight="bold" /> {t('qc.sendCustomer')}
               </button>
             </section>

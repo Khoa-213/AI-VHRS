@@ -1,6 +1,5 @@
 import type { TFn } from '../../i18n'
-import { layoutById } from '../../constants/catalog'
-import type { Order } from '../../types'
+import type { PhotoKind } from '../../services/technician'
 
 export interface QcItem {
   id: string
@@ -14,18 +13,23 @@ export interface QcGroup {
   items: QcItem[]
 }
 
+/** What a job tells the checklist: names come from the API and are shown as received. */
+export interface QcSubject {
+  paperName: string | null
+  penName: string | null
+  inkName: string | null
+  quantity: number
+}
+
 /** Everything the technician checks before the customer sees the result, grouped by where they look. */
-export function qcGroups(o: Order, t: TFn, tn: (s: string) => string): QcGroup[] {
-  const sp = o.spec
-  const pieces = sp.qty || 1
-  const layout = tn(layoutById(o.layout).name)
+export function qcGroups(j: QcSubject, t: TFn): QcGroup[] {
+  const pieces = j.quantity || 1
   return [
     {
       id: 'sheet',
       title: t('qc.sheet'),
       items: [
-        { id: 'paper', title: t('qc.paper', { name: tn(sp.paper) }), detail: t('qc.paperDetail', { type: tn(sp.type), land: sp.land ? t('qc.landscape') : '' }) },
-        { id: 'layout', title: t('qc.layout', { name: layout }), detail: t('qc.layoutDetail') },
+        { id: 'paper', title: t('qc.paper', { name: j.paperName ?? '-' }), detail: t('qc.paperDetailJob') },
         { id: 'bleed', title: t('qc.bleed'), detail: t('qc.bleedDetail') },
       ],
     },
@@ -33,10 +37,10 @@ export function qcGroups(o: Order, t: TFn, tn: (s: string) => string): QcGroup[]
       id: 'writing',
       title: t('qc.writing'),
       items: [
-        { id: 'text', title: t('qc.text'), detail: t('qc.textDetail') },
+        { id: 'text', title: t('qc.text'), detail: t('qc.textDetailJob') },
         { id: 'marks', title: t('qc.marks'), detail: t('qc.marksDetail') },
         { id: 'strokes', title: t('qc.strokes'), detail: t('qc.strokesDetail') },
-        { id: 'ink', title: t('qc.ink', { name: tn(sp.ink) }), detail: t('qc.inkDetail', { pen: tn(sp.pen) }) },
+        { id: 'ink', title: t('qc.ink', { name: j.inkName ?? '-' }), detail: t('qc.inkDetail', { pen: j.penName ?? '-' }) },
         { id: 'marksout', title: t('qc.marksOut'), detail: t('qc.marksOutDetail') },
       ],
     },
@@ -52,10 +56,11 @@ export function qcGroups(o: Order, t: TFn, tn: (s: string) => string): QcGroup[]
   ]
 }
 
-export const PHOTO_SLOTS = [
-  { id: 'sheet', label: 'Whole sheet', hint: 'Flat, all four corners visible', required: true },
-  { id: 'close', label: 'Close-up', hint: 'A few words, in focus', required: true },
-  { id: 'packed', label: 'Packed', hint: 'Optional, the stack before it ships', required: false },
-] as const
+/** One slot per kind of photo the backend knows. OVERALL and CLOSE_UP are required (BR-21). */
+export const PHOTO_SLOTS: { kind: PhotoKind; label: string; hint: string; required: boolean }[] = [
+  { kind: 'OVERALL', label: 'Whole sheet', hint: 'Flat, all four corners visible', required: true },
+  { kind: 'CLOSE_UP', label: 'Close-up', hint: 'A few words, in focus', required: true },
+  { kind: 'OTHER', label: 'Packed', hint: 'Optional, the stack before it ships', required: false },
+]
 
 export const QC_FAIL_REASONS = ['Ink smudge', 'Missing strokes', 'Wrong paper', 'Text mismatch', 'Pen skipped', 'Other']

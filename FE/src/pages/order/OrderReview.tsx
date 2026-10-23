@@ -14,7 +14,6 @@ import {
 import type { Job } from '../../services/async'
 import { fmt } from '../../utils/format'
 import { openChat } from '../../store/chatDock'
-import MockWorkshopBar from './MockWorkshopBar'
 import PrivacyDialog from './PrivacyDialog'
 import './order.css'
 
@@ -33,7 +32,7 @@ export default function OrderReview({ id }: { id: string | null }) {
   const pens = useAsync(() => getPens(), [])
   const inks = useAsync(() => (order?.penId ? getInks(order.penId) : Promise.resolve([])), [order?.penId])
   const quote = useAsync(() => (status && HAS_QUOTE.includes(status) ? getQuotation(orderId) : Promise.resolve(null)), [orderId, status])
-  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy(orderId) : Promise.resolve(null)), [status])
+  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy() : Promise.resolve(null)), [status])
 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -144,7 +143,6 @@ export default function OrderReview({ id }: { id: string | null }) {
 
   return (
     <Page label="Order Review">
-      {import.meta.env.DEV && <MockWorkshopBar order={order} onChange={() => void q.reload()} />}
       <div className="ov">
         <div className="vh-head">
           <div className="vh-head-text">

@@ -121,8 +121,6 @@ const toSketch = (s: RawSketch): Sketch => ({
 
 export const listSketches = async (orderId: number) => (await api<RawSketch[]>(`/workshop/orders/${orderId}/sketches`)).map(toSketch)
 
-export const getSketch = async (orderId: number, version: number) => toSketch(await api<RawSketch>(`/workshop/orders/${orderId}/sketches/${version}`))
-
 export const generateSketch = async (orderId: number, body: { paper_size?: 'A6' | 'A5' | 'A4'; approach_note?: string; seed?: number }) =>
   toSketch(await api<RawSketch>(`/workshop/orders/${orderId}/sketches/generate`, { method: 'POST', body }))
 

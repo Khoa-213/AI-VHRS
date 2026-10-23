@@ -55,6 +55,22 @@
 .ws .wk-tabs{display:inline-flex;flex-wrap:wrap;gap:4px;padding:5px;border-radius:26px;background:#fff;box-shadow:var(--shadow);align-self:flex-start}
 .ws .wk-tabs button{padding:9px 18px;border:none;border-radius:21px;background:transparent;color:var(--ink2);font-family:inherit;font-size:13px;font-weight:600}
 .ws .wk-tabs button.on{background:var(--ink);color:#fff}
+/* sketch editor */
+.ws .wk-editor{display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:20px;background:var(--field)}
+.ws .wk-editor-head{display:flex;flex-direction:column;gap:4px}
+.ws .wk-editor-head h4{margin:0;font-size:16px;font-weight:600}
+.ws .wk-editor-bar,.ws .wk-editor-pages,.ws .wk-editor-foot{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.ws .wk-editor-foot{justify-content:space-between}
+.ws .wk-editor-size{min-width:90px}
+.ws .wk-tabs button{display:inline-flex;align-items:center;gap:6px}
+.ws .wk-editor-pages button[role=tab]{padding:7px 14px;border:none;border-radius:18px;background:#fff;color:var(--ink2);font-family:inherit;font-size:13px;font-weight:600}
+.ws .wk-editor-pages button[role=tab].on{background:var(--ink);color:#fff}
+.ws .wk-paper{display:block;width:100%;max-width:560px;max-height:70vh;align-self:center;background:#fbfaf5;border-radius:6px;box-shadow:var(--shadow);touch-action:none;cursor:crosshair;user-select:none}
+.ws .wk-paper.erase{cursor:pointer}
+.ws .wk-stroke{fill:none;stroke:#1b2a4a;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.ws .wk-stroke.keep{stroke:#3b4a6b}
+.ws .wk-hit{fill:none;stroke:transparent;stroke-linecap:round;stroke-linejoin:round;cursor:pointer}
+.ws .wk-hit:hover{stroke:rgba(220,60,60,.25)}
 /* catalog (manager) */
 .ws .mg{max-width:none}
 .ws .mg-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}

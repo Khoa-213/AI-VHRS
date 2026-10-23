@@ -17,7 +17,7 @@ import StaffDashboard from './pages/staff/StaffDashboard'
 import TechDashboard from './pages/tech/TechDashboard'
 import PreviewOrders from './pages/tech/PreviewOrders'
 import QualityCheck from './pages/tech/QualityCheck'
-import RobotPreview from './pages/tech/RobotPreview'
+import JobRun from './pages/tech/JobRun'
 import RequireStaff from './pages/staff/RequireStaff'
 import ChatDock from './components/ui/ChatDock'
 import Deposit from './pages/order/Deposit'
@@ -96,19 +96,19 @@ function Routes() {
   if (path === '/tech') return <RequireStaff role="technician"><TechDashboard /></RequireStaff>
   if (path === '/tech/preview') return <RequireStaff role="technician"><PreviewOrders mode="preview" /></RequireStaff>
   if (path === '/tech/qc') return <RequireStaff role="technician"><PreviewOrders mode="qc" /></RequireStaff>
-  const qc = /^\/tech\/qc\/([^/]+)\/?$/.exec(path)
+  const qc = /^\/tech\/qc\/(\d+)\/?$/.exec(path)
   if (qc) {
     return (
       <RequireStaff role="technician">
-        <QualityCheck key={qc[1]} id={decodeURIComponent(qc[1])} />
+        <QualityCheck key={qc[1]} id={Number(qc[1])} />
       </RequireStaff>
     )
   }
-  const preview = /^\/tech\/preview\/([^/]+)\/?$/.exec(path)
+  const preview = /^\/tech\/preview\/(\d+)\/?$/.exec(path)
   if (preview) {
     return (
       <RequireStaff role="technician">
-        <RobotPreview key={preview[1]} id={decodeURIComponent(preview[1])} />
+        <JobRun key={preview[1]} id={Number(preview[1])} />
       </RequireStaff>
     )
   }

@@ -68,7 +68,7 @@ Text that stays English is a bug unless it is in the exceptions list above.
 
 - No em dash or en dash in user-facing copy. Use a comma, colon or period.
 - Icons come from `@phosphor-icons/react`. Colours come from CSS variables in `src/styles/theme.css`.
-- Customer and workshop (Staff, Manager) data comes from the API. Only the technician screens still use the localStorage mock in `src/store/store.ts`.
+- Customer, workshop (Staff, Manager) and technician data all come from the API. The localStorage store in `src/store/store.ts` only keeps the signed-in user and profile.
 
 ## Customer orders come from the API
 
@@ -92,7 +92,7 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   an `ORDER_CARD` message (the backend returns the same card within 10 minutes); both sides render it from `order_card`.
   Read only only when the order is `REJECTED` or `CANCELLED` (a `COMPLETED` order stays open for complaints), or for a Staff who has not
   claimed the order. Contract: `BE/docs/FE_API_GUIDE.md` section 5.4.
-- The technician screens (`src/pages/tech/`) still use the local mock (`store.ts`, `pages/staff/technicians.ts`, `evaluate.ts`, `telemetry.ts`). Wire them when backend phase 4 adds jobs, QC and photos, and delete that mock as you go.
+- The technician screens (`src/pages/tech/`) run on the API (`services/technician.ts`): jobs, run steps (`JobRun`), photos and QC. `sim.ts` and `SimCanvas.tsx` are the old text-based arm simulation, not used by any screen yet.
 
 ## Account area
 
