@@ -465,6 +465,40 @@ export const listPayments = async (id: number): Promise<Payment[]> => {
   return (Array.isArray(r) ? r : r.items).map(toPayment)
 }
 
+// ---------- product photos and acceptance ----------
+
+export type PhotoKind = 'OVERALL' | 'CLOSE_UP' | 'OTHER'
+export type RewriteReason = 'WORKSHOP_ERROR' | 'DIFFERS_FROM_SKETCH'
+
+/** Statuses in which the written product has photos the customer can see. */
+export const HAS_PRODUCT_PHOTOS: OrderStatus[] = ['AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED']
+
+export interface ProductPhotos {
+  /** QC-passed photos of the latest writing, through signed links that last 30 minutes. */
+  photos: { id: number; kind: PhotoKind; url: string | null }[]
+  sketchUrl: string | null
+  acceptanceDueAt: string | null
+  canAccept: boolean
+  canRewrite: boolean
+}
+
+export async function getProductPhotos(id: number): Promise<ProductPhotos> {
+  const r = await api<{
+    photos: { id: number; kind: PhotoKind; url: string | null }[]
+    sketch_preview_url: string | null; acceptance_due_at: string | null; can_accept: boolean; can_request_rewrite: boolean
+  }>(`/orders/${id}/product-photos`)
+  return {
+    photos: r.photos.map((p) => ({ id: p.id, kind: p.kind, url: p.url })),
+    sketchUrl: r.sketch_preview_url, acceptanceDueAt: r.acceptance_due_at, canAccept: r.can_accept, canRewrite: r.can_request_rewrite,
+  }
+}
+
+export const acceptProduct = async (id: number): Promise<Order> =>
+  toOrder(await api<RawOrder>(`/orders/${id}/accept`, { method: 'POST' }))
+
+export const requestRewrite = async (id: number, reason_code: RewriteReason, note: string): Promise<Order> =>
+  toOrder(await api<RawOrder>(`/orders/${id}/rewrite`, { method: 'POST', body: { reason_code, note } }))
+
 // ---------- errors ----------
 
 /** Backend error codes that have their own translated text (keys live under `err.`). */
@@ -580,6 +614,8 @@ const ERROR_KEYS: Record<string, string> = {
   QC_NOTE_REQUIRED: 'err.qcNote',
   PHOTO_REMOVED: 'err.photoRemoved',
   PHOTO_NOT_FOUND: 'err.photoGone',
+  REWRITE_LIMIT_REACHED: 'err.rewriteLimit',
+  ACCEPTANCE_CLOSED: 'err.acceptanceClosed',
   DOWNLOAD_FAILED: 'err.downloadFailed',
   FILE_MISSING: 'err.fileMissing',
 }

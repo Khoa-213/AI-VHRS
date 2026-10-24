@@ -2,6 +2,7 @@ import { ChatCircleDots } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
 import OrderPreview from '../../components/ui/OrderPreview'
+import ProductViewer from '../../components/ui/ProductViewer'
 import { OrderTimeline, SpecRows } from '../../components/ui/OrderParts'
 import { ORDER_HREF } from '../../constants'
 import { STATUS_COLOR, STATUS_STEP, STEP_KEYS } from '../../constants/orderStatus'
@@ -9,8 +10,9 @@ import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link, navigate, orderPath } from '../../router/router'
 import {
-  WAITING, approveQuotation, cancelOrder, decidePrivacy, getInks, getOrder, getPapers, getPens, getPrivacyPolicy, getQuotation,
-  orderErrorKey, requestChanges, type Order, errText } from '../../services/orders'
+  HAS_PRODUCT_PHOTOS, WAITING, acceptProduct, approveQuotation, cancelOrder, decidePrivacy, getInks, getOrder, getPapers, getPens,
+  getPrivacyPolicy, getProductPhotos, getQuotation, orderErrorKey, requestChanges, requestRewrite, type Order, type RewriteReason,
+  errText } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { fmt } from '../../utils/format'
 import { openChat } from '../../store/chatDock'
@@ -33,10 +35,13 @@ export default function OrderReview({ id }: { id: string | null }) {
   const inks = useAsync(() => (order?.penId ? getInks(order.penId) : Promise.resolve([])), [order?.penId])
   const quote = useAsync(() => (status && HAS_QUOTE.includes(status) ? getQuotation(orderId) : Promise.resolve(null)), [orderId, status])
   const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy() : Promise.resolve(null)), [status])
+  // Once the technician submits, the order shows the real photos of the written product, not the customer's input.
+  const product = useAsync(() => (status && HAS_PRODUCT_PHOTOS.includes(status) ? getProductPhotos(orderId) : Promise.resolve(null)), [orderId, status])
 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [panel, setPanel] = useState<'' | 'changes' | 'cancel' | 'decline'>('')
+  const [panel, setPanel] = useState<'' | 'changes' | 'cancel' | 'decline' | 'rewrite'>('')
+  const [reason, setReason] = useState<RewriteReason>('WORKSHOP_ERROR')
   const [text, setText] = useState('')
   const [option, setOption] = useState<number | null>(null)
   const [pct, setPct] = useState<number | null>(null)
@@ -91,6 +96,7 @@ export default function OrderReview({ id }: { id: string | null }) {
   }
 
   const quotation = quote.data
+  const productPhotos = product.data?.photos ?? []
   const multi = (quotation?.options.length ?? 0) > 1
   const chosen = multi ? (option ?? quotation?.chosenOption ?? quotation?.options[0]?.option ?? null) : null
   const quoteTotal = multi ? (quotation?.options.find((o) => o.option === chosen)?.total ?? 0) : (quotation?.finalTotal ?? 0)
@@ -154,9 +160,16 @@ export default function OrderReview({ id }: { id: string | null }) {
 
         <div className="vh-cols">
           <section className="vh-col" style={{ flex: '999 1 560px', gap: 20 }}>
-            <div className="or-stage">
-              <OrderPreview order={order} sketchUrls={quotation?.sketch?.previewUrls} inkColor={ink?.hex} />
-            </div>
+            {productPhotos.length ? (
+              <div className="vh-stack" style={{ gap: 6 }}>
+                <span className="vh-label">{t('ov.productPhotos')}</span>
+                <ProductViewer photos={productPhotos} />
+              </div>
+            ) : (
+              <div className="or-stage">
+                <OrderPreview order={order} sketchUrls={quotation?.sketch?.previewUrls} inkColor={ink?.hex} />
+              </div>
+            )}
 
             {quotation?.sketch && (
               <div className="vh-stack" style={{ gap: 6 }}>
@@ -325,7 +338,47 @@ export default function OrderReview({ id }: { id: string | null }) {
                 </>
               )}
 
-              {['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(status) && (
+              {status === 'AWAITING_ACCEPTANCE' && product.data && (
+                <>
+                  <div className="vh-callout vh-callout--teal">
+                    <b>{t('ov.acceptTitle')}</b>
+                    <span>{product.data.acceptanceDueAt ? t('ov.acceptBody', { date: day(product.data.acceptanceDueAt) }) : t('ov.acceptBodyNoDate')}</span>
+                  </div>
+                  {panel === 'rewrite' ? (
+                    <div className="vh-stack" style={{ gap: 10 }}>
+                      <div className="vh-stack" style={{ gap: 6 }} role="radiogroup" aria-label={t('ov.rewriteReason')}>
+                        <span className="vh-label">{t('ov.rewriteReason')}</span>
+                        {(['WORKSHOP_ERROR', 'DIFFERS_FROM_SKETCH'] as const).map((r) => (
+                          <label key={r} className="or-copy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input type="radio" name="ov-rewrite" checked={reason === r} onChange={() => setReason(r)} />
+                            {t(`ov.rewrite.${r}`)}
+                          </label>
+                        ))}
+                      </div>
+                      <label className="vh-label" htmlFor="ov-rewrite-note">{t('ov.rewriteNote')}</label>
+                      <textarea id="ov-rewrite-note" className="vh-textarea" rows={3} maxLength={1000} value={text} onChange={(e) => setText(e.target.value)} />
+                      <span className="co-fine">{t('ov.rewriteFree')}</span>
+                      <div className="or-actions">
+                        <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => { setPanel(''); setText('') }}>{t('ov.back')}</button>
+                        <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || text.trim().length < 5} onClick={() => void run(() => requestRewrite(orderId, reason, text.trim()))}>
+                          {t('ov.rewriteSend')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {product.data.canAccept && (
+                        <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy} onClick={() => void run(() => acceptProduct(orderId))}>{t('ov.acceptBtn')}</button>
+                      )}
+                      {product.data.canRewrite
+                        ? <button className="vh-link" onClick={() => { setPanel('rewrite'); setText('') }}>{t('ov.rewriteBtn')}</button>
+                        : <span className="co-fine">{t('ov.rewriteUsed')}</span>}
+                    </>
+                  )}
+                </>
+              )}
+
+              {['CONFIRMED', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(status) && (
                 <>
                   <div className="vh-callout vh-callout--green">
                     <b>{t('or.depositPaid', { status: t(`os.${status}`) })}</b>
