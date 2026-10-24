@@ -165,6 +165,8 @@ export interface WorkQuotation {
   sentAt: string | null
   validUntil: string | null
   hasPdf: boolean
+  /** What the customer wrote when they asked for changes to this version. */
+  customerNote: string | null
   createdAt: string
 }
 
@@ -175,7 +177,7 @@ interface RawWorkQuotation {
   chosen_option: number | null; char_count: number; quantity: number; complexity: Complexity
   computed_total: string; adjusted_total: string | null; adjustment_pct: string | null; adjustment_reason: string | null
   final_total: string; min_deposit_pct: string; eta: string | null; sent_at: string | null; valid_until: string | null
-  has_pdf?: boolean; created_at: string
+  has_pdf?: boolean; customer_note: string | null; created_at: string
 }
 
 const toQuotation = (q: RawWorkQuotation): WorkQuotation => ({
@@ -185,7 +187,7 @@ const toQuotation = (q: RawWorkQuotation): WorkQuotation => ({
   chosenOption: q.chosen_option, charCount: q.char_count, quantity: q.quantity, complexity: q.complexity,
   computedTotal: num(q.computed_total) ?? 0, adjustedTotal: num(q.adjusted_total), adjustmentPct: num(q.adjustment_pct),
   adjustmentReason: q.adjustment_reason, finalTotal: num(q.final_total) ?? 0, minDepositPct: num(q.min_deposit_pct) ?? 50,
-  eta: q.eta, sentAt: q.sent_at, validUntil: q.valid_until, hasPdf: !!q.has_pdf, createdAt: q.created_at,
+  eta: q.eta, sentAt: q.sent_at, validUntil: q.valid_until, hasPdf: !!q.has_pdf, customerNote: q.customer_note, createdAt: q.created_at,
 })
 
 export const listQuotations = async (orderId: number) =>

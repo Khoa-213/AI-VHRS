@@ -118,3 +118,15 @@
 
 body:has(.ws){background:#ebe9e4}
 .ws{min-height:100dvh}
+
+/* Customer change requests on a quotation (ChangeRequests.tsx) */
+.ws .wk-changes.is-open{box-shadow:var(--shadow),inset 0 0 0 1.5px var(--acc-mid)}
+.ws .wk-changes-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ws .wk-changes-head h3{margin:0;display:inline-flex;align-items:center;gap:8px;font-size:18px;font-weight:600}
+.ws .wk-changes.is-open .wk-changes-head h3 svg{color:var(--acc)}
+.ws .wk-changes-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.ws .wk-changes-list li{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:16px;background:var(--field);border-left:3px solid var(--line)}
+.ws .wk-changes-list li.is-live{background:var(--acc-soft);border-left-color:var(--acc)}
+.ws .wk-changes-list blockquote{margin:0}
+.ws .wk-changes-meta{display:flex;justify-content:space-between;gap:6px 16px;flex-wrap:wrap;color:var(--ink3);font-size:12px;font-weight:600}
+.ws .wk-changes-reply{display:inline-flex;align-items:center;gap:6px;color:var(--ink3);font-size:12px;font-weight:600}

@@ -46,7 +46,6 @@ export default function OrderReview({ id }: { id: string | null }) {
   const [reason, setReason] = useState<RewriteReason>('WORKSHOP_ERROR')
   const [text, setText] = useState('')
   const [option, setOption] = useState<number | null>(null)
-  const [pct, setPct] = useState<number | null>(null)
   const [policyOpen, setPolicyOpen] = useState(false)
   const autoOpened = useRef(false)
 
@@ -103,7 +102,8 @@ export default function OrderReview({ id }: { id: string | null }) {
   const chosen = multi ? (option ?? quotation?.chosenOption ?? quotation?.options[0]?.option ?? null) : null
   const quoteTotal = multi ? (quotation?.options.find((o) => o.option === chosen)?.total ?? 0) : (quotation?.finalTotal ?? 0)
   const minPct = quotation?.minDepositPct ?? 50
-  const depositPct = Math.min(100, Math.max(minPct, pct ?? minPct))
+  // The deposit is fixed at 50%, or the quotation's minimum when that is higher; the customer does not choose it.
+  const depositPct = Math.min(100, Math.max(50, minPct))
   const depositNow = Math.round((quoteTotal * depositPct) / 100)
   const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '–')
   const daysLeft = quotation?.validUntil ? Math.max(0, Math.ceil((new Date(quotation.validUntil).getTime() - Date.now()) / 864e5)) : null
@@ -302,12 +302,9 @@ export default function OrderReview({ id }: { id: string | null }) {
                     <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t('ov.validUntil')}</span><span>{day(quotation.validUntil)}{daysLeft !== null ? ` · ${t('ov.daysLeft', { n: daysLeft })}` : ''}</span></div>
                     {quotation.eta && <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t('ov.eta')}</span><span>{day(quotation.eta)}</span></div>}
                   </div>
-                  <div className="vh-stack" style={{ gap: 8 }}>
-                    <label className="vh-label" htmlFor="ov-pct">
-                      {t('ov.depositPct', { pct: depositPct })}
-                      <input id="ov-pct" type="range" min={minPct} max={100} step={5} value={depositPct} onChange={(e) => setPct(Number(e.target.value))} />
-                    </label>
-                    <span className="co-fine">{t('ov.depositMin', { pct: minPct })}</span>
+                  <div className="vh-stack" style={{ gap: 4 }}>
+                    <span className="vh-label">{t('ov.depositPct', { pct: depositPct })}</span>
+                    <span className="co-fine">{t('ov.depositRest')}</span>
                   </div>
                   <div className="vh-total-row">
                     <span>{t('or.depositDue')}</span>

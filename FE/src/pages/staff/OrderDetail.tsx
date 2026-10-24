@@ -9,12 +9,13 @@ import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { orderErrorKey, errText } from '../../services/orders'
 import {
-  REJECT_REASONS, acceptOrder, assignStaff, claimOrder, getStaffDirectory, getWork, orderJobs, orderPayments, rejectOrder, requestInfo,
+  REJECT_REASONS, acceptOrder, assignStaff, getStaffDirectory, getWork, orderJobs, orderPayments, rejectOrder, requestInfo,
   type RejectReason,
 } from '../../services/workshop'
 import { openChat } from '../../store/chatDock'
 import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
+import ChangeRequests from './ChangeRequests'
 import { isManagerRole } from './RequireStaff'
 import QuotationPanel from './QuotationPanel'
 import SketchPanel from './SketchPanel'
@@ -117,17 +118,14 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         </dl>
       </section>
 
+      {order.status !== 'SUBMITTED' && order.status !== 'NEED_INFO' && <ChangeRequests order={order} />}
+
       {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
 
       {order.status === 'SUBMITTED' && (
         <section className="wk-block" aria-label={t('wk.intake')}>
           <h3>{t('wk.intake')}</h3>
-          {unassigned && !manager && (
-            <>
-              <p className="sd-sub">{t('wk.claimBody')}</p>
-              <button className="vh-btn vh-btn--ghost vh-btn--md wk-self" disabled={busy} onClick={() => void run(() => claimOrder(id))}>{t('wk.claim')}</button>
-            </>
-          )}
+          {unassigned && !manager && <p className="sd-sub">{t('wk.decideClaims')}</p>}
           {manager && unassigned && (
             <label className="vh-label">
               {t('wk.pickStaff')}
