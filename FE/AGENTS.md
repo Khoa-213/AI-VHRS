@@ -82,7 +82,10 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   autosaves every change through `hooks/useSaveQueue.ts`. Drafts list under **Account > Drafts** (`GET /orders?status=DRAFT`).
 - Catalog (paper, pen, ink, templates) and the price estimate come from the API. Do not hard-code them.
 - `/orders/:id/review` is the order page: it renders by `order_status` and polls while the status moves on its own.
-- Deposit uses the **mock** gateway. Keep the "simulated payment" notice while the backend returns `mode = MOCK`.
+- Deposit (`pages/order/Deposit.tsx`) offers the gateways `GET /payments/gateways` marks `enabled` (VNPay, MoMo, payOS).
+  `mode = MOCK` settles with the simulated buttons and keeps the "simulated payment" notice; `SANDBOX` / `LIVE` send the
+  customer to `pay_url`, and the gateway brings them back to `/payment/result` (`PaymentResult.tsx`), which polls the order
+  and never trusts the gateway's query parameters. `vercel.json` rewrites deep links to `index.html` so that page loads.
 - Result, final payment, tracking and shipping have no API yet (backend phase 4), so they have no pages. Add them when they do.
 - The workshop side lives in `src/pages/staff/` and `src/services/workshop.ts`: dashboard, `Workbench` (intake, sketch, quotation, chat),
   `Approvals`, `Schedule` and `Catalog` (Manager only; materials, ink colors, stock, compatibility, templates, robots, price list via `services/manage.ts`). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).

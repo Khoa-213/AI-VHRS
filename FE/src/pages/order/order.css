@@ -136,3 +136,5 @@
 .ov-opt-sub{font-size:13px;color:var(--t5)}
 .ov-calc{color:var(--t5);font-weight:400}
 .ov input[type=range]{width:100%;accent-color:var(--accent)}
+.ov-compare img{display:block;width:100%;max-height:420px;object-fit:contain;border-radius:16px;background:var(--fx-03);border:1px solid var(--fx-1)}
+.dp-copy{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;text-align:right;word-break:break-all}

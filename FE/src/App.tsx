@@ -24,6 +24,7 @@ import ChatDock from './components/ui/ChatDock'
 import Deposit from './pages/order/Deposit'
 import OrderReview from './pages/order/OrderReview'
 import PrivacyPreview from './pages/order/PrivacyPreview'
+import PaymentResult from './pages/order/PaymentResult'
 import { matchOrderRoute, navigate, useInterceptLinks, usePath } from './router/router'
 import { useEffect } from 'react'
 import { useUser } from './store/store'
@@ -101,6 +102,8 @@ function Routes() {
   if (path === '/tech/preview') return <RequireStaff role="technician"><PreviewOrders mode="preview" /></RequireStaff>
   if (path === '/tech/qc') return <RequireStaff role="technician"><PreviewOrders mode="qc" /></RequireStaff>
   if (import.meta.env.DEV && path === '/dev/privacy') return <PrivacyPreview />
+  // VNPay, MoMo and payOS bring the customer back here after paying (PAYMENT_RETURN_URL on the backend).
+  if (path === '/payment/result') return <PaymentResult />
   const review = matchOrderRoute(path, 'review')
   if (review) return <OrderReview key={review} id={review} />
   const deposit = matchOrderRoute(path, 'deposit')

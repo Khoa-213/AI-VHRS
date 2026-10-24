@@ -43,7 +43,7 @@ export type ProductionStatus =
 
 export type InputKind = 'ORIGINAL_IMAGE' | 'HANDWRITING_SAMPLE' | 'TEXT_CONTENT' | 'CANVAS'
 export type Alignment = 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY'
-export type Gateway = 'VNPAY' | 'MOMO'
+export type Gateway = 'VNPAY' | 'MOMO' | 'PAYOS'
 
 /** Statuses in which the customer can still change the order. */
 export const EDITABLE: OrderStatus[] = ['DRAFT', 'NEED_INFO']
@@ -428,28 +428,65 @@ export const requestChanges = async (id: number, note: string): Promise<void> =>
 export const approveQuotation = async (id: number, body: { option?: number; deposit_pct?: number }): Promise<Order> =>
   toOrder(await api<RawOrder>(`/orders/${id}/quotation/approve`, { method: 'POST', body }))
 
-// ---------- deposit (mock gateway) ----------
+// ---------- deposit ----------
+
+/** `MOCK` moves no money; `SANDBOX` is the gateway's test environment; `LIVE` is real money. */
+export type PayMode = 'MOCK' | 'SANDBOX' | 'LIVE'
+
+export interface GatewayInfo {
+  gateway: Gateway
+  mode: PayMode
+  enabled: boolean
+}
+
+/** payOS: who receives the transfer and what it must say. */
+export interface BankTransfer {
+  bin: string | null
+  accountNumber: string | null
+  accountName: string | null
+  amount: number
+  content: string | null
+}
 
 export interface Payment {
   id: number
+  type: string
   amount: number
   status: string
   gateway: Gateway
-  /** `MOCK` until a real gateway is connected: no money moves. */
-  mode: string
+  mode: PayMode
+  /** Money landed on a cancelled payment or with the wrong amount: the workshop has to refund it. */
   needsRefund: boolean
   createdAt: string
+  /** SANDBOX / LIVE, while PENDING: the gateway's page the customer is sent to. */
+  payUrl: string | null
+  payUrlExpiresAt: string | null
+  /** payOS, while PENDING: the bank details of the VietQR transfer. */
+  bank: BankTransfer | null
 }
 
 export interface RawPayment {
-  id: number; amount: string; status: string; gateway: Gateway; mode?: string
-  needs_refund?: boolean; created_at: string
+  id: number; type?: string; amount: string; status: string; gateway: Gateway; mode?: string
+  needs_refund?: boolean; created_at: string; pay_url?: string | null; pay_url_expires_at?: string | null
+  bank?: { bin: string | null; account_number: string | null; account_name: string | null; amount: number | string; content: string | null } | null
 }
 
 export const toPayment = (p: RawPayment): Payment => ({
-  id: p.id, amount: num(p.amount) ?? 0, status: p.status, gateway: p.gateway, mode: p.mode ?? 'MOCK',
-  needsRefund: !!p.needs_refund, createdAt: p.created_at,
+  id: p.id, type: p.type ?? 'DEPOSIT', amount: num(p.amount) ?? 0, status: p.status, gateway: p.gateway,
+  mode: (p.mode ?? 'MOCK') as PayMode, needsRefund: !!p.needs_refund, createdAt: p.created_at,
+  payUrl: p.pay_url ?? null, payUrlExpiresAt: p.pay_url_expires_at ?? null,
+  bank: p.bank ? {
+    bin: p.bank.bin, accountNumber: p.bank.account_number, accountName: p.bank.account_name,
+    amount: num(p.bank.amount) ?? 0, content: p.bank.content,
+  } : null,
 })
+
+/** Gateways the server can take right now; only `enabled` ones are offered. */
+export const getGateways = () => api<GatewayInfo[]>('/payments/gateways')
+
+/** Asks the gateway itself about a PENDING payment when its webhook is late. Not for MOCK payments. */
+export const refreshPayment = (paymentId: number) =>
+  api<{ result: string; status: string; order_status: OrderStatus | null }>(`/payments/${paymentId}/refresh`, { method: 'POST' })
 
 export const startDeposit = async (id: number, gateway: Gateway): Promise<Payment> =>
   toPayment(await api<RawPayment>(`/orders/${id}/payments/deposit`, { method: 'POST', body: { gateway } }))
@@ -548,6 +585,10 @@ const ERROR_KEYS: Record<string, string> = {
   NOTE_REQUIRED: 'err.noteRequired',
   DEPOSIT_NOT_EXPECTED: 'err.depositState',
   DEPOSIT_ALREADY_PAID: 'err.depositState',
+  GATEWAY_NOT_CONFIGURED: 'err.gatewayOff',
+  GATEWAY_UNAVAILABLE: 'err.gatewayDown',
+  GATEWAY_REJECTED: 'err.gatewayRejected',
+  NOT_A_MOCK_PAYMENT: 'err.notMock',
   ORDER_CANCEL_UNSUPPORTED: 'err.cancelUnsupported',
   FORBIDDEN: 'err.forbidden',
   NOT_AUTHENTICATED: 'err.notSignedIn',

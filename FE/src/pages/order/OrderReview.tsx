@@ -20,6 +20,8 @@ import PrivacyDialog from './PrivacyDialog'
 import './order.css'
 
 const HAS_QUOTE = ['QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED']
+// The acceptance step is closed on the server (auto-accepted, rewrite already asked), so the page must catch up.
+const RELOAD_ON = ['STATE_CONFLICT', 'ACCEPTANCE_CLOSED', 'ORDER_NOT_AWAITING_ACCEPTANCE', 'REWRITE_LIMIT_REACHED']
 
 export default function OrderReview({ id }: { id: string | null }) {
   const t = useT()
@@ -69,7 +71,7 @@ export default function OrderReview({ id }: { id: string | null }) {
       await q.reload()
     } catch (e) {
       setErr(orderErrorKey(e))
-      if ((e as { code?: string }).code === 'STATE_CONFLICT') await q.reload()
+      if (RELOAD_ON.includes((e as { code?: string }).code ?? '')) await Promise.all([q.reload(), product.reload()])
     } finally {
       setBusy(false)
     }
@@ -164,6 +166,12 @@ export default function OrderReview({ id }: { id: string | null }) {
               <div className="vh-stack" style={{ gap: 6 }}>
                 <span className="vh-label">{t('ov.productPhotos')}</span>
                 <ProductViewer photos={productPhotos} />
+                {status === 'AWAITING_ACCEPTANCE' && product.data?.sketchUrl && (
+                  <div className="vh-stack ov-compare" style={{ gap: 6 }}>
+                    <span className="vh-label">{t('ov.compareSketch')}</span>
+                    <img src={product.data.sketchUrl} alt={t('ov.compareSketchAlt')} />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="or-stage">
@@ -336,6 +344,14 @@ export default function OrderReview({ id }: { id: string | null }) {
                   <Link to={orderPath(order.id, 'deposit')} className="vh-btn vh-btn--primary">{t('or.payDeposit')}</Link>
                   {cancelBlock}
                 </>
+              )}
+
+              {status === 'AWAITING_ACCEPTANCE' && !product.data && product.error != null && (
+                <div className="vh-callout vh-callout--red" role="alert">
+                  <b>{t('ov.productLoadErr')}</b>
+                  <span>{errText(t, orderErrorKey(product.error))}</span>
+                  <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={product.loading} onClick={() => void product.reload()}>{t('ov.productRetry')}</button>
+                </div>
               )}
 
               {status === 'AWAITING_ACCEPTANCE' && product.data && (

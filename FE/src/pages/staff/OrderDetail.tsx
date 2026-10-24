@@ -199,7 +199,11 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
           <dl className="wk-rows">
             {payments.data.map((p) => (
               <div key={p.id}>
-                <dt>{p.gateway} · {t(`pst.${p.status}`)} · {t('dp.mockTag')}</dt>
+                <dt>
+                  {p.gateway} · {t(`pst.${p.status}`)}
+                  {p.mode === 'MOCK' ? ` · ${t('dp.mockTag')}` : p.mode === 'SANDBOX' ? ` · ${t('dp.sandboxTag')}` : ''}
+                  {p.needsRefund ? ` · ${t('dp.refundTag')}` : ''}
+                </dt>
                 <dd>{fmt(p.amount)}</dd>
               </div>
             ))}
