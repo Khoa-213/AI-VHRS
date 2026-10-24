@@ -11,10 +11,11 @@
 .ws .wk-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 4px;border-bottom:1px solid var(--line);color:inherit}
 .ws .wk-item:hover{background:var(--field);border-radius:14px}
 .ws .wk-item.on{background:var(--acc-soft);border-radius:16px;padding-left:12px;padding-right:12px;border-bottom-color:transparent}
-.ws .wk-item-main{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ws .wk-item-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
 .ws .wk-item-main b{font-weight:600;font-size:14px}
 .ws .wk-item-main span{font-size:12px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ws .wk-item-side{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:12px;color:var(--ink2);flex:none}
+.ws .wk-item-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12px;color:var(--ink2);flex:0 1 auto;min-width:0;max-width:55%;text-align:right}
+.ws .wk-item-side .chip{white-space:normal;max-width:100%}
 .ws .wk-detail{flex:999 1 640px;min-width:0}
 .ws .wk-page{display:flex;flex-direction:column;gap:18px}
 .ws .wk-order{display:flex;flex-direction:column;gap:18px}
@@ -48,9 +49,9 @@
 .ws .wk-lines summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--ink2)}
 .ws .wk-jobs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .ws .wk-jobs li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:16px;background:var(--field);font-size:14px}
-.ws .wk-job{flex-direction:column;align-items:stretch}
+.ws .wk-jobs li.wk-job{flex-direction:column;align-items:stretch}
 .ws .wk-job-main{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.ws .wk-inline{display:flex;gap:8px;align-items:center}
+.ws .wk-inline{display:flex;gap:8px;align-items:center;flex:none}
 .ws .wk-inline .vh-input{height:36px;width:200px}
 .ws .wk-tabs{display:inline-flex;flex-wrap:wrap;gap:4px;padding:5px;border-radius:26px;background:#fff;box-shadow:var(--shadow);align-self:flex-start}
 .ws .wk-tabs button{padding:9px 18px;border:none;border-radius:21px;background:transparent;color:var(--ink2);font-family:inherit;font-size:13px;font-weight:600}

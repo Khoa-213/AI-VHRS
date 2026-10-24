@@ -30,7 +30,7 @@ export default function Schedule({ id }: { id?: number }) {
                     <span>{r.customerName} · {t(`ot.${r.type}`)} × {r.quantity}</span>
                   </span>
                   <span className="wk-item-side">
-                    <span className="chip info">{t(`ps.${r.production}`)}</span>
+                    <span className="chip info">{t(`wk.ps.${r.production}`)}</span>
                     {r.durationMin !== null && <span className="mono">{t('wk.minutes', { n: r.durationMin })}</span>}
                   </span>
                 </Link>

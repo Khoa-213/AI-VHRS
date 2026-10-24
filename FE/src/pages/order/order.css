@@ -37,7 +37,10 @@
 .ov .vh-callout--teal{background:linear-gradient(135deg,transparent,var(--st-accepted-bg))}
 .ov .vh-callout--red{background:linear-gradient(135deg,transparent,color-mix(in srgb,var(--danger) 14%,transparent))}
 .ov .vh-callout--green{background:linear-gradient(135deg,transparent,var(--st-written-bg))}
-.ov .pay-preview{height:220px;border-radius:0}
+.ov .pay-preview{height:auto;max-height:340px;padding:18px;border-radius:0;overflow:hidden;box-sizing:border-box}
+/* Fit the sketch inside the rail: no min height or extra tray, and the image never grows past the box. */
+.pay-preview .opv{min-height:0;padding:0;background:none;max-height:100%}
+.pay-preview .opv-img,.pay-preview .opv-svg{max-height:300px;max-width:100%;object-fit:contain}
 
 /* Order Review */
 .or-stage{position:relative;height:clamp(380px,62vh,620px);overflow:hidden;background:radial-gradient(ellipse at center,var(--tray-hover) 0%,var(--tray) 55%,transparent 100%);display:flex;align-items:center;justify-content:center}

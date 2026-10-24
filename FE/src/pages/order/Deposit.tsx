@@ -7,7 +7,7 @@ import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link, orderPath } from '../../router/router'
 import {
-  getGateways, getOrder, listPayments, mockCheckout, orderErrorKey, refreshPayment, startDeposit, type Gateway, type Payment, errText,
+  getGateways, getOrder, getQuotation, listPayments, mockCheckout, orderErrorKey, refreshPayment, startDeposit, type Gateway, type Payment, errText,
 } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { useProfile } from '../../store/store'
@@ -39,6 +39,8 @@ export default function Deposit({ id }: { id: string | null }) {
   // While a payment is open the webhook can land at any moment, so the order is asked again until it moves.
   const q = useAsync(() => getOrder(orderId), [orderId], (o) => (open && o?.status === 'AWAITING_DEPOSIT' && !failed ? 4000 : undefined))
   const gws = useAsync(getGateways, [])
+  // The approved quotation carries the workshop's sketch, which is what the customer is paying for.
+  const quote = useAsync(() => getQuotation(orderId), [orderId])
   const order = q.data
   const paid = !!order && order.status !== 'AWAITING_DEPOSIT' && order.status !== 'QUOTED' && order.depositAmount !== null
   const enabled = (gws.data ?? []).filter((g) => g.enabled)
@@ -313,7 +315,7 @@ export default function Deposit({ id }: { id: string | null }) {
 
           <aside className="vh-aside" style={{ flex: '1 1 320px' }}>
             <div className="pay-preview">
-              <OrderPreview order={order} />
+              <OrderPreview order={order} sketchUrls={quote.data?.sketch?.previewUrls} />
             </div>
             <div className="ov-rail-body">
               <span className="ov-rail-title">{order.code}</span>
