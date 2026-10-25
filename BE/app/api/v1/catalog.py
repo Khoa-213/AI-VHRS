@@ -11,7 +11,8 @@ from app.models.account import Account, RoleCode
 from app.models.order import HandwritingStyle, StyleStatus
 from app.core.errors import AppError
 from app.repositories.catalog import CatalogRepository
-from app.services.stroke_ai import text_to_stroke
+from app.api.v1.orders import optional_storage
+from app.services.stroke_ai import outline_font, text_to_stroke
 from app.services.stroke_ai.trajectory import render_preview
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
@@ -64,8 +65,17 @@ def template_preview(template_id: int, session: SessionDep,
     tpl = CatalogRepository(session).template(template_id)
     if tpl is None or not tpl.is_active:
         raise AppError(404, "TEMPLATE_NOT_FOUND", "Không tìm thấy mẫu chữ.")
-    pages = text_to_stroke.compose_text(text, font_name=text_to_stroke.font_name_from_uri(tpl.font_uri),
-                                        paper_size="A5", font_size_mm=9.0)
+    if tpl.font_uri.startswith(outline_font.OUTLINE_PREFIX):
+        if len(text) > 80:                                  # public endpoint: keep the work per request small
+            raise AppError(422, "PREVIEW_TEXT_TOO_LONG", "Xem thử mẫu chữ này tối đa 80 ký tự.")
+        store = optional_storage()
+        if store is None:
+            raise AppError(503, "STORAGE_NOT_CONFIGURED", "Chưa cấu hình dịch vụ lưu trữ file.")
+        source = outline_font.load_source(tpl.font_uri[len(outline_font.OUTLINE_PREFIX):], store.read)
+        pages = text_to_stroke.compose_text(text, source=source, paper_size="A5", font_size_mm=9.0)
+    else:
+        pages = text_to_stroke.compose_text(text, font_name=text_to_stroke.font_name_from_uri(tpl.font_uri),
+                                            paper_size="A5", font_size_mm=9.0)
     return Response(render_preview(pages[0], px_per_mm=4.0), media_type="image/png")
 
 

@@ -45,10 +45,16 @@ INKS = {
 }
 # single-line fonts (Hershey, public domain); font_uri is resolved by services/stroke_ai/text_to_stroke.py
 TEMPLATES = [
-    ("HERSHEY_SIMPLEX", "Nét đơn – Đứng thanh", "hershey:futural"),
-    ("HERSHEY_ROMAN", "Nét đơn – La Mã", "hershey:rowmans"),
-    ("HERSHEY_SCRIPT", "Nét đơn – Thư pháp ngả", "hershey:scripts"),
-    ("HERSHEY_CURSIVE", "Nét đơn – Viết tay liền nét", "hershey:cursive"),
+    ("HERSHEY_SIMPLEX", "Nét đơn – Đứng thanh", "hershey:futural", "SINGLE_LINE_FONT", None),
+    ("HERSHEY_ROMAN", "Nét đơn – La Mã", "hershey:rowmans", "SINGLE_LINE_FONT", None),
+    ("HERSHEY_SCRIPT", "Nét đơn – Thư pháp ngả", "hershey:scripts", "SINGLE_LINE_FONT", None),
+    ("HERSHEY_CURSIVE", "Nét đơn – Viết tay liền nét", "hershey:cursive", "SINGLE_LINE_FONT", None),
+    # Outline fonts (SIL OFL) thinned to pen strokes. The font file, LICENSE.txt, glyph cache and preview.png must exist in Storage under
+    # fonts/<slug>/: upload them with `scripts/add_outline_font.py --apply` (it also inserts these rows). Registry: app/assets/fonts/REGISTRY.md
+    ("PLAYPEN_SANS", "Playpen Sans", "outline:fonts/playpen-sans/PlaypenSans.ttf", "TYPOGRAPHY", "fonts/playpen-sans/preview.png"),
+    ("PANGOLIN", "Pangolin", "outline:fonts/pangolin/Pangolin-Regular.ttf", "TYPOGRAPHY", "fonts/pangolin/preview.png"),
+    ("PATRICK_HAND", "Patrick Hand", "outline:fonts/patrick-hand/PatrickHand-Regular.ttf", "TYPOGRAPHY", "fonts/patrick-hand/preview.png"),
+    ("MALI_LIGHT", "Mali Light", "outline:fonts/mali-light/Mali-Light.ttf", "TYPOGRAPHY", "fonts/mali-light/preview.png"),
 ]
 SETTINGS = {
     # LI-10 / Phiếu đăng ký: Creative writing (OT-2) is R&D, so customers can only order OT-1 and OT-3 for now.
@@ -118,9 +124,10 @@ def run(dry: bool) -> None:
                 exec_count("ink_colors", """insert into ink_colors (pen_type_id,name,hex_code,unit_price,stock_qty)
                     select id,:n,:h,0,100 from pen_types where code=:c on conflict (pen_type_id,name) do nothing""",
                            dict(c=code, n=name, h=hex_code))
-        for code, name, uri in TEMPLATES:
-            exec_count("templates", """insert into templates (code,name,kind,font_uri)
-                values (:c,:n,'SINGLE_LINE_FONT',:u) on conflict (code) do nothing""", dict(c=code, n=name, u=uri))
+        for code, name, uri, kind, preview in TEMPLATES:
+            exec_count("templates", """insert into templates (code,name,kind,font_uri,preview_url)
+                values (:c,:n,cast(:k as template_kind),:u,:p) on conflict (code) do nothing""",
+                       dict(c=code, n=name, u=uri, k=kind, p=preview))
 
         for code, robot_type, station in ROBOTS:
             exec_count("robots", """insert into robots (code,robot_type,station,status,is_simulated)

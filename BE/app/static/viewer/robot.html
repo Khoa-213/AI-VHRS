@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robot 3D</title>
+<script type="importmap">
+{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+             "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+             "urdf-loader": "https://cdn.jsdelivr.net/npm/urdf-loader@0.12.1/src/URDFLoader.js"}}
+</script>
+<style>
+  :root { --bg:#f6f5f2; --panel:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#dcdad3; --ok:#2e7d32; --warn:#b26a00; --bad:#c62828; --accent:#1f4e79; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161616; --panel:#202020; --ink:#ececec; --muted:#9a9890; --line:#3a3a36; --ok:#66bb6a; --warn:#ffb74d; --bad:#ef5350; --accent:#7fb3e6; } }
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; }
+  body { display:flex; flex-direction:column; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui, sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--panel); }
+  .badge { padding:2px 9px; border-radius:99px; font-weight:700; font-size:12px; letter-spacing:.04em; border:2px solid var(--muted); color:var(--muted); }
+  .badge.REAL { border-color:var(--bad); color:var(--bad); } .badge.SIM { border-color:var(--accent); color:var(--accent); }
+  .badge.off { border-color:var(--warn); color:var(--warn); } .badge.on { border-color:var(--ok); color:var(--ok); }
+  .kv { color:var(--muted); } .kv b { color:var(--ink); font-weight:600; }
+  #alerts { padding:0 12px; } .al { margin:6px 0; padding:8px 10px; border-radius:8px; border-left:6px solid; background:var(--panel); }
+  .al.l1 { border-color:var(--ok); } .al.l2 { border-color:#c9a400; } .al.l3 { border-color:var(--warn); } .al.l4 { border-color:var(--bad); background:var(--bad); color:#fff; font-weight:700; }
+  .al .act { font-weight:400; margin-top:2px; }
+  #twin { flex:1; min-height:240px; position:relative; } #twin canvas { width:100%; height:100%; display:block; }
+  #note { position:absolute; left:12px; top:8px; right:12px; padding:6px 10px; background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+  footer { padding:6px 12px; color:var(--muted); font-size:12px; border-top:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <span id="mode" class="badge">—</span><span id="online" class="badge off">agent: chưa kết nối</span>
+  <span class="kv">Trạng thái <b id="state">—</b></span><span class="kv">Nét <b id="stroke">—</b></span>
+  <span class="kv">Tiến độ <b id="prog">—</b></span><span class="kv">Lực <b id="force">—</b></span>
+</header>
+<div id="alerts"></div>
+<div id="twin"><div id="note" hidden></div></div>
+<footer>Chỉ xem (không điều khiển). Đây là dữ liệu thật từ Robot Agent, không phải camera: không thấy kẹt giấy hay người vào khu vực robot. Nút E-STOP vật lý luôn là cách dừng khẩn cấp.</footer>
+<script type="module">
+import { startTwin } from '/viewer/twin.js';
+const $ = id => document.getElementById(id);
+const ticket = new URLSearchParams(location.search).get('ticket');
+const note = $('note');
+function say(t) { note.textContent = t; note.hidden = !t; }
+if (!ticket) say('Thiếu vé xem. Hãy mở trang này từ ứng dụng.');
+const api = p => `/api/v1/viewer/${encodeURIComponent(ticket)}/${p}`;
+let twin = null, last = 0, sceneTry = 0, expired = false;
+
+async function getJson(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (r.status === 401) { expired = true; say('Liên kết xem đã hết hạn. Hãy mở lại từ ứng dụng.'); throw new Error('expired'); }
+  return { ok: r.ok, status: r.status, body: await r.json().catch(() => null) };
+}
+function renderAlerts(list) {
+  const box = $('alerts'); box.innerHTML = '';
+  (list || []).forEach(a => {
+    const d = document.createElement('div'); d.className = 'al l' + a.level;
+    const t = document.createElement('div'); t.textContent = (a.level >= 4 ? 'NHẤN NÚT E-STOP NGAY — ' : '') + a.title_vi;
+    const x = document.createElement('div'); x.className = 'act'; x.textContent = a.action_vi;
+    d.append(t, x); box.append(d);
+  });
+  document.title = ((list || []).some(a => a.level >= 4) ? 'E-STOP! ' : '') + 'Robot 3D';
+}
+function show(s) {
+  $('state').textContent = s.state || '—';
+  $('stroke').textContent = s.total_strokes ? `${s.stroke} / ${s.total_strokes}` : '—';
+  $('prog').textContent = s.progress_pct !== undefined ? s.progress_pct.toFixed(1) + ' %' : '—';
+  $('force').textContent = s.force_n === null || s.force_n === undefined ? '—' : s.force_n.toFixed(2) + ' N';
+  renderAlerts(s.alerts);
+}
+async function loadScene() {
+  const r = await getJson(api('scene'));
+  if (r.ok && twin.setScene(r.body.scene)) say('');
+}
+async function tick() {
+  if (expired || !twin) return;
+  try {
+    const { ok, body } = await getJson(api('live') + '?after=' + last);
+    if (!ok) { say(body && body.error ? body.error.message : 'Không lấy được dữ liệu.'); return; }
+    const on = $('online'); on.textContent = body.agent_online ? 'agent: đang kết nối' : 'agent: MẤT KẾT NỐI'; on.className = 'badge ' + (body.agent_online ? 'on' : 'off');
+    const m = (body.mode || '').toUpperCase(); $('mode').textContent = m || '—'; $('mode').className = 'badge ' + m;
+    const jobNow = body.status && body.status.current ? body.status.current.job_id : null;
+    if ((!twin.hasJob() || (jobNow && jobNow !== twin.jobId())) && sceneTry++ % 6 === 0) loadScene().catch(() => {});
+    body.frames.forEach(f => twin.update(f));
+    if (body.frames.length) { show(body.frames[body.frames.length - 1]); last = body.last_seq; }
+    else if (body.status) show(body.status);
+  } catch (e) { if (!expired) say('Mất kết nối tới máy chủ, đang thử lại…'); }
+}
+if (ticket) {
+  twin = await startTwin($('twin'), note, { urdfUrl: '/api/v1/robot-model/fairino3_v6.urdf', packageRoot: '/api/v1/robot-model', toolMm: 250 });
+  loadScene().catch(() => {});
+  setInterval(tick, 250);
+}
+</script>
+</body>
+</html>

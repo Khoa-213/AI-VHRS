@@ -6,11 +6,11 @@ OT-2 (learned style)   -> not supported: it needs the R&D style-learning model (
                           hand-made trajectory instead.
 """
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from app.core.errors import AppError
 from app.models.order import OrderType
-from app.services.stroke_ai import recovery, text_to_stroke
+from app.services.stroke_ai import outline_font, recovery, text_to_stroke
 from app.services.stroke_ai.trajectory import Metrics, Page, compute_metrics
 
 ENGINE_VERSION = "1"
@@ -75,15 +75,23 @@ def generate_ot1(images: list[ImageSource], *, paper_size: str, v_max_mm_s: floa
 
 def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None, font_size_mm: float | None,
                  alignment: str | None, paper_size: str, seed: int, v_max_mm_s: float, pen_category: str | None,
-                 chars: int) -> Generated:
+                 chars: int, font_loader: Callable[[str], bytes | None] | None = None) -> Generated:
     size = float(font_size_mm) if font_size_mm else text_to_stroke.DEFAULT_FONT_SIZE_MM
     pages: list[Page] = []
     if text and text.strip():
         if not font_uri:
             raise AppError(422, "TEMPLATE_REQUIRED", "Đơn chưa chọn mẫu chữ.")
-        pages = text_to_stroke.compose_text(
-            text, font_name=text_to_stroke.font_name_from_uri(font_uri), paper_size=paper_size, font_size_mm=size,
-            alignment=alignment or "LEFT", seed=seed)
+        outline = font_uri.startswith(outline_font.OUTLINE_PREFIX)
+        if outline:
+            if font_loader is None:
+                raise AppError(409, "FONT_FILE_MISSING", "Không đọc được file font của mẫu chữ từ kho lưu trữ.")
+            pages = text_to_stroke.compose_text(
+                text, source=outline_font.load_source(font_uri[len(outline_font.OUTLINE_PREFIX):], font_loader),
+                paper_size=paper_size, font_size_mm=size, alignment=alignment or "LEFT", seed=seed)
+        else:
+            pages = text_to_stroke.compose_text(
+                text, font_name=text_to_stroke.font_name_from_uri(font_uri), paper_size=paper_size, font_size_mm=size,
+                alignment=alignment or "LEFT", seed=seed)
     canvas_strokes = text_to_stroke.canvas_to_strokes(canvas or {}, paper_size)
     if canvas_strokes:
         if not pages:
@@ -92,8 +100,12 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
     if not pages:
         raise AppError(422, "NO_CONTENT", "Đơn chưa có nội dung chữ hoặc hình vẽ để sinh phác thảo.")
     metrics = compute_metrics(pages, v_max_mm_s)
-    engine = {"name": "hershey-vi-compose" if text else "canvas-passthrough", "version": ENGINE_VERSION,
+    kind = ("outline-centerline-compose" if font_uri and font_uri.startswith(outline_font.OUTLINE_PREFIX)
+            else "hershey-vi-compose")
+    engine = {"name": kind if text else "canvas-passthrough", "version": ENGINE_VERSION,
               "font_uri": font_uri, "font_size_mm": size, "alignment": alignment or "LEFT", "seed": seed}
+    if kind == "outline-centerline-compose" and text:
+        engine["stroke_order"] = "reconstructed"          # a person would not write the letters in this order
     complexity = suggest_complexity(order_type=OrderType.OT3_TEMPLATE, pen_category=pen_category, metrics=metrics,
                                     chars=chars, has_canvas=bool(canvas_strokes), similarity=None, font_size_mm=size)
     return Generated(pages, engine, metrics, None, complexity)

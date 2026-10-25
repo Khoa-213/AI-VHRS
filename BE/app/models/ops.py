@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy import (BigInteger, Boolean, DateTime, Enum, FetchedValue, ForeignKey, Integer, Numeric, String, Text,
                         text)
-from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -144,6 +144,14 @@ class Robot(Base):
         ARRAY(ENUM("BALLPOINT", "GEL", "FINELINER", "FOUNTAIN", "BRUSH", "MARKER", name="pen_category",
                    create_type=False)))
     note: Mapped[str | None] = mapped_column(Text)
+    # robot operations (migration 0008): what the Robot Agent last reported
+    controller_version: Mapped[str | None] = mapped_column(String(60))
+    firmware_version: Mapped[str | None] = mapped_column(String(80))
+    sdk_version: Mapped[str | None] = mapped_column(String(60))
+    agent_version: Mapped[str | None] = mapped_column(String(30))
+    connection_state: Mapped[str] = mapped_column(String(10), default="UNKNOWN", server_default="UNKNOWN")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_mode: Mapped[str | None] = mapped_column(String(10))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue(),
                                                  server_onupdate=FetchedValue())
@@ -271,3 +279,122 @@ class Shipment(Base):
 
 # A shipment in one of these still belongs to the order (FAILED may still be delivered by a second attempt).
 LIVE_SHIPMENT_STATUSES = (ShipmentStatus.CREATED, ShipmentStatus.PICKED_UP, ShipmentStatus.DELIVERING, ShipmentStatus.FAILED)
+
+
+class AlertCatalog(Base):
+    """The fixed list of robot alerts: level, plain-Vietnamese sentence, action, who is told (migration 0008)."""
+    __tablename__ = "alert_catalog"
+    code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    level: Mapped[int] = mapped_column(Integer)
+    title_vi: Mapped[str] = mapped_column(Text)
+    action_vi: Mapped[str] = mapped_column(Text)
+    estop_advised: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_roles: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    send_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    threshold: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue(),
+                                                 server_onupdate=FetchedValue())
+
+
+class RobotRun(Base):
+    """One run of the Robot Agent on a job, dry runs and refused attempts included."""
+    __tablename__ = "robot_runs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(40))
+    job_id: Mapped[int] = mapped_column(ForeignKey("production_jobs.id"))
+    robot_id: Mapped[int] = mapped_column(ForeignKey("robots.id"))
+    mode: Mapped[str] = mapped_column(String(10))
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result: Mapped[str | None] = mapped_column(String(20))
+    completed_strokes: Mapped[int] = mapped_column(Integer, default=0)
+    total_strokes: Mapped[int] = mapped_column(Integer, default=0)
+    plan_digest: Mapped[str | None] = mapped_column(String(64))
+    authorized_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    agent_version: Mapped[str | None] = mapped_column(String(30))
+    robot_info: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_by: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+
+
+class RobotAlert(Base):
+    """A raised alert. Title and action are copied from the catalogue when raised, so edits never rewrite history."""
+    __tablename__ = "robot_alerts"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    robot_id: Mapped[int] = mapped_column(ForeignKey("robots.id"))
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("production_jobs.id"))
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("robot_runs.id"))
+    code: Mapped[str] = mapped_column(ForeignKey("alert_catalog.code"))
+    level: Mapped[int] = mapped_column(Integer)
+    title_vi: Mapped[str] = mapped_column(Text)
+    action_vi: Mapped[str] = mapped_column(Text)
+    estop_advised: Mapped[bool] = mapped_column(Boolean, default=False)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    occurrences: Mapped[int] = mapped_column(Integer, default=1)
+    raised_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+    last_raised_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acknowledged_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+
+
+class RobotAgent(Base):
+    """The credential of the Robot Agent that sits next to one robot (migration 0010). Only the key's SHA-256 is stored."""
+    __tablename__ = "robot_agents"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    robot_id: Mapped[int] = mapped_column(ForeignKey("robots.id"))
+    key_hash: Mapped[str] = mapped_column(String(64))
+    key_prefix: Mapped[str] = mapped_column(String(12))
+    created_by: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # migration 0012: MANAGER = long-lived key issued by a Manager; SESSION = short-lived key of one technician's app instance
+    kind: Mapped[str] = mapped_column(String(8), default="MANAGER", server_default="MANAGER")
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    instance_id: Mapped[str | None] = mapped_column(String(64))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RobotCommand(Base):
+    """A durable request to the agent. PENDING until pulled, never replayed after `expires_at`."""
+    __tablename__ = "robot_commands"
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    robot_id: Mapped[int] = mapped_column(ForeignKey("robots.id"))
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("production_jobs.id"))
+    kind: Mapped[str] = mapped_column(String(20))
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(10), default="PENDING")
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_code: Mapped[str | None] = mapped_column(String(40))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    idempotency_key: Mapped[str | None] = mapped_column(String(80))
+    created_by: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class QualityEvaluation(Base):
+    """Service G result for one product photo (migration 0011). Advisory: the technician's QC verdict is the decision."""
+    __tablename__ = "quality_evaluations"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("product_photos.id"))
+    job_id: Mapped[int] = mapped_column(ForeignKey("production_jobs.id"))
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    sketch_id: Mapped[int | None] = mapped_column(ForeignKey("sketches.id"))
+    page_no: Mapped[int] = mapped_column(Integer, default=1)
+    method: Mapped[str] = mapped_column(String(30))
+    verdict: Mapped[str] = mapped_column(String(14))
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    overlay_path: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())

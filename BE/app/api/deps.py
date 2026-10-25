@@ -1,4 +1,5 @@
 """Authentication / authorization dependencies (FR-03, NFR-08)."""
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,9 +29,27 @@ class Principal:
     session_id: uuid.UUID
 
 
-def current_principal(session: SessionDep, token: Annotated[str | None, Depends(_oauth2)]) -> Principal:
+_JOB_IN_PATH = re.compile(r"/technician/jobs/(\d+)")
+AGENT_SESSION = uuid.UUID(int=0)       # marks a request made by a Robot Agent acting for the technician of its live job
+
+
+def _agent_principal(session: Session, token: str, request: Request) -> Principal:
+    """A Robot Agent key opens ONLY the technician routes, as the technician who holds the live job on the agent's robot."""
+    from app.services.robot_link import agent_identity, technician_for_agent   # late import: services import deps indirectly
+    path = request.url.path
+    if "/technician/" not in path or "/robot-commands" in path or "/agent-session" in path:
+        raise AppError(401, "INVALID_AGENT_KEY", "Khoá agent chỉ dùng cho API kỹ thuật viên.")
+    ident = agent_identity(session, token)
+    m = _JOB_IN_PATH.search(path)
+    acc = technician_for_agent(session, ident.robot_id, int(m.group(1)) if m else None, ident.account_id)
+    return Principal(account=acc, session_id=AGENT_SESSION)
+
+
+def current_principal(request: Request, session: SessionDep, token: Annotated[str | None, Depends(_oauth2)]) -> Principal:
     if token is None:
         raise AppError(401, "NOT_AUTHENTICATED", "Vui lòng đăng nhập.")
+    if token.startswith("vhrs_ak_"):
+        return _agent_principal(session, token, request)
     payload = security.decode_token(token, security.ACCESS)
     try:
         sid = uuid.UUID(str(payload.get("sid")))

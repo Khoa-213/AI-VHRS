@@ -1,10 +1,13 @@
+from pathlib import Path
+
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
-from app.api.v1 import (acceptance, admin, auth, catalog, customer_quotes, delivery, manager, manager_ops, me,
+from app.api.v1 import (quality, robot_link, acceptance, admin, robot_ops, auth, catalog, customer_quotes, delivery, manager, manager_ops, me,
                         conversations, messages, orders, payments, pricing, scheduling, shipments, technician, workshop)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
@@ -36,6 +39,7 @@ TAGS = [
     {"name": "Payments", "description": "FR-17..20 · UC-16. Đặt cọc qua cổng thanh toán MOCK (không có tiền thật) + webhook có chữ ký."},
     {"name": "Scheduling", "description": "FR-37, FR-40 · BR-18. Manager: hàng đợi, gợi ý và xếp lịch sản xuất, đổi lịch."},
     {"name": "Technician", "description": "UC-31..39 · FR-43..49 · BR-19. Chỉ TECHNICAL_STAFF, chỉ job được giao: tải gói job (hash), chuẩn bị, hiệu chuẩn, kết quả mô phỏng, bắt đầu/kết thúc viết, sự kiện an toàn, sự cố. Chưa kết nối robot (chỉ làm khi chủ dự án yêu cầu)."},
+    {"name": "Robot operations", "description": "Vận hành robot: lần chạy của Robot Agent, cảnh báo 4 mức (đỏ = bấm E-Stop ngay, kèm email), heartbeat, tình trạng robot, sức khoẻ, tuân thủ quy trình, danh mục cảnh báo."},
     {"name": "Acceptance", "description": "UC-18 · FR-28 · BR-13. Khách xem ảnh sản phẩm thật, nghiệm thu hoặc yêu cầu viết lại (1 lần miễn phí); tự nghiệm thu sau 7 ngày."},
     {"name": "Delivery", "description": "FR-18, FR-21, FR-23 · UC-20. Khách chọn giao hàng / nhận tại xưởng, thanh toán cuối (G − D) + phí ship (MOCK), xác nhận đã nhận. Staff bàn giao tại xưởng (`/workshop/orders/{id}/pickup/confirm`)."},
     {"name": "Shipments", "description": "FR-21, FR-22 · UC-29 · MSG15. Vận đơn: Staff tạo vận đơn đúng hãng + dịch vụ khách chọn; hãng (GHN/GHTK) báo hành trình qua callback; khách tra cứu. Mặc định hãng MOCK."},
@@ -60,18 +64,31 @@ register_error_handlers(app)
 _DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
 
 
+_VIEWER_PAGE = "/viewer/"
+_VIEWER_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; "
+               "img-src 'self' data: blob:; connect-src 'self'; worker-src blob:")
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     h = response.headers
+    path = request.url.path
     h["X-Content-Type-Options"] = "nosniff"
-    h["X-Frame-Options"] = "DENY"
     h["Referrer-Policy"] = "no-referrer"
     h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-    if not request.url.path.startswith(_DOC_PATHS):
-        # Pure JSON API: nothing may be embedded or cached. Swagger UI is excluded (it loads CDN assets).
-        h["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    if path.startswith(_VIEWER_PAGE):
+        # The read-only 3D page: it loads three.js from a pinned CDN version and may be embedded by the FE origins only.
+        ancestors = " ".join(["'self'", *_settings.cors_origins])
+        h["Content-Security-Policy"] = f"{_VIEWER_CSP}; frame-ancestors {ancestors}"
         h["Cache-Control"] = "no-store"
+    else:
+        h["X-Frame-Options"] = "DENY"
+        if not path.startswith(_DOC_PATHS):
+            # Pure JSON API: nothing may be embedded or cached. Swagger UI is excluded (it loads CDN assets).
+            h["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+            if "cache-control" not in h:                      # the public robot model sets its own long cache
+                h["Cache-Control"] = "no-store"
     proto = request.headers.get("x-forwarded-proto") if get_settings().trust_proxy_headers else None
     if (proto or request.url.scheme) == "https":
         h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -92,6 +109,14 @@ v1.include_router(manager.router)
 v1.include_router(manager_ops.router)
 v1.include_router(scheduling.router)
 v1.include_router(technician.router)
+v1.include_router(robot_ops.technician_router)
+v1.include_router(robot_ops.manager_router)
+v1.include_router(robot_link.technician_router)
+v1.include_router(robot_link.manager_router)
+v1.include_router(robot_link.agent_router)
+v1.include_router(robot_link.viewer_router)
+v1.include_router(quality.technician_router)
+v1.include_router(quality.manager_router)
 v1.include_router(acceptance.router)
 v1.include_router(delivery.router)
 v1.include_router(shipments.router)
@@ -105,6 +130,7 @@ def health(session: SessionDep) -> dict[str, str]:
     return {"status": "ok"}
 
 
+app.mount("/viewer", StaticFiles(directory=Path(__file__).parent / "static" / "viewer"), name="viewer")
 app.include_router(v1, responses={
     401: {"model": ErrorOut, "description": "Chưa đăng nhập / token hết hạn hoặc bị thu hồi"},
     403: {"model": ErrorOut, "description": "Không đủ quyền"},

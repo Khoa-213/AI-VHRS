@@ -347,6 +347,9 @@ def test_generate_sketch_for_template_order_end_to_end(client, cust, staff, stor
     path = f"orders/{oid}/sketches/v1/trajectory.json"
     assert tj.content_hash(store.objects[path]) == s["content_hash"]
     assert any(p.endswith("preview_p1.png") for p in store.objects)
+    jpg = store.objects[f"orders/{oid}/sketches/v1/sketch_p1.jpg"]
+    assert jpg[:3] == bytes([0xFF, 0xD8, 0xFF]) and len(s["image_urls"]) == 1
+    assert s["trajectory_url"] and "trajectory.json" in s["trajectory_url"]
     r2 = client.post(f"{W}/orders/{oid}/sketches/generate", headers=sh, json={"paper_size": "A4", "seed": 5})
     assert r2.json()["version"] == 2
     assert [x["version"] for x in client.get(f"{W}/orders/{oid}/sketches", headers=sh).json()] == [2, 1]
@@ -666,6 +669,7 @@ def test_privacy_accept_unlocks_sketch_and_quote_for_the_customer(client, cust, 
     v = client.get(f"{API}/orders/{oid}/quotation", headers=cust)
     assert v.status_code == 200, v.text
     d = v.json()
+    assert d["sketch"]["image_urls"] and d["sketch"]["image_urls"][0].endswith("sketch_p1.jpg") and d["sketch"]["preview_urls"] == d["sketch"]["image_urls"]
     assert d["status"] == "SENT" and d["sketch"]["preview_urls"] and d["pdf_url"] and d["note"].startswith("Giá chưa")
     assert "adjustment_reason" not in d and "computed_total" not in d                  # internal fields stay hidden
     assert d["options"][0]["total"] == int(d["final_total"])

@@ -22,6 +22,7 @@ from app.models.order import HandwritingStyle, StyleStatus
 from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import JobRepository, RobotRepository
 from app.services import audit
+from app.services.stroke_ai.outline_font import OUTLINE_PREFIX
 from app.services.stroke_ai.text_to_stroke import FONT_PREFIX, SUPPORTED_FONTS
 
 PRICING_FIELDS = ("u_ot1", "u_ot2", "u_ot3", "w_min", "s_ot1", "s_ot2", "s_ot3", "k_simple", "k_medium", "k_complex",
@@ -145,9 +146,14 @@ class ManagerCatalogService:
     # ------------------------------------------------------------------ templates (FR-42)
     @staticmethod
     def _check_font(font_uri: str) -> None:
+        if font_uri.startswith(OUTLINE_PREFIX):
+            path = font_uri[len(OUTLINE_PREFIX):]
+            if not (path.startswith("fonts/") and path.lower().endswith((".ttf", ".otf")) and ".." not in path):
+                raise AppError(422, "UNSUPPORTED_FONT", "font_uri dạng 'outline:fonts/<tên>/<file>.ttf|otf'.")
+            return
         if not font_uri.startswith(FONT_PREFIX) or font_uri[len(FONT_PREFIX):] not in SUPPORTED_FONTS:
-            raise AppError(422, "UNSUPPORTED_FONT", "font_uri phải có dạng 'hershey:<tên>' với font được hỗ trợ.",
-                           {"supported": sorted(SUPPORTED_FONTS)})
+            raise AppError(422, "UNSUPPORTED_FONT", "font_uri phải có dạng 'hershey:<tên>' (font được hỗ trợ) hoặc "
+                           "'outline:fonts/<tên>/<file>.ttf'.", {"supported": sorted(SUPPORTED_FONTS)})
 
     def create_template(self, data: dict[str, Any]) -> Template:
         self._new_code(Template, data["code"])

@@ -37,7 +37,21 @@ def _cleanup() -> None:
         c.execute(text(f"delete from shipments where order_id in {_TEST_ORDERS}"))   # no cascade from orders
         c.execute(text(f"delete from payments where order_id in {_TEST_ORDERS}"))
         # product_photos.job_id does not cascade, so photos go before their jobs
+        c.execute(text(f"delete from quality_evaluations where created_by in {_TEST_IDS} or order_id in {_TEST_ORDERS}"))   # before the photos
         c.execute(text(f"delete from product_photos where order_id in {_TEST_ORDERS}"))
+        # robot_alerts / robot_runs (migration 0008) reference jobs, robots and accounts without cascade; alerts go first
+        _jobs_of_tests = (f"(select id from production_jobs where order_id in {_TEST_ORDERS} "
+                          "or robot_id in (select id from robots where code like 'pytest\\_%'))")
+        c.execute(text(f"delete from robot_alerts where job_id in {_jobs_of_tests} or acknowledged_by in {_TEST_IDS} "
+                       f"or resolved_by in {_TEST_IDS} or robot_id in (select id from robots where code like 'pytest\\_%')"))
+        c.execute(text(f"delete from robot_runs where job_id in {_jobs_of_tests} or created_by in {_TEST_IDS} "
+                       f"or authorized_by in {_TEST_IDS} or robot_id in (select id from robots where code like 'pytest\\_%')"))
+        c.execute(text(f"delete from robot_commands where created_by in {_TEST_IDS} or job_id in {_jobs_of_tests} "
+                       "or robot_id in (select id from robots where code like 'pytest\_%')"))
+        c.execute(text(f"delete from robot_agents where created_by in {_TEST_IDS} "
+                       "or robot_id in (select id from robots where code like 'pytest\_%')"))
+        c.execute(text(f"delete from audit_logs where entity_type = 'alert_catalog' and actor_id in {_TEST_IDS}"))
+        c.execute(text(f"update alert_catalog set updated_by = null where updated_by in {_TEST_IDS}"))
         c.execute(text(f"delete from production_jobs where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from orders where customer_id in {_TEST_IDS}"))
         c.execute(text("delete from production_jobs where robot_id in (select id from robots where code like 'pytest\\_%')"))
@@ -112,6 +126,11 @@ def _no_real_provider_credentials(monkeypatch):
                  "momo_partner_code", "momo_access_key", "momo_secret_key", "ghn_token", "ghn_shop_id", "ghtk_token",
                  "ghtk_client_source", "carrier_webhook_secret"):
         monkeypatch.setattr(s, name, None)
+    # e-mail: never reach a real SMTP server (alerts go to every active Manager, and the database holds real people)
+    for name in ("smtp_host", "smtp_user", "smtp_password", "smtp_from"):
+        monkeypatch.setattr(s, name, None)
+    from app.integrations.mailer import ConsoleMailer
+    ConsoleMailer.outbox.clear()
 
 
 @pytest.fixture(scope="session")

@@ -21,6 +21,8 @@ from tests.conftest import auth
 CUSTOMER, STAFF, TECH, MANAGER, ADMIN = "CUSTOMER", "STAFF", "TECHNICAL_STAFF", "MANAGER", "ADMIN"
 ROLES = [CUSTOMER, STAFF, TECH, MANAGER, ADMIN]
 PUBLIC, ANY, SIGNED = "PUBLIC", "ANY_AUTHENTICATED", "SIGNED_WEBHOOK"
+VIEW_TICKET = "VIEW_TICKET"        # read-only 3D view: a signed short-lived ticket in the path, never a login
+AGENT_KEY = "AGENT_KEY"            # Robot Agent credential (Bearer vhrs_ak_...): a user's JWT must not open it
 VNPAY_IPN = "VNPAY_IPN"            # signed by VNPay; answers HTTP 200 with RspCode 97 when the signature is missing/invalid
 READ = {"GET"}
 WRITE = {"POST", "PUT", "PATCH", "DELETE"}
@@ -37,6 +39,9 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/webhooks/payments/momo/ipn$", ALL, SIGNED),
     (r"^/webhooks/payments/payos$", ALL, SIGNED),
     (r"^/webhooks/payments/\{gateway\}$", ALL, SIGNED),                      # no token: authenticated by the HMAC signature
+    (r"^/agent/", ALL, AGENT_KEY),
+    (r"^/robot-model/", READ, PUBLIC),                                       # vendor SDK files (public), served from storage
+    (r"^/viewer/\{ticket\}/", READ, VIEW_TICKET),
     (r"^/auth/logout$", ALL, ANY),
     (r"^/me/conversations", ALL, {CUSTOMER}),                                # the customer's chat inbox and unread badge
     (r"^/me", ALL, ANY),
@@ -105,6 +110,18 @@ def test_permission_matrix_is_enforced_on_every_route(client, tokens):
                 r = client.request(method, url, json=body, headers=headers)
                 if r.status_code != 401 or _code(r) != "INVALID_SIGNATURE":
                     problems.append(f"{method} {path}: unsigned call got {r.status_code} {_code(r)}")
+            continue
+        if who is VIEW_TICKET:
+            for headers in ({}, tokens[MANAGER], tokens[TECH]):
+                r = client.request(method, url, json=body, headers=headers)
+                if r.status_code != 401 or _code(r) != "INVALID_VIEW_TICKET":
+                    problems.append(f"{method} {path}: call without a valid view ticket got {r.status_code} {_code(r)}")
+            continue
+        if who is AGENT_KEY:
+            for headers in ({}, tokens[MANAGER], tokens[TECH], {"Authorization": "Bearer vhrs_ak_nope"}):
+                r = client.request(method, url, json=body, headers=headers)
+                if r.status_code != 401 or _code(r) != "INVALID_AGENT_KEY":
+                    problems.append(f"{method} {path}: call without a valid agent key got {r.status_code} {_code(r)}")
             continue
         if who is VNPAY_IPN:
             for headers in ({}, tokens[MANAGER], tokens[ADMIN]):
