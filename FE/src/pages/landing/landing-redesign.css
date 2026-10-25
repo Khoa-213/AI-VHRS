@@ -12,7 +12,7 @@
 .lp-header-inner>.lp-logo{justify-self:start}
 .lp-header-inner>.lp-actions{justify-self:end}
 .lp-header-inner>*{pointer-events:auto}
-.lp-logo{display:inline-flex;align-items:center;gap:9px;font-family:inherit;font-size:14px;font-weight:600;letter-spacing:-.01em;color:var(--t1);padding:5px 12px 5px 6px;border-radius:999px;background:var(--pill);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.lp-logo{display:inline-flex;align-items:center;gap:9px;font-family:inherit;font-size:14px;font-weight:600;letter-spacing:-.01em;color:var(--t1);padding:0;background:transparent}
 .lp-logo-mark{width:22px;height:22px;border-radius:50%;border:5px solid var(--accent);box-sizing:border-box;background:var(--t1);flex:none}
 .lp-nav{display:flex;align-items:center;gap:6px;background:none;padding:0;border-radius:0;flex-wrap:nowrap}
 .lp-nav a.lp-nav-lead{display:inline-flex;align-items:center;gap:10px;height:38px;padding:0 18px 0 5px;border-radius:999px;background:var(--btn-inv-bg);color:var(--btn-inv-fg);font-size:12.5px;font-weight:600;white-space:nowrap}
@@ -35,7 +35,7 @@
   .lp-actions{margin-left:auto}
 }
 @media (max-width:560px){
-  .lp-logo span:last-child{display:none}
+  .lp-logo .brand-logo{display:block}
   .lp-start-btn span:last-child{display:none}
   .lp-start-btn{padding:0 5px}
 }

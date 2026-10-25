@@ -85,6 +85,10 @@ export const apiChangePassword = (current_password: string, new_password: string
 export const apiRequestReset = (email: string) =>
   api('/auth/password-reset/request', { method: 'POST', body: { email }, auth: false })
 
+/** `POST /auth/password-reset/confirm`: the token comes from the emailed link. Signs out every device. */
+export const apiConfirmReset = (token: string, new_password: string) =>
+  api('/auth/password-reset/confirm', { method: 'POST', body: { token, new_password }, auth: false })
+
 /** Same rules as the backend. */
 export const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/
 export const PHONE_RULE = /^(0|\+84)\d{9}$/

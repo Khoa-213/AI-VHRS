@@ -36,6 +36,7 @@
 .entry-register-page{min-height:100dvh}
 .entry-register-page>.lp-header{position:relative}
 .entry-register-main{display:flex;justify-content:center;padding:clamp(24px,4vw,56px) 16px 64px;background:radial-gradient(ellipse at 50% 20%,var(--fx-04),transparent 65%)}
-.entry-register-page .entry-register-card{position:relative;inset:auto;margin:0;width:min(520px,100%);max-height:none;overflow:visible}
+.entry-reset{display:flex;justify-content:center}
+.entry-register-page .entry-register-card,.entry-reset .entry-register-card{position:relative;inset:auto;margin:0;width:min(520px,100%);max-height:none;overflow:visible}
 .entry-register-card .entry-login-panel{border-radius:26px}
 @media(max-width:560px){.entry-register-card h1{font-size:30px}.entry-register-card{width:100%}.entry-register-switch{min-height:44px}}

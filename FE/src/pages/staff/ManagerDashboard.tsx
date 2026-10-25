@@ -7,7 +7,7 @@ import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { adminInks, adminPapers, adminPens } from '../../services/manage'
 import { errText, orderErrorKey } from '../../services/orders'
-import { getStaffDirectory, listRobots, listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
+import { allWork, getStaffDirectory, listRobots, pendingApprovals, scheduleQueue } from '../../services/workshop'
 import { useUser } from '../../store/store'
 import { OPEN, lastSevenDays } from './StaffDashboard'
 
@@ -21,7 +21,7 @@ export default function ManagerDashboard() {
   const t = useT()
   const locale = useLocale()
   const user = useUser()
-  const orders = useAsync(() => listWork({ pageSize: 100 }), [], 30000)
+  const orders = useAsync(() => allWork(), [], 30000)
   const approvals = useAsync(async () => (await pendingApprovals()).total, [], 30000)
   const queue = useAsync(async () => (await scheduleQueue()).total, [], 30000)
   const staff = useAsync(getStaffDirectory, [], 60000)
@@ -35,7 +35,7 @@ export default function ManagerDashboard() {
     ].filter((x) => LOW_STOCK >= x.stock).sort((a, b) => a.stock - b.stock).slice(0, 5)
   }, [], 120000)
 
-  const all = orders.data?.items ?? []
+  const all = orders.data ?? []
   const week = lastSevenDays(all, locale)
   const paidWeek = lastSevenDays(all.filter((o) => PAID.includes(o.status)), locale).counts
   const open = all.filter((o) => OPEN.includes(o.status)).length

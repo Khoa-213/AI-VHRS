@@ -1,7 +1,8 @@
+import { ChatCircleDots } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import Page from '../../components/layout/Page'
-import Chat from '../../components/ui/Chat'
 import OrderPreview from '../../components/ui/OrderPreview'
+import ProductViewer from '../../components/ui/ProductViewer'
 import { OrderTimeline, SpecRows } from '../../components/ui/OrderParts'
 import { ORDER_HREF } from '../../constants'
 import { STATUS_COLOR, STATUS_STEP, STEP_KEYS } from '../../constants/orderStatus'
@@ -9,15 +10,18 @@ import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link, navigate, orderPath } from '../../router/router'
 import {
-  WAITING, approveQuotation, cancelOrder, decidePrivacy, getInks, getOrder, getPapers, getPens, getPrivacyPolicy, getQuotation,
-  orderErrorKey, requestChanges, type Order, errText } from '../../services/orders'
+  HAS_PRODUCT_PHOTOS, WAITING, acceptProduct, approveQuotation, cancelOrder, decidePrivacy, getInks, getOrder, getPapers, getPens,
+  getPrivacyPolicy, getProductPhotos, getQuotation, orderErrorKey, requestChanges, requestRewrite, type Order, type RewriteReason,
+  errText } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { fmt } from '../../utils/format'
-import MockWorkshopBar from './MockWorkshopBar'
+import { openChat } from '../../store/chatDock'
 import PrivacyDialog from './PrivacyDialog'
 import './order.css'
 
 const HAS_QUOTE = ['QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED']
+// The acceptance step is closed on the server (auto-accepted, rewrite already asked), so the page must catch up.
+const RELOAD_ON = ['STATE_CONFLICT', 'ACCEPTANCE_CLOSED', 'ORDER_NOT_AWAITING_ACCEPTANCE', 'REWRITE_LIMIT_REACHED']
 
 export default function OrderReview({ id }: { id: string | null }) {
   const t = useT()
@@ -32,14 +36,16 @@ export default function OrderReview({ id }: { id: string | null }) {
   const pens = useAsync(() => getPens(), [])
   const inks = useAsync(() => (order?.penId ? getInks(order.penId) : Promise.resolve([])), [order?.penId])
   const quote = useAsync(() => (status && HAS_QUOTE.includes(status) ? getQuotation(orderId) : Promise.resolve(null)), [orderId, status])
-  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy(orderId) : Promise.resolve(null)), [status])
+  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy() : Promise.resolve(null)), [status])
+  // Once the technician submits, the order shows the real photos of the written product, not the customer's input.
+  const product = useAsync(() => (status && HAS_PRODUCT_PHOTOS.includes(status) ? getProductPhotos(orderId) : Promise.resolve(null)), [orderId, status])
 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [panel, setPanel] = useState<'' | 'changes' | 'cancel' | 'decline'>('')
+  const [panel, setPanel] = useState<'' | 'changes' | 'cancel' | 'decline' | 'rewrite'>('')
+  const [reason, setReason] = useState<RewriteReason>('WORKSHOP_ERROR')
   const [text, setText] = useState('')
   const [option, setOption] = useState<number | null>(null)
-  const [pct, setPct] = useState<number | null>(null)
   const [policyOpen, setPolicyOpen] = useState(false)
   const autoOpened = useRef(false)
 
@@ -64,7 +70,7 @@ export default function OrderReview({ id }: { id: string | null }) {
       await q.reload()
     } catch (e) {
       setErr(orderErrorKey(e))
-      if ((e as { code?: string }).code === 'STATE_CONFLICT') await q.reload()
+      if (RELOAD_ON.includes((e as { code?: string }).code ?? '')) await Promise.all([q.reload(), product.reload()])
     } finally {
       setBusy(false)
     }
@@ -91,11 +97,13 @@ export default function OrderReview({ id }: { id: string | null }) {
   }
 
   const quotation = quote.data
+  const productPhotos = product.data?.photos ?? []
   const multi = (quotation?.options.length ?? 0) > 1
   const chosen = multi ? (option ?? quotation?.chosenOption ?? quotation?.options[0]?.option ?? null) : null
   const quoteTotal = multi ? (quotation?.options.find((o) => o.option === chosen)?.total ?? 0) : (quotation?.finalTotal ?? 0)
   const minPct = quotation?.minDepositPct ?? 50
-  const depositPct = Math.min(100, Math.max(minPct, pct ?? minPct))
+  // The deposit is fixed at 50%, or the quotation's minimum when that is higher; the customer does not choose it.
+  const depositPct = Math.min(100, Math.max(50, minPct))
   const depositNow = Math.round((quoteTotal * depositPct) / 100)
   const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '–')
   const daysLeft = quotation?.validUntil ? Math.max(0, Math.ceil((new Date(quotation.validUntil).getTime() - Date.now()) / 864e5)) : null
@@ -143,7 +151,6 @@ export default function OrderReview({ id }: { id: string | null }) {
 
   return (
     <Page label="Order Review">
-      {import.meta.env.DEV && <MockWorkshopBar order={order} onChange={() => void q.reload()} />}
       <div className="ov">
         <div className="vh-head">
           <div className="vh-head-text">
@@ -155,9 +162,22 @@ export default function OrderReview({ id }: { id: string | null }) {
 
         <div className="vh-cols">
           <section className="vh-col" style={{ flex: '999 1 560px', gap: 20 }}>
-            <div className="or-stage">
-              <OrderPreview order={order} sketchUrls={quotation?.sketch?.previewUrls} inkColor={ink?.hex} />
-            </div>
+            {productPhotos.length ? (
+              <div className="vh-stack" style={{ gap: 6 }}>
+                <span className="vh-label">{t('ov.productPhotos')}</span>
+                <ProductViewer photos={productPhotos} />
+                {status === 'AWAITING_ACCEPTANCE' && product.data?.sketchUrl && (
+                  <div className="vh-stack ov-compare" style={{ gap: 6 }}>
+                    <span className="vh-label">{t('ov.compareSketch')}</span>
+                    <img src={product.data.sketchUrl} alt={t('ov.compareSketchAlt')} />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="or-stage">
+                <OrderPreview order={order} sketchUrls={quotation?.sketch?.previewUrls} inkColor={ink?.hex} />
+              </div>
+            )}
 
             {quotation?.sketch && (
               <div className="vh-stack" style={{ gap: 6 }}>
@@ -194,13 +214,18 @@ export default function OrderReview({ id }: { id: string | null }) {
                 <p className="or-copy">{quotation.note}</p>
               </div>
             )}
-            {status !== 'DRAFT' && <Chat orderId={orderId} closed={['REJECTED', 'CANCELLED', 'COMPLETED'].includes(status)} />}
           </section>
 
           <aside className="vh-aside">
             <div className="ov-rail-body">
               <span className="ov-rail-title">{t('or.details')}</span>
               <SpecRows rows={rows} />
+              {status !== 'DRAFT' && (
+                <button type="button" className="vh-btn vh-btn--ghost vh-btn--sm ov-ask" onClick={() => openChat(order.id)}>
+                  <ChatCircleDots size={18} aria-hidden />
+                  {t('cd.askAbout')}
+                </button>
+              )}
 
               {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
 
@@ -277,12 +302,9 @@ export default function OrderReview({ id }: { id: string | null }) {
                     <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t('ov.validUntil')}</span><span>{day(quotation.validUntil)}{daysLeft !== null ? ` · ${t('ov.daysLeft', { n: daysLeft })}` : ''}</span></div>
                     {quotation.eta && <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t('ov.eta')}</span><span>{day(quotation.eta)}</span></div>}
                   </div>
-                  <div className="vh-stack" style={{ gap: 8 }}>
-                    <label className="vh-label" htmlFor="ov-pct">
-                      {t('ov.depositPct', { pct: depositPct })}
-                      <input id="ov-pct" type="range" min={minPct} max={100} step={5} value={depositPct} onChange={(e) => setPct(Number(e.target.value))} />
-                    </label>
-                    <span className="co-fine">{t('ov.depositMin', { pct: minPct })}</span>
+                  <div className="vh-stack" style={{ gap: 4 }}>
+                    <span className="vh-label">{t('ov.depositPct', { pct: depositPct })}</span>
+                    <span className="co-fine">{t('ov.depositRest')}</span>
                   </div>
                   <div className="vh-total-row">
                     <span>{t('or.depositDue')}</span>
@@ -321,7 +343,55 @@ export default function OrderReview({ id }: { id: string | null }) {
                 </>
               )}
 
-              {['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(status) && (
+              {status === 'AWAITING_ACCEPTANCE' && !product.data && product.error != null && (
+                <div className="vh-callout vh-callout--red" role="alert">
+                  <b>{t('ov.productLoadErr')}</b>
+                  <span>{errText(t, orderErrorKey(product.error))}</span>
+                  <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={product.loading} onClick={() => void product.reload()}>{t('ov.productRetry')}</button>
+                </div>
+              )}
+
+              {status === 'AWAITING_ACCEPTANCE' && product.data && (
+                <>
+                  <div className="vh-callout vh-callout--teal">
+                    <b>{t('ov.acceptTitle')}</b>
+                    <span>{product.data.acceptanceDueAt ? t('ov.acceptBody', { date: day(product.data.acceptanceDueAt) }) : t('ov.acceptBodyNoDate')}</span>
+                  </div>
+                  {panel === 'rewrite' ? (
+                    <div className="vh-stack" style={{ gap: 10 }}>
+                      <div className="vh-stack" style={{ gap: 6 }} role="radiogroup" aria-label={t('ov.rewriteReason')}>
+                        <span className="vh-label">{t('ov.rewriteReason')}</span>
+                        {(['WORKSHOP_ERROR', 'DIFFERS_FROM_SKETCH'] as const).map((r) => (
+                          <label key={r} className="or-copy" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input type="radio" name="ov-rewrite" checked={reason === r} onChange={() => setReason(r)} />
+                            {t(`ov.rewrite.${r}`)}
+                          </label>
+                        ))}
+                      </div>
+                      <label className="vh-label" htmlFor="ov-rewrite-note">{t('ov.rewriteNote')}</label>
+                      <textarea id="ov-rewrite-note" className="vh-textarea" rows={3} maxLength={1000} value={text} onChange={(e) => setText(e.target.value)} />
+                      <span className="co-fine">{t('ov.rewriteFree')}</span>
+                      <div className="or-actions">
+                        <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => { setPanel(''); setText('') }}>{t('ov.back')}</button>
+                        <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || text.trim().length < 5} onClick={() => void run(() => requestRewrite(orderId, reason, text.trim()))}>
+                          {t('ov.rewriteSend')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {product.data.canAccept && (
+                        <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy} onClick={() => void run(() => acceptProduct(orderId))}>{t('ov.acceptBtn')}</button>
+                      )}
+                      {product.data.canRewrite
+                        ? <button className="vh-link" onClick={() => { setPanel('rewrite'); setText('') }}>{t('ov.rewriteBtn')}</button>
+                        : <span className="co-fine">{t('ov.rewriteUsed')}</span>}
+                    </>
+                  )}
+                </>
+              )}
+
+              {['CONFIRMED', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(status) && (
                 <>
                   <div className="vh-callout vh-callout--green">
                     <b>{t('or.depositPaid', { status: t(`os.${status}`) })}</b>

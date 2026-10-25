@@ -5,7 +5,7 @@ import Shell from '../../components/ws/Shell'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
-import { ROLES, listAccounts, listAudit } from '../../services/admin'
+import { ROLES, allAccounts, listAccounts, listAudit } from '../../services/admin'
 import { errText, orderErrorKey } from '../../services/orders'
 import { useUser } from '../../store/store'
 import './admin.css'
@@ -26,7 +26,7 @@ export default function AdminDashboard() {
     return { byRole, locked: locked.total, disabled: disabled.total }
   }, [], 60000)
   const recent = useAsync(() => listAudit({ pageSize: 8 }), [], 30000)
-  const recentAccounts = useAsync(() => listAccounts({ pageSize: 5 }), [], 60000)
+  const recentAccounts = useAsync(async () => (await allAccounts()).slice(0, 5), [], 60000)
 
   const byRole = stats.data?.byRole ?? ROLES.map(() => 0)
   const total = byRole.reduce((a, b) => a + b, 0)
@@ -57,14 +57,14 @@ export default function AdminDashboard() {
         <section className="panel" style={{ flex: '1 1 420px' }} aria-labelledby="a2">
           <div className="ph"><h2 id="a2">{t('ad.newest')}</h2><Link to="/admin/accounts" className="link">{t('ad.seeAccounts')}</Link></div>
           <div className="list">
-            {(recentAccounts.data?.items ?? []).map((a) => (
+            {(recentAccounts.data ?? []).map((a) => (
               <div key={a.id} className="item">
                 <span className={`avatar ${avatarTone(a.name)}`}>{initials(a.name)}</span>
                 <div className="t"><b>{a.name}</b><span>{a.email}</span></div>
                 <span className="chip mute">{t(`ad.role.${a.role}`)}</span>
               </div>
             ))}
-            {recentAccounts.data && !recentAccounts.data.items.length && <p className="sub">{t('ad.acc.empty')}</p>}
+            {recentAccounts.data && !recentAccounts.data.length && <p className="sub">{t('ad.acc.empty')}</p>}
           </div>
         </section>
       </div>

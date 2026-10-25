@@ -1,6 +1,6 @@
+import { ChatCircleDots } from '@phosphor-icons/react'
 import { useState } from 'react'
 import type { Job } from '../../services/async'
-import Chat from '../../components/ui/Chat'
 import OrderPreview from '../../components/ui/OrderPreview'
 import { STATUS_COLOR } from '../../constants/orderStatus'
 import { useAsync } from '../../hooks/useAsync'
@@ -9,11 +9,13 @@ import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { orderErrorKey, errText } from '../../services/orders'
 import {
-  REJECT_REASONS, acceptOrder, assignStaff, claimOrder, getStaffDirectory, getWork, orderJobs, orderPayments, rejectOrder, requestInfo,
+  REJECT_REASONS, acceptOrder, assignStaff, getStaffDirectory, getWork, orderJobs, orderPayments, rejectOrder, requestInfo,
   type RejectReason,
 } from '../../services/workshop'
+import { openChat } from '../../store/chatDock'
 import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
+import ChangeRequests from './ChangeRequests'
 import { isManagerRole } from './RequireStaff'
 import QuotationPanel from './QuotationPanel'
 import SketchPanel from './SketchPanel'
@@ -116,17 +118,14 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         </dl>
       </section>
 
+      {order.status !== 'SUBMITTED' && order.status !== 'NEED_INFO' && <ChangeRequests order={order} />}
+
       {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
 
       {order.status === 'SUBMITTED' && (
         <section className="wk-block" aria-label={t('wk.intake')}>
           <h3>{t('wk.intake')}</h3>
-          {unassigned && !manager && (
-            <>
-              <p className="sd-sub">{t('wk.claimBody')}</p>
-              <button className="vh-btn vh-btn--ghost vh-btn--md wk-self" disabled={busy} onClick={() => void run(() => claimOrder(id))}>{t('wk.claim')}</button>
-            </>
-          )}
+          {unassigned && !manager && <p className="sd-sub">{t('wk.decideClaims')}</p>}
           {manager && unassigned && (
             <label className="vh-label">
               {t('wk.pickStaff')}
@@ -198,7 +197,11 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
           <dl className="wk-rows">
             {payments.data.map((p) => (
               <div key={p.id}>
-                <dt>{p.gateway} · {t(`pst.${p.status}`)} · {t('dp.mockTag')}</dt>
+                <dt>
+                  {p.gateway} · {t(`pst.${p.status}`)}
+                  {p.mode === 'MOCK' ? ` · ${t('dp.mockTag')}` : p.mode === 'SANDBOX' ? ` · ${t('dp.sandboxTag')}` : ''}
+                  {p.needsRefund ? ` · ${t('dp.refundTag')}` : ''}
+                </dt>
                 <dd>{fmt(p.amount)}</dd>
               </div>
             ))}
@@ -223,7 +226,12 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         <Link to={`/staff/schedule/${order.id}`} className="vh-btn vh-btn--primary vh-btn--md wk-link">{t('wk.goSchedule')}</Link>
       )}
 
-      {order.status !== 'DRAFT' && <Chat orderId={id} closed={['REJECTED', 'CANCELLED', 'COMPLETED'].includes(order.status)} />}
+      {order.status !== 'DRAFT' && (
+        <button type="button" className="vh-btn vh-btn--ghost vh-btn--md wk-link" onClick={() => openChat(order.id, false)}>
+          <ChatCircleDots size={18} aria-hidden />
+          {t('cd.ws.ask')}
+        </button>
+      )}
     </div>
   )
 }

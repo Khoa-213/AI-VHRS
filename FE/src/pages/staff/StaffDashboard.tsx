@@ -7,7 +7,7 @@ import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { errText, orderErrorKey, type OrderStatus } from '../../services/orders'
-import { listWork, type WorkOrder } from '../../services/workshop'
+import { allWork, type WorkOrder } from '../../services/workshop'
 import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
 
@@ -53,8 +53,8 @@ export default function StaffDashboard() {
   const t = useT()
   const locale = useLocale()
   const user = useUser()
-  const list = useAsync(() => listWork({ pageSize: 100 }), [], 30000)
-  const orders = list.data?.items ?? []
+  const list = useAsync(() => allWork(), [], 30000)
+  const orders = list.data ?? []
   const mineId = user?.id
   const count = (...s: OrderStatus[]) => orders.filter((o) => s.includes(o.status)).length
   const week = lastSevenDays(orders, locale)

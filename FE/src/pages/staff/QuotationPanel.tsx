@@ -34,6 +34,8 @@ export default function QuotationPanel({ order, readOnly = false, onChanged }: {
   const shown: WorkQuotation | undefined = live ?? quotes[0]
   const canCreate = !readOnly && order.status === 'ACCEPTED' && !live && order.finalSketchVersion !== null
   const suggest = order.workshopSuggest
+  // What the customer already chose stays in every option; Staff only fill the rest (the API refuses a change).
+  const fixed: MaterialOption = { paper_type_id: order.paperId ?? 0, pen_type_id: order.penId ?? 0, ink_color_id: order.inkId ?? 0 }
 
   const run = async (job: Job) => {
     if (busy) return
@@ -91,10 +93,10 @@ export default function QuotationPanel({ order, readOnly = false, onChanged }: {
               <span className="vh-label">{t('wk.optionsTitle')}</span>
               <p className="sd-sub">{t('wk.optionsHint')}</p>
               {options.map((o, i) => (
-                <OptionRow key={i} value={o} onChange={(v) => setOptions(options.map((x, j) => (j === i ? v : x)))} onRemove={() => setOptions(options.filter((_, j) => j !== i))} />
+                <OptionRow key={i} value={o} fixed={fixed} onChange={(v) => setOptions(options.map((x, j) => (j === i ? v : x)))} onRemove={() => setOptions(options.filter((_, j) => j !== i))} />
               ))}
               {options.length < 3 && (
-                <button className="vh-btn vh-btn--ghost vh-btn--sm wk-self" onClick={() => setOptions([...options, { paper_type_id: 0, pen_type_id: 0, ink_color_id: 0 }])}>{t('wk.addOption')}</button>
+                <button className="vh-btn vh-btn--ghost vh-btn--sm wk-self" onClick={() => setOptions([...options, { ...fixed }])}>{t('wk.addOption')}</button>
               )}
             </div>
           )}
@@ -105,7 +107,8 @@ export default function QuotationPanel({ order, readOnly = false, onChanged }: {
               ...(complexity ? { complexity } : {}),
               ...(chars ? { char_count: Number(chars) } : {}),
               ...(suggest ? { options } : {}),
-              ...(eta ? { eta: new Date(`${eta}T17:00:00+07:00`).toISOString() } : {}),
+              // The API takes a plain date (YYYY-MM-DD), the same format the date input gives.
+              ...(eta ? { eta } : {}),
             }))}
           >
             {t(busy ? 'wk.creating' : 'wk.createQuote')}
@@ -198,22 +201,22 @@ export default function QuotationPanel({ order, readOnly = false, onChanged }: {
 }
 
 /** One material option of a quotation: paper, then a pen that works with it, then an ink for that pen. */
-function OptionRow({ value, onChange, onRemove }: { value: MaterialOption; onChange: (v: MaterialOption) => void; onRemove: () => void }) {
+function OptionRow({ value, fixed, onChange, onRemove }: { value: MaterialOption; fixed: MaterialOption; onChange: (v: MaterialOption) => void; onRemove: () => void }) {
   const t = useT()
   const papers = useAsync(getPapers, [])
   const pens = useAsync(() => (value.paper_type_id ? getPens(value.paper_type_id) : Promise.resolve([])), [value.paper_type_id])
   const inks = useAsync(() => (value.pen_type_id ? getInks(value.pen_type_id) : Promise.resolve([])), [value.pen_type_id])
   return (
     <div className="wk-form wk-option">
-      <select className="vh-select" aria-label={t('co.paper')} value={value.paper_type_id || ''} onChange={(e) => onChange({ paper_type_id: Number(e.target.value), pen_type_id: 0, ink_color_id: 0 })}>
+      <select className="vh-select" aria-label={t('co.paper')} value={value.paper_type_id || ''} disabled={!!fixed.paper_type_id} onChange={(e) => onChange({ paper_type_id: Number(e.target.value), pen_type_id: fixed.pen_type_id, ink_color_id: fixed.ink_color_id })}>
         <option value="">{t('co.paper')}</option>
         {(papers.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
-      <select className="vh-select" aria-label={t('co.pen')} value={value.pen_type_id || ''} disabled={!value.paper_type_id} onChange={(e) => onChange({ ...value, pen_type_id: Number(e.target.value), ink_color_id: 0 })}>
+      <select className="vh-select" aria-label={t('co.pen')} value={value.pen_type_id || ''} disabled={!value.paper_type_id || !!fixed.pen_type_id} onChange={(e) => onChange({ ...value, pen_type_id: Number(e.target.value), ink_color_id: fixed.ink_color_id })}>
         <option value="">{t('co.pen')}</option>
         {(pens.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
-      <select className="vh-select" aria-label={t('co.ink')} value={value.ink_color_id || ''} disabled={!value.pen_type_id} onChange={(e) => onChange({ ...value, ink_color_id: Number(e.target.value) })}>
+      <select className="vh-select" aria-label={t('co.ink')} value={value.ink_color_id || ''} disabled={!value.pen_type_id || !!fixed.ink_color_id} onChange={(e) => onChange({ ...value, ink_color_id: Number(e.target.value) })}>
         <option value="">{t('co.ink')}</option>
         {(inks.data ?? []).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
       </select>

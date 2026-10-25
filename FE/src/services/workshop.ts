@@ -1,7 +1,7 @@
-import { ApiError, api } from './api'
+import { ApiError, allPages, api, newestFirst } from './api'
 import {
   num, toOrder, toPayment,
-  type Order, type OrderStatus, type Page, type Payment, type RawOrder, type RawPayment,
+  type Order, type OrderStatus, type OrderType, type Page, type Payment, type RawOrder, type RawPayment,
 } from './orders'
 
 /**
@@ -69,6 +69,10 @@ export async function listWork(opts: WorkQuery = {}): Promise<Page<WorkOrder>> {
   return { items: r.items.map(toWork), total: r.total, page: r.page, pageSize: r.page_size }
 }
 
+/** Every matching order, newest submission first (the backend pages them oldest first). */
+export const allWork = async (opts: Omit<WorkQuery, 'page' | 'pageSize'> = {}): Promise<WorkOrder[]> =>
+  newestFirst(await allPages((page) => listWork({ ...opts, page, pageSize: 100 }), 100), (o) => o.submittedAt ?? o.createdAt)
+
 export const getWork = async (id: number): Promise<WorkOrder> => toWork(await api<RawWork>(`/workshop/orders/${id}`))
 
 export const claimOrder = async (id: number) => toWork(await api<RawWork>(`/workshop/orders/${id}/claim`, { method: 'POST' }))
@@ -121,8 +125,6 @@ const toSketch = (s: RawSketch): Sketch => ({
 
 export const listSketches = async (orderId: number) => (await api<RawSketch[]>(`/workshop/orders/${orderId}/sketches`)).map(toSketch)
 
-export const getSketch = async (orderId: number, version: number) => toSketch(await api<RawSketch>(`/workshop/orders/${orderId}/sketches/${version}`))
-
 export const generateSketch = async (orderId: number, body: { paper_size?: 'A6' | 'A5' | 'A4'; approach_note?: string; seed?: number }) =>
   toSketch(await api<RawSketch>(`/workshop/orders/${orderId}/sketches/generate`, { method: 'POST', body }))
 
@@ -167,6 +169,8 @@ export interface WorkQuotation {
   sentAt: string | null
   validUntil: string | null
   hasPdf: boolean
+  /** What the customer wrote when they asked for changes to this version. */
+  customerNote: string | null
   createdAt: string
 }
 
@@ -177,7 +181,7 @@ interface RawWorkQuotation {
   chosen_option: number | null; char_count: number; quantity: number; complexity: Complexity
   computed_total: string; adjusted_total: string | null; adjustment_pct: string | null; adjustment_reason: string | null
   final_total: string; min_deposit_pct: string; eta: string | null; sent_at: string | null; valid_until: string | null
-  has_pdf?: boolean; created_at: string
+  has_pdf?: boolean; customer_note: string | null; created_at: string
 }
 
 const toQuotation = (q: RawWorkQuotation): WorkQuotation => ({
@@ -187,7 +191,7 @@ const toQuotation = (q: RawWorkQuotation): WorkQuotation => ({
   chosenOption: q.chosen_option, charCount: q.char_count, quantity: q.quantity, complexity: q.complexity,
   computedTotal: num(q.computed_total) ?? 0, adjustedTotal: num(q.adjusted_total), adjustmentPct: num(q.adjustment_pct),
   adjustmentReason: q.adjustment_reason, finalTotal: num(q.final_total) ?? 0, minDepositPct: num(q.min_deposit_pct) ?? 50,
-  eta: q.eta, sentAt: q.sent_at, validUntil: q.valid_until, hasPdf: !!q.has_pdf, createdAt: q.created_at,
+  eta: q.eta, sentAt: q.sent_at, validUntil: q.valid_until, hasPdf: !!q.has_pdf, customerNote: q.customer_note, createdAt: q.created_at,
 })
 
 export const listQuotations = async (orderId: number) =>
@@ -267,12 +271,16 @@ export const getStaffDirectory = async (): Promise<StaffBrief[]> =>
 export const assignStaff = async (orderId: number, staffId: number) =>
   toWork(await api<RawWork>(`/manager/orders/${orderId}/assignment`, { method: 'PUT', body: { staff_id: staffId } }))
 
-export async function pendingApprovals(page = 1): Promise<Page<WorkQuotation & { orderId: number }>> {
+export async function pendingApprovals(page = 1, pageSize = 50): Promise<Page<WorkQuotation & { orderId: number }>> {
   const r = await api<{ items: (RawWorkQuotation & { order_id: number })[]; total: number; page: number; page_size: number }>(
-    `/manager/quotations/pending-approval?page=${page}&page_size=50`,
+    `/manager/quotations/pending-approval?page=${page}&page_size=${pageSize}`,
   )
   return { items: r.items.map((q) => ({ ...toQuotation(q), orderId: q.order_id })), total: r.total, page: r.page, pageSize: r.page_size }
 }
+
+/** Every adjustment waiting for the Manager, newest first. */
+export const allPendingApprovals = async () =>
+  newestFirst(await allPages((page) => pendingApprovals(page, 100), 100), (q) => q.createdAt)
 
 export const approveAdjustment = async (id: number) =>
   toQuotation(await api<RawWorkQuotation>(`/manager/quotations/${id}/approve-adjustment`, { method: 'POST' }))
@@ -368,9 +376,22 @@ export async function listJobs(opts: { status?: JobStatus[]; page?: number } = {
 
 // ---------- chat (customer and workshop share these) ----------
 
+export type MessageKind = 'TEXT' | 'ORDER_CARD'
+
+/** The order a customer shared with `kind = ORDER_CARD`, as it is now (not a copy from when it was sent). */
+export interface OrderCard {
+  code: string
+  type: OrderType
+  status: OrderStatus
+  quantity: number
+  total: number | null
+}
+
 export interface Message {
   id: number
   mine: boolean
+  kind: MessageKind
+  card: OrderCard | null
   body: string | null
   attachments: { url: string; mime: string }[]
   readAt: string | null
@@ -384,12 +405,16 @@ export interface MessagePage {
 }
 
 interface RawMessage {
-  id: number; mine: boolean; body: string | null; attachments: { url: string; mime: string }[]
+  id: number; mine: boolean; kind?: MessageKind; body: string | null; attachments: { url: string; mime: string }[]
+  order_card?: { code: string; order_type: OrderType; order_status: OrderStatus; quantity: number; total_amount: string | null } | null
   read_at: string | null; created_at: string
 }
 
 const toMessage = (m: RawMessage): Message => ({
-  id: m.id, mine: m.mine, body: m.body, attachments: m.attachments, readAt: m.read_at, createdAt: m.created_at,
+  id: m.id, mine: m.mine, kind: m.kind ?? 'TEXT', body: m.body, attachments: m.attachments, readAt: m.read_at, createdAt: m.created_at,
+  card: m.order_card
+    ? { code: m.order_card.code, type: m.order_card.order_type, status: m.order_card.order_status, quantity: m.order_card.quantity, total: num(m.order_card.total_amount) }
+    : null,
 })
 
 export const CHAT_IMAGES = ['image/jpeg', 'image/png']
@@ -417,6 +442,10 @@ export async function sendMessage(orderId: number, body: string, image?: File): 
     body: { body: body.trim() || null, ...(attachments ? { attachments } : {}) },
   }))
 }
+
+/** Customer only: shares this order's card in its chat. Sending again within 10 minutes returns the same card. */
+export const sendOrderCard = async (orderId: number): Promise<Message> =>
+  toMessage(await api<RawMessage>(`/orders/${orderId}/messages`, { method: 'POST', body: { kind: 'ORDER_CARD' } }))
 
 export const markMessagesRead = (orderId: number) => api(`/orders/${orderId}/messages/read`, { method: 'POST' })
 

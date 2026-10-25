@@ -48,7 +48,8 @@ const locale = useLocale() // dates and numbers: date.toLocaleDateString(locale,
 
 ## New screens
 
-- Put `<LanguageToggle className="..." />` right after every `<ThemeToggle ... />` (any header or top bar).
+- Put `<LanguageToggle />` right after every `<ThemeToggle ... />` (any header or top bar). It styles itself
+  (`components/ui/language.css`, the landing page's look) so it is the same button everywhere: do not restyle it per page.
 - Staff and technician pages must render their rail (`StaffRail` / `TechRail`).
 - Keep layout working at the longest language: Vietnamese and Japanese text can be longer or wrap differently.
   Do not give buttons a fixed width that clips them.
@@ -68,7 +69,9 @@ Text that stays English is a bug unless it is in the exceptions list above.
 
 - No em dash or en dash in user-facing copy. Use a comma, colon or period.
 - Icons come from `@phosphor-icons/react`. Colours come from CSS variables in `src/styles/theme.css`.
-- Customer and workshop (Staff, Manager) data comes from the API. Only the technician screens still use the localStorage mock in `src/store/store.ts`.
+
+- Customer, workshop (Staff, Manager) and technician data all come from the API. The localStorage store in `src/store/store.ts` only keeps the signed-in user and profile.
+
 
 ## Customer orders come from the API
 
@@ -80,14 +83,23 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   autosaves every change through `hooks/useSaveQueue.ts`. Drafts list under **Account > Drafts** (`GET /orders?status=DRAFT`).
 - Catalog (paper, pen, ink, templates) and the price estimate come from the API. Do not hard-code them.
 - `/orders/:id/review` is the order page: it renders by `order_status` and polls while the status moves on its own.
-- Deposit uses the **mock** gateway. Keep the "simulated payment" notice while the backend returns `mode = MOCK`.
+- Deposit (`pages/order/Deposit.tsx`) offers the gateways `GET /payments/gateways` marks `enabled` (VNPay, MoMo, payOS).
+  `mode = MOCK` settles with the simulated buttons and keeps the "simulated payment" notice; `SANDBOX` / `LIVE` send the
+  customer to `pay_url`, and the gateway brings them back to `/payment/result` (`PaymentResult.tsx`), which polls the order
+  and never trusts the gateway's query parameters. `vercel.json` rewrites deep links to `index.html` so that page loads.
 - Result, final payment, tracking and shipping have no API yet (backend phase 4), so they have no pages. Add them when they do.
 - The workshop side lives in `src/pages/staff/` and `src/services/workshop.ts`: dashboard, `Workbench` (intake, sketch, quotation, chat),
-  `Approvals`, `Schedule` and `Catalog` (Manager only; materials, ink colors, stock, compatibility, templates, robots, price list via `services/manage.ts`). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
+  `Approvals`, `Schedule` and `Catalog` (Manager only, via `services/manage.ts`: templates, robots, price list, and `Materials.tsx`, where paper, pens, ink colors and paper-pen compatibility are one list-and-detail view because the customer only sees the chain paper → compatible active pen → that pen's active inks; a new paper is created with its pens, a new pen with its inks and papers, and anything a customer cannot order is flagged). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
 - Errors from the API go through `orderErrorKey` / `errText` (`services/orders.ts`): known codes have translated text, any other code shows the backend's own message. Add a code to `ERROR_KEYS` and `err.*` when you want it translated.
 - Workshop screens (Staff, Manager, Technician) all render inside `components/ws/Shell.tsx`: the icon pill, the header and a language button. Their look is `components/ws/ws.css` (generated from the Figma-based design, everything under `.ws`, light only, no theme toggle) and `workshop.css`; the accent is the `--acc` variable. Use the shared pieces in `components/ws/parts.tsx` and `charts.tsx` before adding new markup.
-- The order chat (`components/ui/Chat.tsx`) is shared by the customer order page and the workshop.
-- The technician screens (`src/pages/tech/`) still use the local mock (`store.ts`, `pages/staff/technicians.ts`, `evaluate.ts`, `telemetry.ts`). Wire them when backend phase 4 adds jobs, QC and photos, and delete that mock as you go.
+- The order chat (`components/ui/Chat.tsx`) is shared by the customer and the workshop, and is reached only through the floating
+  `components/ui/ChatDock.tsx`: `side="customer"` in `App.tsx`, `side="workshop"` in `Shell.tsx` (Staff, Manager). The list and badge come from
+  `services/chat.ts` (`/me/conversations`, `/workshop/conversations`, `.../unread-count`). Opening the customer chat from an order sends
+  an `ORDER_CARD` message (the backend returns the same card within 10 minutes); both sides render it from `order_card`.
+  Read only only when the order is `REJECTED` or `CANCELLED` (a `COMPLETED` order stays open for complaints), or for a Staff who has not
+  claimed the order. Contract: `BE/docs/FE_API_GUIDE.md` section 5.4.
+- The technician screens (`src/pages/tech/`) run on the API (`services/technician.ts`): jobs, the job screen (`JobDetail` and its workflow, preparation, events and photo parts, also reached at `/tech/preview/:id` and `/tech/qc/:id`). Details in `docs/TECHNICAL_STAFF_INTEGRATION.md`. `sim.ts` and `SimCanvas.tsx` are the old text-based arm simulation, not used by any screen.
+
 
 ## Account area
 

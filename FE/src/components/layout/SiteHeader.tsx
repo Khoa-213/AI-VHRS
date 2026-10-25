@@ -1,3 +1,4 @@
+import BrandLogo from '../ui/BrandLogo'
 import { ORDER_HREF, svgProps } from '../../constants'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
@@ -13,7 +14,7 @@ export default function SiteHeader() {
   return (
     <header className="vh-header">
       <div className="vh-header-inner">
-        <Link to="/" className="vh-logo">AI-VHRS</Link>
+        <Link to="/" className="vh-logo"><BrandLogo /></Link>
         <nav className="vh-nav">
           <Link to="/#showcase">{t('nav.features')}</Link>
           <Link to="/#showcase">{t('nav.robotSpecs')}</Link>
@@ -32,7 +33,7 @@ export default function SiteHeader() {
               </svg>
             </button>
             <ThemeToggle className="vh-icon-btn" />
-            <LanguageToggle className="vh-icon-btn" />
+            <LanguageToggle />
             <AccountButton buttonClassName="vh-icon-btn" avatarClassName="vh-avatar" />
           </div>
           <Link to={ORDER_HREF} className="vh-btn vh-btn--primary vh-btn--sm vh-start">{t('nav.startWriting')}</Link>

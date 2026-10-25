@@ -1,3 +1,4 @@
+import BrandLogo from '../../../components/ui/BrandLogo'
 import { ORDER_HREF, svgProps } from '../../../constants'
 import { useT } from '../../../i18n'
 import ThemeToggle from '../../../components/ui/ThemeToggle'
@@ -10,9 +11,8 @@ export default function Header() {
   return (
     <header className="lp-header">
       <div className="lp-header-inner">
-        <a href="/#top" className="lp-logo" aria-label="AI-VHRS FR3">
-          <span className="lp-logo-mark" aria-hidden="true" />
-          <span>AI-VHRS</span>
+        <a href="/#top" className="lp-logo" aria-label="AI-VHRS">
+          <BrandLogo />
         </a>
         <nav className="lp-nav" aria-label={t('nav.features')}>
           <a href="/#showcase" className="lp-nav-lead">
@@ -34,7 +34,7 @@ export default function Header() {
               </svg>
             </button>
             <ThemeToggle className="lp-icon-btn" />
-            <LanguageToggle className="lp-icon-btn" />
+            <LanguageToggle />
             <AccountButton buttonClassName="lp-icon-btn" avatarClassName="vh-avatar" />
           </div>
           <a href={ORDER_HREF} className="lp-start-btn">

@@ -4,8 +4,11 @@ import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
-import { phaseOf, useNow } from '../../pages/tech/phase'
-import { signOut, useAllStaffOrders, useUser } from '../../store/store'
+
+import { listTechJobs } from '../../services/technician'
+
+import { signOut, useUser } from '../../store/store'
+import ChatDock from '../ui/ChatDock'
 import LanguageToggle from '../ui/LanguageToggle'
 import SkipLink from '../ui/SkipLink'
 import './ws.css'
@@ -24,23 +27,25 @@ interface Item {
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'
 
-/** Counts that wait for this person, from the API for the workshop and from the local store for technicians. */
-function useCounts(area: Area, techId?: string) {
-  const orders = useAllStaffOrders()
-  const now = useNow(1000)
+
+/** Counts that wait for this person, all from the API: the workshop queues, or a technician's written jobs. */
+function useCounts(area: Area) {
   const api = useAsync(
-    async () => (area === 'tech' || area === 'admin'
+    async () => (area === 'admin'
       ? null
-      : {
-        intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
-        approvals: area === 'manager' ? (await pendingApprovals()).total : 0,
-        schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
-      }),
+      : area === 'tech'
+        ? { intake: 0, approvals: 0, schedule: 0, qc: (await listTechJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
+        : {
+          intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
+          approvals: area === 'manager' ? (await pendingApprovals()).total : 0,
+          schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
+          qc: 0,
+        }),
     [area],
-    area === 'tech' || area === 'admin' ? undefined : 60000,
+    area === 'admin' ? undefined : 60000,
   )
-  const qc = orders.filter((o) => o.assignment?.techId === techId && phaseOf(o, now) === 'qc').length
-  return { ...(api.data ?? { intake: 0, approvals: 0, schedule: 0 }), qc }
+  return api.data ?? { intake: 0, approvals: 0, schedule: 0, qc: 0 }
+
 }
 
 /**
@@ -59,7 +64,9 @@ export default function Shell({
 }) {
   const t = useT()
   const user = useUser()
-  const c = useCounts(area, user?.techId)
+
+  const c = useCounts(area)
+
   const icon = (I: typeof SquaresFour) => <I size={22} weight="regular" aria-hidden />
 
   const items: (Item | 'gap')[] =
@@ -93,7 +100,7 @@ export default function Shell({
   const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
 
   return (
-    <div className="ws">
+    <div className={area === 'tech' ? 'ws ws-tech' : 'ws'}>
       <SkipLink />
       <div className="app2">
         <div className="rail-col">
@@ -131,13 +138,14 @@ export default function Shell({
             </div>
             <div className="tools">
               {tools}
-              <LanguageToggle className="ibtn" />
+              <LanguageToggle />
               <div className="me2"><span className="avatar">{initials(name)}</span><div>{name}<small>{role}</small></div></div>
             </div>
           </header>
           {children}
         </main>
       </div>
+      {(area === 'staff' || area === 'manager') && <ChatDock side="workshop" />}
     </div>
   )
 }

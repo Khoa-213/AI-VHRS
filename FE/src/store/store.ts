@@ -1,12 +1,12 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import type { Order, Profile, OrderStatus, QcReport, User } from '../types'
+import type { Order, Profile, OrderStatus, User } from '../types'
 import { getTokens, onSessionExpired } from '../services/api'
 import { apiGoogleLogin, apiLogin, apiLogout, apiMe, apiUpdateMe } from '../services/auth'
 
 /**
  * App state in small subscribable stores. The signed-in user comes from the
  * backend (services/auth.ts); the customer's orders come from the API
- * (services/orders.ts). The orders kept here are the staff and technician screens' own, until those are wired in.
+ * (services/orders.ts). The orders kept here belong to legacy prototype modules; active workshop and technician routes use API services.
  */
 
 const KEYS = {
@@ -202,24 +202,6 @@ export function startSession() {
 
 export function updateOrder(id: string, patch: Partial<Order>) {
   ordersStore.set(ordersStore.get().map((o) => (o.id === id ? { ...o, ...patch } : o)))
-}
-
-/** Technician presses Start on the robot. */
-export function startRobotRun(id: string, robotId: string, seconds = 45) {
-  updateOrder(id, { run: { robotId, startedAt: Date.now(), seconds } })
-}
-
-/** QC passed: the order is Written and the customer gets the photos. */
-export function submitQc(id: string, qc: QcReport) {
-  updateOrder(id, { status: 'Written', qc, run: undefined, qcFail: undefined })
-}
-
-/** QC failed: back to the robot queue to be rescheduled. */
-export function failQc(id: string, reasons: string[], note: string) {
-  updateOrder(id, {
-    status: 'Queued', run: undefined, qc: undefined,
-    qcFail: { reasons, note, at: new Date().toISOString() },
-  })
 }
 
 export function saveStaffOrder(order: Order) {

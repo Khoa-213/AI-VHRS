@@ -3,6 +3,8 @@ import { Eye, EyeSlash, LockKey, X } from '@phosphor-icons/react'
 import { useT } from '../../i18n'
 import { authErrorKey } from '../../services/api'
 import { apiRequestReset } from '../../services/auth'
+import { navigate } from '../../router/router'
+import { closeAuth } from '../../store/authDialog'
 import { GOOGLE_CLIENT_ID } from '../../services/google'
 import { signInWithGoogle, signInWithPassword, useSessionExpired, useUser } from '../../store/store'
 import GoogleButton from '../../components/ui/GoogleButton'
@@ -38,8 +40,9 @@ export default function SignInPanel({ onSuccess: finish, onClose, initialMode = 
     try {
       if (reset) {
         await apiRequestReset(email.trim())
-        setNotice(t('reset.sent', { email: email.trim() }))
-        setReset(false)
+        // The email carries a code: continue on the page where it is entered with the new password.
+        closeAuth()
+        navigate(`/reset-password?email=${encodeURIComponent(email.trim())}`)
       } else finish(await signInWithPassword(email, password))
     } catch (err) {
       setError(t(authErrorKey(err)))

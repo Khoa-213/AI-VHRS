@@ -1,7 +1,4 @@
 import { API_BASE, ApiError, api } from './api'
-import {
-  MOCK_ORDER_ID, isMockOrder, isMockPayment, mockApprove, mockCancel, mockCheckoutResult, mockDecidePrivacy, mockOrder, mockPayments, mockPolicy,
-  mockQuotation, mockStartDeposit } from './mockOrder'
 
 /**
  * Customer side of the order API: catalog, estimate, draft editing, submit,
@@ -46,7 +43,7 @@ export type ProductionStatus =
 
 export type InputKind = 'ORIGINAL_IMAGE' | 'HANDWRITING_SAMPLE' | 'TEXT_CONTENT' | 'CANVAS'
 export type Alignment = 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY'
-export type Gateway = 'VNPAY' | 'MOMO'
+export type Gateway = 'VNPAY' | 'MOMO' | 'PAYOS'
 
 /** Statuses in which the customer can still change the order. */
 export const EDITABLE: OrderStatus[] = ['DRAFT', 'NEED_INFO']
@@ -271,13 +268,7 @@ export async function listOrders(opts: { status?: OrderStatus | OrderStatus[]; p
   return { items: r.items.map(toOrder), total: r.total, page: r.page, pageSize: r.page_size }
 }
 
-export const getOrder = async (id: number): Promise<Order> => {
-  const real = id === MOCK_ORDER_ID ? undefined : toOrder(await api<RawOrder>(`/orders/${id}`))
-  return isMockOrder(id) ? mockOrder(id, real) : real!
-}
-
-/** Dev mock: change the local state, then read the order back with it laid over. */
-const mocked = async (id: number, change: () => void): Promise<Order> => { change(); return getOrder(id) }
+export const getOrder = async (id: number): Promise<Order> => toOrder(await api<RawOrder>(`/orders/${id}`))
 
 export const createOrder = async (type: OrderType, quantity = 1): Promise<Order> =>
   toOrder(await api<RawOrder>('/orders', { method: 'POST', body: { order_type: type, quantity } }))
@@ -346,7 +337,7 @@ export const provideInfo = async (id: number): Promise<Order> =>
   toOrder(await api<RawOrder>(`/orders/${id}/provide-info`, { method: 'POST', body: { terms_accepted: true } }))
 
 export const cancelOrder = async (id: number, reason: string): Promise<Order> =>
-  isMockOrder(id) ? mocked(id, () => mockCancel(id)) : toOrder(await api<RawOrder>(`/orders/${id}/cancel`, { method: 'POST', body: { reason } }))
+  toOrder(await api<RawOrder>(`/orders/${id}/cancel`, { method: 'POST', body: { reason } }))
 
 // ---------- privacy and quotation ----------
 
@@ -356,11 +347,10 @@ export interface PrivacyPolicy {
   body: string
 }
 
-export const getPrivacyPolicy = (forOrder?: number) =>
-  forOrder !== undefined && isMockOrder(forOrder) ? Promise.resolve(mockPolicy()) : api<PrivacyPolicy>('/privacy-policy', { auth: false })
+export const getPrivacyPolicy = () => api<PrivacyPolicy>('/privacy-policy', { auth: false })
 
 export const decidePrivacy = async (id: number, accept: boolean): Promise<Order> =>
-  isMockOrder(id) ? mocked(id, () => mockDecidePrivacy(id, accept)) : toOrder(await api<RawOrder>(`/orders/${id}/privacy`, { method: 'POST', body: { accept } }))
+  toOrder(await api<RawOrder>(`/orders/${id}/privacy`, { method: 'POST', body: { accept } }))
 
 export interface QuotationLine {
   option: number
@@ -416,7 +406,6 @@ interface RawQuotation {
 }
 
 export async function getQuotation(id: number): Promise<Quotation> {
-  if (isMockOrder(id)) return mockQuotation(id)
   const q = await api<RawQuotation>(`/orders/${id}/quotation`)
   return {
     id: q.id, version: q.version, status: q.status,
@@ -437,47 +426,115 @@ export const requestChanges = async (id: number, note: string): Promise<void> =>
 }
 
 export const approveQuotation = async (id: number, body: { option?: number; deposit_pct?: number }): Promise<Order> =>
-  isMockOrder(id) ? mocked(id, () => mockApprove(id, body.deposit_pct)) : toOrder(await api<RawOrder>(`/orders/${id}/quotation/approve`, { method: 'POST', body }))
+  toOrder(await api<RawOrder>(`/orders/${id}/quotation/approve`, { method: 'POST', body }))
 
-// ---------- deposit (mock gateway) ----------
+// ---------- deposit ----------
+
+/** `MOCK` moves no money; `SANDBOX` is the gateway's test environment; `LIVE` is real money. */
+export type PayMode = 'MOCK' | 'SANDBOX' | 'LIVE'
+
+export interface GatewayInfo {
+  gateway: Gateway
+  mode: PayMode
+  enabled: boolean
+}
+
+/** payOS: who receives the transfer and what it must say. */
+export interface BankTransfer {
+  bin: string | null
+  accountNumber: string | null
+  accountName: string | null
+  amount: number
+  content: string | null
+}
 
 export interface Payment {
   id: number
+  type: string
   amount: number
   status: string
   gateway: Gateway
-  /** `MOCK` until a real gateway is connected: no money moves. */
-  mode: string
+  mode: PayMode
+  /** Money landed on a cancelled payment or with the wrong amount: the workshop has to refund it. */
   needsRefund: boolean
   createdAt: string
+  /** SANDBOX / LIVE, while PENDING: the gateway's page the customer is sent to. */
+  payUrl: string | null
+  payUrlExpiresAt: string | null
+  /** payOS, while PENDING: the bank details of the VietQR transfer. */
+  bank: BankTransfer | null
 }
 
 export interface RawPayment {
-  id: number; amount: string; status: string; gateway: Gateway; mode?: string
-  needs_refund?: boolean; created_at: string
+  id: number; type?: string; amount: string; status: string; gateway: Gateway; mode?: string
+  needs_refund?: boolean; created_at: string; pay_url?: string | null; pay_url_expires_at?: string | null
+  bank?: { bin: string | null; account_number: string | null; account_name: string | null; amount: number | string; content: string | null } | null
 }
 
 export const toPayment = (p: RawPayment): Payment => ({
-  id: p.id, amount: num(p.amount) ?? 0, status: p.status, gateway: p.gateway, mode: p.mode ?? 'MOCK',
-  needsRefund: !!p.needs_refund, createdAt: p.created_at,
+  id: p.id, type: p.type ?? 'DEPOSIT', amount: num(p.amount) ?? 0, status: p.status, gateway: p.gateway,
+  mode: (p.mode ?? 'MOCK') as PayMode, needsRefund: !!p.needs_refund, createdAt: p.created_at,
+  payUrl: p.pay_url ?? null, payUrlExpiresAt: p.pay_url_expires_at ?? null,
+  bank: p.bank ? {
+    bin: p.bank.bin, accountNumber: p.bank.account_number, accountName: p.bank.account_name,
+    amount: num(p.bank.amount) ?? 0, content: p.bank.content,
+  } : null,
 })
 
+/** Gateways the server can take right now; only `enabled` ones are offered. */
+export const getGateways = () => api<GatewayInfo[]>('/payments/gateways')
+
+/** Asks the gateway itself about a PENDING payment when its webhook is late. Not for MOCK payments. */
+export const refreshPayment = (paymentId: number) =>
+  api<{ result: string; status: string; order_status: OrderStatus | null }>(`/payments/${paymentId}/refresh`, { method: 'POST' })
+
 export const startDeposit = async (id: number, gateway: Gateway): Promise<Payment> =>
-  isMockOrder(id) ? mockStartDeposit(id, gateway) : toPayment(await api<RawPayment>(`/orders/${id}/payments/deposit`, { method: 'POST', body: { gateway } }))
+  toPayment(await api<RawPayment>(`/orders/${id}/payments/deposit`, { method: 'POST', body: { gateway } }))
 
 export const mockCheckout = (paymentId: number, result: 'SUCCESS' | 'FAILED') =>
-  isMockPayment(paymentId)
-    ? Promise.resolve(mockCheckoutResult(paymentId, result))
-    : api<{ result: string; status: string; order_status: OrderStatus }>(`/payments/${paymentId}/mock-checkout`, {
-      method: 'POST',
-      body: { result },
-    })
+  api<{ result: string; status: string; order_status: OrderStatus }>(`/payments/${paymentId}/mock-checkout`, {
+    method: 'POST',
+    body: { result },
+  })
 
 export const listPayments = async (id: number): Promise<Payment[]> => {
-  if (isMockOrder(id)) return mockPayments(id)
   const r = await api<RawPayment[] | { items: RawPayment[] }>(`/orders/${id}/payments`)
   return (Array.isArray(r) ? r : r.items).map(toPayment)
 }
+
+// ---------- product photos and acceptance ----------
+
+export type PhotoKind = 'OVERALL' | 'CLOSE_UP' | 'OTHER'
+export type RewriteReason = 'WORKSHOP_ERROR' | 'DIFFERS_FROM_SKETCH'
+
+/** Statuses in which the written product has photos the customer can see. */
+export const HAS_PRODUCT_PHOTOS: OrderStatus[] = ['AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED']
+
+export interface ProductPhotos {
+  /** QC-passed photos of the latest writing, through signed links that last 30 minutes. */
+  photos: { id: number; kind: PhotoKind; url: string | null }[]
+  sketchUrl: string | null
+  acceptanceDueAt: string | null
+  canAccept: boolean
+  canRewrite: boolean
+}
+
+export async function getProductPhotos(id: number): Promise<ProductPhotos> {
+  const r = await api<{
+    photos: { id: number; kind: PhotoKind; url: string | null }[]
+    sketch_preview_url: string | null; acceptance_due_at: string | null; can_accept: boolean; can_request_rewrite: boolean
+  }>(`/orders/${id}/product-photos`)
+  return {
+    photos: r.photos.map((p) => ({ id: p.id, kind: p.kind, url: p.url })),
+    sketchUrl: r.sketch_preview_url, acceptanceDueAt: r.acceptance_due_at, canAccept: r.can_accept, canRewrite: r.can_request_rewrite,
+  }
+}
+
+export const acceptProduct = async (id: number): Promise<Order> =>
+  toOrder(await api<RawOrder>(`/orders/${id}/accept`, { method: 'POST' }))
+
+export const requestRewrite = async (id: number, reason_code: RewriteReason, note: string): Promise<Order> =>
+  toOrder(await api<RawOrder>(`/orders/${id}/rewrite`, { method: 'POST', body: { reason_code, note } }))
 
 // ---------- errors ----------
 
@@ -528,6 +585,10 @@ const ERROR_KEYS: Record<string, string> = {
   NOTE_REQUIRED: 'err.noteRequired',
   DEPOSIT_NOT_EXPECTED: 'err.depositState',
   DEPOSIT_ALREADY_PAID: 'err.depositState',
+  GATEWAY_NOT_CONFIGURED: 'err.gatewayOff',
+  GATEWAY_UNAVAILABLE: 'err.gatewayDown',
+  GATEWAY_REJECTED: 'err.gatewayRejected',
+  NOT_A_MOCK_PAYMENT: 'err.notMock',
   ORDER_CANCEL_UNSUPPORTED: 'err.cancelUnsupported',
   FORBIDDEN: 'err.forbidden',
   NOT_AUTHENTICATED: 'err.notSignedIn',
@@ -574,6 +635,30 @@ const ERROR_KEYS: Record<string, string> = {
   JOB_ALREADY_STARTED: 'err.jobStarted',
   STOCK_NEGATIVE: 'err.stockNegative',
   CODE_TAKEN: 'err.codeTaken',
+  JOB_NOT_FOUND: 'err.jobNotFound',
+  JOB_STATE_CONFLICT: 'err.jobState',
+  JOB_NOT_ACTIVE: 'err.jobState',
+  ORDER_NOT_ACTIVE: 'err.orderNotActive',
+  JOB_NOT_DOWNLOADED: 'err.jobNotDownloaded',
+  CALIBRATION_REQUIRED: 'err.calRequired',
+  SIMULATION_REQUIRED: 'err.simRequired',
+  SIMULATION_FAILED: 'err.simFailed',
+  JOB_HASH_MISMATCH: 'err.hashMismatch',
+  CHECKLIST_INCOMPLETE: 'err.checklist',
+  INVALID_PROBE_POINTS: 'err.probes',
+  PROGRESS_REQUIRED: 'err.progress',
+  PHOTO_REQUIREMENTS_NOT_MET: 'err.photoReqs',
+  INVALID_PHOTO: 'err.photoInvalid',
+  INVALID_PHOTO_KEY: 'err.photoInvalid',
+  PHOTO_TOO_SMALL: 'err.photoSmall',
+  TOO_MANY_PHOTOS: 'err.photoMany',
+  QC_NOTE_REQUIRED: 'err.qcNote',
+  PHOTO_REMOVED: 'err.photoRemoved',
+  PHOTO_NOT_FOUND: 'err.photoGone',
+  REWRITE_LIMIT_REACHED: 'err.rewriteLimit',
+  ACCEPTANCE_CLOSED: 'err.acceptanceClosed',
+  DOWNLOAD_FAILED: 'err.downloadFailed',
+  FILE_MISSING: 'err.fileMissing',
 }
 
 /**

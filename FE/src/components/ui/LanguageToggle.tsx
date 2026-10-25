@@ -3,8 +3,11 @@ import { useEffect, useRef, useState } from 'react'
 import { LANGS, setLang, useLang, useT } from '../../i18n'
 import './language.css'
 
-/** Icon button next to the theme toggle. Opens a small menu with the three languages. */
-export default function LanguageToggle({ className }: { className: string }) {
+/**
+ * Next to the theme toggle. Opens a small menu with the three languages. It carries its own look (`language.css`) so it is
+ * the same button in every header.
+ */
+export default function LanguageToggle() {
   const lang = useLang()
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -37,7 +40,7 @@ export default function LanguageToggle({ className }: { className: string }) {
       <button
         ref={trigger}
         type="button"
-        className={`${className} lang-btn`}
+        className="lang-btn"
         aria-label={`${t('lang.label')}: ${current.name}`}
         aria-haspopup="menu"
         aria-expanded={open}

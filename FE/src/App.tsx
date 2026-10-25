@@ -15,13 +15,17 @@ import Workbench from './pages/staff/Workbench'
 import ManagerDashboard from './pages/staff/ManagerDashboard'
 import StaffDashboard from './pages/staff/StaffDashboard'
 import TechDashboard from './pages/tech/TechDashboard'
+import TechJobDetail from './pages/tech/JobDetail'
 import PreviewOrders from './pages/tech/PreviewOrders'
-import QualityCheck from './pages/tech/QualityCheck'
-import RobotPreview from './pages/tech/RobotPreview'
+
+
 import RequireStaff from './pages/staff/RequireStaff'
+import ChatDock from './components/ui/ChatDock'
 import Deposit from './pages/order/Deposit'
 import OrderReview from './pages/order/OrderReview'
 import PrivacyPreview from './pages/order/PrivacyPreview'
+import PaymentResult from './pages/order/PaymentResult'
+import ResetPassword from './pages/login/ResetPassword'
 import { matchOrderRoute, navigate, useInterceptLinks, usePath } from './router/router'
 import { useEffect } from 'react'
 import { useUser } from './store/store'
@@ -32,7 +36,7 @@ import { useUser } from './store/store'
  */
 function homeFor(role: string | undefined, path: string): string | null {
   const own = role === 'staff' ? '/staff' : role === 'technician' ? '/tech' : role === 'admin' ? '/admin' : null
-  if (own) return path === own || path.startsWith(own + '/') || /^\/(account|login)(\/|$)/.test(path) ? null : own
+  if (own) return path === own || path.startsWith(own + '/') || /^\/(account|login|reset-password)(\/|$)/.test(path) ? null : own
   if (role === 'customer' && /^\/(staff|tech|admin)(\/|$)/.test(path)) return '/'
   return null
 }
@@ -93,25 +97,16 @@ function Routes() {
   if (path === '/admin/audit') return <RequireStaff role="admin"><AuditLog /></RequireStaff>
 
   if (path === '/tech') return <RequireStaff role="technician"><TechDashboard /></RequireStaff>
+  // /tech/preview/:id and /tech/qc/:id are aliases of the job screen.
+  const techJob = /^\/tech\/(?:jobs|preview|qc)\/(\d+)\/?$/.exec(path)
+  if (techJob) return <RequireStaff role="technician"><TechJobDetail key={techJob[1]} id={Number(techJob[1])} /></RequireStaff>
   if (path === '/tech/preview') return <RequireStaff role="technician"><PreviewOrders mode="preview" /></RequireStaff>
   if (path === '/tech/qc') return <RequireStaff role="technician"><PreviewOrders mode="qc" /></RequireStaff>
-  const qc = /^\/tech\/qc\/([^/]+)\/?$/.exec(path)
-  if (qc) {
-    return (
-      <RequireStaff role="technician">
-        <QualityCheck key={qc[1]} id={decodeURIComponent(qc[1])} />
-      </RequireStaff>
-    )
-  }
-  const preview = /^\/tech\/preview\/([^/]+)\/?$/.exec(path)
-  if (preview) {
-    return (
-      <RequireStaff role="technician">
-        <RobotPreview key={preview[1]} id={decodeURIComponent(preview[1])} />
-      </RequireStaff>
-    )
-  }
   if (import.meta.env.DEV && path === '/dev/privacy') return <PrivacyPreview />
+  // VNPay, MoMo and payOS bring the customer back here after paying (PAYMENT_RETURN_URL on the backend).
+  if (path === '/payment/result') return <PaymentResult />
+  // The password-reset email links here (FRONTEND_BASE_URL on the backend).
+  if (path === '/reset-password') return <ResetPassword />
   const review = matchOrderRoute(path, 'review')
   if (review) return <OrderReview key={review} id={review} />
   const deposit = matchOrderRoute(path, 'deposit')
@@ -123,5 +118,5 @@ function Routes() {
 export default function App() {
   useInterceptLinks()
   const auth = useAuthDialog()
-  return <><Routes />{auth && <SignInDialog initialMode={auth.mode} next={auth.next} onClose={closeAuth} />}</>
+  return <><Routes /><ChatDock />{auth && <SignInDialog initialMode={auth.mode} next={auth.next} onClose={closeAuth} />}</>
 }
