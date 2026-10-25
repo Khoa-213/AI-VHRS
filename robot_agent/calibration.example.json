@@ -1,0 +1,29 @@
+{
+  "_help": "Copy to calibration.json (same folder) and replace every <...>. Keys starting with _ are notes and are not sent. Units: mm, N, mm/s, mm/s2. Robot base frame.",
+  "checklist": {"frame_mounted": true, "paper_clamped": true, "pen_installed": true, "force_zeroed": true},
+  "_checklist_note": "Set each to true ONLY when it is really done. force_zeroed: the plain gripper has no force sensor; confirm the pen is installed and lifted.",
+  "force_zero_offset": 0.0,
+  "probe_points": [
+    {"x": "<P0 x: góc trên-trái của tờ giấy, đầu bút chạm nhẹ>", "y": "<P0 y>", "z": "<P0 z>"},
+    {"x": "<P1 x: góc trên-phải>", "y": "<P1 y>", "z": "<P1 z>"},
+    {"x": "<P2 x: góc dưới-trái>", "y": "<P2 y>", "z": "<P2 z>"}
+  ],
+  "_probe_note": "Read the pen-tip position (x, y, z in mm, base frame) from the robot web page / pendant after touching each corner lightly. P0,P1,P2 must not be on one line.",
+  "frame_transform": {
+    "schema": "vhrs-motion/1",
+    "motion": {
+      "a_lat_mm_s2": "<chọn, nhỏ: gia tốc ngang tối đa>",
+      "a_tan_mm_s2": "<chọn, nhỏ: gia tốc dọc tối đa>",
+      "travel_speed_mm_s": "<chọn: tốc độ di chuyển khi nhấc bút>",
+      "approach_speed_mm_s": "<chọn: tốc độ hạ/nhấc bút>",
+      "pen_up_clearance_mm": "<chọn: độ cao đầu bút khi nhấc, vài chục mm cho lần đầu>",
+      "spring_k_n_per_mm": "<ĐO: độ cứng lò xo = lực / độ nén>",
+      "max_spring_travel_mm": "<ĐO: hành trình nén tối đa của gripper>"
+    },
+    "workspace": {
+      "box_min_mm": ["<x min>", "<y min>", "<z min>"],
+      "box_max_mm": ["<x max>", "<y max>", "<z max>"],
+      "edge_margin_mm": "<chọn: lề cấm trong mép giấy, ví dụ vài mm>"
+    }
+  }
+}

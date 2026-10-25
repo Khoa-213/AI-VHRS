@@ -17,7 +17,7 @@ from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit
-from app.services.stroke_ai import engine, trajectory as tj
+from app.services.stroke_ai import engine, render_image, trajectory as tj
 from app.services.workshop_access import WorkshopAccess
 
 DEFAULT_V_MAX = 30.0   # mm/s, used when the order has no pen yet ("để xưởng đề xuất")
@@ -58,15 +58,25 @@ class SketchService:
         store = self._storage()
         version = self.sketches.next_version(order.id)
         base = f"orders/{order.id}/sketches/v{version}"
+        paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
+        ink = self.catalog.ink(order.ink_color_id) if order.ink_color_id else None
+        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        image_paths: list[str] = []
         for i, page in enumerate(pages, start=1):
             page.preview_path = f"{base}/preview_p{i}.png"
             store.write(page.preview_path, tj.render_preview(page), "image/png")
+            img = render_image.render_jpeg(
+                page, ink_hex=ink.hex_code if ink else None,
+                stroke_width_mm=float(pen.stroke_width_mm) if pen and pen.stroke_width_mm else None,
+                paper_surface=paper.surface if paper else None)
+            image_paths.append(f"{base}/sketch_p{i}.jpg")
+            store.write(image_paths[-1], img, "image/jpeg")
         raw = tj.dumps(tj.to_dict(pages, eng))
         path = f"{base}/trajectory.json"
         store.write(path, raw, "application/json")
         row = self.sketches.add(Sketch(
             order_id=order.id, version=version, created_by=self.actor.id, trajectory_uri=path,
-            preview_url=pages[0].preview_path, similarity_score=similarity,
+            preview_url=pages[0].preview_path, image_urls=image_paths, similarity_score=similarity,
             suggested_complexity=ComplexityLevel(complexity) if complexity else None,
             estimated_writing_sec=metrics.estimated_writing_sec, total_stroke_mm=metrics.total_stroke_mm,
             pen_lift_count=metrics.pen_lift_count, approach_note=(note or None), content_hash=tj.content_hash(raw)))
@@ -115,7 +125,7 @@ class SketchService:
                 font_size_mm=float(first.font_size_mm) if first and first.font_size_mm else None,
                 alignment=first.alignment if first else None, paper_size=size,
                 seed=seed if seed is not None else order.id, v_max_mm_s=v_max, pen_category=category,
-                chars=order.char_count or 0)
+                chars=order.char_count or 0, font_loader=store.read)
         row = self._persist(order, gen.pages, gen.engine, gen.metrics, gen.similarity, gen.complexity, approach_note)
         return row, gen.warnings
 
@@ -148,6 +158,17 @@ class SketchService:
             return []
         paths = [p.get("preview_path") for p in json.loads(raw).get("pages", []) if p.get("preview_path")]
         return [self.storage.create_download_url(p, 600) for p in paths]
+
+    def image_urls(self, row: Sketch) -> list[str]:
+        """Signed links of the customer-facing JPEGs (older sketches without one fall back to the PNG previews)."""
+        if self.storage is None:
+            return []
+        if row.image_urls:
+            return [self.storage.create_download_url(p, 600) for p in row.image_urls]
+        return self.preview_urls(row)
+
+    def trajectory_url(self, row: Sketch) -> str | None:
+        return self.storage.create_download_url(row.trajectory_uri, 600) if self.storage else None
 
     def detail(self, order_id: int, version: int) -> tuple[Sketch, dict[str, Any], list[str]]:
         order = self.access.order(order_id)

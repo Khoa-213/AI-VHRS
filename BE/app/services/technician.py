@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db.session import set_actor
 from app.domain import job_rules as jr
@@ -32,6 +33,8 @@ from app.repositories.ops import CalibrationRepository, EventRepository, Inciden
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit, notifications
+from app.services.motion import plan as motion_plan
+from app.services.motion import validate as motion_validate
 from app.services.stroke_ai import trajectory as tj
 
 PACKAGE_URL_TTL = 1800                      # seconds a signed trajectory link stays valid
@@ -257,12 +260,52 @@ class TechnicianJobService:
             jr.check_simulation(passed, errors)
         except jr.JobRuleError as exc:
             raise _rule_error(exc) from exc
+        server = self._server_validation(job, order, cal)
+        if server is not None and not server["passed"]:       # the server does not take the client's word for it
+            passed, errors = False, errors + [f"SERVER {t}" for t in server["error_texts"]]
         job.simulation_passed = passed
         job.simulation_report = {"errors": errors, "report": report, "calibration_id": cal.id,
-                                 "reported_at": _now().isoformat()}
-        self._event(job, JobEventType.SIMULATED, payload={"passed": passed, "errors": len(errors)})
+                                 "reported_at": _now().isoformat(),
+                                 "server_validation": server if server is not None else {"status": "NOT_RUN"}}
+        self._event(job, JobEventType.SIMULATED, payload={"passed": passed, "errors": len(errors),
+                                                          "server_validation": (server or {}).get("status", "NOT_RUN")})
         self.session.flush()
         return job
+
+    def _server_validation(self, job: ProductionJob, order: Order, cal: Calibration) -> dict[str, Any] | None:
+        """Deterministic re-validation of the trajectory against the calibration (Service F). None = not run.
+
+        Runs when the calibration carries the measured motion block; with MOTION_VALIDATION_REQUIRED it must."""
+        block = cal.frame_transform if isinstance(cal.frame_transform, dict) else {}
+        required = get_settings().motion_validation_required
+        if block.get("schema") != "vhrs-motion/1":
+            if not required:
+                return None
+            return {"status": "FAIL", "passed": False, "error_texts": ["MOTION_BLOCK_MISSING: hiệu chuẩn chưa có khối "
+                    "thông số chuyển động (frame_transform.schema = vhrs-motion/1)"], "errors": []}
+        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        raw_cfg = dict(block.get("motion") or {})
+        if pen is not None:                                    # the pen profile in the database is authoritative
+            raw_cfg["f_target_n"], raw_cfg["v_max_mm_s"] = float(pen.f_target_n), float(pen.v_max_mm_s)
+        try:
+            cfg = motion_plan.MotionConfig.from_dict(raw_cfg)
+            ws = motion_validate.Workspace.from_dict(block.get("workspace"))
+        except (TypeError, ValueError):
+            return {"status": "FAIL", "passed": False, "errors": [],
+                    "error_texts": ["INVALID_CONFIG: khối thông số chuyển động không đọc được"]}
+        try:
+            uri = job.package_uri or self.sketches.get_by_id(job.sketch_id).trajectory_uri
+            raw = self._storage().read(uri)
+            pages = tj.parse(json.loads(raw)) if raw is not None else None
+        except (AppError, ValueError, AttributeError):
+            pages = None
+        if pages is None:
+            return {"status": "FAIL", "passed": False, "errors": [],
+                    "error_texts": ["PACKAGE_UNREADABLE: không đọc được quỹ đạo để kiểm tra"]}
+        rep, _ = motion_validate.validate(pages, cal.probe_points, cfg, ws, require_box=True)
+        out = rep.as_dict()
+        out.update({"status": "PASS" if rep.passed else "FAIL", "error_texts": rep.error_texts()})
+        return out
 
     # ------------------------------------------------------------------ UC-35: start writing
     def start(self, job_id: int) -> ProductionJob:

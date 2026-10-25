@@ -67,9 +67,12 @@ def _row(order: Order, customer_name: str) -> WorkshopOrderRow:
     return out
 
 
-def sketch_out(row: Sketch, previews: list[str] | None = None, warnings: list[str] | None = None) -> SketchOut:
+def sketch_out(row: Sketch, previews: list[str] | None = None, warnings: list[str] | None = None,
+               svc: SketchService | None = None) -> SketchOut:
     out = SketchOut.model_validate(row)
     out.preview_urls, out.warnings = previews or [], warnings or []
+    if svc is not None:
+        out.image_urls, out.trajectory_url = svc.image_urls(row), svc.trajectory_url(row)
     return out
 
 
@@ -139,7 +142,7 @@ def request_info(order_id: int, body: RequestInfoIn, svc: Orders) -> WorkshopOrd
              responses={422: {"description": "AI_TYPE_UNSUPPORTED (OT-2), UNSUPPORTED_CHARS, NO_STROKES_FOUND, ..."}})
 def generate_sketch(order_id: int, body: SketchGenerateIn, svc: Sketches) -> SketchOut:
     row, warnings = svc.generate(order_id, paper_size=body.paper_size, approach_note=body.approach_note, seed=body.seed)
-    return sketch_out(row, svc.preview_urls(row), warnings)
+    return sketch_out(row, svc.preview_urls(row), warnings, svc)
 
 
 @router.post("/orders/{order_id}/sketches", dependencies=STAFF_ONLY, response_model=SketchOut, status_code=status.HTTP_201_CREATED,
@@ -147,32 +150,32 @@ def generate_sketch(order_id: int, body: SketchGenerateIn, svc: Sketches) -> Ske
 def create_manual_sketch(order_id: int, body: SketchManualIn, svc: Sketches) -> SketchOut:
     row = svc.create_manual(order_id, body.trajectory, body.approach_note,
                             body.suggested_complexity.value if body.suggested_complexity else None)
-    return sketch_out(row, svc.preview_urls(row))
+    return sketch_out(row, svc.preview_urls(row), None, svc)
 
 
 @router.get("/orders/{order_id}/sketches", response_model=list[SketchOut], summary="Các phiên bản phác thảo")
 def list_sketches(order_id: int, svc: Sketches) -> list[SketchOut]:
-    return [sketch_out(r) for r in svc.list(order_id)]
+    return [sketch_out(r, svc=svc) for r in svc.list(order_id)]
 
 
 @router.get("/orders/{order_id}/sketches/{version}", response_model=SketchDetailOut,
             summary="Một phiên bản: quỹ đạo đầy đủ + liên kết ảnh xem trước từng trang")
 def get_sketch(order_id: int, version: int, svc: Sketches) -> SketchDetailOut:
     row, data, previews = svc.detail(order_id, version)
-    out = SketchDetailOut.model_validate({**sketch_out(row, previews).model_dump(), "trajectory": data})
+    out = SketchDetailOut.model_validate({**sketch_out(row, previews, None, svc).model_dump(), "trajectory": data})
     return out
 
 
 @router.patch("/orders/{order_id}/sketches/{version}", dependencies=STAFF_ONLY, response_model=SketchOut,
               summary="Sửa ghi chú cách làm / độ phức tạp đề xuất")
 def patch_sketch(order_id: int, version: int, body: SketchPatchIn, svc: Sketches) -> SketchOut:
-    return sketch_out(svc.patch(order_id, version, body.model_dump(exclude_unset=True)))
+    return sketch_out(svc.patch(order_id, version, body.model_dump(exclude_unset=True)), svc=svc)
 
 
 @router.post("/orders/{order_id}/sketches/{version}/finalize", dependencies=STAFF_ONLY, response_model=SketchOut,
              summary="Chốt phiên bản này là bản gửi khách / dùng sản xuất")
 def finalize_sketch(order_id: int, version: int, svc: Sketches) -> SketchOut:
-    return sketch_out(svc.finalize(order_id, version))
+    return sketch_out(svc.finalize(order_id, version), svc=svc)
 
 
 # ---- quotations -----------------------------------------------------------------------------------

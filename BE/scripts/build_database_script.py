@@ -54,8 +54,9 @@ def dump_schema(url: str) -> str:
         cmd = [binary, *args, url]
     else:                                                                    # the client lives inside the scratch container
         cmd = ["docker", "exec", CONTAINER, "pg_dump", *args, "-U", u.username or "postgres", u.path.lstrip("/") or "postgres"]
-    out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf8", check=True).stdout
     out = re.sub(r"^\\(un)?restrict .*\n", "", out, flags=re.M)               # psql-only guard lines of recent pg_dump releases
+    out = re.sub(r"^SET transaction_timeout = 0;\n", "", out, flags=re.M)      # PostgreSQL 17+ only: the script must run on 15 and 16 too
     return re.sub(r"\n{3,}", "\n\n", out).strip() + "\n"
 
 
@@ -72,6 +73,27 @@ def settings_seed() -> str:
     spec.loader.exec_module(mod)
     stmt = next(s for s in getattr(mod, "STATEMENTS", []) if "INSERT INTO system_settings" in s)
     return stmt.strip() + ";\n"
+
+
+def _sql_str(v: str) -> str:
+    return "'" + v.replace("'", "''") + "'"
+
+
+def alert_catalog_seed() -> str:
+    """The robot alerts (migrations 0008 and 0010): level, plain-Vietnamese sentence, action, who is told, e-mail."""
+    catalog = []
+    for name, file in (("m0008", "0008_robot_ops.py"), ("m0010", "0010_robot_agent_link.py")):    # each migration adds its own rows
+        spec = importlib.util.spec_from_file_location(name, VERSIONS / file)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        catalog += mod.CATALOG
+    rows = []
+    for code, level, title, action, roles, _mail in catalog:
+        arr = "ARRAY[" + ", ".join(_sql_str(r) for r in roles) + "]::text[]"
+        rows.append(f"({_sql_str(code)}, {level}, {_sql_str(title)}, {_sql_str(action)}, {'true' if level == 4 else 'false'}, "
+                    f"{arr}, {'true' if level == 4 else 'false'})")
+    return ("INSERT INTO alert_catalog (code, level, title_vi, action_vi, estop_advised, notify_roles, send_email) VALUES\n  "
+            + ",\n  ".join(rows) + "\nON CONFLICT (code) DO NOTHING;\n")
 
 
 def main() -> int:
@@ -93,7 +115,7 @@ def main() -> int:
 --      baseline schema and every migration up to {head});
 --   2. the `alembic_version` row, so the application's migrations see this database as already at {head};
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
---      the pen types, and the default system settings.
+--      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
 -- privacy policy, which order types are enabled): run that script afterwards for a working demo.
 --
@@ -117,7 +139,9 @@ INSERT INTO alembic_version (version_num) VALUES ('{head}');
 BEGIN;
 {baseline_seed()}
 -- Default system settings (migration 0002)
-{settings_seed()}COMMIT;
+{settings_seed()}
+-- Robot alert catalogue (migration 0008): level 4 = press the physical E-Stop now
+{alert_catalog_seed()}COMMIT;
 
 -- =====================================================================================================================
 -- 4. Supabase only: the REST roles must not reach the tables (the API talks to Postgres directly). Skipped elsewhere.

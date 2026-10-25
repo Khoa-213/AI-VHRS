@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy import (BigInteger, Boolean, Date, DateTime, Enum, FetchedValue, ForeignKey, Integer, Numeric,
                         SmallInteger, String, Text)
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -44,6 +44,7 @@ class Sketch(Base):
     created_by: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     trajectory_uri: Mapped[str] = mapped_column(Text)          # storage object path of the trajectory JSON
     preview_url: Mapped[str | None] = mapped_column(Text)      # storage object path of page 1 preview
+    image_urls: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")  # customer-facing JPEG per page
     similarity_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     suggested_complexity: Mapped[ComplexityLevel | None] = mapped_column(
         Enum(ComplexityLevel, name="complexity_level", create_type=False))

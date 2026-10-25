@@ -180,3 +180,25 @@ docker-compose.override.yml
 *.rar
 .nx/
 .turbo/
+
+# ========================
+# robot_agent (local only)
+# ========================
+robot_agent/vendor/
+robot_agent/runs/
+robot_agent/runs-demo/
+robot_agent/.pytest_cache/
+robot_agent/.simenv/
+
+robot_agent/vendor/
+robot_agent/vhrs_agent/static/vendor/
+
+robot_agent/agent.json
+robot_agent/console.json
+robot_agent/calibration.json
+robot_agent/.console_state.json
+robot_agent/.tech_credentials.dpapi*
+BE/be_stdout.log
+BE/be_stderr.log
+robot_agent/runs/agent_stdout.log
+robot_agent/runs/agent_stderr.log

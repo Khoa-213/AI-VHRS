@@ -143,6 +143,18 @@ def _compose_char(glyphs, ch: str) -> CharGlyph | None:
     return CharGlyph(base=base + ([extra.pop(0)] if bar else []), marks=extra, advance=float(glyph.char_width))
 
 
+class HersheySource:
+    """Public-domain single-line Hershey glyphs (the original source)."""
+
+    def __init__(self, font_name: str):
+        self.glyphs = _glyphs(font_name)
+        self.space_units = float(self.glyphs[" "].char_width) * 0.7
+
+    def char(self, ch: str) -> CharGlyph | None:
+        return _compose_char(self.glyphs, ch)
+
+
+
 @dataclass
 class _Word:
     chars: list[CharGlyph]
@@ -151,7 +163,7 @@ class _Word:
         return sum(c.advance for c in self.chars)
 
 
-def _tokenise(text: str, glyphs) -> list[list[_Word | None]]:
+def _tokenise(text: str, compose) -> list[list[_Word | None]]:
     """Paragraphs -> words. Raises 422 listing the characters the font cannot draw."""
     paragraphs, bad = [], []
     pos = 0
@@ -162,7 +174,7 @@ def _tokenise(text: str, glyphs) -> list[list[_Word | None]]:
                 continue
             chars = []
             for ch in token:
-                g = _compose_char(glyphs, ch)
+                g = compose(ch)
                 if g is None:
                     bad.append({"index": pos, "char": ch})
                 else:
@@ -190,12 +202,12 @@ def _break_long(word: _Word, max_width: float) -> list[_Word]:
     return parts
 
 
-def compose_text(text: str, *, font_name: str, paper_size: str, font_size_mm: float = DEFAULT_FONT_SIZE_MM,
+def compose_text(text: str, *, font_name: str | None = None, paper_size: str, font_size_mm: float = DEFAULT_FONT_SIZE_MM,
                  alignment: str = "LEFT", seed: int = 0, variation: float = 0.015,
-                 margin_mm: float = MARGIN_MM) -> list[Page]:
+                 margin_mm: float = MARGIN_MM, source=None) -> list[Page]:
     """S0-S4: lay the text out on one or more pages of `paper_size` and return the pen strokes."""
     text = _normalise(text)
-    glyphs = _glyphs(font_name)
+    source = source or HersheySource(font_name)
     scale = font_size_mm / CAP_UNITS
     width_mm, height_mm = PAPER_MM[paper_size]
     avail_units = (width_mm - 2 * margin_mm) / scale
@@ -203,11 +215,11 @@ def compose_text(text: str, *, font_name: str, paper_size: str, font_size_mm: fl
     lines_per_page = int((height_mm - 2 * margin_mm) // pitch_mm)
     if avail_units < 30 or lines_per_page < 1:
         raise AppError(422, "FONT_TOO_LARGE", "Cỡ chữ quá lớn so với khổ giấy.")
-    space = float(glyphs[" "].char_width) * 0.7
+    space = source.space_units
 
     # S3 layout: greedy word wrap into lines of (words, is_last_of_paragraph)
     lines: list[tuple[list[_Word], bool]] = []
-    for words in _tokenise(text, glyphs):
+    for words in _tokenise(text, source.char):
         expanded: list[_Word] = []
         for w in words:
             expanded.extend(_break_long(w, avail_units) if w.width() > avail_units else [w])

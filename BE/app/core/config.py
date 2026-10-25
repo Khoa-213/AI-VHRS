@@ -75,6 +75,19 @@ class Settings(BaseSettings):
     ghtk_client_source: str | None = None            # the shop / partner code
     ghtk_base_url: str = "https://services-staging.ghtklab.com"
     # The workshop's pick-up address (GHTK wants names; shown on labels).
+    # ---- e-mail (alerts to staff). Without SMTP_HOST the console mailer only logs. Credentials belong in BE/.env, never in git.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None
+    smtp_starttls: bool = True
+    smtp_timeout_seconds: float = 10.0
+    # ---- robot motion (Phase: FAIRINO FR3 integration) ----------------------------------------------------
+    # When true, a job's simulation result is only accepted if the calibration carries the measured motion block
+    # (`frame_transform.schema == "vhrs-motion/1"`) AND the server's own deterministic validation passes. Turn this on for
+    # any station that drives a real robot. Left off, old clients that only report `passed` keep working.
+    motion_validation_required: bool = False
     workshop_name: str = "Xuong Net Viet"
     workshop_phone: str | None = None
     workshop_address: str | None = None

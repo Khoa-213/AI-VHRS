@@ -1,14 +1,14 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0007 (alembic head), generated 2026-10-22 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0013 (alembic head), generated 2026-10-25 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0007);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0007;
+--      baseline schema and every migration up to 0013);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0013;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
---      the pen types, and the default system settings.
+--      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
 -- privacy policy, which order types are enabled): run that script afterwards for a working demo.
 --
@@ -23,8 +23,8 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 16.15 (Debian 16.15-1.pgdg13+2)
--- Dumped by pg_dump version 16.15 (Debian 16.15-1.pgdg13+2)
+-- Dumped from database version 18.1
+-- Dumped by pg_dump version 18.1
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -429,7 +429,9 @@ CREATE TYPE public.template_kind AS ENUM (
 CREATE FUNCTION public.fn_current_actor() RETURNS bigint
     LANGUAGE sql STABLE
     AS $$
+
   SELECT NULLIF(current_setting('app.current_account_id', true), '')::bigint
+
 $$;
 
 --
@@ -439,111 +441,207 @@ $$;
 CREATE FUNCTION public.fn_order_state_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+
 DECLARE
+
   o_ok boolean := TRUE;
+
   p_ok boolean := TRUE;
+
 BEGIN
+
   IF TG_OP = 'INSERT' THEN
+
     IF NEW.order_status <> 'DRAFT' OR NEW.production_status <> 'NOT_STARTED' THEN
+
       RAISE EXCEPTION 'Đơn mới phải ở DRAFT / NOT_STARTED' USING ERRCODE = 'P0409';
+
     END IF;
+
     RETURN NEW;
+
   END IF;
 
   -- D3: cumulative ETA postponement is derived here, never trusted from the client.
+
   IF NEW.eta IS DISTINCT FROM OLD.eta AND OLD.eta IS NOT NULL AND NEW.eta IS NOT NULL AND NEW.eta > OLD.eta THEN
+
     NEW.eta_postponed_days := OLD.eta_postponed_days + (NEW.eta - OLD.eta);
+
   ELSE
+
     NEW.eta_postponed_days := OLD.eta_postponed_days;
+
   END IF;
 
   IF NEW.order_status IS DISTINCT FROM OLD.order_status THEN
+
     o_ok := CASE OLD.order_status
+
       WHEN 'DRAFT'                  THEN NEW.order_status IN ('SUBMITTED')
+
       WHEN 'SUBMITTED'              THEN NEW.order_status IN ('ACCEPTED','REJECTED','NEED_INFO','CANCELLED')
+
       WHEN 'NEED_INFO'              THEN NEW.order_status IN ('SUBMITTED','CANCELLED')
+
       WHEN 'ACCEPTED'               THEN NEW.order_status IN ('AWAITING_PRIVACY','CANCELLED')
+
                                          OR (NEW.order_status = 'QUOTED' AND NEW.privacy_accepted_at IS NOT NULL)
+
       WHEN 'AWAITING_PRIVACY'       THEN NEW.order_status IN ('QUOTED','CANCELLED')
+
       WHEN 'QUOTED'                 THEN NEW.order_status IN ('AWAITING_DEPOSIT','ACCEPTED','CANCELLED')
+
       WHEN 'AWAITING_DEPOSIT'       THEN NEW.order_status IN ('CONFIRMED','CANCELLED')
+
       WHEN 'CONFIRMED'              THEN NEW.order_status IN ('AWAITING_ACCEPTANCE','CANCELLED')
+
       WHEN 'AWAITING_ACCEPTANCE'    THEN NEW.order_status IN ('AWAITING_FINAL_PAYMENT','CONFIRMED')
+
       WHEN 'AWAITING_FINAL_PAYMENT' THEN NEW.order_status IN ('READY_TO_DELIVER')
+
       WHEN 'READY_TO_DELIVER'       THEN NEW.order_status IN ('DELIVERING','COMPLETED')
+
       WHEN 'DELIVERING'             THEN NEW.order_status IN ('COMPLETED')
+
       ELSE FALSE
+
     END;
+
     IF NOT o_ok THEN
+
       RAISE EXCEPTION 'Chuyển trạng thái đơn không hợp lệ: % -> %', OLD.order_status, NEW.order_status
+
         USING ERRCODE = 'P0409';
+
     END IF;
+
   END IF;
 
   IF NEW.production_status IS DISTINCT FROM OLD.production_status THEN
+
     p_ok := CASE OLD.production_status
+
       WHEN 'NOT_STARTED'      THEN NEW.production_status IN ('PENDING_SCHEDULE')
+
       WHEN 'PENDING_SCHEDULE' THEN NEW.production_status IN ('SCHEDULED')
+
       WHEN 'SCHEDULED'        THEN NEW.production_status IN ('PREPARING','PENDING_SCHEDULE')
+
       WHEN 'PREPARING'        THEN NEW.production_status IN ('WRITING','FAILED')
+
       WHEN 'WRITING'          THEN NEW.production_status IN ('PAUSED','WRITTEN','FAILED')
+
       WHEN 'PAUSED'           THEN NEW.production_status IN ('WRITING','FAILED')
+
       WHEN 'FAILED'           THEN NEW.production_status IN ('PENDING_SCHEDULE')
+
       WHEN 'WRITTEN'          THEN NEW.production_status IN ('PHOTO_UPLOADED','REWRITE_REQUIRED')
+
       WHEN 'PHOTO_UPLOADED'   THEN NEW.production_status IN ('FINISHED','REWRITE_REQUIRED')
+
       WHEN 'REWRITE_REQUIRED' THEN NEW.production_status IN ('PENDING_SCHEDULE')
+
       ELSE FALSE
+
     END;
+
     -- D1: a cancelled order may reset production from ANY state (BR-14 pre-start, BR-16 after start).
+
     IF NOT p_ok AND NEW.order_status = 'CANCELLED' AND NEW.production_status = 'NOT_STARTED' THEN
+
       p_ok := TRUE;
+
     END IF;
+
     IF NOT p_ok THEN
+
       RAISE EXCEPTION 'Chuyển trạng thái sản xuất không hợp lệ: % -> %', OLD.production_status, NEW.production_status
+
         USING ERRCODE = 'P0409';
+
     END IF;
+
   END IF;
 
   -- BR-17 / bảng 2.5.3. D1: a CANCELLED order is exempt from the "production only when CONFIRMED" rule.
+
   IF NEW.order_status <> 'CANCELLED' AND NEW.production_status <> 'NOT_STARTED' AND NEW.order_status NOT IN
+
        ('CONFIRMED','AWAITING_ACCEPTANCE','AWAITING_FINAL_PAYMENT','READY_TO_DELIVER','DELIVERING','COMPLETED') THEN
+
     RAISE EXCEPTION 'Sản xuất chỉ bắt đầu khi đơn CONFIRMED (BR-17)' USING ERRCODE = 'P0409';
+
   END IF;
+
   IF NEW.order_status = 'CONFIRMED' AND OLD.order_status = 'AWAITING_DEPOSIT' AND NEW.production_status <> 'PENDING_SCHEDULE' THEN
+
     RAISE EXCEPTION 'Cọc thành công phải chuyển sản xuất sang PENDING_SCHEDULE' USING ERRCODE = 'P0409';
+
   END IF;
+
   IF NEW.order_status = 'AWAITING_ACCEPTANCE' AND NEW.production_status <> 'PHOTO_UPLOADED' THEN
+
     RAISE EXCEPTION 'Đơn chỉ chờ nghiệm thu khi sản xuất PHOTO_UPLOADED (BR-17)' USING ERRCODE = 'P0409';
+
   END IF;
+
   IF NEW.order_status IN ('AWAITING_FINAL_PAYMENT','READY_TO_DELIVER','DELIVERING','COMPLETED')
+
      AND NEW.production_status <> 'FINISHED' THEN
+
     RAISE EXCEPTION 'Đơn chỉ được thanh toán cuối/giao khi sản xuất FINISHED (BR-17)' USING ERRCODE = 'P0409';
+
   END IF;
+
   IF OLD.order_status = 'AWAITING_ACCEPTANCE' AND NEW.order_status = 'CONFIRMED'
+
      AND NEW.production_status NOT IN ('REWRITE_REQUIRED','PENDING_SCHEDULE') THEN
+
     RAISE EXCEPTION 'Yêu cầu viết lại phải chuyển sản xuất sang REWRITE_REQUIRED' USING ERRCODE = 'P0409';
+
   END IF;
+
   -- BR-14 / BR-16
+
   IF NEW.order_status = 'CANCELLED' AND OLD.order_status = 'CONFIRMED'
+
      AND OLD.production_status IN ('WRITING','PAUSED','WRITTEN','PHOTO_UPLOADED','REWRITE_REQUIRED','FAILED')
+
      AND NEW.eta_postponed_days <= 7 THEN
+
     RAISE EXCEPTION 'Không thể huỷ đơn đã bắt đầu viết (BR-14)' USING ERRCODE = 'P0409';
+
   END IF;
 
   IF NEW.order_status IS DISTINCT FROM OLD.order_status THEN
+
     CASE NEW.order_status
+
       WHEN 'SUBMITTED' THEN NEW.submitted_at := COALESCE(NEW.submitted_at, now());
+
       WHEN 'CONFIRMED' THEN NEW.confirmed_at := COALESCE(NEW.confirmed_at, now());
+
       WHEN 'AWAITING_ACCEPTANCE' THEN NEW.awaiting_acceptance_at := now(); NEW.acceptance_reminded_at := NULL;
+
       WHEN 'COMPLETED' THEN NEW.completed_at := now();
+
       WHEN 'CANCELLED' THEN NEW.cancelled_at := now();
+
       ELSE NULL;
+
     END CASE;
+
   END IF;
+
   IF OLD.order_status = 'DRAFT' AND NEW.order_status = 'DRAFT' THEN
+
     NEW.last_saved_at := now();
+
   END IF;
+
   RETURN NEW;
+
 END $$;
 
 --
@@ -553,31 +651,57 @@ END $$;
 CREATE FUNCTION public.fn_order_status_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+
 DECLARE
+
   v_actor  bigint := fn_current_actor();
+
   v_reason text   := NULLIF(current_setting('app.status_reason', true), '');
+
 BEGIN
+
   IF TG_OP = 'INSERT' THEN
+
     INSERT INTO status_histories (order_id, state_type, from_status, to_status, actor_id)
+
     VALUES (NEW.id, 'ORDER', NULL, NEW.order_status::text, COALESCE(v_actor, NEW.customer_id));
+
     RETURN NEW;
+
   END IF;
+
   IF NEW.order_status IS DISTINCT FROM OLD.order_status THEN
+
     INSERT INTO status_histories (order_id, state_type, from_status, to_status, reason, actor_id)
+
     VALUES (NEW.id, 'ORDER', OLD.order_status::text, NEW.order_status::text, v_reason, v_actor);
+
   END IF;
+
   IF NEW.production_status IS DISTINCT FROM OLD.production_status THEN
+
     INSERT INTO status_histories (order_id, state_type, from_status, to_status, reason, actor_id)
+
     VALUES (NEW.id, 'PRODUCTION', OLD.production_status::text, NEW.production_status::text, v_reason, v_actor);
+
   END IF;
+
   IF NEW.eta IS DISTINCT FROM OLD.eta AND OLD.eta IS NOT NULL THEN
+
     IF v_reason IS NULL THEN
+
       RAISE EXCEPTION 'Dời ETA phải có lý do (BR-16): SET LOCAL app.status_reason' USING ERRCODE = 'P0409';
+
     END IF;
+
     INSERT INTO status_histories (order_id, state_type, old_eta, new_eta, reason, actor_id)
+
     VALUES (NEW.id, 'ETA', OLD.eta, NEW.eta, v_reason, v_actor);
+
   END IF;
+
   RETURN NEW;
+
 END $$;
 
 --
@@ -587,22 +711,39 @@ END $$;
 CREATE FUNCTION public.fn_photo_uploaded_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+
 DECLARE v_job bigint;
+
 BEGIN
+
   IF NEW.production_status = 'PHOTO_UPLOADED' AND OLD.production_status IS DISTINCT FROM 'PHOTO_UPLOADED' THEN
+
     SELECT id INTO v_job FROM production_jobs
+
      WHERE order_id = NEW.id AND status IN ('WRITTEN','PHOTO_UPLOADED')
+
      ORDER BY created_at DESC LIMIT 1;
+
     IF v_job IS NULL
+
        OR (SELECT count(*) FROM product_photos WHERE job_id = v_job AND deleted_at IS NULL) < 2
+
        OR NOT EXISTS (SELECT 1 FROM product_photos WHERE job_id = v_job AND kind = 'OVERALL'  AND deleted_at IS NULL)
+
        OR NOT EXISTS (SELECT 1 FROM product_photos WHERE job_id = v_job AND kind = 'CLOSE_UP' AND deleted_at IS NULL)
+
        OR EXISTS (SELECT 1 FROM product_photos WHERE job_id = v_job AND deleted_at IS NULL
+
                     AND qc_result IS DISTINCT FROM 'PASS') THEN
+
       RAISE EXCEPTION 'Cần ≥ 2 ảnh (toàn cảnh + cận cảnh) và QC đạt trước PHOTO_UPLOADED (BR-21)' USING ERRCODE = 'P0409';
+
     END IF;
+
   END IF;
+
   RETURN NEW;
+
 END $$;
 
 --
@@ -612,13 +753,21 @@ END $$;
 CREATE FUNCTION public.fn_review_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+
 BEGIN
+
   IF NOT EXISTS (SELECT 1 FROM orders o
+
                  WHERE o.id = NEW.order_id AND o.customer_id = NEW.customer_id
+
                    AND o.order_status = 'COMPLETED') THEN
+
     RAISE EXCEPTION 'Chỉ đánh giá được đơn đã hoàn thành của chính mình' USING ERRCODE = 'P0409';
+
   END IF;
+
   RETURN NEW;
+
 END $$;
 
 --
@@ -628,9 +777,13 @@ END $$;
 CREATE FUNCTION public.fn_set_updated_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
+
 BEGIN
+
   NEW.updated_at := now();
+
   RETURN NEW;
+
 END $$;
 
 SET default_tablespace = '';
@@ -683,6 +836,26 @@ CREATE TABLE public.alembic_version (
 );
 
 --
+-- Name: alert_catalog; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alert_catalog (
+    code character varying(40) NOT NULL,
+    level smallint NOT NULL,
+    title_vi text NOT NULL,
+    action_vi text NOT NULL,
+    estop_advised boolean DEFAULT false NOT NULL,
+    notify_roles text[] DEFAULT '{}'::text[] NOT NULL,
+    send_email boolean DEFAULT false NOT NULL,
+    threshold jsonb,
+    is_active boolean DEFAULT true NOT NULL,
+    updated_by bigint,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT alert_catalog_level_check CHECK (((level >= 1) AND (level <= 4))),
+    CONSTRAINT chk_alert_level4_is_estop CHECK (((level = 4) = estop_advised))
+);
+
+--
 -- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -698,7 +871,7 @@ CREATE TABLE public.audit_logs (
     policy_version character varying(20),
     ip_address inet,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_audit_privacy CHECK ((((action)::text <> ALL ((ARRAY['PRIVACY_ACCEPT'::character varying, 'PRIVACY_DECLINE'::character varying])::text[])) OR (policy_version IS NOT NULL)))
+    CONSTRAINT chk_audit_privacy CHECK ((((action)::text <> ALL (ARRAY[('PRIVACY_ACCEPT'::character varying)::text, ('PRIVACY_DECLINE'::character varying)::text])) OR (policy_version IS NOT NULL)))
 );
 
 --
@@ -904,7 +1077,7 @@ CREATE TABLE public.messages (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     kind character varying(20) DEFAULT 'TEXT'::character varying NOT NULL,
     CONSTRAINT chk_message_not_empty CHECK ((((kind)::text = 'ORDER_CARD'::text) OR (body IS NOT NULL) OR (jsonb_array_length(attachments) > 0))),
-    CONSTRAINT chk_messages_kind CHECK (((kind)::text = ANY ((ARRAY['TEXT'::character varying, 'ORDER_CARD'::character varying])::text[])))
+    CONSTRAINT chk_messages_kind CHECK (((kind)::text = ANY (ARRAY[('TEXT'::character varying)::text, ('ORDER_CARD'::character varying)::text])))
 );
 
 --
@@ -980,10 +1153,10 @@ CREATE TABLE public.order_inputs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT chk_input_payload CHECK ((((kind = ANY (ARRAY['ORIGINAL_IMAGE'::public.order_input_kind, 'HANDWRITING_SAMPLE'::public.order_input_kind])) AND ((file_url IS NOT NULL) OR (deleted_at IS NOT NULL))) OR (kind = 'TEXT_CONTENT'::public.order_input_kind) OR ((kind = 'CANVAS'::public.order_input_kind) AND ((canvas_data IS NOT NULL) OR (deleted_at IS NOT NULL))))),
-    CONSTRAINT order_inputs_alignment_check CHECK (((alignment)::text = ANY ((ARRAY['LEFT'::character varying, 'CENTER'::character varying, 'RIGHT'::character varying, 'JUSTIFY'::character varying])::text[]))),
+    CONSTRAINT order_inputs_alignment_check CHECK (((alignment)::text = ANY (ARRAY[('LEFT'::character varying)::text, ('CENTER'::character varying)::text, ('RIGHT'::character varying)::text, ('JUSTIFY'::character varying)::text]))),
     CONSTRAINT order_inputs_file_size_bytes_check CHECK (((file_size_bytes > 0) AND (file_size_bytes <= 20971520))),
     CONSTRAINT order_inputs_font_size_mm_check CHECK ((font_size_mm > (0)::numeric)),
-    CONSTRAINT order_inputs_mime_type_check CHECK (((mime_type)::text = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'application/pdf'::character varying])::text[]))),
+    CONSTRAINT order_inputs_mime_type_check CHECK (((mime_type)::text = ANY (ARRAY[('image/jpeg'::character varying)::text, ('image/png'::character varying)::text, ('application/pdf'::character varying)::text]))),
     CONSTRAINT order_inputs_rotation_deg_check CHECK ((rotation_deg = ANY (ARRAY[0, 90, 180, 270])))
 );
 
@@ -1376,6 +1549,44 @@ ALTER TABLE public.production_jobs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
 );
 
 --
+-- Name: quality_evaluations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.quality_evaluations (
+    id bigint NOT NULL,
+    photo_id bigint NOT NULL,
+    job_id bigint NOT NULL,
+    order_id bigint NOT NULL,
+    sketch_id bigint,
+    page_no smallint DEFAULT 1 NOT NULL,
+    method character varying(30) NOT NULL,
+    verdict character varying(14) NOT NULL,
+    metrics jsonb NOT NULL,
+    overlay_path text,
+    created_by bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT quality_evaluations_page_no_check CHECK ((page_no >= 1)),
+    CONSTRAINT quality_evaluations_verdict_check CHECK (((verdict)::text = ANY (ARRAY[('PASS'::character varying)::text, ('NEEDS_REVIEW'::character varying)::text, ('FAIL'::character varying)::text])))
+);
+
+--
+-- Name: quality_evaluations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.quality_evaluations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: quality_evaluations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.quality_evaluations_id_seq OWNED BY public.quality_evaluations.id;
+
+--
 -- Name: quotations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1491,6 +1702,155 @@ ALTER TABLE public.reviews ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 );
 
 --
+-- Name: robot_agents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.robot_agents (
+    id bigint NOT NULL,
+    robot_id bigint NOT NULL,
+    key_hash character(64) NOT NULL,
+    key_prefix character varying(12) NOT NULL,
+    created_by bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone,
+    last_seen_at timestamp with time zone,
+    kind character varying(8) DEFAULT 'MANAGER'::character varying NOT NULL,
+    account_id bigint,
+    instance_id character varying(64),
+    expires_at timestamp with time zone,
+    CONSTRAINT chk_robot_agents_kind CHECK (((((kind)::text = 'MANAGER'::text) AND (account_id IS NULL) AND (instance_id IS NULL)) OR (((kind)::text = 'SESSION'::text) AND (account_id IS NOT NULL) AND (instance_id IS NOT NULL) AND (expires_at IS NOT NULL))))
+);
+
+--
+-- Name: robot_agents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.robot_agents_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: robot_agents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.robot_agents_id_seq OWNED BY public.robot_agents.id;
+
+--
+-- Name: robot_alerts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.robot_alerts (
+    id bigint NOT NULL,
+    robot_id bigint NOT NULL,
+    job_id bigint,
+    run_id bigint,
+    code character varying(40) NOT NULL,
+    level smallint NOT NULL,
+    title_vi text NOT NULL,
+    action_vi text NOT NULL,
+    estop_advised boolean DEFAULT false NOT NULL,
+    details jsonb,
+    occurrences integer DEFAULT 1 NOT NULL,
+    raised_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_raised_at timestamp with time zone DEFAULT now() NOT NULL,
+    emailed_at timestamp with time zone,
+    acknowledged_by bigint,
+    acknowledged_at timestamp with time zone,
+    resolved_by bigint,
+    resolved_at timestamp with time zone,
+    resolution_note text,
+    CONSTRAINT chk_alert_ack_pair CHECK (((acknowledged_by IS NULL) = (acknowledged_at IS NULL))),
+    CONSTRAINT chk_alert_level4_is_estop CHECK (((level = 4) = estop_advised)),
+    CONSTRAINT robot_alerts_level_check CHECK (((level >= 1) AND (level <= 4))),
+    CONSTRAINT robot_alerts_occurrences_check CHECK ((occurrences >= 1))
+);
+
+--
+-- Name: robot_alerts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.robot_alerts ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.robot_alerts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+--
+-- Name: robot_commands; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.robot_commands (
+    id uuid NOT NULL,
+    robot_id bigint NOT NULL,
+    job_id bigint,
+    kind character varying(20) NOT NULL,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status character varying(10) DEFAULT 'PENDING'::character varying NOT NULL,
+    result jsonb,
+    error_code character varying(40),
+    error_message text,
+    idempotency_key character varying(80),
+    created_by bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    delivered_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    CONSTRAINT chk_robot_command_kind CHECK (((kind)::text = ANY ((ARRAY['LOAD'::character varying, 'PREFLIGHT'::character varying, 'DRY_RUN'::character varying, 'RUN'::character varying, 'PAUSE'::character varying, 'RESUME'::character varying, 'STOP'::character varying, 'PAPER_CHANGED'::character varying, 'IDENTIFY'::character varying, 'ALIGN_START'::character varying])::text[]))),
+    CONSTRAINT chk_robot_command_status CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('DELIVERED'::character varying)::text, ('DONE'::character varying)::text, ('FAILED'::character varying)::text, ('EXPIRED'::character varying)::text, ('CANCELLED'::character varying)::text])))
+);
+
+--
+-- Name: robot_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.robot_runs (
+    id bigint NOT NULL,
+    run_id character varying(40) NOT NULL,
+    job_id bigint NOT NULL,
+    robot_id bigint NOT NULL,
+    mode character varying(10) NOT NULL,
+    dry_run boolean DEFAULT false NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    ended_at timestamp with time zone,
+    result character varying(20),
+    completed_strokes integer DEFAULT 0 NOT NULL,
+    total_strokes integer DEFAULT 0 NOT NULL,
+    plan_digest character varying(64),
+    authorized_by bigint,
+    authorized_at timestamp with time zone,
+    agent_version character varying(30),
+    robot_info jsonb,
+    summary jsonb,
+    created_by bigint NOT NULL,
+    CONSTRAINT chk_run_ended CHECK (((ended_at IS NULL) OR (ended_at >= started_at))),
+    CONSTRAINT chk_run_progress CHECK (((total_strokes = 0) OR (completed_strokes <= total_strokes))),
+    CONSTRAINT chk_run_real_authorized CHECK ((((mode)::text <> 'REAL'::text) OR (authorized_by IS NOT NULL) OR (NOT ((result)::text IS DISTINCT FROM 'REFUSED'::text)))),
+    CONSTRAINT robot_runs_completed_strokes_check CHECK ((completed_strokes >= 0)),
+    CONSTRAINT robot_runs_mode_check CHECK (((mode)::text = ANY (ARRAY[('MOCK'::character varying)::text, ('SIM'::character varying)::text, ('REAL'::character varying)::text]))),
+    CONSTRAINT robot_runs_result_check CHECK (((result)::text = ANY (ARRAY[('DONE'::character varying)::text, ('STOPPED'::character varying)::text, ('FAULT'::character varying)::text, ('UNKNOWN'::character varying)::text, ('DRY_RUN_DONE'::character varying)::text, ('REFUSED'::character varying)::text]))),
+    CONSTRAINT robot_runs_total_strokes_check CHECK ((total_strokes >= 0))
+);
+
+--
+-- Name: robot_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.robot_runs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.robot_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+--
 -- Name: robots; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1504,7 +1864,16 @@ CREATE TABLE public.robots (
     supported_pen_categories public.pen_category[],
     note text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    controller_version character varying(60),
+    firmware_version character varying(80),
+    sdk_version character varying(60),
+    agent_version character varying(30),
+    connection_state character varying(10) DEFAULT 'UNKNOWN'::character varying NOT NULL,
+    last_seen_at timestamp with time zone,
+    last_mode character varying(10),
+    CONSTRAINT chk_robots_connection_state CHECK (((connection_state)::text = ANY (ARRAY[('ONLINE'::character varying)::text, ('OFFLINE'::character varying)::text, ('UNKNOWN'::character varying)::text]))),
+    CONSTRAINT chk_robots_last_mode CHECK (((last_mode IS NULL) OR ((last_mode)::text = ANY (ARRAY[('MOCK'::character varying)::text, ('SIM'::character varying)::text, ('REAL'::character varying)::text]))))
 );
 
 --
@@ -1555,7 +1924,7 @@ CREATE TABLE public.shipments (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT shipments_fee_check CHECK ((fee >= (0)::numeric)),
-    CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY ((ARRAY['FLAT_BOX_A5'::character varying, 'FLAT_BOX_A4'::character varying, 'TUBE'::character varying])::text[]))),
+    CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY (ARRAY[('FLAT_BOX_A5'::character varying)::text, ('FLAT_BOX_A4'::character varying)::text, ('TUBE'::character varying)::text]))),
     CONSTRAINT shipments_weight_g_check CHECK ((weight_g > 0))
 );
 
@@ -1622,6 +1991,7 @@ CREATE TABLE public.sketches (
     content_hash character(64),
     is_final boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    image_urls text[] DEFAULT '{}'::text[] NOT NULL,
     CONSTRAINT sketches_estimated_writing_sec_check CHECK ((estimated_writing_sec >= 0)),
     CONSTRAINT sketches_pen_lift_count_check CHECK ((pen_lift_count >= 0)),
     CONSTRAINT sketches_similarity_score_check CHECK (((similarity_score >= (0)::numeric) AND (similarity_score <= (100)::numeric))),
@@ -1746,6 +2116,18 @@ CREATE VIEW public.v_order_eta_postponement AS
   GROUP BY order_id;
 
 --
+-- Name: quality_evaluations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_evaluations ALTER COLUMN id SET DEFAULT nextval('public.quality_evaluations_id_seq'::regclass);
+
+--
+-- Name: robot_agents id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_agents ALTER COLUMN id SET DEFAULT nextval('public.robot_agents_id_seq'::regclass);
+
+--
 -- Name: accounts accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1758,6 +2140,13 @@ ALTER TABLE ONLY public.accounts
 
 ALTER TABLE ONLY public.alembic_version
     ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
+
+--
+-- Name: alert_catalog alert_catalog_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_catalog
+    ADD CONSTRAINT alert_catalog_pkey PRIMARY KEY (code);
 
 --
 -- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1949,6 +2338,13 @@ ALTER TABLE ONLY public.production_jobs
     ADD CONSTRAINT production_jobs_pkey PRIMARY KEY (id);
 
 --
+-- Name: quality_evaluations quality_evaluations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_evaluations
+    ADD CONSTRAINT quality_evaluations_pkey PRIMARY KEY (id);
+
+--
 -- Name: quotations quotations_order_id_version_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1982,6 +2378,41 @@ ALTER TABLE ONLY public.reviews
 
 ALTER TABLE ONLY public.reviews
     ADD CONSTRAINT reviews_pkey PRIMARY KEY (id);
+
+--
+-- Name: robot_agents robot_agents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_agents
+    ADD CONSTRAINT robot_agents_pkey PRIMARY KEY (id);
+
+--
+-- Name: robot_alerts robot_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_alerts
+    ADD CONSTRAINT robot_alerts_pkey PRIMARY KEY (id);
+
+--
+-- Name: robot_commands robot_commands_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_commands
+    ADD CONSTRAINT robot_commands_pkey PRIMARY KEY (id);
+
+--
+-- Name: robot_runs robot_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_runs
+    ADD CONSTRAINT robot_runs_pkey PRIMARY KEY (id);
+
+--
+-- Name: robot_runs robot_runs_run_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_runs
+    ADD CONSTRAINT robot_runs_run_id_key UNIQUE (run_id);
 
 --
 -- Name: robots robots_code_key; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2230,6 +2661,18 @@ CREATE INDEX ix_product_photos_job ON public.product_photos USING btree (job_id)
 CREATE INDEX ix_product_photos_order ON public.product_photos USING btree (order_id);
 
 --
+-- Name: ix_quality_evaluations_job; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_quality_evaluations_job ON public.quality_evaluations USING btree (job_id, created_at DESC);
+
+--
+-- Name: ix_quality_evaluations_photo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_quality_evaluations_photo ON public.quality_evaluations USING btree (photo_id, created_at DESC);
+
+--
 -- Name: ix_quotations_expiring; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2252,6 +2695,48 @@ CREATE INDEX ix_quotations_pending_approval ON public.quotations USING btree (cr
 --
 
 CREATE INDEX ix_review_photos_review ON public.review_photos USING btree (review_id, sort_order);
+
+--
+-- Name: ix_robot_agents_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_robot_agents_session ON public.robot_agents USING btree (robot_id, expires_at) WHERE ((revoked_at IS NULL) AND ((kind)::text = 'SESSION'::text));
+
+--
+-- Name: ix_robot_alerts_job; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_robot_alerts_job ON public.robot_alerts USING btree (job_id, raised_at);
+
+--
+-- Name: ix_robot_alerts_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_robot_alerts_open ON public.robot_alerts USING btree (robot_id, level DESC, raised_at DESC) WHERE (resolved_at IS NULL);
+
+--
+-- Name: ix_robot_commands_job; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_robot_commands_job ON public.robot_commands USING btree (job_id, created_at DESC);
+
+--
+-- Name: ix_robot_commands_robot_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_robot_commands_robot_status ON public.robot_commands USING btree (robot_id, status, created_at);
+
+--
+-- Name: ix_robot_runs_job; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_robot_runs_job ON public.robot_runs USING btree (job_id, started_at);
+
+--
+-- Name: ix_robot_runs_robot; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_robot_runs_robot ON public.robot_runs USING btree (robot_id, started_at DESC);
 
 --
 -- Name: ix_shipments_order; Type: INDEX; Schema: public; Owner: -
@@ -2320,6 +2805,36 @@ CREATE UNIQUE INDEX ux_pricing_configs_one_active ON public.pricing_configs USIN
 CREATE UNIQUE INDEX ux_quotations_one_live ON public.quotations USING btree (order_id) WHERE (status = ANY (ARRAY['DRAFT'::public.quotation_status, 'PENDING_APPROVAL'::public.quotation_status, 'SENT'::public.quotation_status]));
 
 --
+-- Name: ux_robot_agents_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_robot_agents_key ON public.robot_agents USING btree (key_hash);
+
+--
+-- Name: ux_robot_agents_manager_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_robot_agents_manager_active ON public.robot_agents USING btree (robot_id) WHERE ((revoked_at IS NULL) AND ((kind)::text = 'MANAGER'::text));
+
+--
+-- Name: ux_robot_alerts_one_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_robot_alerts_one_open ON public.robot_alerts USING btree (robot_id, code, COALESCE(job_id, (0)::bigint)) WHERE (resolved_at IS NULL);
+
+--
+-- Name: ux_robot_commands_idem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_robot_commands_idem ON public.robot_commands USING btree (created_by, idempotency_key) WHERE (idempotency_key IS NOT NULL);
+
+--
+-- Name: ux_robot_runs_one_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_robot_runs_one_open ON public.robot_runs USING btree (robot_id) WHERE (ended_at IS NULL);
+
+--
 -- Name: ux_shipments_waybill; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2356,6 +2871,12 @@ CREATE OR REPLACE VIEW public.v_customer_drafts AS
 --
 
 CREATE TRIGGER trg_accounts_updated_at BEFORE UPDATE ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+--
+-- Name: alert_catalog trg_alert_catalog_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_alert_catalog_updated_at BEFORE UPDATE ON public.alert_catalog FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 
 --
 -- Name: handwriting_styles trg_handwriting_styles_updated_at; Type: TRIGGER; Schema: public; Owner: -
@@ -2466,6 +2987,13 @@ ALTER TABLE ONLY public.accounts
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id);
+
+--
+-- Name: alert_catalog alert_catalog_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_catalog
+    ADD CONSTRAINT alert_catalog_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.accounts(id);
 
 --
 -- Name: audit_logs audit_logs_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -2804,6 +3332,41 @@ ALTER TABLE ONLY public.production_jobs
     ADD CONSTRAINT production_jobs_technician_id_fkey FOREIGN KEY (technician_id) REFERENCES public.accounts(id);
 
 --
+-- Name: quality_evaluations quality_evaluations_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_evaluations
+    ADD CONSTRAINT quality_evaluations_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.accounts(id);
+
+--
+-- Name: quality_evaluations quality_evaluations_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_evaluations
+    ADD CONSTRAINT quality_evaluations_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.production_jobs(id);
+
+--
+-- Name: quality_evaluations quality_evaluations_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_evaluations
+    ADD CONSTRAINT quality_evaluations_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id);
+
+--
+-- Name: quality_evaluations quality_evaluations_photo_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_evaluations
+    ADD CONSTRAINT quality_evaluations_photo_id_fkey FOREIGN KEY (photo_id) REFERENCES public.product_photos(id);
+
+--
+-- Name: quality_evaluations quality_evaluations_sketch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quality_evaluations
+    ADD CONSTRAINT quality_evaluations_sketch_id_fkey FOREIGN KEY (sketch_id) REFERENCES public.sketches(id);
+
+--
 -- Name: quotations quotations_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2858,6 +3421,118 @@ ALTER TABLE ONLY public.reviews
 
 ALTER TABLE ONLY public.reviews
     ADD CONSTRAINT reviews_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
+
+--
+-- Name: robot_agents robot_agents_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_agents
+    ADD CONSTRAINT robot_agents_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+--
+-- Name: robot_agents robot_agents_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_agents
+    ADD CONSTRAINT robot_agents_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.accounts(id);
+
+--
+-- Name: robot_agents robot_agents_robot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_agents
+    ADD CONSTRAINT robot_agents_robot_id_fkey FOREIGN KEY (robot_id) REFERENCES public.robots(id);
+
+--
+-- Name: robot_alerts robot_alerts_acknowledged_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_alerts
+    ADD CONSTRAINT robot_alerts_acknowledged_by_fkey FOREIGN KEY (acknowledged_by) REFERENCES public.accounts(id);
+
+--
+-- Name: robot_alerts robot_alerts_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_alerts
+    ADD CONSTRAINT robot_alerts_code_fkey FOREIGN KEY (code) REFERENCES public.alert_catalog(code);
+
+--
+-- Name: robot_alerts robot_alerts_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_alerts
+    ADD CONSTRAINT robot_alerts_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.production_jobs(id);
+
+--
+-- Name: robot_alerts robot_alerts_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_alerts
+    ADD CONSTRAINT robot_alerts_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.accounts(id);
+
+--
+-- Name: robot_alerts robot_alerts_robot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_alerts
+    ADD CONSTRAINT robot_alerts_robot_id_fkey FOREIGN KEY (robot_id) REFERENCES public.robots(id);
+
+--
+-- Name: robot_alerts robot_alerts_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_alerts
+    ADD CONSTRAINT robot_alerts_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.robot_runs(id);
+
+--
+-- Name: robot_commands robot_commands_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_commands
+    ADD CONSTRAINT robot_commands_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.accounts(id);
+
+--
+-- Name: robot_commands robot_commands_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_commands
+    ADD CONSTRAINT robot_commands_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.production_jobs(id);
+
+--
+-- Name: robot_commands robot_commands_robot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_commands
+    ADD CONSTRAINT robot_commands_robot_id_fkey FOREIGN KEY (robot_id) REFERENCES public.robots(id);
+
+--
+-- Name: robot_runs robot_runs_authorized_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_runs
+    ADD CONSTRAINT robot_runs_authorized_by_fkey FOREIGN KEY (authorized_by) REFERENCES public.accounts(id);
+
+--
+-- Name: robot_runs robot_runs_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_runs
+    ADD CONSTRAINT robot_runs_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.accounts(id);
+
+--
+-- Name: robot_runs robot_runs_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_runs
+    ADD CONSTRAINT robot_runs_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.production_jobs(id);
+
+--
+-- Name: robot_runs robot_runs_robot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.robot_runs
+    ADD CONSTRAINT robot_runs_robot_id_fkey FOREIGN KEY (robot_id) REFERENCES public.robots(id);
 
 --
 -- Name: shipments shipments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -2933,6 +3608,12 @@ ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.alembic_version ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: alert_catalog; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.alert_catalog ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3049,6 +3730,12 @@ ALTER TABLE public.product_photos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_jobs ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: quality_evaluations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.quality_evaluations ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: quotations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3065,6 +3752,30 @@ ALTER TABLE public.review_photos ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: robot_agents; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.robot_agents ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: robot_alerts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.robot_alerts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: robot_commands; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.robot_commands ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: robot_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.robot_runs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: robots; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3125,7 +3836,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0007');
+INSERT INTO alembic_version (version_num) VALUES ('0013');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9
@@ -3184,6 +3895,27 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('integrations_enabled',        '{"VNPAY": false, "MOMO": false, "GHN": false, "GHTK": false, "SMTP": false, "SMS": false}'::jsonb,
                                   'UC-49: bật/tắt tích hợp. Khoá API nằm ở secret store/env, không lưu DB.')
 ON CONFLICT (key) DO NOTHING;
+
+-- Robot alert catalogue (migration 0008): level 4 = press the physical E-Stop now
+INSERT INTO alert_catalog (code, level, title_vi, action_vi, estop_advised, notify_roles, send_email) VALUES
+  ('STOP_NOT_EFFECTIVE', 4, 'Đã gửi lệnh dừng nhưng đầu bút vẫn đang di chuyển.', 'BẤM NÚT E-STOP NGAY. Phần mềm không thể tự dừng robot trong trường hợp này.', true, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], true),
+  ('LINK_LOST_MOVING', 4, 'Mất kết nối với robot khi robot đang chạy.', 'Nếu robot còn chuyển động, BẤM NÚT E-STOP NGAY. Sau đó kiểm tra dây mạng và nguồn.', true, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], true),
+  ('TRACKING_ERROR', 4, 'Đầu bút lệch xa đường đã định.', 'BẤM NÚT E-STOP NGAY. Không chạy lại cho tới khi xác định nguyên nhân.', true, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], true),
+  ('CONTROLLER_SAFETY_FAULT', 4, 'Robot báo lỗi an toàn hoặc va chạm trong lúc di chuyển.', 'BẤM NÚT E-STOP NGAY nếu robot chưa đứng yên, rồi gọi Manager.', true, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], true),
+  ('OVER_FORCE_STILL', 4, 'Lực ép vẫn vượt giới hạn dù đã gửi lệnh dừng.', 'BẤM NÚT E-STOP NGAY. Bút hoặc giấy có thể đang bị kẹt.', true, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], true),
+  ('OVER_FORCE', 3, 'Bút ép quá mạnh, robot đã tự dừng và nhấc bút.', 'Kiểm tra bút và tờ giấy (cong, kẹt, sai độ cao). Sau đó chọn tiếp tục hoặc bỏ qua nét dở; không tự chạy lại từ đầu.', false, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], false),
+  ('SENSOR_LOST', 3, 'Mất tín hiệu cảm biến lực, robot đã dừng.', 'Kiểm tra dây USB của gripper rồi chạy lại bước kiểm tra trước khi viết.', false, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], false),
+  ('STROKE_LOST', 3, 'Bút rời khỏi giấy khi đang viết, robot đã tạm dừng.', 'Kiểm tra giấy có bị nhấc lên hoặc bút có hết mực không, rồi tiếp tục hoặc bỏ qua nét dở.', false, ARRAY['TECHNICAL_STAFF']::text[], false),
+  ('RUN_OUTCOME_UNKNOWN', 3, 'Mất kết nối giữa chừng: chưa biết bản viết đã đến đâu.', 'Nhìn tờ giấy, xác định nét nào đã viết xong, rồi chọn nét bắt đầu lại. Không tự chạy lại từ đầu.', false, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], false),
+  ('STROKE_INTERRUPTED', 3, 'Một nét đang viết dở khi dừng.', 'Xem nét dở trên giấy rồi chọn viết lại nét đó hoặc bỏ qua.', false, ARRAY['TECHNICAL_STAFF']::text[], false),
+  ('PREFLIGHT_REFUSED', 2, 'Chưa chạy được vì bước kiểm tra trước khi chạy không đạt.', 'Đọc lý do hiển thị và xử lý (hiệu chuẩn, gripper, vị trí bút). Robot không di chuyển.', false, ARRAY['TECHNICAL_STAFF']::text[], false),
+  ('CALIBRATION_OLD', 2, 'Hiệu chuẩn đã cũ.', 'Nên hiệu chuẩn lại mặt giấy trước khi viết tiếp.', false, ARRAY['TECHNICAL_STAFF']::text[], false),
+  ('FORCE_NEAR_LIMIT', 2, 'Lực ép thường xuyên sát giới hạn.', 'Kiểm tra bút, giấy và độ cao đặt bút.', false, ARRAY['TECHNICAL_STAFF']::text[], false),
+  ('DROPPED_FRAMES', 2, 'Cảm biến lực mất nhiều gói tin.', 'Kiểm tra dây USB của gripper.', false, ARRAY['TECHNICAL_STAFF']::text[], false),
+  ('AGENT_OFFLINE', 2, 'Máy trạm điều khiển không báo về máy chủ.', 'Kiểm tra máy trạm và mạng. Nếu robot đang chạy, đứng cạnh nút E-Stop.', false, ARRAY['MANAGER']::text[], false),
+  ('PAPER_CHANGE', 1, 'Cần đặt tờ giấy mới cho trang kế tiếp.', 'Đặt giấy mới, kẹp chặt rồi xác nhận để tiếp tục.', false, ARRAY['TECHNICAL_STAFF']::text[], false),
+  ('BACKEND_LINK_LOST', 3, 'Máy trạm mất kết nối tới hệ thống trong lúc đang viết: robot đã viết xong nét hiện tại, nhấc bút và tạm dừng.', 'Kiểm tra mạng của máy trạm. Khi kết nối lại, chọn tiếp tục hoặc dừng job. Nếu thấy robot chuyển động bất thường, dùng nút dừng khẩn vật lý.', false, ARRAY['TECHNICAL_STAFF', 'MANAGER']::text[], false)
+ON CONFLICT (code) DO NOTHING;
 COMMIT;
 
 -- =====================================================================================================================

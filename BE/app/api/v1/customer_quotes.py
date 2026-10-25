@@ -56,7 +56,8 @@ def view_quotation(order_id: int, svc: Svc) -> QuotationCustomerOut:
         id=q.id, version=q.version, status=q.status, line_items=q.line_items, options=option_summaries(q),
         chosen_option=q.chosen_option, char_count=q.char_count, quantity=q.quantity, final_total=q.final_total,
         min_deposit_pct=q.min_deposit_pct, eta=q.eta, valid_until=q.valid_until, pdf_url=pdf,
-        sketch=SketchForCustomer(version=sketch.version, preview_urls=previews, approach_note=sketch.approach_note,
+        sketch=SketchForCustomer(version=sketch.version, preview_urls=svc.sketch_image_urls(sketch) or previews,
+                                 image_urls=svc.sketch_image_urls(sketch), approach_note=sketch.approach_note,
                                  estimated_writing_sec=sketch.estimated_writing_sec,
                                  similarity_score=sketch.similarity_score) if sketch else None)
 

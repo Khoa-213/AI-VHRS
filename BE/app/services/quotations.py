@@ -502,6 +502,12 @@ class CustomerQuoteService:
         sketch = self.sketches.get_by_id(q.sketch_id)
         return {"order": order, "quotation": q, "sketch": sketch}
 
+    def sketch_image_urls(self, sketch) -> list[str]:
+        """Customer-facing JPEGs of the sketch (what the customer judges before paying the deposit)."""
+        if self.storage is None or sketch is None or not sketch.image_urls:
+            return []
+        return [self.storage.create_download_url(p, 600) for p in sketch.image_urls]
+
     def asset_urls(self, quotation: Quotation, sketch) -> tuple[str | None, list[str]]:
         if self.storage is None:
             return None, []

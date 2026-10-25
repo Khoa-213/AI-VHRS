@@ -25,6 +25,22 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **Bỏ việc khoá ô nhập khi đơn `COMPLETED`** (BE vẫn cho nhắn; chỉ `REJECTED`/`CANCELLED` là đã đóng).
 - [ ] **Staff: ngừng ẩn các đơn chưa ai nhận** trong danh sách chat (BE trả cả đơn mình phụ trách lẫn đơn `SUBMITTED` chưa ai nhận). Khi khách nhắn đơn chưa ai nhận, FE khách có thể hiện "Đơn chưa có nhân viên nhận, xưởng sẽ trả lời sớm" (Manager trả lời được, Staff chưa nhắn được).
 
+**Robot, hiệu chuẩn, mẫu chữ mới (mục 7b, 7.1; chi tiết `docs/ROBOT_INTEGRATION.md`)**
+- [ ] **Màn hiệu chuẩn của Technical Staff** gửi thêm khối `frame_transform = {schema:"vhrs-motion/1", motion:{…}, workspace:{…}}` (các trường ở mục 7b); hiển thị `UNCONFIGURED` khi thiếu số đo.
+- [ ] Sau `POST .../simulation`, **đọc kết quả của server** (`passed` có thể bị server đổi thành `false`) và hiện danh sách lỗi `SERVER …`; `GET /technician/jobs/{id}` có `can_start`.
+- [ ] **App Technical Staff điều khiển robot qua BE** (mục 7g, KHÔNG gọi máy trạm trực tiếp): gửi lệnh bằng `POST /technician/robot-commands`, hỏi kết quả bằng `GET /technician/robot-commands/{id}`; luôn hiện nhãn chế độ MOCK / SIM / REAL và trạng thái kết nối agent (`GET /technician/robots/{id}/live` → `agent_online`).
+- [ ] **Danh sách mẫu chữ:** có thêm 4 mẫu `kind = "TYPOGRAPHY"` (Playpen Sans, Pangolin, Patrick Hand, Mali Light, `font_uri` dạng `outline:fonts/...`); `GET /catalog/templates/{id}/preview?text=` trả PNG (tối đa 80 ký tự với mẫu này, lần đầu có thể chậm ~3 giây). Hiển thị cảnh báo "thứ tự nét do hệ thống dựng lại" nếu cần.
+
+**Bản sao số 3D của robot (mục 7g)**
+- [ ] **Xem 3D = nhúng trang do BE phục vụ** (cách chắc chắn nhất, không cần viết three.js): gọi `POST /technician/robots/{id}/view-ticket` → mở `<BE>` + `viewer_path` trong WebView (mobile) hoặc `<iframe>` (web). Trang chỉ-đọc, tự cập nhật 4 lần/giây, tự hiện cảnh báo đỏ "NHẤN NÚT E-STOP". Vé sống 60 phút: hết hạn thì xin vé mới và nạp lại. Chi tiết và phương án tự vẽ ở mục 7g.3. Nút Tạm dừng/Tiếp tục/DỪNG của FE nằm **ngoài** khung 3D và gọi `POST /technician/robot-commands`.
+- [ ] **Ảnh phác thảo cho khách** (mục 5.2, 6): `GET /orders/{id}/quotation` → `sketch.image_urls[]` (JPG) là ảnh khách xem để quyết định đặt cọc; Staff dùng `image_urls[]` + `trajectory_url` (file chạy của robot) ở `GET /workshop/orders/{id}/sketches/{v}`.
+- [ ] **Đánh giá chất lượng bản viết** (mục 7c.2): sau khi tải ảnh QC, nút "Đánh giá" gọi `POST /technician/jobs/{id}/photos/{photo_id}/evaluate`; hiện `verdict`, số đo mm và `overlay_url`; luôn kèm dòng `advisory` (chỉ tham khảo).
+
+**Vận hành robot: cảnh báo, tình trạng, tuân thủ quy trình (mục 7f)**
+- [ ] **Màn Technical Staff:** poll `GET /technician/robot-status` (2 giây) hiển thị `headline_vi`, `level` 1–4, `open_alerts[]` (`title_vi` + `action_vi`), nút "Đã thấy" (`POST /technician/alerts/{id}/ack`) và "Đóng" (`.../resolve`, mức 4 bị chặn). **Mức 4 = banner đỏ nhấp nháy + còi + chữ "BẤM NÚT E-STOP NGAY"**; không bao giờ ẩn banner đỏ khi chưa có Manager đóng.
+- [ ] **Màn Manager:** `GET /manager/robot-status`, `GET /manager/robots/{id}/health`, `GET /manager/alerts`, `GET /manager/jobs/{id}/compliance` (từng bước đạt/không + ngoại lệ), `GET /manager/runs`, `GET/PATCH /manager/alert-catalog`.
+- [ ] Cảnh báo mức 4 cũng được **gửi email** (BE làm); FE không cần gửi.
+
 **Chưa có ở BE (đừng chờ):** đẩy tức thời (SSE/WebSocket), thông báo in-app và email, huỷ sau cọc và hoàn tiền (xem mục 10).
 
 ## 1. Kết nối nhanh
@@ -198,7 +214,7 @@ Sau `confirm`, BE kiểm tra chất lượng + ước lượng số ký tự; n�
   1. `GET /privacy-policy` (public) → `{version, title, body}`; hiển thị toàn văn.
   2. `POST /orders/{id}/privacy {accept:true}` → `QUOTED`. `{accept:false}` → đơn **bị huỷ**; hãy hỏi xác nhận trước khi gọi.
   3. Trước bước này `GET /orders/{id}/quotation` trả `403 PRIVACY_REQUIRED`.
-- `GET /orders/{id}/quotation` → `{status, line_items[], options[], final_total, min_deposit_pct, eta, valid_until, pdf_url, sketch{preview_urls[], estimated_writing_sec, ...}}`. `pdf_url` và `preview_urls` là **link hết hạn sau 10 phút**: lấy lại khi cần.
+- `GET /orders/{id}/quotation` → `{status, line_items[], options[], final_total, min_deposit_pct, eta, valid_until, pdf_url, sketch{image_urls[], preview_urls[], estimated_writing_sec, ...}}`. **`sketch.image_urls[]` là ảnh JPG phác thảo (mực, độ dày nét và loại giấy đúng như đơn) để khách xem rồi quyết định đặt cọc**, mỗi trang một ảnh, đặt trong thẻ báo giá / `ORDER_CARD`; `preview_urls` giữ để tương thích (bằng `image_urls` khi có). Ảnh là hình dung **kế hoạch** nét viết, không phải ảnh chụp kết quả. `pdf_url` và các link ảnh là **link hết hạn sau 10 phút**: lấy lại khi cần.
   - Báo giá **1 phương án**: `options` có 1 phần tử. Khách chọn "để xưởng gợi ý" có thể có **2–3 phương án vật tư**: bắt khách chọn 1.
   - `valid_until` quá hạn: lần gọi kế tiếp thấy `status:"EXPIRED"` và đơn `CANCELLED` (đếm ngược 7 ngày trong UI).
 - Không đồng ý: `POST /orders/{id}/quotation/request-changes {note}` → đơn về `ACCEPTED`, xưởng lập lại; hoặc `POST /orders/{id}/cancel {reason}`.
@@ -321,7 +337,7 @@ POST /workshop/orders/{id}/sketches {trajectory, approach_note?, suggested_compl
 GET  /workshop/orders/{id}/sketches[/{version}]   danh sách / chi tiết (quỹ đạo + preview_urls từng trang)
 PATCH .../sketches/{version} {approach_note, suggested_complexity}      POST .../sketches/{version}/finalize   (chốt đúng 1 bản)
 ```
-`SketchOut` có `similarity_score` (độ giống bản gốc, OT-1), `suggested_complexity`, `estimated_writing_sec`, `warnings[]`. Lỗi AI thường gặp: `NO_STROKES_FOUND`, `IMAGE_TOO_NOISY`, `UNSUPPORTED_CHARS` (kèm danh sách ký tự), `TEXT_TOO_LONG`, `AI_TYPE_UNSUPPORTED` (OT-2 không có AI).
+`SketchOut` có `image_urls[]` (**JPG cho khách**, mỗi trang một ảnh), `preview_urls[]` (PNG kỹ thuật có chấm xanh đầu nét, chỉ để Staff xem), **`trajectory_url`** (link ký 10 phút tới file quỹ đạo JSON mà robot chạy; Staff xem/tải cùng ảnh) và `similarity_score` (độ giống bản gốc, OT-1), `suggested_complexity`, `estimated_writing_sec`, `warnings[]`. Lỗi AI thường gặp: `NO_STROKES_FOUND`, `IMAGE_TOO_NOISY`, `UNSUPPORTED_CHARS` (kèm danh sách ký tự), `TEXT_TOO_LONG`, `AI_TYPE_UNSUPPORTED` (OT-2 không có AI).
 
 **Báo giá** (cần phác thảo đã chốt – BR-22):
 ```
@@ -340,6 +356,88 @@ GET  /manager/quotations/pending-approval      POST /manager/quotations/{qid}/ap
 
 ## 7. Luồng Manager (`/manager/*`)
 
+## 7f. Vận hành robot: lần chạy, cảnh báo, tình trạng (migration 0008)
+
+Robot Agent (máy trạm) gọi các route `/technician/*` bằng token của Technical Staff. Agent chỉ **gọi tên** cảnh báo; **mức, câu chữ và việc cần làm do bảng `alert_catalog` quyết định** (agent không thể báo thấp hơn thực tế).
+Bốn mức: 1 xanh · 2 vàng (chú ý) · 3 cam (**robot đã tự dừng an toàn**: kiểm tra rồi tiếp tục/bỏ qua nét dở) · 4 đỏ (**bấm nút E-Stop vật lý ngay**, `estop_advised = true`, gửi email cho Technical Staff của job và mọi Manager đang hoạt động).
+
+| Việc | Endpoint |
+|---|---|
+| Mở lần chạy | `POST /technician/jobs/{id}/runs {run_id, mode: MOCK\|SIM\|REAL, dry_run, authorized, plan_digest?, total_strokes, agent_version?, robot_info?, refused_reason?}` → 201. Chạy thử cần job `PREPARING`; chạy viết cần `WRITING`/`PAUSED`; **REAL cần `authorized:true`** (người vận hành đã xác nhận; BE ghi `authorized_by/at`; DB có CHECK). Một robot chỉ có **một** lần chạy đang mở (`409 ROBOT_BUSY`). `refused_reason` = lần chạy bị từ chối ở bước kiểm tra, lưu đã đóng với kết quả `REFUSED` |
+| Đóng lần chạy | `PATCH /technician/runs/{run_id} {result: DONE\|STOPPED\|FAULT\|UNKNOWN\|DRY_RUN_DONE\|REFUSED, completed_strokes, total_strokes?, summary?}`; gọi lại cùng kết quả là idempotent, kết quả khác → `409 RUN_ALREADY_CLOSED` |
+| Báo cảnh báo | `POST /technician/alerts {robot_id, code, job_id?, run_id?, details?}` (mã trong danh mục, sai mã → `422 UNKNOWN_ALERT`). Cảnh báo cùng (robot, mã, job) đang mở chỉ tăng `occurrences` |
+| Xem cảnh báo | `GET /technician/alerts?open=true&min_level=&robot_id=&job_id=` (robot tôi phụ trách); Manager: `GET /manager/alerts` |
+| Đã thấy / đóng | `POST /technician/alerts/{id}/ack`, `POST /technician/alerts/{id}/resolve {note}` (mức 1–3). **Mức 4 chỉ Manager đóng được** (`403 RED_ALERT_NEEDS_MANAGER`): `POST /manager/alerts/{id}/resolve {note}` |
+| Heartbeat | `PUT /technician/robots/{id}/heartbeat {mode, controller_version?, firmware_version?, sdk_version?, agent_version?}` mỗi 1–5 giây; quá `offline_after_seconds` (15) coi là mất kết nối. Khi robot đang có lần chạy mở mà agent im lặng, BE tự báo `AGENT_OFFLINE` + `RUN_OUTCOME_UNKNOWN` (kiểm tra "lười" khi có người gọi các route status/alerts) |
+| Tình trạng bằng lời thường | `GET /technician/robot-status` · `GET /manager/robot-status` → `[{robot_id, robot_code, state: OFFLINE\|IDLE\|PREPARING\|WRITING\|PAUSED_SAFE\|DANGER, headline_vi, level, mode, connection_state, last_seen_at, controller_version, sdk_version, agent_version, job_id, job_status, open_run, open_alerts[], calibration_age_minutes}]` |
+| Sức khoẻ robot (Manager) | `GET /manager/robots/{id}/health?days=30` → số lần chạy theo kết quả/chế độ, giờ chạy, số lần dừng an toàn, cảnh báo theo mức, `in_band_pct_avg`, sự cố mở, cảnh báo đỏ chưa đóng |
+| Lần chạy (Manager) | `GET /manager/runs?robot_id=&job_id=` |
+| Có đúng quy trình không | `GET /manager/jobs/{id}/compliance` → `steps[{key, label_vi, status: PASS\|FAIL\|PENDING\|NOT_APPLICABLE, at, detail}]`, `exceptions[]`, `followed_process`. Các bước: gói khớp hash, hiệu chuẩn, máy chủ tự kiểm lại, mô phỏng, chạy thử pen-up, người vận hành xác nhận, viết xong, **có lần chạy robot thật hoàn tất** (job ghi nhận viết xong mà chỉ có MOCK/SIM bị đánh FAIL), ảnh QC |
+| Danh mục cảnh báo | `GET /manager/alert-catalog`; `PATCH /manager/alert-catalog/{code} {title_vi?, action_vi?, notify_roles?, send_email?, threshold?, is_active?}` (mức không đổi được; cảnh báo đỏ không tắt được, không tắt email, không bỏ Technical Staff khỏi người nhận: `422 RED_ALERT_PROTECTED`). Cảnh báo đã phát giữ nguyên câu chữ lúc phát |
+
+Mã cảnh báo: mức 4 `STOP_NOT_EFFECTIVE`, `LINK_LOST_MOVING`, `TRACKING_ERROR`, `CONTROLLER_SAFETY_FAULT`, `OVER_FORCE_STILL`; mức 3 `OVER_FORCE`, `SENSOR_LOST`, `STROKE_LOST`, `RUN_OUTCOME_UNKNOWN`, `STROKE_INTERRUPTED`; mức 2 `PREFLIGHT_REFUSED`, `CALIBRATION_OLD`, `FORCE_NEAR_LIMIT`, `DROPPED_FRAMES`, `AGENT_OFFLINE`; mức 1 `PAPER_CHANGE`.
+Lỗi riêng: `404 ROBOT_NOT_FOUND`, `404 RUN_NOT_FOUND`, `404 ALERT_NOT_FOUND`, `409 RUN_EXISTS`, `409 ROBOT_BUSY`, `409 RUN_ALREADY_CLOSED`, `422 AUTHORIZATION_REQUIRED`, `422 UNKNOWN_ALERT`, `422 RESULT_INVALID`, `403 RED_ALERT_NEEDS_MANAGER`.
+Phần mềm không bấm được E-Stop: câu chữ mức 4 luôn nói rõ điều đó. Email cần cấu hình SMTP (`SMTP_HOST`, ...); chưa cấu hình thì chỉ ghi log.
+
+## 7g. Điều khiển robot qua BE (kiến trúc A, migration 0010, 0011)
+
+**Mọi thứ liên quan robot là API của BE đã deploy.** Máy trạm chạy Robot Agent **gọi RA** BE (không mở cổng vào xưởng); app Technical Staff chỉ nói chuyện với BE. Lệnh là bản ghi bền trong DB, agent kéo về khoảng 1 lần/giây (4 lần/giây khi đang chạy). Không lệnh nào được gửi lại sau khi hết hạn.
+
+```
+App kỹ thuật viên ──POST robot-commands──▶ BE (Render) ◀──POST /agent/sync (agent gọi ra)── Máy trạm ── FR3 + gripper
+        ▲  GET live / view-ticket (3D)  ◀── khung hình sống: khớp, bút, lực, cảnh báo ──────────┘
+```
+
+### 7g.1 Lệnh (Technical Staff; Manager chỉ PAUSE/RESUME/STOP)
+`POST /technician/robot-commands {kind, job_id?, robot_id?, params, idempotency_key?}` → 201 `CommandOut {id, kind, status, result, error_code, expires_at, ...}`. Theo dõi `GET /technician/robot-commands/{id}` mỗi 0,5–1 giây tới khi `status` là `DONE` hoặc `FAILED`. Trạng thái: `PENDING` (chưa được agent lấy) → `DELIVERED` (agent đã nhận, đang làm) → `DONE` / `FAILED`; `PENDING` quá hạn (20 giây cho PAUSE/RESUME/STOP, 60 giây cho lệnh khác) → `EXPIRED` (**không chạy trễ**). `GET /technician/jobs/{id}/robot-commands` liệt kê lịch sử.
+
+| `kind` | `params` | Điều kiện job | `result` khi `DONE` |
+|---|---|---|---|
+| `LOAD` | (không) | job đang hoạt động | tóm tắt job, `validation`, `plan_digest`, **`authorization_token`** (mã người vận hành xác nhận khi chạy THẬT), `scene` (cho 3D) |
+| `PREFLIGHT` | `mode` | đang hoạt động | `{ok, moves, plan_digest}` hoặc `{ok:false, code, message}`; robot không di chuyển |
+| `DRY_RUN` | `mode`, `speed?` | job `PREPARING` | `{started:true}`; chạy thử pen-up (bút không chạm giấy); xem kết quả qua `live` |
+| `RUN` | `mode`, `authorization?`, `resume_from?`, `confirm_unknown?`, `speed?` | job `WRITING`/`PAUSED` (**bấm `POST /technician/jobs/{id}/start` trước**) | `{started:true}`; theo dõi bằng `live` |
+| `PAUSE` / `RESUME` / `STOP` | (không) | có lần chạy | `{ok}`; `STOP` chỉ dừng phần mềm, **không thay nút E-Stop** |
+| `PAPER_CHANGED` | (không) | đang đợi thay giấy | `{ok}` |
+| `ALIGN_START` | `mode`, `authorization` (REAL) | job đang hoạt động | đưa đầu bút (người vận hành đã đặt gần điểm bắt đầu bằng tay) tới **điểm bắt đầu cố định của job** (trên tờ giấy, cách góc trái-trên 20 mm, ở độ cao nhấc bút + 2 mm) với **đúng góc viết**; một lệnh MoveL chậm, từ chối khi xa hơn 150 mm hoặc lệch góc quá 15°, hoặc đầu bút thấp hơn độ cao nhấc bút. `{moved, distance_mm, angle_deg, target_mm}`. Dùng khi `RUN` báo `START_ORIENTATION_MISMATCH`. Chạy REAL cần `real-enable` + mã `AUTHORIZE-…` như `DRY_RUN`; `STOP`/`PAUSE` dừng nó tại chỗ |
+| `IDENTIFY` | `mode` | (không cần job; gửi `robot_id`) | nối **chỉ-đọc** lấy mẫu/phiên bản/tư thế robot rồi ngắt; không enable, không chuyển động |
+
+`mode` là `MOCK` / `SIM` / `REAL`. `FAILED` kèm `error_code` của agent: `REAL_NOT_ENABLED_ON_SITE`, `MODE_DISABLED`, `AGENT_BUSY`, `JOB_NOT_LOADED`, `VALIDATION_FAILED`, `DRY_RUN_REQUIRED`, `PARTIAL_JOB_EXISTS`, `NO_RUN_ACTIVE`, ... (hiện `error_message` cho người dùng).
+Lỗi tạo lệnh: `409 ROBOT_IN_USE` (robot đang do kỹ thuật viên khác điều khiển), `409 AGENT_OFFLINE` (máy trạm chưa kết nối: **không** xếp hàng; hiện "robot không liên lạc được, nếu nguy hiểm hãy nhấn E-Stop vật lý"), `409 JOB_STATE_CONFLICT` (sai trạng thái job), `409 JOB_NOT_ACTIVE`, `409 IDEMPOTENCY_KEY_REUSED`, `422 MODE_REQUIRED`, `422 AUTHORIZATION_REQUIRED` (RUN chạy REAL cần `authorization: "AUTHORIZE-<job>-<mã>"` lấy từ kết quả `LOAD`), `422 JOB_REQUIRED`, `404` khi không có job trên robot đó (BR-19), `403` khi Manager gửi lệnh khác PAUSE/RESUME/STOP.
+Gửi `idempotency_key` (UUID mới cho mỗi lần bấm) để bấm đúp / mạng chập chờn không tạo hai lệnh.
+**Chạy robot THẬT** vẫn cần ba điều độc lập mà lệnh từ xa không thay được: (1) `real` nằm trong `modes` của agent ở máy trạm; (2) **người ở máy trạm** chạy `cli real-enable --job N --minutes M` (gõ YES; file hết hạn, đúng job đó); (3) mã `AUTHORIZE-…` gắn kế hoạch + đã chạy thử pen-up. Quy trình đầy đủ: `docs/ROBOT_REAL_TEST_RUNBOOK.md`.
+
+**Trình tự một job (app kỹ thuật viên):** `package` → `prepare` → `calibration` → `simulation` → `LOAD` → `PREFLIGHT` → `DRY_RUN` → (người vận hành xác nhận tại máy trạm khi chạy THẬT) → `POST /jobs/{id}/start` → `RUN` → theo dõi `live` → tới khi `status.busy=false` → `POST /jobs/{id}/finish` → ảnh QC.
+
+### 7g.2 Trạng thái sống
+`GET /technician/robots/{robot_id}/live?after=<last_seq>` (Manager: `/manager/robots/{id}/live`) → `{agent_online, age_s, mode, status{busy, current, last, state, level, ...}, last_seq, frames[]}`. Gọi **4–5 lần/giây** khi đang xem; truyền `after = last_seq` lần trước để chỉ nhận khung mới. Mỗi khung: `state, mode, tcp (mm), joints_deg (độ, j1..j6), move_kind, stroke, total_strokes, progress_pct, force_n, touching, level, alerts[], message`. `agent_online=false` (im lặng > 15 giây) → banner "mất kết nối máy trạm". `GET /technician/robots/{id}/scene` → tờ giấy, khung toạ độ, nét của job đã `LOAD`. Cảnh báo đỏ/cam/vàng vẫn lấy từ `robot-status` và `alerts` (mục 7f) và có thêm mã **`BACKEND_LINK_LOST` (mức 3, cam)**.
+
+**Mất liên lạc agent ↔ BE khi đang viết (đã chốt):** sau ~6 giây không gọi được BE, agent viết nốt nét đang viết, nhấc bút, **tạm dừng** và hiện cảnh báo cam tại máy trạm; khi nối lại, nó báo `BACKEND_LINK_LOST` lên BE và **không tự tiếp tục**: kỹ thuật viên gửi `RESUME` hoặc `STOP`. Agent không thể dừng robot nó không liên lạc được: **nút E-Stop vật lý là an toàn thật**.
+
+### 7g.3 Xem 3D (cách chọn và vì sao)
+**Chọn: nhúng trang 3D do BE phục vụ** (FE không viết three.js). Lý do: một nguồn code duy nhất cho cả mobile (WebView) và web (iframe), mô hình robot và logic đặt tờ giấy/khớp đã được kiểm tra, cập nhật không cần phát hành lại app.
+1. `POST /technician/robots/{robot_id}/view-ticket` (Manager: `/manager/robots/{id}/view-ticket`) → `{ticket, expires_in:3600, viewer_path, live_path, scene_path}`.
+2. Mở `<BE_URL>` + `viewer_path` (ví dụ `https://<be>/viewer/robot.html?ticket=...`) trong WebView/iframe. Chiều cao tối thiểu 300 px; chạm-kéo để xoay, véo để thu phóng.
+3. Hết vé (401 `INVALID_VIEW_TICKET`): xin vé mới và nạp lại. **Vé chỉ đọc**: không gửi được lệnh. Điều khiển luôn qua `robot-commands` bằng token của người dùng.
+4. Web FE: thêm origin của FE vào `CORS_ORIGINS` của BE (BE dùng danh sách này cho `frame-ancestors`); nếu không iframe bị chặn.
+Phương án tự vẽ (không khuyến nghị): three.js r160 + `urdf-loader` 0.12.1; URDF `GET /api/v1/robot-model/fairino3_v6.urdf` (công khai, cache 1 ngày), mesh `GET /api/v1/robot-model/meshes/fairino3_v6/{name}.STL`, `loader.packages = {fairino_description: "<BE>/api/v1/robot-model"}`; dữ liệu từ `viewer/{ticket}/live` và `viewer/{ticket}/scene` (không cần token); `joints_deg` theo độ, tên khớp `j1`..`j6`; hệ trục Z hướng lên, đơn vị mét (tcp/scene theo mm). Ghi chú trung thực: đây là **dữ liệu thật từ agent hiển thị lại**, không phải camera và không mô phỏng vật lý; mô hình giả định gốc URDF trùng gốc controller (chưa kiểm chứng trên robot thật).
+
+### 7g.4 Khoá agent: đăng nhập là có (app desktop) và khoá của Manager (migration 0010, 0012)
+**Đường chính (app desktop của technical staff): khoá theo phiên đăng nhập, không ai phải cấp tay.**
+1. App đăng nhập bằng tài khoản technical staff (`/auth/login`), chọn robot mình đang giữ job (`GET /technician/robot-status` → `robot_id`).
+2. `POST /technician/robots/{robot_id}/agent-session {instance_id}` → `201 {key, key_prefix, expires_at, renew_after_s}`. `instance_id` là UUID (hoặc chuỗi 8–64 ký tự `A-Za-z0-9_.-`) **sinh một lần mỗi lần mở app** và giữ nguyên cho mọi lần gia hạn. Chỉ technical staff **đang giữ job đang hoạt động trên robot đó** mới lấy được (không có thì `404`); Manager `403`.
+3. App đưa `key` cho agent chạy trong app (chỉ trong bộ nhớ, **không ghi ra file**). Khoá sống ~4 giờ (`expires_at`).
+4. **Gia hạn êm:** sau `renew_after_s` (~3 giờ) gọi lại đúng endpoint với **cùng `instance_id`**; khoá mới cấp ngay, khoá cũ còn dùng được thêm ~2 phút rồi hết hạn. Không có khoảng trống nên không sinh "mất liên lạc". Nếu gia hạn lỗi, giữ khoá cũ và thử lại sau 30 giây.
+5. Đóng app: `DELETE /technician/robots/{robot_id}/agent-session?instance_id=...` → `204` (`409 RUN_OPEN` nếu robot còn lần chạy chưa kết thúc: dừng trước). App sập thì khoá tự hết hạn.
+
+**Mỗi robot chỉ có một app điều khiển, không ai bị đẩy ra giữa chừng:** lấy khoá lần đầu (instance mới) bị `409 ROBOT_IN_USE` khi robot đang có agent online (kể cả cùng một người mở cửa sổ/máy thứ hai, hoặc agent dùng khoá của Manager), đang có lần chạy mở, hoặc có khoá vừa cấp chưa kịp kết nối (60 giây). Hiện lời báo "Robot đang do người khác điều khiển" và đừng thử lại liên tục. Khoá của app đã bỏ đi (offline, quá 60 giây, không có lần chạy mở) bị thay thế bởi lần đăng nhập mới. Khi một agent theo phiên đang online, kỹ thuật viên khác gửi lệnh nhận `409 ROBOT_IN_USE` (Manager vẫn PAUSE/RESUME/STOP).
+Khoá phiên chỉ mở `/agent/*` và `/technician/*` **với tư cách đúng tài khoản đó** (cần còn job hoạt động trên robot); không tạo được lệnh, không xin được khoá khác.
+
+**Đường phụ (máy trạm cố định, không cần ai đăng nhập): khoá của Manager.** `POST /manager/robots/{id}/agent-key` → `{key}` **chỉ hiện một lần** (BE chỉ lưu SHA-256); cấp lại thu hồi khoá Manager cũ (không đụng khoá phiên). `GET /manager/robots/{id}/agent` cho biết đã có khoá Manager chưa, agent `online`, `session_keys[]` đang hiệu lực và `controlled_by_account_id`. `DELETE /manager/robots/{id}/agent-key` thu hồi **mọi** khoá của robot (cắt ngay). Đặt khoá vào biến môi trường `VHRS_AGENT_KEY`, không commit.
+
+### 7g.5 Agent API trong LAN (tuỳ chọn, để gỡ lỗi)
+Agent vẫn có thể phục vụ trang điều khiển riêng trong LAN (`cli serve`, `lan_server:true`; đăng nhập bằng tài khoản hệ thống; `GET /api/agent`, `POST /api/login`, `/api/jobs/{id}/load|preflight|dry-run|run`, `/api/pause|resume|stop`, `WS /ws`...). Đây là đường phụ cho kỹ thuật viên đứng tại máy trạm; **FE không dựa vào nó**.
+
 ### 7.1 Vật tư, mẫu chữ, robot
 | Việc | Endpoint |
 |---|---|
@@ -347,7 +445,7 @@ GET  /manager/quotations/pending-approval      POST /manager/quotations/{qid}/ap
 | Bút (hồ sơ lực) | `GET/POST /manager/pens`, `PATCH .../{id}`, `POST .../{id}/stock` |
 | Mực | `GET /manager/inks?pen_id=`, `POST /manager/pens/{id}/inks`, `PATCH /manager/inks/{id}`, `POST .../stock` |
 | Tương thích giấy–bút | `GET /manager/compatibility`, `PUT /manager/compatibility/{paper_id}/{pen_id} {is_compatible, note?}` (thiếu dòng = **không** tương thích) |
-| Mẫu chữ | `GET/POST /manager/templates`, `PATCH .../{id}` (bật/tắt qua `is_active`). `font_uri` phải dạng `hershey:<tên>` |
+| Mẫu chữ | `GET/POST /manager/templates`, `PATCH .../{id}` (bật/tắt qua `is_active`). `font_uri` dạng `hershey:<tên>` (font một nét) hoặc `outline:fonts/<tên>/<file>.ttf` (font có sẵn trong Storage, thêm bằng `scripts/add_outline_font.py`, không qua API) |
 | Bộ nét chờ duyệt | `GET /manager/styles?status=`, `POST .../{id}/approve`, `POST .../{id}/reject {reason}` |
 | Robot | `GET/POST /manager/robots`, `PATCH .../{id}`; đặt `MAINTENANCE`/`BROKEN` trả `affected_job_ids` (job cần xếp lại). Không đặt tay `BUSY` |
 
@@ -402,6 +500,13 @@ SCHEDULED ──prepare──▶ PREPARING ──start──▶ WRITING ◀─�
 Lỗi riêng: `404 JOB_NOT_FOUND`, `409 JOB_STATE_CONFLICT` (sai bước; `details.allowed`), `409 JOB_NOT_ACTIVE` (job đã xong/hỏng/huỷ), `409 ORDER_NOT_ACTIVE` (đơn không còn `CONFIRMED`, ví dụ bị huỷ), `409 JOB_NOT_DOWNLOADED`, `409 CALIBRATION_REQUIRED`, `409 SIMULATION_REQUIRED`/`SIMULATION_FAILED`, `409 JOB_HASH_MISMATCH` (MSG14), `409 FILE_MISSING`, `409 ROBOT_UNAVAILABLE`, `422 CHECKLIST_INCOMPLETE`, `422 INVALID_PROBE_POINTS`, `422 SIMULATION_INCONSISTENT`, `422 INVALID_FORCE_SUMMARY`, `422 PROGRESS_REQUIRED`, `422 EVENT_NOT_ALLOWED`, `503 STORAGE_NOT_CONFIGURED`.
 Ảnh sản phẩm + QC (UC-38) ở mục 7c; sự cố chưa có ảnh đính kèm.
 
+**Kiểm chứng phía server (thêm 2026-10-23, không đổi route).** Nếu `frame_transform` của hiệu chuẩn có `schema:"vhrs-motion/1"`, `POST .../simulation` tự dựng lại kế hoạch từ phác thảo đã duyệt và kiểm tra;
+lời khai `passed:true` bị đổi thành `false` khi server tìm thấy lỗi (lỗi vào `simulation_report.errors` với tiền tố `SERVER`; `simulation_report.server_validation` có `checks`, `errors`, `stats`).
+Khối gồm: `motion {a_lat_mm_s2, a_tan_mm_s2, travel_speed_mm_s, approach_speed_mm_s, pen_up_clearance_mm, spring_k_n_per_mm, max_spring_travel_mm}` (mọi số **do nhóm đo**, thiếu → `UNCONFIGURED`; `f_target_n`, `v_max_mm_s` luôn lấy từ hồ sơ bút trong DB)
+và `workspace {box_min_mm[x,y,z], box_max_mm[x,y,z], max_reach_mm?, edge_margin_mm?}` (hộp bắt buộc). Với `MOTION_VALIDATION_REQUIRED=true` (trạm có robot thật) hiệu chuẩn thiếu khối này → mô phỏng không đạt (`MOTION_BLOCK_MISSING`).
+Kiểm tra IK / giới hạn khớp **không** làm ở server (`checks.joint_reachability_ik = NOT_CHECKED`): do Robot Agent hỏi controller trước khi chạy.
+Robot Agent gửi thêm vào sự kiện đầu của lần chạy `PROGRESS.payload.agent_run {run_id, mode, robot{model, controller_version, sdk_version, ip}, digest, total_strokes, estimated_seconds}`; dừng bằng phần mềm ghi `payload.source = "agent_software_stop"`.
+
 ## 7c. Ảnh sản phẩm, QC và nghiệm thu – Phase 4b
 
 Sau khi `finish` (job `WRITTEN`), kỹ thuật viên chụp ảnh sản phẩm thật, đánh dấu QC rồi nộp; khách xem ảnh và nghiệm thu hoặc yêu cầu viết lại.
@@ -438,6 +543,11 @@ Tối đa 10 ảnh/job. Lỗi: `409 PHOTO_REQUIREMENTS_NOT_MET` (`details`: `pho
 `OrderOut` có thêm `awaiting_acceptance_at`, `accepted_product_at`, `free_rewrite_used`.
 
 **Xưởng:** `GET /workshop/orders/{id}/product-photos` (Staff của đơn, Manager) – mọi ảnh còn hiện của mọi job kèm QC (`job_status`, `qc_result`, `qc_note`). Ảnh chồng với phác thảo (`overlay_url`) **chưa được BE tạo**: client tự chồng `sketch_preview_url` lên ảnh.
+
+### 7c.2 Đánh giá chất lượng bản viết (Service G, migration 0011)
+`POST /technician/jobs/{id}/photos/{photo_id}/evaluate {page?}` → 201 `{id, verdict: PASS|NEEDS_REVIEW|FAIL, metrics{coverage_pct, extra_ink_pct, chamfer_mm, hd95_mm, hausdorff_mm, alignment{dx_mm,dy_mm,rot_deg}, thresholds{..., source}}, overlay_url, advisory}`. BE tìm tờ giấy trong ảnh, nắn phẳng, tìm nét mực (mọi màu mực), căn chỉnh nhỏ rồi đo so với phác thảo đã duyệt (mm). `overlay_url`: xanh dương = nét đo được, xanh lá = nét có đủ, đỏ = nét kế hoạch bị thiếu. `GET /technician/jobs/{id}/quality` và `GET /manager/jobs/{id}/quality` liệt kê các lần đánh giá.
+- **Ảnh không đo được thì báo chứ không đoán:** `422 PAPER_NOT_FOUND` (không thấy đủ tờ giấy: chụp thấy 4 góc, nền tương phản, đủ sáng), `422 NO_INK`, `422 NO_MATCH` (sai tờ/sai đơn), `422 PHOTO_UNREADABLE`, `422 PAGE_OUT_OF_RANGE`.
+- **Chỉ tham khảo:** số mm giả định tờ giấy phẳng và **chưa hiệu chuẩn bằng thước**; ngưỡng đạt/không đạt là mặc định chưa kiểm chứng (`thresholds.source = DEFAULT_UNCALIBRATED`). Kết luận QC vẫn là của kỹ thuật viên (`qc_result` của ảnh không bị đổi). FE hiện dòng `advisory` cạnh kết quả.
 
 ## 7d. Thanh toán cuối và nhận hàng – Phase 4c-1
 

@@ -91,6 +91,8 @@ class SketchOut(_ORM):
     is_final: bool
     created_at: datetime
     preview_urls: list[str] = []
+    image_urls: list[str] = []          # customer-facing JPEG per page (what the customer will see)
+    trajectory_url: str | None = None   # signed link of the robot trajectory JSON
     warnings: list[str] = []
 
 
@@ -272,6 +274,7 @@ class ChangeRequestIn(BaseModel):
 class SketchForCustomer(BaseModel):
     version: int
     preview_urls: list[str]
+    image_urls: list[str] = []
     approach_note: str | None
     estimated_writing_sec: int | None
     similarity_score: Decimal | None

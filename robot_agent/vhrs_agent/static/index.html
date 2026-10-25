@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHRS Robot Monitor</title>
+<script type="importmap">
+{"imports": {"three": "/vendor/three/build/three.module.js", "three/examples/jsm/": "/vendor/three/examples/jsm/",
+             "urdf-loader": "/vendor/urdf-loader/src/URDFLoader.js"}}
+</script>
+<style>
+  :root { --bg:#f6f5f2; --panel:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#dcdad3; --ok:#2e7d32; --warn:#b26a00; --bad:#c62828; --accent:#1f4e79; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161616; --panel:#202020; --ink:#ececec; --muted:#9a9890; --line:#3a3a36; --ok:#66bb6a; --warn:#ffb74d; --bad:#ef5350; --accent:#7fb3e6; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.4 system-ui, sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  h1 { font-size:17px; margin:0; font-weight:650; }
+  .mode { padding:3px 10px; border-radius:99px; font-weight:700; font-size:13px; letter-spacing:.04em; border:2px solid var(--muted); }
+  .mode.REAL { border-color:var(--bad); color:var(--bad); } .mode.SIM { border-color:var(--accent); color:var(--accent); } .mode.MOCK { border-color:var(--muted); color:var(--muted); }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 340px; gap:16px; padding:16px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  canvas { width:100%; height:auto; display:block; background:#fff; border:1px solid var(--line); border-radius:6px; }
+  dl { display:grid; grid-template-columns: 110px 1fr; gap:6px 10px; margin:0 0 12px; }
+  dt { color:var(--muted); } dd { margin:0; font-variant-numeric: tabular-nums; }
+  .state { font-size:22px; font-weight:700; margin-bottom:8px; }
+  .state.FAULT, .state.STOPPED, .state.UNKNOWN, .state.REFUSED { color:var(--bad); } .state.PAUSED { color:var(--warn); } .state.DONE, .state.DRY_RUN_DONE { color:var(--ok); }
+  .bar { position:relative; height:22px; background:var(--bg); border:1px solid var(--line); border-radius:4px; overflow:hidden; margin:6px 0 14px; }
+  .band { position:absolute; top:0; bottom:0; background:color-mix(in srgb, var(--ok) 25%, transparent); }
+  .needle { position:absolute; top:0; bottom:0; width:3px; background:var(--ink); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  button { font:inherit; font-weight:650; padding:10px 14px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer; min-height:44px; }
+  button.stop { background:var(--bad); color:#fff; border-color:var(--bad); flex:1; }
+  button:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .note { color:var(--muted); font-size:13px; margin-top:12px; }
+  #msg { min-height:1.4em; color:var(--warn); }
+  #alerts { display:grid; gap:8px; padding:12px 16px 0; }
+  .al { border:2px solid var(--line); border-radius:10px; padding:10px 14px; background:var(--panel); }
+  .al.l2 { border-color:var(--warn); } .al.l3 { border-color:var(--warn); background:color-mix(in srgb, var(--warn) 14%, var(--panel)); }
+  .al.l4 { border-color:var(--bad); background:var(--bad); color:#fff; animation:blink 1s steps(2) infinite; }
+  .al.l4 .act { font-size:20px; font-weight:700; }
+  .al b { display:block; font-size:18px; } .al .act { margin-top:4px; } .al small { opacity:.8; }
+  @keyframes blink { 50% { background:#7f0000; } }
+  @media (prefers-reduced-motion: reduce) { .al.l4 { animation:none; } }
+  #sound { margin-left:auto; }
+  #login, #console { max-width:1200px; margin:12px 16px 0; }
+  #login form, .ctl { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  input, select { font:inherit; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); min-height:40px; }
+  button.go { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #out { white-space:pre-wrap; font:13px/1.45 ui-monospace, monospace; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; margin-top:10px; max-height:240px; overflow:auto; }
+  #out.err { border-color:var(--bad); }
+  .hint { color:var(--muted); font-size:13px; }
+  #twin { width:100%; height:420px; border:1px solid var(--line); border-radius:6px; overflow:hidden; margin-bottom:12px; }
+  #twin canvas { width:100%; height:100%; display:block; }
+  #twinnote { color:var(--warn); font-size:13px; margin-bottom:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VHRS Robot Monitor</h1><span id="mode" class="mode">—</span><span id="job"></span><span id="conn" style="color:var(--muted)">đang kết nối…</span><button id="sound" type="button">Bật âm thanh cảnh báo</button>
+</header>
+<section id="login" class="card" hidden>
+  <b>Đăng nhập bằng tài khoản hệ thống</b> <span class="hint">(Technical Staff điều khiển; Manager xem và dừng)</span>
+  <form id="loginform" style="margin-top:8px"><input id="em" type="email" placeholder="email" autocomplete="username" required>
+    <input id="pw" type="password" placeholder="mật khẩu" autocomplete="current-password" required><button class="go" type="submit">Đăng nhập</button></form>
+  <div id="loginerr" class="hint" style="color:var(--bad)"></div>
+</section>
+<section id="console" class="card" hidden>
+  <b>Điều khiển</b> <span id="who" class="hint"></span> <button id="logout" type="button" style="min-height:32px;padding:4px 10px">Đăng xuất</button>
+  <div class="ctl" style="margin-top:8px">
+    <select id="jobsel" aria-label="Job"><option value="">Chọn job của tôi…</option></select>
+    <input id="jobid" type="number" min="1" placeholder="hoặc nhập mã job" style="width:150px">
+    <select id="runmode" aria-label="Chế độ"></select>
+    <button id="b-load" type="button">1. Tải job</button>
+    <button id="b-pre" type="button">2. Kiểm tra trước</button>
+    <button id="b-dry" type="button">3. Chạy thử pen-up</button>
+    <button id="b-run" type="button" class="go">4. Chạy viết</button>
+  </div>
+  <div class="ctl" style="margin-top:8px">
+    <input id="authz" placeholder="Mã xác nhận (chỉ khi chạy robot THẬT)" style="width:290px" autocomplete="off">
+    <input id="resume-from" type="number" min="0" placeholder="viết tiếp từ nét…" style="width:150px">
+    <label class="hint"><input id="unknown" type="checkbox"> tôi đã xem tờ giấy (lần chạy trước kết thúc không rõ)</label>
+    <button id="b-paper" type="button">Đã thay giấy</button>
+  </div>
+  <div class="hint" style="margin-top:6px">Chạy robot THẬT chỉ khi người vận hành ở máy trạm đã bật cho đúng job này (lệnh <code>real-enable</code>) và bạn đứng cạnh nút E-Stop.</div>
+  <div id="out" hidden></div>
+</section>
+<div id="alerts" role="alert" aria-live="assertive"></div>
+<main>
+  <section class="card"><div id="twinnote" hidden></div><div id="twin" role="img" aria-label="Mô hình 3D của robot FR3"></div><canvas id="cv" width="700" height="990" aria-label="Tờ giấy và vị trí bút"></canvas></section>
+  <section class="card">
+    <div id="state" class="state">—</div><div id="msg"></div>
+    <dl>
+      <dt>Tiến độ</dt><dd id="prog">—</dd>
+      <dt>Nét</dt><dd id="stroke">—</dd>
+      <dt>Chuyển động</dt><dd id="kind">—</dd>
+      <dt>Bút (giấy)</dt><dd id="pos">—</dd>
+      <dt>Độ cao bút</dt><dd id="lift">—</dd>
+      <dt>Lực</dt><dd id="force">—</dd>
+    </dl>
+    <div class="bar" aria-hidden="true"><div id="band" class="band"></div><div id="needle" class="needle" style="left:0"></div></div>
+    <div class="row">
+      <button id="pause">Tạm dừng</button><button id="resume">Tiếp tục</button><button id="stop" class="stop">DỪNG</button>
+    </div>
+    <p class="note">DỪNG là dừng bằng phần mềm. Nó <b>không thay</b> nút dừng khẩn vật lý của robot. Màn hình này không phải camera: người vận hành vẫn phải kiểm soát khu vực robot.</p>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let job = null, snap = null, token = new URLSearchParams(location.search).get('token') || '';
+let bearer = ''; try { bearer = sessionStorage.getItem('vhrs_token') || ''; } catch (e) {}
+const hdr = () => bearer ? {'Authorization': 'Bearer ' + bearer} : (token ? {'X-Viewer-Token': token} : {});
+window.apiHeaders = hdr;
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {...hdr(), ...(opts.body ? {'Content-Type': 'application/json'} : {}), ...(opts.headers || {})}});
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && bearer) { logout(); }
+  return {ok: r.ok, status: r.status, data};
+}
+function say(res) {
+  const o = $('out'); o.hidden = false; o.className = res.ok ? '' : 'err';
+  o.textContent = res.ok ? JSON.stringify(res.data, null, 2) : ((res.data.error && (res.data.error.code + ': ' + res.data.error.message)) || ('Lỗi ' + res.status))
+    + (res.data.error && res.data.error.details ? '\n' + JSON.stringify(res.data.error.details, null, 2) : '');
+}
+async function post(p) { const r = await api('/api/' + p, {method: 'POST'}); if (!r.ok) $('msg').textContent = 'Lệnh bị từ chối: ' + ((r.data.error && r.data.error.message) || r.status); }
+function logout() { try { sessionStorage.removeItem('vhrs_token'); } catch (e) {} location.reload(); }
+$('pause').onclick = () => post('pause'); $('resume').onclick = () => post('resume'); $('stop').onclick = () => post('stop');
+
+function toPaper(tcp) {   // robot base frame -> paper mm and height above the sheet
+  const f = job.frame, o = f.origin, d = [tcp[0]-o[0], tcp[1]-o[1], tcp[2]-o[2]];
+  const dot = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const u = dot(d, f.x_axis), v = dot(d, f.y_axis), h = dot(d, f.normal);
+  const [a,b,c] = f.height_coeffs;
+  return {u, v, lift: h - (a*u + b*v + c)};
+}
+function draw() {
+  if (!job) return;
+  const pg = job.pages[0], cv = $('cv'), g = cv.getContext('2d');
+  const s = Math.min(cv.width / pg.width_mm, cv.height / pg.height_mm);
+  cv.height = Math.round(pg.height_mm * s); cv.width = Math.round(pg.width_mm * s);
+  g.fillStyle = '#fff'; g.fillRect(0,0,cv.width,cv.height); g.strokeStyle = '#bbb'; g.strokeRect(0.5,0.5,cv.width-1,cv.height-1);
+  const done = snap ? snap.stroke : 0;
+  pg.strokes.forEach((st, i) => {
+    g.beginPath(); st.forEach((p, j) => j ? g.lineTo(p[0]*s, p[1]*s) : g.moveTo(p[0]*s, p[1]*s));
+    g.strokeStyle = i < done ? '#1f4e79' : '#b9b7ae'; g.lineWidth = i < done ? 2 : 1.2; g.stroke();
+  });
+  if (snap && snap.tcp) {
+    const t = toPaper(snap.tcp), down = t.lift < 0.3;
+    g.beginPath(); g.arc(t.u*s, t.v*s, down ? 6 : 9, 0, 6.3);
+    g.fillStyle = down ? '#c62828' : 'rgba(31,78,121,.35)'; g.fill(); g.strokeStyle = '#000'; g.lineWidth = 1; g.stroke();
+  }
+}
+let audio = null, siren = null;
+$('sound').onclick = () => {
+  audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+  $('sound').textContent = 'Âm thanh cảnh báo: bật';
+};
+function setSiren(on) {
+  if (on && audio && !siren) {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = 'square'; o.frequency.value = 880; g.gain.value = 0.08; o.connect(g); g.connect(audio.destination); o.start();
+    let hi = true; const t = setInterval(() => { o.frequency.value = hi ? 660 : 880; hi = !hi; }, 450);
+    siren = {o, t};
+  } else if (!on && siren) { siren.o.stop(); clearInterval(siren.t); siren = null; }
+}
+function renderAlerts() {
+  const box = $('alerts'), list = (snap && snap.alerts) || [];
+  box.innerHTML = '';
+  list.forEach(a => {
+    const d = document.createElement('div'); d.className = 'al l' + a.level;
+    const t = document.createElement('b'); t.textContent = a.title_vi;
+    const act = document.createElement('div'); act.className = 'act'; act.textContent = a.action_vi;
+    d.append(t, act);
+    if (a.source === 'local') { const sm = document.createElement('small'); sm.textContent = 'Nội dung dự phòng tại máy trạm (chưa lấy được từ máy chủ).'; d.append(sm); }
+    box.append(d);
+  });
+  const red = (snap && snap.level >= 4);
+  setSiren(red);
+  document.title = (red ? 'E-STOP! ' : '') + 'VHRS Robot Monitor';
+}
+function render() {
+  if (!snap) return;
+  renderAlerts();
+  if (window.twin) window.twin.update(snap);
+  $('state').textContent = snap.state; $('state').className = 'state ' + snap.state;
+  $('mode').textContent = snap.mode || (job && job.mode) || '—'; $('mode').className = 'mode ' + (snap.mode || '');
+  $('msg').textContent = [snap.fault, snap.message].filter(Boolean).join(' — ');
+  $('prog').textContent = (snap.progress_pct || 0).toFixed(1) + ' %';
+  $('stroke').textContent = snap.stroke + ' / ' + snap.total_strokes; $('kind').textContent = snap.move_kind || '—';
+  if (snap.tcp && job) { const t = toPaper(snap.tcp); $('pos').textContent = t.u.toFixed(1) + ', ' + t.v.toFixed(1) + ' mm'; $('lift').textContent = t.lift.toFixed(2) + ' mm'; }
+  if (snap.force_n !== null && job) {
+    const L = job.limits, top = L.f_hard * 1.1;
+    $('force').textContent = snap.force_n.toFixed(2) + ' N  (dải ' + L.f_min + '–' + L.f_max + ', tối đa ' + L.f_hard + ')';
+    $('needle').style.left = Math.min(100, snap.force_n / top * 100) + '%';
+    $('band').style.left = (L.f_min / top * 100) + '%'; $('band').style.width = ((L.f_max - L.f_min) / top * 100) + '%';
+  } else $('force').textContent = '—';
+  draw();
+}
+async function setupConsole(agent) {
+  $('console').hidden = false;
+  $('runmode').innerHTML = agent.modes.map(m => '<option value="' + m + '">' + m.toUpperCase() + (m === 'real' ? ' (robot THẬT)' : m === 'sim' ? ' (mô phỏng)' : ' (giả lập phần mềm)') + '</option>').join('');
+  const jobs = await api('/api/my-jobs');
+  if (jobs.ok) jobs.data.items.forEach(j => { const o = document.createElement('option'); o.value = j.id; o.textContent = '#' + j.id + ' · ' + (j.order_code || '') + ' · ' + j.status; $('jobsel').append(o); });
+  $('jobsel').onchange = () => { if ($('jobsel').value) $('jobid').value = $('jobsel').value; };
+  const jid = () => parseInt($('jobid').value || $('jobsel').value, 10);
+  const need = () => { if (!jid()) { say({ok: false, status: 0, data: {error: {code: 'THIEU_JOB', message: 'Chọn hoặc nhập mã job.'}}}); return false; } return true; };
+  $('b-load').onclick = async () => { if (!need()) return; const r = await api('/api/jobs/' + jid() + '/load', {method: 'POST'}); say(r);
+    if (r.ok) $('authz').placeholder = 'Mã xác nhận (chạy THẬT). Kế hoạch này: ' + r.data.authorization_token.slice(0, 14) + '…'; };
+  $('b-pre').onclick = async () => { if (need()) say(await api('/api/jobs/' + jid() + '/preflight', {method: 'POST', body: JSON.stringify({mode: $('runmode').value})})); };
+  const body = () => { const b = {mode: $('runmode').value}; if ($('authz').value) b.authorization = $('authz').value.trim(); return b; };
+  $('b-dry').onclick = async () => { if (need()) say(await api('/api/jobs/' + jid() + '/dry-run', {method: 'POST', body: JSON.stringify(body())})); };
+  $('b-run').onclick = async () => {
+    if (!need()) return;
+    if ($('runmode').value === 'real' && !confirm('Chạy robot THẬT? Bạn phải đứng cạnh nút E-Stop, vùng robot trống và giấy đã kẹp chặt.')) return;
+    const b = body(); if ($('resume-from').value !== '') b.resume_from = parseInt($('resume-from').value, 10); if ($('unknown').checked) b.confirm_unknown = true;
+    say(await api('/api/jobs/' + jid() + '/run', {method: 'POST', body: JSON.stringify(b)})); };
+  $('b-paper').onclick = async () => say(await api('/api/paper-changed', {method: 'POST'}));
+  $('logout').onclick = logout;
+}
+async function start() {
+  const agent = await (await fetch('/api/agent')).json().catch(() => ({auth_required: false, modes: []}));
+  if (agent.auth_required && !bearer) {
+    $('login').hidden = false;
+    $('loginform').onsubmit = async e => {
+      e.preventDefault();
+      const r = await fetch('/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: $('em').value, password: $('pw').value})});
+      const d = await r.json();
+      if (!r.ok) { $('loginerr').textContent = (d.error && d.error.message) || 'Đăng nhập thất bại'; return; }
+      try { sessionStorage.setItem('vhrs_token', d.access_token); } catch (err) {}
+      location.reload();
+    };
+    return;
+  }
+  if (agent.auth_required) { $('who').textContent = ''; setupConsole(agent); }
+  const jr = await api('/api/job'); job = jr.data; $('job').textContent = job.job_id ? 'Job #' + job.job_id : '';
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws' + (bearer ? '?token=' + encodeURIComponent(bearer) : ''));
+  ws.onopen = () => { $('conn').textContent = 'đã kết nối'; };
+  ws.onclose = () => { $('conn').textContent = 'MẤT KẾT NỐI với agent'; $('conn').style.color = 'var(--bad)'; };
+  ws.onmessage = e => { snap = JSON.parse(e.data); render(); };
+  draw();
+}
+start();
+</script>
+<script type="module">
+  import { startTwin } from '/twin.js';
+  startTwin(document.getElementById('twin'), document.getElementById('twinnote'))
+    .then(t => { window.twin = t; if (snap) t.update(snap); })
+    .catch(e => { const n = document.getElementById('twinnote'); n.hidden = false; n.textContent = 'Không dựng được mô hình 3D: ' + e; });
+</script>
+</body>
+</html>
