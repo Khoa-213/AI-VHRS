@@ -1,0 +1,7 @@
+{
+  "_help": "Copy this file to console.json (same folder as this file) and fill it in. console.json is git-ignored.",
+  "backend_url": "<địa chỉ BE, ví dụ http://127.0.0.1:8000 hoặc https://ai-vhrs.onrender.com>",
+  "email": "<email tài khoản Technical Staff đang giữ job>",
+  "job_id": "<số job, xem trong app/DB>",
+  "mode": "SIM"
+}
