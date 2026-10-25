@@ -138,7 +138,7 @@ export default function Shell({
             </div>
             <div className="tools">
               {tools}
-              <LanguageToggle className="ibtn" />
+              <LanguageToggle />
               <div className="me2"><span className="avatar">{initials(name)}</span><div>{name}<small>{role}</small></div></div>
             </div>
           </header>

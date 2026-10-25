@@ -5,7 +5,7 @@ import { useAsync } from '../../hooks/useAsync'
 import { useDebounced } from '../../hooks/useDebounced'
 import { useLocale, useT } from '../../i18n'
 import {
-  INTERNAL_ROLES, ROLES, STATUSES, createAccount, listAccounts, updateAccount, type AccountStatus, type AdminAccount,
+  INTERNAL_ROLES, ROLES, STATUSES, allAccounts, createAccount, updateAccount, type AccountStatus, type AdminAccount,
 } from '../../services/admin'
 import { PASSWORD_RULE, PHONE_RULE, cleanPhone } from '../../services/auth'
 import { errDetails, errText, orderErrorKey } from '../../services/orders'
@@ -29,8 +29,11 @@ export default function Accounts() {
   const [open, setOpen] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
 
-  const list = useAsync(() => listAccounts({ q: search, role, status, page, pageSize: PAGE_SIZE }), [search, role, status, page])
-  const pages = Math.max(1, Math.ceil((list.data?.total ?? 0) / PAGE_SIZE))
+  // Every match is loaded and paged here, so the newest accounts come first (the backend pages them oldest first).
+  const list = useAsync(() => allAccounts({ q: search, role, status }), [search, role, status])
+  const all = list.data ?? []
+  const pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE))
+  const shown = all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const done = (msg: string) => {
     setNotice(msg)
     setOpen(null)
@@ -86,18 +89,18 @@ export default function Accounts() {
                   </tr>
                 </thead>
                 <tbody>
-                  {list.data.items.map((a) => (
+                  {shown.map((a) => (
                     <AccountRows key={a.id} a={a} self={a.id === me?.id} open={open === a.id} onToggle={() => setOpen(open === a.id ? null : a.id)} onDone={() => done(t('ad.acc.saved'))} locale={locale} />
                   ))}
                 </tbody>
               </table>
-              {!list.data.items.length && <p className="sub">{t('ad.acc.empty')}</p>}
+              {!shown.length && <p className="sub">{t('ad.acc.empty')}</p>}
             </div>
           )}
 
           {list.data && (
             <div className="ad-pager">
-              <span className="sub">{t('ad.acc.count', { n: list.data.total })}</span>
+              <span className="sub">{t('ad.acc.count', { n: all.length })}</span>
               <div>
                 <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t('ad.prev')}</button>
                 <span className="sub">{t('ad.page', { page, pages })}</span>

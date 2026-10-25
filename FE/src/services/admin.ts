@@ -1,4 +1,4 @@
-import { api } from './api'
+import { allPages, api, newestFirst } from './api'
 import type { Account } from './auth'
 
 /** Admin only: internal accounts and the system audit trail (`/admin/*`). Admin has no access to orders, prices or production. */
@@ -46,6 +46,10 @@ export async function listAccounts(f: { role?: string; status?: string; q?: stri
   const r = await api<RawPage<Account>>(`/admin/accounts${query({ role: f.role, status: f.status, q: f.q?.trim(), page: f.page, page_size: f.pageSize })}`)
   return { items: r.items.map(toAccount), total: r.total, page: r.page, pageSize: r.page_size }
 }
+
+/** Every matching account, newest first (the backend pages them oldest first). */
+export const allAccounts = async (f: { role?: string; status?: string; q?: string } = {}): Promise<AdminAccount[]> =>
+  newestFirst(await allPages((page) => listAccounts({ ...f, page, pageSize: 100 }), 100), (a) => a.createdAt)
 
 export const createAccount = async (b: { email: string; password: string; full_name: string; phone?: string; role: string }) =>
   toAccount(await api<Account>('/admin/accounts', { method: 'POST', body: b }))

@@ -180,3 +180,20 @@ export function authErrorKey(e: unknown): string {
   }
   return e.status >= 500 ? 'auth.err.server' : 'auth.err.unknown'
 }
+
+/**
+ * Loads every page of a paged list. Several backend lists come oldest first, so the newest rows sit on the last page:
+ * read them all before sorting, or a new row never shows.
+ */
+export async function allPages<T>(load: (page: number) => Promise<{ items: T[]; total: number }>, pageSize: number): Promise<T[]> {
+  const out: T[] = []
+  for (let page = 1; ; page++) {
+    const r = await load(page)
+    out.push(...r.items)
+    if (!r.items.length || page * pageSize >= r.total) return out
+  }
+}
+
+/** Newest first by the given ISO timestamp (missing ones last), then by id, newest first. */
+export const newestFirst = <T extends { id: number }>(items: T[], at: (x: T) => string | null | undefined): T[] =>
+  [...items].sort((a, b) => (at(b) ?? '').localeCompare(at(a) ?? '') || b.id - a.id)

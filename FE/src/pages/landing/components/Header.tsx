@@ -34,7 +34,7 @@ export default function Header() {
               </svg>
             </button>
             <ThemeToggle className="lp-icon-btn" />
-            <LanguageToggle className="lp-icon-btn" />
+            <LanguageToggle />
             <AccountButton buttonClassName="lp-icon-btn" avatarClassName="vh-avatar" />
           </div>
           <a href={ORDER_HREF} className="lp-start-btn">

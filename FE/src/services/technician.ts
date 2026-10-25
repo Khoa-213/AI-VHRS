@@ -1,4 +1,4 @@
-import { ApiError, api } from './api'
+import { ApiError, allPages, api, newestFirst } from './api'
 import type { Page } from './orders'
 import type { JobStatus } from './workshop'
 
@@ -188,9 +188,12 @@ export const postJobEvent = (id: number, body: EventInput) => {
   if (!CLIENT_EVENTS.includes(body.event_type)) throw new Error('td.flow.invalidEvent')
   return techApi<JobEvent>(`/technician/jobs/${id}/events`, { method: 'POST', body })
 }
-export async function jobEvents(id: number, page = 1) {
-  return techApi<{ items: JobEvent[]; total: number; page: number; page_size: number }>(`/technician/jobs/${id}/events?page=${page}&page_size=50`)
+export async function jobEvents(id: number, page = 1, pageSize = 50) {
+  return techApi<{ items: JobEvent[]; total: number; page: number; page_size: number }>(`/technician/jobs/${id}/events?page=${page}&page_size=${pageSize}`)
 }
+/** The whole history of a job, latest event first (the backend pages it oldest first). */
+export const allJobEvents = async (id: number) =>
+  newestFirst(await allPages((page) => jobEvents(id, page, 500), 500), (e) => e.occurred_at)
 export const INCIDENT_TYPES = ['ROBOT', 'MATERIAL', 'FORCE_MODULE', 'OTHER'] as const
 export interface IncidentInput { type: typeof INCIDENT_TYPES[number]; description: string; robot_status_after?: 'MAINTENANCE' | 'BROKEN' }
 export const reportIncident = (id: number, body: IncidentInput) => techApi(`/technician/jobs/${id}/incidents`, { method: 'POST', body })

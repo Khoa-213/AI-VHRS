@@ -6,17 +6,17 @@ import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import type { Job } from '../../services/async'
 import { errText, orderErrorKey } from '../../services/orders'
-import { approveAdjustment, pendingApprovals, rejectAdjustment } from '../../services/workshop'
+import { allPendingApprovals, approveAdjustment, rejectAdjustment } from '../../services/workshop'
 import { fmt } from '../../utils/format'
 
 /** Manager only: price adjustments that went past the threshold and wait for a decision (BR-09). */
 export default function Approvals() {
   const t = useT()
-  const list = useAsync(() => pendingApprovals(), [], 30000)
+  const list = useAsync(() => allPendingApprovals(), [], 30000)
   const [busy, setBusy] = useState<number | null>(null)
   const [err, setErr] = useState('')
   const [reasons, setReasons] = useState<Record<number, string>>({})
-  const items = list.data?.items ?? []
+  const items = list.data ?? []
 
   const run = async (id: number, job: Job) => {
     if (busy !== null) return

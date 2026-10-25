@@ -48,7 +48,8 @@ const locale = useLocale() // dates and numbers: date.toLocaleDateString(locale,
 
 ## New screens
 
-- Put `<LanguageToggle className="..." />` right after every `<ThemeToggle ... />` (any header or top bar).
+- Put `<LanguageToggle />` right after every `<ThemeToggle ... />` (any header or top bar). It styles itself
+  (`components/ui/language.css`, the landing page's look) so it is the same button everywhere: do not restyle it per page.
 - Staff and technician pages must render their rail (`StaffRail` / `TechRail`).
 - Keep layout working at the longest language: Vietnamese and Japanese text can be longer or wrap differently.
   Do not give buttons a fixed width that clips them.

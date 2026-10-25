@@ -14,8 +14,9 @@
 .ws .wk-item-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
 .ws .wk-item-main b{font-weight:600;font-size:14px}
 .ws .wk-item-main span{font-size:12px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ws .wk-item-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12px;color:var(--ink2);flex:0 1 auto;min-width:0;max-width:55%;text-align:right}
-.ws .wk-item-side .chip{white-space:normal;max-width:100%}
+/* The status chip keeps one line; the code and customer on the left give way (they truncate) instead. */
+.ws .wk-item-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12px;color:var(--ink2);flex:none;text-align:right}
+.ws .wk-item-side .chip{white-space:nowrap}
 .ws .wk-detail{flex:999 1 640px;min-width:0}
 .ws .wk-page{display:flex;flex-direction:column;gap:18px}
 .ws .wk-order{display:flex;flex-direction:column;gap:18px}

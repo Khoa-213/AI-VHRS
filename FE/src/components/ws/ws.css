@@ -196,8 +196,7 @@
 .ws .btn.sm{height:36px;padding:0 16px;font-size:13px}
 .ws .seg{display:inline-flex;flex-wrap:wrap;gap:4px;padding:5px;border-radius:26px;background:#fff;box-shadow:var(--shadow)}
 .ws .seg span{padding:9px 18px;border-radius:21px;font-weight:600;color:var(--ink2);font-size:13px}
-.ws .seg span.on{background:var(--ink);color:#fff}
-.ws .field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:var(--ink3)}
+.ws .seg span.on{background:var(--ink);color:#fff}.ws .field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:var(--ink3)}
 .ws .field .box{min-height:46px;padding:0 16px;border-radius:14px;background:var(--field);display:flex;align-items:center;color:var(--ink);font-size:14px;font-weight:500}
 .ws .field .box.area{min-height:88px;align-items:flex-start;padding-top:13px}
 .ws .rule{height:1px;background:var(--line)}

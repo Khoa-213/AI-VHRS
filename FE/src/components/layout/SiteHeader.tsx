@@ -33,7 +33,7 @@ export default function SiteHeader() {
               </svg>
             </button>
             <ThemeToggle className="vh-icon-btn" />
-            <LanguageToggle className="vh-icon-btn" />
+            <LanguageToggle />
             <AccountButton buttonClassName="vh-icon-btn" avatarClassName="vh-avatar" />
           </div>
           <Link to={ORDER_HREF} className="vh-btn vh-btn--primary vh-btn--sm vh-start">{t('nav.startWriting')}</Link>

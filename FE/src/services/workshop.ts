@@ -1,4 +1,4 @@
-import { ApiError, api } from './api'
+import { ApiError, allPages, api, newestFirst } from './api'
 import {
   num, toOrder, toPayment,
   type Order, type OrderStatus, type OrderType, type Page, type Payment, type RawOrder, type RawPayment,
@@ -68,6 +68,10 @@ export async function listWork(opts: WorkQuery = {}): Promise<Page<WorkOrder>> {
   const r = await api<{ items: RawWork[]; total: number; page: number; page_size: number }>(`/workshop/orders?${q}`)
   return { items: r.items.map(toWork), total: r.total, page: r.page, pageSize: r.page_size }
 }
+
+/** Every matching order, newest submission first (the backend pages them oldest first). */
+export const allWork = async (opts: Omit<WorkQuery, 'page' | 'pageSize'> = {}): Promise<WorkOrder[]> =>
+  newestFirst(await allPages((page) => listWork({ ...opts, page, pageSize: 100 }), 100), (o) => o.submittedAt ?? o.createdAt)
 
 export const getWork = async (id: number): Promise<WorkOrder> => toWork(await api<RawWork>(`/workshop/orders/${id}`))
 
@@ -267,12 +271,16 @@ export const getStaffDirectory = async (): Promise<StaffBrief[]> =>
 export const assignStaff = async (orderId: number, staffId: number) =>
   toWork(await api<RawWork>(`/manager/orders/${orderId}/assignment`, { method: 'PUT', body: { staff_id: staffId } }))
 
-export async function pendingApprovals(page = 1): Promise<Page<WorkQuotation & { orderId: number }>> {
+export async function pendingApprovals(page = 1, pageSize = 50): Promise<Page<WorkQuotation & { orderId: number }>> {
   const r = await api<{ items: (RawWorkQuotation & { order_id: number })[]; total: number; page: number; page_size: number }>(
-    `/manager/quotations/pending-approval?page=${page}&page_size=50`,
+    `/manager/quotations/pending-approval?page=${page}&page_size=${pageSize}`,
   )
   return { items: r.items.map((q) => ({ ...toQuotation(q), orderId: q.order_id })), total: r.total, page: r.page, pageSize: r.page_size }
 }
+
+/** Every adjustment waiting for the Manager, newest first. */
+export const allPendingApprovals = async () =>
+  newestFirst(await allPages((page) => pendingApprovals(page, 100), 100), (q) => q.createdAt)
 
 export const approveAdjustment = async (id: number) =>
   toQuotation(await api<RawWorkQuotation>(`/manager/quotations/${id}/approve-adjustment`, { method: 'POST' }))

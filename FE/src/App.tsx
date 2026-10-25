@@ -25,6 +25,7 @@ import Deposit from './pages/order/Deposit'
 import OrderReview from './pages/order/OrderReview'
 import PrivacyPreview from './pages/order/PrivacyPreview'
 import PaymentResult from './pages/order/PaymentResult'
+import ResetPassword from './pages/login/ResetPassword'
 import { matchOrderRoute, navigate, useInterceptLinks, usePath } from './router/router'
 import { useEffect } from 'react'
 import { useUser } from './store/store'
@@ -35,7 +36,7 @@ import { useUser } from './store/store'
  */
 function homeFor(role: string | undefined, path: string): string | null {
   const own = role === 'staff' ? '/staff' : role === 'technician' ? '/tech' : role === 'admin' ? '/admin' : null
-  if (own) return path === own || path.startsWith(own + '/') || /^\/(account|login)(\/|$)/.test(path) ? null : own
+  if (own) return path === own || path.startsWith(own + '/') || /^\/(account|login|reset-password)(\/|$)/.test(path) ? null : own
   if (role === 'customer' && /^\/(staff|tech|admin)(\/|$)/.test(path)) return '/'
   return null
 }
@@ -104,6 +105,8 @@ function Routes() {
   if (import.meta.env.DEV && path === '/dev/privacy') return <PrivacyPreview />
   // VNPay, MoMo and payOS bring the customer back here after paying (PAYMENT_RETURN_URL on the backend).
   if (path === '/payment/result') return <PaymentResult />
+  // The password-reset email links here (FRONTEND_BASE_URL on the backend).
+  if (path === '/reset-password') return <ResetPassword />
   const review = matchOrderRoute(path, 'review')
   if (review) return <OrderReview key={review} id={review} />
   const deposit = matchOrderRoute(path, 'deposit')

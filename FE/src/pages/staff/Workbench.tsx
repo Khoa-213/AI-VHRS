@@ -5,32 +5,23 @@ import { useAsync } from '../../hooks/useAsync'
 import { useDebounced } from '../../hooks/useDebounced'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
-import { errText, orderErrorKey, type OrderStatus } from '../../services/orders'
-import { listWork } from '../../services/workshop'
+import { errText, orderErrorKey } from '../../services/orders'
+import { allWork } from '../../services/workshop'
 import { fmt } from '../../utils/format'
 import OrderDetail from './OrderDetail'
 import { useUser } from '../../store/store'
 import { isManagerRole } from './RequireStaff'
 
-const FILTERS: { id: string; statuses?: OrderStatus[] }[] = [
-  { id: 'todo', statuses: ['SUBMITTED', 'ACCEPTED'] },
-  { id: 'customer', statuses: ['NEED_INFO', 'AWAITING_PRIVACY', 'QUOTED', 'AWAITING_DEPOSIT'] },
-  { id: 'production', statuses: ['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING'] },
-  { id: 'all' },
-]
-
 /** Orders on the left, the selected one on the right: intake, sketch, quotation and chat all happen here. */
 export default function Workbench({ id }: { id?: number }) {
   const t = useT()
   const user = useUser()
-  const [filter, setFilter] = useState('todo')
   const [q, setQ] = useState('')
   const [type, setType] = useState('')
   const [pool, setPool] = useState(false)
   const dq = useDebounced(q, 400)
-  const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[0]
-  const list = useAsync(() => listWork({ status: f.statuses, q: dq, orderType: type || undefined, unassigned: pool, pageSize: 50 }), [filter, dq, type, pool], 30000)
-  const rows = list.data?.items ?? []
+  const list = useAsync(() => allWork({ q: dq, orderType: type || undefined, unassigned: pool }), [dq, type, pool], 30000)
+  const rows = list.data ?? []
 
   return (
     <Shell
@@ -38,13 +29,6 @@ export default function Workbench({ id }: { id?: number }) {
       active="review"
       title={t('wk.title')}
       lede={t('wk.lede')}
-      tools={
-        <div className="seg" role="tablist" aria-label={t('wk.queue')}>
-          {FILTERS.map((x) => (
-            <button key={x.id} role="tab" aria-selected={filter === x.id} className={filter === x.id ? 'on' : ''} onClick={() => setFilter(x.id)}>{t(`wk.filter.${x.id}`)}</button>
-          ))}
-        </div>
-      }
     >
       <div className="wk-layout">
         <aside className="wk-list" aria-label={t('wk.queue')}>
