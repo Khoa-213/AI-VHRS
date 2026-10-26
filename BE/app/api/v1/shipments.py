@@ -103,8 +103,8 @@ def mock_event(shipment_id: int, body: MockEventIn, session: SessionDep, actor: 
 
 @router.post("/webhooks/shipments/{carrier}", response_model=WebhookResult,
              dependencies=[Depends(rate_limit("shipment_webhook", 120, 60))],
-             summary="Callback của hãng vận chuyển (GHN/GHTK). Xác thực bằng mã bí mật trong địa chỉ hoặc chữ ký; idempotent",
-             description="MOCK: header `X-Signature` = HMAC-SHA256(body). GHN: `?key=<CARRIER_WEBHOOK_SECRET>`. GHTK: `?hash=<CARRIER_WEBHOOK_SECRET>`. "
+             summary="Callback của hãng vận chuyển (GHN). Xác thực bằng mã bí mật (địa chỉ hoặc header) hoặc chữ ký; idempotent",
+             description="MOCK: header `X-Signature` = HMAC-SHA256(body). GHN: `?key=<CARRIER_WEBHOOK_SECRET>`. Header tuỳ chọn `X-Webhook-Secret` thay cho `?key=`. "
                          "Callback trùng hoặc cũ hơn trạng thái hiện tại trả `ALREADY_PROCESSED` và không đổi gì. Luôn HTTP 200 khi đã xử lý.",
              responses={401: {"model": ErrorOut, "description": "INVALID_SIGNATURE"},
                         404: {"model": ErrorOut, "description": "SHIPMENT_NOT_FOUND"},

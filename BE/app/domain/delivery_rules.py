@@ -30,7 +30,7 @@ PACKAGE_BY_PAPER = {"A6": "FLAT_BOX_A5", "A5": "FLAT_BOX_A5", "A4": "FLAT_BOX_A4
 PICKUP_MIN_MINUTES, PICKUP_MAX_MINUTES = 15, 240      # length of the appointment window
 PICKUP_HORIZON_DAYS = 30                              # how far ahead a pickup can be booked
 MONEY_STEP = Decimal(100)
-ADDRESS_FIELDS = ("receiver", "phone", "street", "province_code", "district_code", "ward_code")
+ADDRESS_FIELDS = ("receiver", "phone", "street", "province_code", "ward_code")      # two-level model: no district
 _DIGITS = re.compile(r"\D+")
 
 
@@ -78,14 +78,14 @@ def amount_due(total_amount: Decimal, deposit_amount: Decimal, method: str, fee:
 
 # ---------------------------------------------------------------------------------------------- address and contact
 def check_address(address: dict[str, Any]) -> dict[str, Any]:
-    """The delivery address snapshot stored on the order: codes follow the carrier's location tables (FR-02)."""
+    """The delivery address snapshot stored on the order: codes follow GHN's two-level location catalogue (FR-02)."""
     clean: dict[str, Any] = {k: str(address.get(k) or "").strip() for k in ADDRESS_FIELDS}
     missing = [k for k, v in clean.items() if not v]
     if missing:
         raise DeliveryRuleError("INVALID_ADDRESS", "Địa chỉ giao hàng thiếu thông tin.", {"missing": missing})
     if address.get("label"):
         clean["label"] = str(address["label"]).strip()[:50]
-    for key in ("province_name", "district_name", "ward_name"):          # optional: GHTK addresses by name
+    for key in ("province_name", "ward_name"):                           # optional here: the service fills them from the catalogue
         if str(address.get(key) or "").strip():
             clean[key] = str(address[key]).strip()[:100]
     return clean

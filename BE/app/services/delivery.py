@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.db.session import set_actor
 from app.integrations import carrier as cx
+from app.integrations.locations import normalize_address
 from app.domain import carrier_rules as cr
 from app.domain import delivery_rules as dr
 from app.domain.scheduling_rules import NoSlotError, WorkCalendar
@@ -104,7 +105,7 @@ class DeliveryService:
 
     def _quotes(self, order: Order, address: dict[str, Any] | None) -> list[cr.ServiceQuote]:
         """What each carrier offers for this parcel and address. A carrier whose API is off (or fails) is offered with one option
-        priced from the fallback table (FR-21); a carrier that cannot address this destination is left out."""
+        priced from the fallback table (FR-21). An address the carrier refuses is an error for the customer to fix."""
         base = self._fee(order)
         fee_table = self.catalog.setting("fallback_shipping_fees", None)
         flags = self.catalog.setting("integrations_enabled", {})
@@ -118,11 +119,9 @@ class DeliveryService:
                         out.extend(found)
                         continue
                 except AppError as exc:
-                    if exc.code in ("ADDRESS_NAMES_REQUIRED", "INVALID_ADDRESS"):
-                        continue
                     if exc.code not in ("CARRIER_UNAVAILABLE", "CARRIER_REJECTED", "CARRIER_NOT_CONFIGURED",
                                         "SHIPPING_FEE_UNAVAILABLE"):
-                        raise
+                        raise                                    # e.g. INVALID_ADDRESS: the customer must fix it, not get a fallback
                     log.warning("carrier %s quote failed (%s): fallback fee used", carrier, exc.code)
             out.append(cr.fallback_quote(carrier, base))
         return out
@@ -143,7 +142,7 @@ class DeliveryService:
         self._awaiting(order)
         size, package = self._package(order)
         try:
-            use = dr.check_address(address) if address else (
+            use = normalize_address(dr.check_address(address)) if address else (
                 order.delivery_address if order.delivery_method == DeliveryMethod.DELIVERY else None)
         except dr.DeliveryRuleError as exc:
             raise _rule_error(exc) from exc
@@ -169,13 +168,14 @@ class DeliveryService:
         self._awaiting(order)
         try:
             if method == DeliveryMethod.DELIVERY:
-                order.delivery_address = dr.check_address(address or {})
+                order.delivery_address = normalize_address(dr.check_address(address or {}))      # names from the catalogue
                 order.pickup_slot_start = order.pickup_slot_end = None
                 picked = cr.pick_service(self._quotes(order, order.delivery_address), carrier, service_code)
                 order.shipping_carrier, order.shipping_service_code, order.shipping_eta = (
                     picked.carrier, picked.service_code, picked.eta)
             else:
-                assert slot_start is not None and slot_end is not None
+                if slot_start is None or slot_end is None:
+                    raise dr.DeliveryRuleError("INVALID_SLOT", "Cần chọn khung giờ nhận hàng.")
                 dr.check_pickup_slot(slot_start, slot_end, _now(), self._calendar())
                 if not dr.normalize_phone(contact_phone):
                     raise dr.DeliveryRuleError("INVALID_CONTACT", "Cần số điện thoại để đối chiếu khi nhận hàng.")

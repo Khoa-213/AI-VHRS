@@ -44,10 +44,11 @@ def _now() -> datetime:
 
 
 def tracking_url(carrier: Carrier, code: str | None) -> str | None:
-    """Public tracking page of the carrier (none for a simulated waybill). Addresses as the author knows them: to confirm."""
-    if not code or code.startswith("MOCK-"):
+    """Public tracking page of GHN (none for a simulated waybill or a carrier that is no longer offered). The address is the one
+    GHN publishes for customers; not yet confirmed against a real parcel."""
+    if not code or code.startswith("MOCK-") or carrier.value != "GHN":
         return None
-    return {"GHN": f"https://donhang.ghn.vn/?order_code={code}", "GHTK": f"https://i.ghtk.vn/{code}"}[carrier.value]
+    return f"https://donhang.ghn.vn/?order_code={code}"
 
 
 class ShipmentService:
@@ -74,12 +75,17 @@ class ShipmentService:
         return list(reversed(self.shipments.for_order(order.id)))
 
     def label_link(self, shipment: Shipment) -> str | None:
-        if not (shipment.label_url and self.storage):
-            return None
+        """The simulated waybill's label is a stored PDF; GHN's is its own print page, asked for when the Staff look at a live waybill."""
         try:
-            return self.storage.create_download_url(shipment.label_url, LABEL_TTL)
+            if shipment.label_url and self.storage:
+                return self.storage.create_download_url(shipment.label_url, LABEL_TTL)
+            if (shipment.waybill_code and not shipment.waybill_code.startswith("MOCK-") and shipment.status in ALIVE
+                    and shipment.carrier.value == "GHN"):
+                adapter = cx.get_adapter("GHN", strict=False)
+                return adapter.label_link(shipment.waybill_code) if hasattr(adapter, "label_link") else None
         except AppError:
-            return None
+            log.warning("label link for waybill %s is not available", shipment.waybill_code)
+        return None
 
     # ------------------------------------------------------------------ UC-29: create the waybill
     def create(self, order_id: int, note: str | None) -> Shipment:
@@ -108,7 +114,11 @@ class ShipmentService:
         if service_code == "STANDARD" and adapter.mode != "MOCK":
             # chosen while the carrier's API was off (fallback fee): pick its cheapest real service now
             service_code = cr.pick_service(adapter.quote(parcel=parcel, to=to, order_code=order.code), None, None).service_code
-        waybill = adapter.create(parcel=parcel, to=to, order_code=order.code, service_code=service_code, note=note)
+        # One reference per attempt: GHN answers a repeated reference with the waybill it already made, so a cancelled waybill is
+        # never handed back for the next attempt, while a retry of the same attempt cannot ship twice.
+        reference = f"{order.code}-{len(self.shipments.for_order(order.id)) + 1}"
+        waybill = adapter.create(parcel=parcel, to=to, order_code=order.code, service_code=service_code, note=note,
+                                 reference=reference)
 
         paid = self.payments.success(order.id, PaymentType.SHIPPING)
         fee = Decimal(paid.amount) if paid else Decimal(0)            # what the customer paid, not what the carrier charges us
@@ -137,7 +147,7 @@ class ShipmentService:
             pdf = adapter.label(waybill_code=waybill.code, context={
                 "service_name": service_code, "order_code": order.code, "receiver": to.get("receiver", ""),
                 "phone": to.get("phone", ""), "address_line": ", ".join(str(to.get(k)) for k in (
-                    "street", "ward_name", "district_name", "province_name") if to.get(k)) or str(to.get("street", "")),
+                    "street", "ward_name", "province_name") if to.get(k)) or str(to.get("street", "")),
                 "weight_g": parcel.weight_g})
             if not pdf:
                 return None
@@ -160,7 +170,9 @@ class ShipmentService:
             raise AppError(409, "SHIPMENT_NOT_CANCELLABLE", "Chỉ huỷ được vận đơn hãng chưa lấy hàng (CREATED).",
                            {"status": row.status.value})
         if row.waybill_code:
-            cx.get_adapter(row.carrier.value, fee_table=self.catalog.setting("fallback_shipping_fees", None)).cancel(row.waybill_code)
+            # The carrier may refuse (it has the parcel already): then nothing changes here and the Staff see why.
+            cx.get_adapter(row.carrier.value, fee_table=self.catalog.setting("fallback_shipping_fees", None)).cancel(
+                row.waybill_code, reason)
         row.status = ShipmentStatus.CANCELLED
         self.session.flush()
         audit.record(self.session, actor_id=self.actor.id, action="SHIPMENT_CANCEL", entity_type="shipment", entity_id=row.id,

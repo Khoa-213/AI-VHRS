@@ -19,8 +19,8 @@ from tests.test_api_photos_acceptance import _awaiting, _ost
 from tests.test_api_scheduling import CAL, _at, _prod, mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import _err, _user, cust, manager, policy, staff, store, wcat  # noqa: F401
 
-ADDRESS = {"receiver": "Nguyễn An", "phone": "0901234567", "street": "1 Lê Lợi", "province_code": "79",
-           "district_code": "760", "ward_code": "26734"}
+ADDRESS = {"receiver": "Nguyễn An", "phone": "0901234567", "street": "1 Lê Lợi", "province_code": "1000001",
+           "ward_code": "1003506"}                                   # Hồ Chí Minh / Phường Sài Gòn (GHN two-level ids)
 O = f"{API}/orders"
 W = f"{API}/workshop"
 
@@ -117,6 +117,8 @@ def test_quote_and_the_choice_of_delivery_are_validated(client, cust, staff, mgr
            ({"method": "PICKUP", "contact_phone": "0901234567"}, "VALIDATION_ERROR"),          # no slot
            ({"method": "COD", "address": ADDRESS}, "VALIDATION_ERROR"),                        # no cash on delivery (LI-08)
            (_delivery(ward_code=""), "INVALID_ADDRESS"), (_delivery(street="  "), "INVALID_ADDRESS"),
+           (_delivery(ward_code="999"), "INVALID_ADDRESS"),                                    # not in the catalogue
+           (_delivery(province_code="1000000"), "INVALID_ADDRESS"),                            # the ward is not in that province
            (_pickup(**_slot(days=-2)), "SLOT_IN_PAST"),
            # _at() rolls a closed hour forward to opening time, so build the 07:00 start by hand
            (_pickup(pickup_slot_start=_at(1, 9).replace(hour=7).isoformat(),

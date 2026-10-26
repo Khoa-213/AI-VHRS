@@ -31,7 +31,9 @@ ALL = READ | WRITE
 # (regex on the path without /api/v1, methods, who). First match wins, so specific rules come first.
 RULES: list[tuple[str, set[str], object]] = [
     (r"^/health$", ALL, PUBLIC),
-    (r"^/(catalog/(papers|pens|templates|suggest-materials)|privacy-policy)", READ, PUBLIC),
+    (r"^/(catalog/(papers|pens|templates|suggest-materials|text-styles)|privacy-policy)", READ, PUBLIC),
+    (r"^/catalog/templates/\{template_id\}/preview$", {"POST"}, PUBLIC),    # styled preview of a template (rate limited)
+    (r"^/locations/", READ, ANY),                                              # address pickers: any signed-in role
     (r"^/pricing/estimate$", ALL, {CUSTOMER}),
     (r"^/auth/(register|login|google|refresh|token|password-reset/(request|confirm))$", ALL, PUBLIC),
     (r"^/webhooks/shipments/\{carrier\}$", ALL, SIGNED),                      # authenticated by the carrier's secret / signature

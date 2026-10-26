@@ -64,11 +64,21 @@ def test_rbac_matrix_for_admin_endpoints(client):
 
 def test_profile_addresses_and_phone_reset(client):
     h = auth(client, "CUSTOMER")
-    addr = {"receiver": "A", "phone": "0900000001", "street": "1 Lê Lợi", "province_code": "79",
-            "district_code": "760", "ward_code": "26734", "is_default": True}
+    addr = {"receiver": "A", "phone": "0900000001", "street": "1 Lê Lợi", "province_code": "1000001",
+            "ward_code": "1003506", "is_default": True}
     r = client.patch(f"{API}/me", headers=h, json={"phone": "0900000002", "addresses": [addr]})
     assert r.status_code == 200 and r.json()["phone"] == "0900000002" and r.json()["phone_verified"] is False
     assert len(r.json()["addresses"]) == 1
+    saved = r.json()["addresses"][0]                                 # the names come from the catalogue, not from the client
+    assert (saved["province_name"], saved["ward_name"]) == ("Hồ Chí Minh", "Phường Sài Gòn")
+    old = {**addr, "district_code": "760", "district_name": "Quận 1", "ward_name": "tên tự gõ", "is_default": False}
+    r = client.patch(f"{API}/me", headers=h, json={"addresses": [old]})          # an old client still sending the district level
+    assert r.status_code == 200 and r.json()["addresses"][0]["ward_name"] == "Phường Sài Gòn"
+    assert "district_code" not in r.json()["addresses"][0]
+    for wrong in ({**addr, "ward_code": "999"}, {**addr, "province_code": "1000000"}, {**addr, "province_code": "79"}):
+        bad = client.patch(f"{API}/me", headers=h, json={"addresses": [wrong]})
+        assert bad.status_code == 422 and bad.json()["error"]["code"] == "INVALID_ADDRESS", wrong
+    assert client.get(f"{API}/me", headers=h).json()["addresses"][0]["ward_name"] == "Phường Sài Gòn"   # a refused save keeps the old list
     r = client.patch(f"{API}/me", headers=h, json={"addresses": [addr, addr]})
     assert r.status_code == 422  # two defaults
 

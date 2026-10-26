@@ -29,7 +29,7 @@ Target: Render web service (Docker, Singapore) + Supabase Postgres (Tokyo) + FE 
 ## 1b. Real payments and carriers (optional; default is simulated)
 
 Out of the box (`PAYMENT_MODE=mock`, `CARRIER_MODE=mock`) nothing leaves the server: payments and waybills are simulated and
-labelled `MOCK`. To use the real VNPay / MoMo / GHN / GHTK APIs, add these variables in **Render → Environment** (they are not
+labelled `MOCK`. To use the real VNPay / MoMo / GHN APIs, add these variables in **Render → Environment** (they are not
 in `render.yaml`; they are secrets) and redeploy. **Run `alembic upgrade head` first** (the deploy does it) so migration `0004`
 exists before the new code reads the order's `shipping_*` columns.
 
@@ -45,14 +45,13 @@ exists before the new code reads the order's `shipping_*` columns.
 | `MOMO_ENDPOINT` | default `https://test-payment.momo.vn`; `https://payment.momo.vn` for `live` |
 | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` | payOS (VietQR bank transfer): my.payos.vn → Kênh thanh toán → the channel's integration info. **payOS has no test environment: every payment is a real transfer**, so it is available as soon as the three keys are set, whatever `PAYMENT_MODE` says. `PAYOS_BASE_URL` defaults to `https://api-merchant.payos.vn` |
 | `CARRIER_MODE` | `mock` (default) / `sandbox` / `live` |
-| `CARRIER_WEBHOOK_SECRET` | long random string placed in the carriers' callback address (`?key=` for GHN, `?hash=` for GHTK); neither signs its callbacks by default |
-| `GHN_TOKEN`, `GHN_SHOP_ID`, `GHN_FROM_DISTRICT_ID`, `GHN_FROM_WARD_CODE` | GHN API token and shop id; the workshop's GHN district id and ward code |
+| `CARRIER_WEBHOOK_SECRET` | long random string GHN's callback carries, in the address (`?key=`) or in a custom header (`X-Webhook-Secret`); GHN does not sign its callbacks |
+| `GHN_TOKEN`, `GHN_SHOP_ID` | GHN API token and shop id. The pick-up address is the shop's own address registered with GHN (Developer Portal): no district/ward variables. The same credentials feed the address pickers (`GET /locations/...`) |
 | `GHN_BASE_URL` | default is GHN staging; `https://online-gateway.ghn.vn/shiip/public-api` for `live` |
-| `GHTK_TOKEN`, `GHTK_CLIENT_SOURCE`, `GHTK_BASE_URL` | GHTK API token, shop/partner code, host (default staging; `https://services.giaohangtietkiem.vn` for `live`) |
-| `WORKSHOP_NAME`, `WORKSHOP_PHONE`, `WORKSHOP_ADDRESS`, `WORKSHOP_PROVINCE`, `WORKSHOP_DISTRICT`, `WORKSHOP_WARD` | the workshop's pick-up address (GHTK wants names) |
 
-Also switch the carriers' APIs on in the database: `system_settings.integrations_enabled` (`{"GHN": true, "GHTK": true, ...}`).
-While a carrier's flag is `false` it is offered with one option priced from the fallback fee table.
+Also switch GHN's API on in the database: `system_settings.integrations_enabled` (`{"GHN": true, ...}`).
+While the flag is `false` GHN is offered with one option priced from the fallback fee table. GHTK was dropped from the flow
+(2026-10-26): its flag is ignored and its value stays in the `carrier` enum only so old rows keep reading.
 
 **payOS first:** run `alembic upgrade head` (migration `0005` adds `PAYOS` to the `payment_gateway` enum; the deploy does it), set the
 three `PAYOS_*` keys and `PUBLIC_BASE_URL`, redeploy, then register the webhook once from a shell that has the same environment:
@@ -65,12 +64,12 @@ Do it again if `PUBLIC_BASE_URL` changes.
 |---|---|---|
 | VNPay | `https://<PUBLIC_BASE_URL>/api/v1/webhooks/payments/vnpay/ipn` | IPN URL in the VNPay merchant admin (sandbox: the merchant portal link in the registration email) |
 | MoMo | sent with every payment (`ipnUrl`); no registration | the address must be public `https`; allow MoMo's source IPs if you filter |
-| GHN | `https://<PUBLIC_BASE_URL>/api/v1/webhooks/shipments/GHN?key=<CARRIER_WEBHOOK_SECRET>` | ask GHN support: send your client id, the callback address, the environment and that you want the `key` query parameter checked; allow up to ~15 minutes |
-| GHTK | `https://<PUBLIC_BASE_URL>/api/v1/webhooks/shipments/GHTK?hash=<CARRIER_WEBHOOK_SECRET>` | ask GHTK how to register the callback address for your shop |
+| GHN | `https://<PUBLIC_BASE_URL>/api/v1/webhooks/shipments/GHN?key=<CARRIER_WEBHOOK_SECRET>` | self-service: Developer Portal (developer.ghn.vn for production, developer.ghn.dev for staging) > account menu > Webhook configuration > Order tab: paste the address, press Create webhook. A secret in a custom header (`X-Webhook-Secret: <secret>`) works instead of `?key=`. Staging and production are separate accounts; a change takes ~15 minutes. GHN retries 5xx/408/429 and drops other 4xx |
 
 **First real run (nothing has been run against the providers yet):** use `sandbox`, make one small deposit with each gateway and
-one waybill with each carrier, and check the Render logs. The adapters' notes (`integrations/vnpay.py`, `momo.py`, `ghn.py`,
-`ghtk.py`: "VERIFICATION STATUS") list exactly which signatures, paths and fields to confirm. Do not set `live` before that.
+one waybill with GHN, and check the Render logs. GHN's preview / create / cancel / label token / master-data calls were run
+against its staging API on 2026-10-26; its callback has not yet reached this server. The adapters' notes (`integrations/vnpay.py`,
+`momo.py`, `ghn.py`: "VERIFICATION") list exactly what is proven and what is not. Do not set `live` before that.
 
 ## 2. Verify
 

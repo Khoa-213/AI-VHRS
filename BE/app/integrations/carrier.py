@@ -1,13 +1,14 @@
-"""Carrier port (GHN / GHTK): quote services, create and cancel a waybill, get the label, read the carrier's callbacks.
+"""Carrier port (GHN): quote services, create and cancel a waybill, get the label, read the carrier's callbacks.
 
 Behind it, `CARRIER_MODE` picks the adapter:
 
-* `mock` (default): simulated carriers (`MockCarrier`); their callbacks are signed with a key derived from JWT_SECRET and carry
+* `mock` (default): a simulated carrier (`MockCarrier`); its callbacks are signed with a key derived from JWT_SECRET and carry
   mode="MOCK". Nothing leaves the server.
-* `sandbox` / `live`: the real adapters in `ghn.py` and `ghtk.py`, talking to the carriers' test or production APIs.
+* `sandbox` / `live`: the real adapter in `ghn.py`, talking to GHN's test or production API.
 
-Whether a carrier's API is used at all is the DB setting `system_settings.integrations_enabled.<CARRIER>`; while it is false the
+Whether the carrier's API is used at all is the DB setting `system_settings.integrations_enabled.GHN`; while it is false the
 carrier is offered with one option priced from the fallback fee table (FR-21: "phí dự phòng khi API lỗi").
+GHTK was dropped from the flow (2026-10-26); its value stays in the DB enum so old waybills keep reading.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ from app.models.ops import ShipmentStatus
 
 SIGNATURE_HEADER = "X-Signature"
 _LABEL = b"vhrs-carrier-webhook/v1"
-CARRIERS = ("GHN", "GHTK")
+CARRIERS = ("GHN",)                       # the carriers offered to customers
 MODE_LABEL = {"mock": "MOCK", "sandbox": "SANDBOX", "live": "LIVE"}
 
 
@@ -38,8 +39,8 @@ class CarrierAdapter(Protocol):
 
     def quote(self, *, parcel: Parcel, to: Mapping[str, Any], order_code: str) -> list[ServiceQuote]: ...
     def create(self, *, parcel: Parcel, to: Mapping[str, Any], order_code: str, service_code: str,
-               note: str | None) -> Waybill: ...
-    def cancel(self, waybill_code: str) -> None: ...
+               note: str | None, reference: str | None = None) -> Waybill: ...
+    def cancel(self, waybill_code: str, reason: str | None = None) -> None: ...
     def label(self, *, waybill_code: str, context: Mapping[str, Any]) -> bytes | None: ...
     def parse_webhook(self, *, body: bytes, query: Mapping[str, str], headers: Mapping[str, str]) -> TrackingEvent: ...
 
@@ -72,13 +73,13 @@ class MockCarrier:
         return cr.mock_services(self.name, Decimal(str(base)), _now())
 
     def create(self, *, parcel: Parcel, to: Mapping[str, Any], order_code: str, service_code: str,
-               note: str | None) -> Waybill:
-        known = {code for code, *_ in cr.MOCK_SERVICES[self.name]} | {"STANDARD"}
+               note: str | None, reference: str | None = None) -> Waybill:
+        known = {code for code, *_ in cr.MOCK_SERVICES.get(self.name, [])} | {"STANDARD"}
         if service_code not in known:
             raise AppError(422, "SERVICE_NOT_AVAILABLE", "Dịch vụ vận chuyển không tồn tại.")
         return Waybill(code=f"MOCK-{self.name}-{uuid.uuid4().hex[:12].upper()}", fee=None, raw={"mode": "MOCK"})
 
-    def cancel(self, waybill_code: str) -> None:
+    def cancel(self, waybill_code: str, reason: str | None = None) -> None:
         return None
 
     def label(self, *, waybill_code: str, context: Mapping[str, Any]) -> bytes | None:
@@ -140,15 +141,12 @@ def get_adapter(carrier: str, *, fee_table: Mapping[str, Any] | None = None, str
     if carrier in _overrides:
         return _overrides[carrier]
     mode = MODE_LABEL[s.carrier_mode]
-    if carrier == "GHN" and s.ghn_token and s.ghn_shop_id and s.ghn_from_district_id and s.ghn_from_ward_code:
+    if carrier == "GHN" and s.ghn_token and s.ghn_shop_id:
         from app.integrations.ghn import GhnCarrier
-        return GhnCarrier(token=s.ghn_token, shop_id=s.ghn_shop_id, base_url=s.ghn_base_url,
-                          from_district_id=s.ghn_from_district_id, from_ward_code=s.ghn_from_ward_code, mode=mode,
+        return GhnCarrier(token=s.ghn_token, shop_id=s.ghn_shop_id, base_url=s.ghn_base_url, mode=mode,
                           webhook_secret=s.carrier_webhook_secret)
-    if carrier == "GHTK" and s.ghtk_token and s.ghtk_client_source:
-        from app.integrations.ghtk import GhtkCarrier
-        return GhtkCarrier(token=s.ghtk_token, client_source=s.ghtk_client_source, base_url=s.ghtk_base_url, mode=mode,
-                           webhook_secret=s.carrier_webhook_secret)
+    if carrier != "GHN":
+        raise AppError(422, "CARRIER_NOT_SUPPORTED", f"Hãng vận chuyển {carrier} không còn được hỗ trợ.")
     if strict:
         raise AppError(503, "CARRIER_NOT_CONFIGURED", f"Hãng vận chuyển {carrier} chưa được cấu hình trên máy chủ.")
     return None

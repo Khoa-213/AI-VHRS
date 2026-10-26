@@ -1,6 +1,6 @@
 """Pure rules for carriers and waybills (FR-21, FR-22, UC-29, BR-12). No DB, no I/O.
 
-The carriers (GHN, GHTK) each have their own status vocabulary; here they are mapped onto the system's `shipment_status`, and
+GHN has its own status vocabulary; here it is mapped onto the system's `shipment_status`, and
 the rules for which moves a waybill may make and what a move means for the order are kept in one place. A carrier's callbacks
 arrive repeated and out of order, so every move is judged against the current status and an old or repeated one is ignored.
 """
@@ -88,7 +88,7 @@ def order_effect(new: S) -> str | None:
 
 
 # ---------------------------------------------------------------------------------------------- carrier vocabularies
-# GHN order status (webhook `Status` / order detail). Only `delivered` is final on GHN's side.
+# GHN order status (webhook `Status` / order detail). Final on GHN's side: delivered, returned, cancel, exception, lost, damage, scrap.
 GHN_STATUS: dict[str, S] = {
     "ready_to_pick": S.CREATED, "picking": S.CREATED, "money_collect_picking": S.CREATED,
     "picked": S.PICKED_UP,
@@ -97,30 +97,14 @@ GHN_STATUS: dict[str, S] = {
     "delivered": S.DELIVERED,
     "delivery_fail": S.FAILED, "waiting_to_return": S.FAILED, "return": S.FAILED, "return_transporting": S.FAILED,
     "return_sorting": S.FAILED, "returning": S.FAILED, "return_fail": S.FAILED, "exception": S.FAILED,
-    "damage": S.FAILED, "lost": S.FAILED,
+    "damage": S.FAILED, "lost": S.FAILED, "scrap": S.FAILED,       # scrap: GHN disposed of the parcel
     "returned": S.RETURNED,
     "cancel": S.CANCELLED,
-}
-# GHTK `status_id`. The shipper-reported ids (123, 127, 128, 45, 49, 410) are informational and may be corrected: ignored.
-GHTK_STATUS: dict[int, S] = {
-    -1: S.CANCELLED, 1: S.CREATED, 2: S.CREATED, 12: S.CREATED, 8: S.CREATED,
-    3: S.PICKED_UP,
-    4: S.DELIVERING, 10: S.DELIVERING,
-    5: S.DELIVERED, 6: S.DELIVERED, 11: S.DELIVERED,
-    7: S.FAILED, 9: S.FAILED, 13: S.FAILED, 20: S.FAILED,
-    21: S.RETURNED,
 }
 
 
 def map_ghn_status(raw: str | None) -> S | None:
     return GHN_STATUS.get(str(raw or "").strip().lower())
-
-
-def map_ghtk_status(status_id: Any) -> S | None:
-    try:
-        return GHTK_STATUS.get(int(status_id))
-    except (TypeError, ValueError):
-        return None
 
 
 # ---------------------------------------------------------------------------------------------- the parcel (FR-21)
@@ -151,7 +135,6 @@ def round_up_100(value: float | Decimal) -> int:
 # every quote carries mode="MOCK". Replaced by the carriers' own answers when their real adapters are switched on.
 MOCK_SERVICES: dict[str, list[tuple[str, str, float, int]]] = {
     "GHN": [("STANDARD", "Giao tiêu chuẩn", 1.0, 3), ("EXPRESS", "Giao nhanh", 1.4, 1)],
-    "GHTK": [("ROAD", "Đường bộ", 0.9, 4), ("FAST", "Giao nhanh", 1.5, 2)],
 }
 
 

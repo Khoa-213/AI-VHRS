@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core import security
 from app.core.errors import AppError
+from app.integrations.locations import normalize_address
 from app.models.account import Account, AccountStatus, RoleCode
 from app.repositories.accounts import AccountRepository
 from app.services import audit
@@ -25,7 +26,7 @@ class ProfileService:
         if phone_given and phone != acc.phone:
             acc.phone, acc.phone_verified_at = phone, None  # a new number must be verified again (FR-53)
         if addresses is not None:
-            acc.addresses = addresses
+            acc.addresses = [normalize_address(a) for a in addresses]     # codes checked, names from the catalogue
         return acc
 
     def change_password(self, acc: Account, current: str, new: str) -> None:

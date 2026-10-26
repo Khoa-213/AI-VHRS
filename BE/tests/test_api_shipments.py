@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.integrations import carrier as cx
+from app.integrations import locations as loc
 from app.main import app
 from tests.conftest import auth
 from tests.test_api_delivery_final import ADDRESS, O, W, _final, _final_stage, _pickup, _put
@@ -28,7 +29,7 @@ HOOK = f"{API}/webhooks/shipments"
 
 @pytest.fixture
 def carriers_on():
-    cx.use_flags({"GHN": True, "GHTK": True})            # the carriers' APIs count as enabled (the DB flags stay untouched)
+    cx.use_flags({"GHN": True})                          # the carrier's API counts as enabled (the DB flags stay untouched)
     yield
     cx.use_flags(None)
     cx.use_adapters(None)
@@ -76,7 +77,7 @@ def test_customer_sees_each_carriers_services_and_the_choice_is_kept(client, cus
     assert r.status_code == 200, r.text
     q = r.json()
     got = {(s["carrier"], s["service_code"]): s for s in q["services"]}
-    assert set(got) == {("GHN", "STANDARD"), ("GHN", "EXPRESS"), ("GHTK", "ROAD"), ("GHTK", "FAST")}
+    assert set(got) == {("GHN", "STANDARD"), ("GHN", "EXPRESS")}                              # GHTK is no longer offered
     assert Decimal(got[("GHN", "STANDARD")]["fee"]) == fee and Decimal(got[("GHN", "EXPRESS")]["fee"]) == fee + fee * Decimal("0.4")
     assert all(s["mode"] == "MOCK" and s["is_fallback_fee"] is False and s["eta"] for s in q["services"])
     balance = Decimal(q["balance"])
@@ -95,10 +96,10 @@ def test_customer_sees_each_carriers_services_and_the_choice_is_kept(client, cus
     assert after["chosen_service"]["service_code"] == "EXPRESS"
     assert Decimal(after["options"]["DELIVERY"]["fee"]) == Decimal(got[("GHN", "EXPRESS")]["fee"])      # the fee of the chosen one
 
-    for bad, code in ((_choose("GHN", "ROAD"), "SERVICE_NOT_AVAILABLE"), (_choose("GHTK", "EXPRESS"), "SERVICE_NOT_AVAILABLE")):
-        r = client.put(f"{O}/{oid}/delivery", headers=cust, json=bad)
-        assert r.status_code == 422 and _err(r) == code, bad
-    for half in ({"carrier": "GHN"}, {"service_code": "EXPRESS"}, {"carrier": "DHL", "service_code": "X"}):
+    r = client.put(f"{O}/{oid}/delivery", headers=cust, json=_choose("GHN", "ROAD"))
+    assert r.status_code == 422 and _err(r) == "SERVICE_NOT_AVAILABLE"
+    for half in ({"carrier": "GHN"}, {"service_code": "EXPRESS"}, {"carrier": "DHL", "service_code": "X"},
+                 {"carrier": "GHTK", "service_code": "ROAD"}):
         assert client.put(f"{O}/{oid}/delivery", headers=cust, json={"method": "DELIVERY", "address": ADDRESS, **half}).status_code == 422
     assert _sql("select shipping_service_code from orders where id=:o", o=oid) == "EXPRESS"             # refused choices change nothing
 
@@ -113,10 +114,14 @@ def test_carriers_whose_api_is_off_are_offered_at_the_fallback_fee(client, cust,
     fee = Decimal(_sql("select value->>'FLAT_BOX_A5' from system_settings where key='fallback_shipping_fees'"))
     q = client.post(f"{O}/{oid}/delivery-quote", headers=cust, json={"address": ADDRESS}).json()
     assert [(s["carrier"], s["service_code"], Decimal(s["fee"]), s["is_fallback_fee"], s["mode"], s["eta"]) for s in q["services"]] == [
-        ("GHN", "STANDARD", fee, True, "FALLBACK", None), ("GHTK", "STANDARD", fee, True, "FALLBACK", None)]
+        ("GHN", "STANDARD", fee, True, "FALLBACK", None)]
     assert q["is_fallback_fee"] is True and Decimal(q["options"]["DELIVERY"]["fee"]) == fee
-    r = _put(client, cust, oid, _choose("GHTK", "STANDARD")).json()
-    assert (r["shipping_carrier"], r["shipping_service_code"]) == ("GHTK", "STANDARD")
+    r = _put(client, cust, oid, _choose("GHN", "STANDARD")).json()
+    assert (r["shipping_carrier"], r["shipping_service_code"]) == ("GHN", "STANDARD")
+    bad = client.post(f"{O}/{oid}/delivery-quote", headers=cust, json={"address": {**ADDRESS, "ward_code": "999"}})
+    assert bad.status_code == 422 and _err(bad) == "INVALID_ADDRESS"                       # a made-up ward is refused, not priced
+    refused = client.put(f"{O}/{oid}/delivery", headers=cust, json=_choose("GHN", "STANDARD", province_code="1000000"))
+    assert refused.status_code == 422 and _err(refused) == "INVALID_ADDRESS"
 
 
 def test_the_customer_is_not_charged_a_fee_other_than_the_one_they_saw(client, cust, staff, mgr, wcat, robot, tech, store, carriers_on):
@@ -146,7 +151,9 @@ def test_staff_create_the_waybill_and_the_carrier_completes_the_order(client, cu
     assert s["carrier"] == "GHN" and s["service_code"] == "EXPRESS" and s["status"] == "CREATED" and s["mode"] == "MOCK"
     assert s["waybill_code"].startswith("MOCK-GHN-") and Decimal(s["fee"]) == paid_ship and s["tracking_url"] is None
     assert s["package_type"] == "FLAT_BOX_A5" and s["weight_g"] > 60 and s["is_fallback_fee"] is False
-    assert s["to_address"]["street"] == ADDRESS["street"] and s["to_address"]["district_code"] == ADDRESS["district_code"]
+    assert s["to_address"]["street"] == ADDRESS["street"] and s["to_address"]["ward_code"] == ADDRESS["ward_code"]
+    assert (s["to_address"]["province_name"], s["to_address"]["ward_name"]) == ("Hồ Chí Minh", "Phường Sài Gòn")
+    assert "district_code" not in s["to_address"]
     assert s["label_link"].endswith("/label.pdf") and store.objects[s["label_link"].removeprefix("memory://")][:5] == b"%PDF-"
     assert _ost(oid) == "READY_TO_DELIVER"                                                      # nothing moves until the carrier does
     assert _err(_create_raw(client, staff, oid)) == "SHIPMENT_ALREADY_EXISTS"
@@ -237,9 +244,9 @@ def test_a_waybill_nobody_picked_up_can_be_cancelled_and_remade(client, cust, st
 
 
 def test_a_delivery_can_complete_from_a_first_report_that_says_delivered(client, cust, staff, mgr, wcat, robot, tech, store, carriers_on):
-    oid, _ = _ready(client, cust, staff, mgr, wcat, robot, tech, store, body=_choose("GHTK", "ROAD"))
+    oid, _ = _ready(client, cust, staff, mgr, wcat, robot, tech, store, body=_choose("GHN", "STANDARD"))
     s = _create(client, staff, oid)
-    assert s["carrier"] == "GHTK" and s["waybill_code"].startswith("MOCK-GHTK-")
+    assert s["carrier"] == "GHN" and s["waybill_code"].startswith("MOCK-GHN-")
     r = _event(client, staff, s["id"], "DELIVERED")                                                       # nothing came before it
     assert r["order_status"] == "COMPLETED" and _ost(oid) == "COMPLETED"
     chain = _sql("""select string_agg(from_status || '>' || to_status, ',' order by id) from status_histories
@@ -316,65 +323,108 @@ def test_two_staff_clicks_and_two_identical_callbacks_change_things_once(client,
 
 
 # ---- the real GHN adapter inside the whole flow (HTTP to a scripted fake) ------------------------------------------------------
-def test_real_ghn_adapter_quotes_creates_and_completes(client, cust, staff, mgr, wcat, robot, tech, store, monkeypatch):
-    oid = _final_stage(client, cust, staff, mgr, wcat, robot, tech, store)
+@pytest.fixture
+def real_ghn(monkeypatch):
+    """CARRIER_MODE=sandbox with the GHN adapter and the address catalogue both replaced by test doubles."""
     s = get_settings()
     monkeypatch.setattr(s, "carrier_mode", "sandbox")
     monkeypatch.setattr(s, "carrier_webhook_secret", SECRET)
+    loc.use_source(loc.MockLocations())
+    cx.use_flags({"GHN": True})
+    yield
+    loc.use_source(None)
+    cx.use_adapters(None)
+    cx.use_flags(None)
+
+
+def test_real_ghn_adapter_quotes_creates_and_completes(client, cust, staff, mgr, wcat, robot, tech, store, real_ghn):
+    oid = _final_stage(client, cust, staff, mgr, wcat, robot, tech, store)
     calls: list = []
     code = "GHN" + uuid.uuid4().hex[:10].upper()                                                # unique per run: waybill codes are unique
-    cx.use_flags({"GHN": True, "GHTK": True})
-    cx.use_adapters({"GHN": make_ghn(_ghn_api(calls, order_code=code))})                     # GHTK has no credentials: fallback only
-    try:
-        q = client.post(f"{O}/{oid}/delivery-quote", headers=cust, json={"address": ADDRESS}).json()
-        ghn = {x["service_code"]: x for x in q["services"] if x["carrier"] == "GHN"}
-        assert set(ghn) == {"53320", "53321"} and ghn["53321"]["mode"] == "SANDBOX" and Decimal(ghn["53321"]["fee"]) == 35100
-        assert ghn["53320"]["eta"] and not ghn["53320"]["is_fallback_fee"]
-        assert [x["service_code"] for x in q["services"] if x["carrier"] == "GHTK"] == ["STANDARD"]   # GHTK not configured: fallback
+    cx.use_adapters({"GHN": make_ghn(_ghn_api(calls, order_code=code))})
+    q = client.post(f"{O}/{oid}/delivery-quote", headers=cust, json={"address": ADDRESS}).json()
+    assert [(x["carrier"], x["service_code"], x["mode"], x["is_fallback_fee"]) for x in q["services"]] == [("GHN", "2", "SANDBOX", False)]
+    assert Decimal(q["services"][0]["fee"]) == 21300 and q["services"][0]["eta"]
+    preview = next(c[3] for c in calls if c[1].endswith("/preview"))                              # priced on the address as named in the catalogue
+    assert (preview["to_province_name"], preview["to_ward_name"], preview["is_new_to_address"]) == ("Hồ Chí Minh", "Phường Sài Gòn", True)
 
-        _put(client, cust, oid, _choose("GHN", "53321"))
-        total = Decimal(client.get(f"{O}/{oid}/delivery-quote", headers=cust).json()["chosen_service"]["total_due"])
-        r = client.post(f"{O}/{oid}/payments/final", headers=cust, json={"gateway": "VNPAY", "expected_total": str(total)}).json()
-        assert Decimal(r["total_due"]) == total
-        ok = client.post(f"{API}/payments/{r['payments'][0]['id']}/mock-checkout", headers=cust, json={"result": "SUCCESS"})
-        assert ok.json()["order_status"] == "READY_TO_DELIVER"
+    _put(client, cust, oid, _choose("GHN", "2"))
+    total = Decimal(client.get(f"{O}/{oid}/delivery-quote", headers=cust).json()["chosen_service"]["total_due"])
+    r = client.post(f"{O}/{oid}/payments/final", headers=cust, json={"gateway": "VNPAY", "expected_total": str(total)}).json()
+    assert Decimal(r["total_due"]) == total
+    ok = client.post(f"{API}/payments/{r['payments'][0]['id']}/mock-checkout", headers=cust, json={"result": "SUCCESS"})
+    assert ok.json()["order_status"] == "READY_TO_DELIVER"
 
-        ship = _create(client, staff, oid)
-        assert ship["waybill_code"] == code and ship["service_code"] == "53321" and ship["mode"] == "SANDBOX"
-        assert ship["tracking_url"] == f"https://donhang.ghn.vn/?order_code={code}"
-        assert Decimal(ship["fee"]) == Decimal(next(p["amount"] for p in r["payments"] if p["type"] == "SHIPPING"))
-        created = next(c[3] for c in calls if c[1].endswith("/create"))
-        assert created["service_id"] == 53321 and created["cod_amount"] == 0 and created["client_order_code"]
-        assert store.objects[ship["label_link"].removeprefix("memory://")] == b"%PDF-1.4 label"            # GHN's own label is kept
+    ship = _create(client, staff, oid)
+    assert ship["waybill_code"] == code and ship["service_code"] == "2" and ship["mode"] == "SANDBOX"
+    assert ship["tracking_url"] == f"https://donhang.ghn.vn/?order_code={code}"
+    assert Decimal(ship["fee"]) == Decimal(next(p["amount"] for p in r["payments"] if p["type"] == "SHIPPING"))
+    created = next(c[3] for c in calls if c[1].endswith("/create"))
+    order_code = _sql("select code from orders where id=:o", o=oid)
+    assert created["service_type_id"] == 2 and created["cod_amount"] == 0 and created["client_order_code"] == f"{order_code}-1"
+    assert ship["label_link"] == "https://ghn.example/a5/public-api/printA5?token=PRINTTOKEN"      # GHN's own print page, not a stored file
+    assert _sql("select label_url is null from shipments where id=:s", s=ship["id"]) is True
 
-        def hook(status, key=SECRET):
-            body = json.dumps({"Type": "switch_status", "OrderCode": code, "Status": status,
-                               "Time": "2026-10-23T10:00:00Z"})
-            return client.post(f"{HOOK}/GHN", params={"key": key} if key else {}, content=body)
+    def hook(status, key=SECRET, **headers):
+        body = json.dumps({"Type": "switch_status", "OrderCode": code, "Status": status, "Time": "2026-10-23T10:00:00Z"})
+        return client.post(f"{HOOK}/GHN", params={"key": key} if key else {}, content=body, headers=headers)
 
-        assert hook("picked", key="wrong").status_code == 401 and hook("picked", key=None).status_code == 401
-        assert _ost(oid) == "READY_TO_DELIVER"
-        assert hook("picked").json()["order_status"] == "DELIVERING"
-        assert hook("some_unknown_status").json()["result"] == "IGNORED"
-        assert hook("delivered").json()["order_status"] == "COMPLETED" and _ost(oid) == "COMPLETED"
-        assert hook("delivered").json()["result"] == "ALREADY_PROCESSED"
-        # the simulated carrier's own callbacks are not accepted while the real adapter is in charge
-        from app.models.ops import ShipmentStatus as S
-        m = cx.MockCarrier("GHN", None)
-        body = m.webhook_body(code, S.DELIVERED)
-        assert client.post(f"{HOOK}/GHN", content=body, headers={cx.SIGNATURE_HEADER: m.sign(body)}).status_code == 401
-    finally:
-        cx.use_adapters(None)
-        cx.use_flags(None)
+    assert hook("picked", key="wrong").status_code == 401 and hook("picked", key=None).status_code == 401
+    assert _ost(oid) == "READY_TO_DELIVER"
+    assert hook("picked", key=None, **{"X-Webhook-Secret": SECRET}).json()["order_status"] == "DELIVERING"   # the secret in a header works too
+    assert hook("some_unknown_status").json()["result"] == "IGNORED"
+    assert hook("delivered").json()["order_status"] == "COMPLETED" and _ost(oid) == "COMPLETED"
+    assert hook("delivered").json()["result"] == "ALREADY_PROCESSED"
+    # the simulated carrier's own callbacks are not accepted while the real adapter is in charge
+    from app.models.ops import ShipmentStatus as S
+    m = cx.MockCarrier("GHN", None)
+    body = m.webhook_body(code, S.DELIVERED)
+    assert client.post(f"{HOOK}/GHN", content=body, headers={cx.SIGNATURE_HEADER: m.sign(body)}).status_code == 401
+    assert client.post(f"{HOOK}/GHTK", params={"key": SECRET}, content="{}").status_code == 422        # GHTK is not supported any more
 
 
-def test_a_choice_made_while_the_carrier_api_was_down_gets_a_real_service_at_creation(client, cust, staff, mgr, wcat, robot, tech, store, monkeypatch):
+def test_ghn_refusing_a_cancel_keeps_the_waybill_and_a_remake_gets_a_new_reference(client, cust, staff, mgr, wcat, robot, tech, store, real_ghn):
     oid = _final_stage(client, cust, staff, mgr, wcat, robot, tech, store)
-    s = get_settings()
-    monkeypatch.setattr(s, "carrier_mode", "sandbox")
+    calls: list = []
+    first, second = "GHN" + uuid.uuid4().hex[:10].upper(), "GHN" + uuid.uuid4().hex[:10].upper()
+    state = {"code": first, "cancel": False}
+    healthy = {}
+
+    def handler(request):
+        api = healthy.setdefault(state["code"], _ghn_api(calls, order_code=state["code"], cancel_result=state["cancel"]))
+        return api(request)
+
+    cx.use_adapters({"GHN": make_ghn(handler)})
+    _put(client, cust, oid, _choose("GHN", "2"))
+    r = _final(client, cust, oid).json()
+    client.post(f"{API}/payments/{r['payments'][0]['id']}/mock-checkout", headers=cust, json={"result": "SUCCESS"})
+    ship = _create(client, staff, oid)
+    assert ship["waybill_code"] == first
+
+    refused = client.post(f"{W}/shipments/{ship['id']}/cancel", headers=staff[0], json={"reason": "Sai địa chỉ"})
+    assert refused.status_code == 409 and _err(refused) == "CARRIER_CANCEL_REFUSED"            # GHN already has the parcel
+    assert _sstat(ship["id"]) == "CREATED"                                                      # so nothing changed here
+    assert _sql("select count(*) from audit_logs where action='SHIPMENT_CANCEL' and entity_id=:s", s=ship["id"]) == 0
+    assert _err(_create_raw(client, staff, oid)) == "SHIPMENT_ALREADY_EXISTS"                  # and no second waybill is possible
+
+    state["cancel"] = True
+    healthy.pop(first)                                                                          # GHN now agrees to cancel
+    done = client.post(f"{W}/shipments/{ship['id']}/cancel", headers=staff[0], json={"reason": "Sai địa chỉ"})
+    assert done.status_code == 200 and _sstat(ship["id"]) == "CANCELLED"
+    cancel = next(c[3] for c in calls if c[1].endswith("/cancel") and c[3].get("reason") == "Sai địa chỉ")
+    assert cancel["reason_code"] == "GHN-CANCEL-OTHER" and cancel["order_codes"] == [first]
+
+    state["code"] = second
+    again = _create(client, staff, oid)
+    order_code = _sql("select code from orders where id=:o", o=oid)
+    refs = [c[3]["client_order_code"] for c in calls if c[1].endswith("/create")]
+    assert again["waybill_code"] == second and refs == [f"{order_code}-1", f"{order_code}-2"]   # a new reference per attempt
+
+
+def test_a_choice_made_while_the_carrier_api_was_down_gets_a_real_service_at_creation(client, cust, staff, mgr, wcat, robot, tech, store, real_ghn):
+    oid = _final_stage(client, cust, staff, mgr, wcat, robot, tech, store)
     calls: list = []
     code = "GHN" + uuid.uuid4().hex[:10].upper()
-    cx.use_flags({"GHN": True})
     healthy = _ghn_api(calls, order_code=code)
     state = {"down": True}
 
@@ -383,16 +433,11 @@ def test_a_choice_made_while_the_carrier_api_was_down_gets_a_real_service_at_cre
         return httpx.Response(503, text="down") if state["down"] else healthy(request)
 
     cx.use_adapters({"GHN": make_ghn(handler)})
-    try:
-        q = client.post(f"{O}/{oid}/delivery-quote", headers=cust, json={"address": ADDRESS}).json()
-        assert [(x["carrier"], x["service_code"], x["is_fallback_fee"]) for x in q["services"] if x["carrier"] == "GHN"] == [
-            ("GHN", "STANDARD", True)]                                                      # GHN failed: its fallback option
-        _put(client, cust, oid, _choose("GHN", "STANDARD"))
-        r = _final(client, cust, oid).json()
-        client.post(f"{API}/payments/{r['payments'][0]['id']}/mock-checkout", headers=cust, json={"result": "SUCCESS"})
-        state["down"] = False                                                                 # GHN is back by the time the Staff ship
-        ship = _create(client, staff, oid)
-        assert ship["service_code"] == "53320" and ship["waybill_code"] == code             # the cheapest real service
-    finally:
-        cx.use_adapters(None)
-        cx.use_flags(None)
+    q = client.post(f"{O}/{oid}/delivery-quote", headers=cust, json={"address": ADDRESS}).json()
+    assert [(x["carrier"], x["service_code"], x["is_fallback_fee"]) for x in q["services"]] == [("GHN", "STANDARD", True)]   # GHN failed
+    _put(client, cust, oid, _choose("GHN", "STANDARD"))
+    r = _final(client, cust, oid).json()
+    client.post(f"{API}/payments/{r['payments'][0]['id']}/mock-checkout", headers=cust, json={"result": "SUCCESS"})
+    state["down"] = False                                                                 # GHN is back by the time the Staff ship
+    ship = _create(client, staff, oid)
+    assert ship["service_code"] == "2" and ship["waybill_code"] == code                   # the real service

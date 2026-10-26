@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.domain import text_layout
 from app.db.session import set_actor
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account
@@ -310,11 +311,23 @@ class OrderService:
         row = next((r for r in self.orders.inputs(order.id) if r.kind == OrderInputKind.TEXT_CONTENT), None)
         if row is None:
             row = self.orders.add_input(OrderInput(order_id=order.id, kind=OrderInputKind.TEXT_CONTENT))
+        data = {**data, "text_content": unicodedata.normalize("NFC", data["text_content"] or "")}   # S0: Unicode NFC
+        data["layout"] = self._check_layout(data.get("layout"), data["text_content"])
         for k, v in data.items():
             setattr(row, k, v)
-        row.text_content = unicodedata.normalize("NFC", row.text_content or "")  # S0: Unicode NFC
         self._touch_and_price(order)
         return row
+
+    @staticmethod
+    def _check_layout(raw: dict[str, Any] | None, text: str) -> dict[str, Any] | None:
+        """FR-08: sizes and styles of parts of the text. Offsets index the NFC text just stored; stored in canonical form."""
+        if not raw:
+            return None
+        try:
+            parsed = text_layout.parse(raw, len(text))
+        except text_layout.TextLayoutError as exc:
+            raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
+        return None if parsed.is_plain else text_layout.to_json(parsed)
 
     def set_canvas(self, order_id: int, canvas_data: dict[str, Any]) -> OrderInput:
         order = self._get_editable(order_id)

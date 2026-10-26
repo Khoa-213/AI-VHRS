@@ -16,7 +16,9 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **Màn thanh toán cuối** (`POST /orders/{id}/payments/final`, mục 7d).
 
 **Giao hàng (mục 7d, 7e)**
-- [ ] Màn **chọn hãng + dịch vụ vận chuyển** (`POST /orders/{id}/delivery-quote`, rồi `PUT /orders/{id}/delivery` với `carrier`, `service_code`), xử lý `FEE_CHANGED`.
+- [ ] Thanh công cụ soạn chữ cho đơn viết theo mẫu: cỡ chữ, nghiêng, gạch chân, gạch ngang, giãn dòng + xem trước (`GET /catalog/text-styles`, `POST /catalog/templates/{id}/preview`, mục 5.1b). Không có chữ đậm.
+- [ ] Form địa chỉ **tỉnh/thành → phường/xã** (hai cấp, `GET /locations/...`, mục 7d-2; bỏ ô quận/huyện) cho hồ sơ và đơn hàng.
+- [ ] Màn **chọn hãng + dịch vụ vận chuyển** (`POST /orders/{id}/delivery-quote`, rồi `PUT /orders/{id}/delivery` với `carrier`, `service_code`), xử lý `FEE_CHANGED`. Chỉ còn hãng GHN.
 - [ ] Màn **xem vận đơn** của khách (`GET /orders/{id}/shipment`) và màn Staff tạo vận đơn / nhãn PDF (`/workshop/orders/{id}/shipment`).
 
 **Chat (mục 5.4)**
@@ -194,8 +196,21 @@ stateDiagram-v2
 
 | Loại đơn | Gọi |
 |---|---|
-| `OT3_TEMPLATE` (viết theo mẫu) | `PUT /orders/{id}/inputs/text {text_content, template_id, font_size_mm?, alignment?}`; vẽ tay: `PUT /orders/{id}/inputs/canvas {canvas_data:{strokes:[{points:[{x,y,p}]}]}}` (x,y theo **mm**) |
+| `OT3_TEMPLATE` (viết theo mẫu) | `PUT /orders/{id}/inputs/text {text_content, template_id, font_size_mm? (4–100 mm), alignment?, layout?}` (`layout` = cỡ chữ/kiểu chữ theo đoạn, mục 5.1b); vẽ tay: `PUT /orders/{id}/inputs/canvas {canvas_data:{strokes:[{points:[{x,y,p}]}]}}` (x,y theo **mm**) |
 | `OT1_COPY_RESTORE` (sao chép) | **Upload ảnh 3 bước** (bên dưới) |
+
+**5.1b Cỡ chữ và kiểu chữ theo đoạn (đơn viết theo mẫu, FR-08).** Ngoài `font_size_mm` chung, khách có thể đổi **cỡ chữ**, **nghiêng**, **gạch chân** (đơn/đôi), **gạch ngang** cho từng đoạn và chỉnh **giãn dòng**. **Không có chữ đậm.** Kiểu chữ **không đổi giá** (báo giá vẫn theo số ký tự × độ phức tạp, và độ phức tạp được tính như khi chưa có kiểu chữ).
+- `GET /catalog/text-styles` (không cần đăng nhập) → giới hạn để dựng thanh công cụ: `min_font_size_mm: 4`, `max_font_size_mm: 100`, `default_font_size_mm: 8`, `line_spacing {min 0.8, max 2.5, default 1}`, `styles`, `underline: ["single","double"]`, `max_spans: 200`.
+- `layout` gửi kèm `PUT /orders/{id}/inputs/text`:
+```json
+{"version": 1, "line_spacing": 1.2,
+ "spans": [{"start": 0, "end": 12, "size_mm": 14, "italic": true, "underline": "single"},
+           {"start": 20, "end": 27, "strike": true}]}
+```
+  `start`/`end` là vị trí ký tự **theo code point** trong nội dung **đã chuẩn hoá NFC**, khoảng `[start, end)` (khác chỉ số UTF-16 của JavaScript: dùng `Array.from(text.normalize('NFC'))` để đếm). Đoạn không nêu thuộc tính nào thì giữ cỡ chung và chữ thường; các đoạn không được chồng nhau, tối đa 200. Cỡ chữ của đoạn: 4–100 mm. **PUT thay thế toàn bộ**: không gửi `layout` nghĩa là xoá định dạng; sửa nội dung phải gửi lại `layout` cho khớp vị trí. Sai → `422 INVALID_LAYOUT` (`details` nói đoạn nào). Cỡ chữ chung dưới 4 mm → `422 VALIDATION_ERROR`.
+- Xem trước: `POST /catalog/templates/{id}/preview {text (≤200), font_size_mm?, alignment?, layout?}` → ảnh PNG trang đầu (A5), không cần đăng nhập, 60 lần/phút/IP; mẫu `TYPOGRAPHY` tối đa 80 ký tự. `GET .../preview?text=` cũ vẫn dùng được (không có kiểu chữ).
+- `InputOut.layout` trả đúng dạng đã lưu (đoạn theo thứ tự, bỏ giá trị mặc định); layout không đổi gì thì lưu `null`. Lúc Staff sinh phác thảo, nghiêng/gạch chân/cỡ chữ được vẽ thành nét thật (gạch chân là một nét thẳng dưới mỗi dòng của đoạn); layout hỏng → `422 INVALID_LAYOUT`.
+- Cỡ tối thiểu 4 mm là giả định tạm (chưa thử với bút thật); độ nghiêng cố định khoảng 12°.
 
 **Upload ảnh/PDF – 3 bước** (jpg/png/pdf, ≤ 20 MB, ≤ 10 tệp):
 ```
@@ -560,9 +575,9 @@ AWAITING_FINAL_PAYMENT ──chọn cách nhận──▶ ──POST payments/fi
 
 | Việc | Endpoint |
 |---|---|
-| Xem phí và dịch vụ cho một **địa chỉ chưa lưu** (FR-21) | `POST /orders/{id}/delivery-quote {address: {...}}` → `services[]` mỗi mục `{carrier: GHN\|GHTK, service_code, service_name, fee, total_due (= G−D + phí), eta, is_fallback_fee, mode}`. Không đổi dữ liệu. **Dùng ngay khi khách nhập xong địa chỉ** để hiện danh sách cho khách chọn |
-| Xem phí của đơn | `GET /orders/{id}/delivery-quote` → như trên cho địa chỉ **đã lưu** (chưa lưu: chỉ phí dự phòng) + `{paper_size, package_type, balance, is_fallback_fee, options: {DELIVERY, PICKUP}, chosen, chosen_service}`. Gói: A6/A5 → `FLAT_BOX_A5`, A4 → `FLAT_BOX_A4`. Hãng có API đang tắt/lỗi chỉ có **một** dịch vụ `STANDARD` tính theo bảng phí dự phòng (`is_fallback_fee: true`, `mode: "FALLBACK"`, `eta: null`); `mode` còn lại là `MOCK`/`SANDBOX`/`LIVE` |
-| Chọn giao hàng + dịch vụ | `PUT /orders/{id}/delivery {method: "DELIVERY", address: {receiver, phone, street, province_code, district_code, ward_code, province_name?, district_name?, ward_name?, label?}, carrier: "GHN"\|"GHTK", service_code}` → `OrderOut` có `shipping_carrier`, `shipping_service_code`, `shipping_eta`. `carrier` và `service_code` **đi cùng nhau** và phải là một trong các dịch vụ vừa báo (`422 SERVICE_NOT_AVAILABLE` nếu không); **bỏ trống cả hai** = BE chọn dịch vụ rẻ nhất. `province_code/district_code/ward_code` theo mã của **GHN**; GHTK địa chỉ theo **tên**, nên gửi kèm `province_name`, `district_name` (`ward_name`) để GHTK có thể được đề xuất |
+| Xem phí và dịch vụ cho một **địa chỉ chưa lưu** (FR-21) | `POST /orders/{id}/delivery-quote {address: {...}}` → `services[]` mỗi mục `{carrier: "GHN", service_code, service_name, fee, total_due (= G−D + phí), eta, is_fallback_fee, mode}`. Không đổi dữ liệu. **Dùng ngay khi khách nhập xong địa chỉ** để hiện danh sách cho khách chọn |
+| Xem phí của đơn | `GET /orders/{id}/delivery-quote` → như trên cho địa chỉ **đã lưu** (chưa lưu: chỉ phí dự phòng) + `{paper_size, package_type, balance, is_fallback_fee, options: {DELIVERY, PICKUP}, chosen, chosen_service}`. Gói: A6/A5 → `FLAT_BOX_A5`, A4 → `FLAT_BOX_A4`. GHN thật (`SANDBOX`/`LIVE`) trả **một** dịch vụ cho gói nhẹ (`service_code: "2"`, "Giao hàng nhẹ"), phí + ngày giao dự kiến lấy từ GHN; `MOCK` trả hai dịch vụ `STANDARD`/`EXPRESS` để demo. Khi API GHN đang tắt/lỗi chỉ có **một** dịch vụ `STANDARD` tính theo bảng phí dự phòng (`is_fallback_fee: true`, `mode: "FALLBACK"`, `eta: null`). Địa chỉ GHN không nhận → `422 INVALID_ADDRESS` (khách sửa địa chỉ), không rơi về phí dự phòng |
+| Chọn giao hàng + dịch vụ | `PUT /orders/{id}/delivery {method: "DELIVERY", address: {receiver, phone, street, province_code, ward_code, label?}, carrier: "GHN", service_code}` → `OrderOut` có `shipping_carrier`, `shipping_service_code`, `shipping_eta`. `carrier` và `service_code` **đi cùng nhau** và phải là một trong các dịch vụ vừa báo (`422 SERVICE_NOT_AVAILABLE` nếu không); **bỏ trống cả hai** = BE chọn dịch vụ rẻ nhất. **Địa chỉ theo mô hình hai cấp (tỉnh/thành → phường/xã, không còn quận/huyện)**: `province_code` và `ward_code` lấy từ `GET /locations/...` (mục 7d-2); BE kiểm tra ward thuộc đúng tỉnh và **tự điền** `province_name`, `ward_name` theo danh mục (tên FE gửi lên bị bỏ qua). `district_code`/`district_name` cũ vẫn được nhận nhưng **bị bỏ qua và không lưu**. Hãng duy nhất là **GHN** (GHTK đã gỡ: gửi `carrier: "GHTK"` → `422 VALIDATION_ERROR`) |
 | Chọn nhận tại xưởng (FR-23) | `PUT /orders/{id}/delivery {method: "PICKUP", pickup_slot_start, pickup_slot_end (có múi giờ, trong giờ làm việc của xưởng, dài 15–240 phút, trong 30 ngày tới), contact_phone, receiver?}`. SĐT này dùng để đối chiếu khi bàn giao |
 | Thanh toán cuối (FR-18) | `POST /orders/{id}/payments/final {gateway: VNPAY\|MOMO, expected_total?}` → 201 `{payment_required, total_due, order_status, payments[]}`. Giao hàng: 2 dòng `FINAL` (G−D) + `SHIPPING` (phí ship); nhận tại xưởng: chỉ `FINAL`. Cọc 100% thì không có dòng `FINAL`. **Hai dòng thuộc một giao dịch cổng**: mock-checkout bằng id của một trong hai dòng đều thanh toán cả hai |
 | Mock thanh toán | `POST /payments/{payment_id}/mock-checkout {result: SUCCESS\|FAILED}` (như đặt cọc) → đơn `READY_TO_DELIVER` |
@@ -572,7 +587,21 @@ AWAITING_FINAL_PAYMENT ──chọn cách nhận──▶ ──POST payments/fi
 - **`expected_total`** (nên gửi): số tiền khách đã thấy (`total_due` của dịch vụ đã chọn). Phí hãng thay đổi từ lúc đó thì trả `409 FEE_CHANGED` (`details.expected_total`, `details.current_total`) và **không** mở giao dịch nào: hiện số mới cho khách xác nhận lại. Dịch vụ đã chọn không còn khả dụng → `409 SERVICE_NOT_AVAILABLE` (cho khách chọn lại).
 - Đổi cách nhận sau khi đã bắt đầu thanh toán: các giao dịch cuối đang chờ bị **huỷ** (webhook muộn của chúng được bỏ qua, `IGNORED`); gọi lại `payments/final` để tạo giao dịch mới theo số tiền mới. Sau khi đã thanh toán thì không đổi được (`409 FINAL_ALREADY_PAID`).
 - `GET /orders/{id}/payments` liệt kê cả `FINAL` và `SHIPPING`. `OrderOut` có thêm `delivery_method`, `delivery_address` (nhận tại xưởng: chỉ `{receiver, phone}`), `pickup_slot_start/end`, `received_confirmed_at`, `completed_at`.
-- Lỗi riêng: `409 FINAL_PAYMENT_NOT_EXPECTED`, `409 FINAL_ALREADY_PAID`, `409 DELIVERY_NOT_CHOSEN`, `409 DELIVERY_NOT_READY` (đơn chưa có loại giấy), `409 ORDER_NOT_DELIVERED`, `409 RECEIPT_ALREADY_CONFIRMED`, `409 PICKUP_NOT_EXPECTED`, `422 INVALID_ADDRESS` (`details.missing`), `422 INVALID_SLOT`, `422 SLOT_IN_PAST`, `422 SLOT_TOO_FAR`, `422 OUTSIDE_WORKING_HOURS`, `422 INVALID_CONTACT`, `422 PICKUP_PHONE_MISMATCH`, `503 SHIPPING_FEE_UNAVAILABLE` (chưa cấu hình phí cho loại gói), `409 FEE_CHANGED`, `409`/`422 SERVICE_NOT_AVAILABLE`, `422 ADDRESS_NAMES_REQUIRED` (chỉ khi dùng hãng cần tên địa chỉ).
+- Lỗi riêng: `409 FINAL_PAYMENT_NOT_EXPECTED`, `409 FINAL_ALREADY_PAID`, `409 DELIVERY_NOT_CHOSEN`, `409 DELIVERY_NOT_READY` (đơn chưa có loại giấy), `409 ORDER_NOT_DELIVERED`, `409 RECEIPT_ALREADY_CONFIRMED`, `409 PICKUP_NOT_EXPECTED`, `422 INVALID_ADDRESS` (thiếu trường: `details.missing`; mã tỉnh/phường không có trong danh mục hoặc phường không thuộc tỉnh; hoặc GHN không nhận địa chỉ/số điện thoại), `422 INVALID_SLOT`, `422 SLOT_IN_PAST`, `422 SLOT_TOO_FAR`, `422 OUTSIDE_WORKING_HOURS`, `422 INVALID_CONTACT`, `422 PICKUP_PHONE_MISMATCH`, `503 SHIPPING_FEE_UNAVAILABLE` (chưa cấu hình phí cho loại gói), `409 FEE_CHANGED`, `409`/`422 SERVICE_NOT_AVAILABLE`, `503 LOCATIONS_UNAVAILABLE` (chưa tải được danh mục địa chỉ từ GHN và chưa có bản lưu).
+
+### 7d-2. Danh mục địa chỉ (tỉnh/thành, phường/xã) – dùng cho form địa chỉ
+
+Từ 01/07/2025 Việt Nam chỉ còn **hai cấp** (tỉnh/thành → phường/xã). BE lấy danh mục từ **GHN** (cùng nguồn đã tính phí và tạo vận đơn, nên mã không bao giờ lệch) và giữ cache 24 giờ; **FE không giữ token GHN và không gọi GHN**. Cần đăng nhập (mọi vai trò). Giới hạn 120 lần/phút/IP; trình duyệt được giữ kết quả 1 giờ (`Cache-Control: private, max-age=3600`).
+
+| Việc | Endpoint |
+|---|---|
+| Danh sách tỉnh/thành (khoảng 34) | `GET /locations/provinces` → `[{code, name}]`, sắp theo tên |
+| Phường/xã của một tỉnh | `GET /locations/provinces/{province_code}/wards` → `[{code, name}]` (tỉnh lớn nhất ~170 phường). Tỉnh lạ → `404 PROVINCE_NOT_FOUND` |
+
+- Form địa chỉ: chọn tỉnh → tải phường/xã của tỉnh đó → ô đường/số nhà (`street`). Gửi `province_code` + `ward_code` (chuỗi) cùng `receiver`, `phone`, `street` khi `PUT /orders/{id}/delivery`, `POST .../delivery-quote` và `PATCH /me` (địa chỉ hồ sơ).
+- `PATCH /me` kiểm tra địa chỉ như khi đặt hàng: mã sai → `422 INVALID_ADDRESS`; địa chỉ đã lưu **bằng mã cũ (có quận/huyện) không còn dùng được**, khách cần chọn lại.
+- `503 LOCATIONS_UNAVAILABLE`: GHN không trả lời và BE chưa có bản lưu (hiếm). Cho khách thử lại.
+- `MOCK` (mặc định): chỉ có 4 tỉnh (Hà Nội, Hồ Chí Minh, Đà Nẵng, Cà Mau) với vài phường mỗi tỉnh, mã thật của GHN staging. Khi máy chủ bật GHN (`CARRIER_MODE=sandbox|live`) danh sách đầy đủ.
 
 ## 7e. Vận đơn và giao hàng – Phase 4c-2c
 
@@ -584,17 +613,17 @@ READY_TO_DELIVER ──Staff tạo vận đơn (CREATED)──▶ hãng lấy h�
 ```
 | Ai | Việc | Endpoint |
 |---|---|---|
-| Khách | Theo dõi vận đơn (FR-22), mới nhất trước | `GET /orders/{id}/shipment` → `[{id, carrier, service_code, waybill_code, status, fee (khách đã trả), eta, picked_up_at, delivered_at, mode, tracking_url}]`. `tracking_url` là trang tra cứu của hãng (`null` với vận đơn mô phỏng). Chưa có vận đơn → `[]` |
-| Staff | Xem vận đơn + link nhãn PDF (hết hạn sau 10 phút) | `GET /workshop/orders/{id}/shipment` (Staff, Manager đọc) → thêm `package_type, weight_g, is_fallback_fee, carrier_status_raw, to_address, label_link, created_by` |
+| Khách | Theo dõi vận đơn (FR-22), mới nhất trước | `GET /orders/{id}/shipment` → `[{id, carrier, service_code, waybill_code, status, fee (khách đã trả), eta, picked_up_at, delivered_at, mode, tracking_url}]`. `tracking_url` là trang tra cứu của GHN (`null` với vận đơn mô phỏng). Chưa có vận đơn → `[]` |
+| Staff | Xem vận đơn + link nhãn (MOCK: PDF lưu sẵn, hết hạn sau 10 phút; GHN thật: **trang in A5 của GHN**, link mới mỗi lần xem, chỉ có khi vận đơn còn sống) | `GET /workshop/orders/{id}/shipment` (Staff, Manager đọc) → thêm `package_type, weight_g, is_fallback_fee, carrier_status_raw, to_address, label_link, created_by` |
 | Staff | Tạo vận đơn (UC-29) | `POST /workshop/orders/{id}/shipment {note?}` → 201. Đơn phải `READY_TO_DELIVER` (hoặc `DELIVERING` khi vận đơn trước đã `FAILED`/`RETURNED`/`CANCELLED`), hình thức giao hàng, đã có dịch vụ khách chọn, chưa có vận đơn đang sống |
-| Staff | Huỷ vận đơn hãng chưa lấy hàng | `POST /workshop/shipments/{id}/cancel {reason}` (chỉ `CREATED`) → `CANCELLED`; sau đó tạo lại |
+| Staff | Huỷ vận đơn hãng chưa lấy hàng | `POST /workshop/shipments/{id}/cancel {reason}` (chỉ `CREATED`) → `CANCELLED`; sau đó tạo lại. GHN từ chối huỷ (hãng đã lấy hàng) → `409 CARRIER_CANCEL_REFUSED`, vận đơn **giữ nguyên** `CREATED` |
 | Staff | **Demo** hãng báo trạng thái (chỉ vận đơn MOCK) | `POST /workshop/shipments/{id}/mock-event {status: PICKED_UP\|DELIVERING\|DELIVERED\|FAILED\|RETURNED, reason?}` → phát lại đúng callback có chữ ký |
-| Hãng | Callback (FE không gọi) | `POST /webhooks/shipments/{GHN\|GHTK}` (mục 9) |
+| Hãng | Callback (FE không gọi) | `POST /webhooks/shipments/GHN` (mục 9) |
 
 - Vận đơn: `CREATED → PICKED_UP → DELIVERING → DELIVERED`; `FAILED` (có thể giao lại), `RETURNED`, `CANCELLED`. Callback **trùng hoặc cũ hơn** trạng thái hiện tại bị bỏ qua (`ALREADY_PROCESSED`). Chỉ vận đơn **mới nhất** của đơn điều khiển trạng thái đơn.
 - **Giao thất bại / hoàn về: đơn vẫn `DELIVERING`.** UI Staff nên hiện "Giao thất bại" và nút "Tạo vận đơn mới" (hoặc liên hệ khách chuyển sang nhận tại xưởng).
 - Sau `COMPLETED` khách bấm "Đã nhận hàng" (`POST /orders/{id}/receipt`, chỉ ghi `received_confirmed_at`).
-- Lỗi riêng: `409 SHIPMENT_NOT_EXPECTED`, `409 SHIPPING_SERVICE_NOT_CHOSEN`, `409 SHIPMENT_ALREADY_EXISTS` (`details.shipment_id`), `409 SHIPMENT_NOT_CANCELLABLE`, `409 NOT_A_MOCK_SHIPMENT`, `404 SHIPMENT_NOT_FOUND`, `502 CARRIER_REJECTED` / `502 CARRIER_UNAVAILABLE` (hãng từ chối/lỗi: chưa tạo vận đơn), `503 CARRIER_NOT_CONFIGURED`.
+- Lỗi riêng: `409 SHIPMENT_NOT_EXPECTED`, `409 SHIPPING_SERVICE_NOT_CHOSEN`, `409 SHIPMENT_ALREADY_EXISTS` (`details.shipment_id`), `409 SHIPMENT_NOT_CANCELLABLE`, `409 CARRIER_CANCEL_REFUSED`, `409 NOT_A_MOCK_SHIPMENT`, `404 SHIPMENT_NOT_FOUND`, `502 CARRIER_REJECTED` / `502 CARRIER_UNAVAILABLE` (hãng từ chối/lỗi: chưa tạo vận đơn), `503 CARRIER_NOT_CONFIGURED`.
 - Hãng mặc định là **MOCK** (`mode:"MOCK"`, mã vận đơn dạng `MOCK-GHN-...`, nhãn PDF có chữ MÔ PHỎNG). Khi máy chủ bật hãng thật, `mode` là `SANDBOX`/`LIVE` và hợp đồng API giữ nguyên.
 
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
@@ -644,7 +673,7 @@ Tất cả do **bên ngoài** gọi vào BE; FE chỉ cần poll `GET /orders/{i
 | `POST /webhooks/payments/{VNPAY\|MOMO}` | cổng **MOCK** | HMAC-SHA256 ở `X-Signature` | Tắt (`403 MOCK_WEBHOOK_DISABLED`) khi `PAYMENT_MODE` ≠ `mock` |
 | `GET /webhooks/payments/vnpay/ipn` | VNPay | `vnp_SecureHash` HMAC-SHA512 | Luôn HTTP 200 + `{RspCode, Message}`: `00` ok, `02` đã xác nhận, `01` không thấy giao dịch, `04` sai số tiền, `97` sai chữ ký, `99` lỗi |
 | `POST /webhooks/payments/momo/ipn` | MoMo | `signature` HMAC-SHA256 | `204` khi đã xử lý (kể cả trùng); `401` sai chữ ký; `422` sai số tiền/dữ liệu |
-| `POST /webhooks/shipments/{GHN\|GHTK}` | hãng vận chuyển | MOCK: `X-Signature`; GHN: `?key=<mã bí mật>`; GHTK: `?hash=<mã bí mật>` | Idempotent; callback cũ/trùng → `ALREADY_PROCESSED` |
+| `POST /webhooks/shipments/GHN` | GHN | MOCK: `X-Signature`; GHN: `?key=<mã bí mật>` hoặc header `X-Webhook-Secret` | Idempotent; callback cũ/trùng → `ALREADY_PROCESSED`; trạng thái lạ/loại sự kiện khác → `IGNORED`. GHTK không còn hỗ trợ (`422 CARRIER_NOT_SUPPORTED`) |
 
 Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thật, địa chỉ IPN/callback phải là `https` công khai (`PUBLIC_BASE_URL`), và phải được đăng ký với từng bên (xem `DEPLOY.md`).
 
@@ -655,7 +684,7 @@ Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thậ
 - Technical Staff: **đã có** xem job, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố (mục 7b), ảnh sản phẩm + QC và nộp ảnh (mục 7c). Ảnh chồng phác thảo do client tự làm.
 - Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4); **chưa có** đẩy tức thời (SSE/WebSocket).
 - Khách: **đã có** xem ảnh, nghiệm thu, viết lại 1 lần, tự nghiệm thu sau 7 ngày (mục 7c). Thanh toán cuối + nhận tại xưởng **đã có** (mục 7d). Chọn dịch vụ vận chuyển, vận đơn và giao hàng qua hãng **đã có** (mục 7e). **Chưa có**: huỷ sau cọc + hoàn tiền (kể cả khoản `needs_refund`), dời ETA, **thông báo (in-app + email)** (Phase 4d/4e).
-- Cổng thanh toán và hãng vận chuyển **thật** (VNPay, MoMo, GHN, GHTK) đã có code nhưng **chưa được thử với môi trường thật của họ**; mặc định vẫn là MOCK cho tới khi có tài khoản và cấu hình (xem `DEPLOY.md`).
+- Cổng thanh toán thật (VNPay, MoMo) đã có code nhưng **chưa được thử với môi trường thật của họ**. **GHN** (hãng duy nhất) đã được thử trên staging ngày 2026-10-26: báo giá (`preview`), tạo/huỷ vận đơn, link nhãn, danh mục địa chỉ; **chưa** thử callback thật. Mặc định vẫn là MOCK cho tới khi cấu hình (xem `DEPLOY.md`).
 - Admin: tích hợp, tham số hệ thống, dashboard, OTP SMS, showcase, review (Phase 5).
 - OT-2 (nét đã học) khoá với khách; AI không sinh phác thảo cho OT-2.
 - Độ chính xác dựng nét OT-1 trên chữ viết tay thật **chưa được kiểm chứng**: giao diện nên cho Staff xem/sửa phác thảo trước khi gửi.
