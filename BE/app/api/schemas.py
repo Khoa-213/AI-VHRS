@@ -43,13 +43,14 @@ class Address(BaseModel):
     receiver: str = Field(min_length=1, max_length=150)
     phone: str = Field(pattern=_PHONE)
     street: str = Field(min_length=1, max_length=255)
-    province_code: str  # codes follow the carrier's (GHN/GHTK) location tables (FR-02)
-    district_code: str
+    province_code: str  # GHN's two-level catalogue (GET /locations/provinces, .../wards) (FR-02)
     ward_code: str
-    # Names are needed by carriers that address by name (GHTK); GHN uses the codes above.
+    # Names come from the catalogue: whatever the client sends here is replaced when the address is saved.
     province_name: str | None = Field(default=None, max_length=100)
-    district_name: str | None = Field(default=None, max_length=100)
     ward_name: str | None = Field(default=None, max_length=100)
+    # The district level no longer exists (01/07/2025). Old clients may still send it; it is ignored and not stored.
+    district_code: str | None = Field(default=None, max_length=20, description="Không còn dùng (bỏ qua).")
+    district_name: str | None = Field(default=None, max_length=100, description="Không còn dùng (bỏ qua).")
     is_default: bool = False
 
 

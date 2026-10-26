@@ -61,20 +61,15 @@ class Settings(BaseSettings):
     payos_api_key: str | None = None
     payos_checksum_key: str | None = None
     payos_base_url: str = "https://api-merchant.payos.vn"
-    # ---- carriers (GHN, GHTK) --------------------------------------------------------------------------------------
-    # mock    = simulated carriers (default). sandbox = the carriers' TEST environments. live = production waybills.
+    # ---- carrier (GHN is the only one) ---------------------------------------------------------------------------------
+    # mock    = simulated carrier (default). sandbox = GHN's TEST environment. live = production waybills.
     carrier_mode: Literal["mock", "sandbox", "live"] = "mock"
-    # Shared secret the carriers put in the callback address (`?key=...`); neither GHN nor GHTK signs its webhook by default.
+    # Shared secret GHN's callback carries (`?key=...` or the `X-Webhook-Secret` header); GHN does not sign its webhook.
     carrier_webhook_secret: str | None = None
     ghn_token: str | None = None
     ghn_shop_id: str | None = None
+    # The pick-up address is the shop's own address registered with GHN (Developer Portal / `shop` API): nothing to set here.
     ghn_base_url: str = "https://dev-online-gateway.ghn.vn/shiip/public-api"
-    ghn_from_district_id: int | None = None          # where the workshop ships from (GHN location ids)
-    ghn_from_ward_code: str | None = None
-    ghtk_token: str | None = None
-    ghtk_client_source: str | None = None            # the shop / partner code
-    ghtk_base_url: str = "https://services-staging.ghtklab.com"
-    # The workshop's pick-up address (GHTK wants names; shown on labels).
     # ---- e-mail (alerts to staff). Without SMTP_HOST the console mailer only logs. Credentials belong in BE/.env, never in git.
     smtp_host: str | None = None
     smtp_port: int = 587
@@ -88,12 +83,6 @@ class Settings(BaseSettings):
     # (`frame_transform.schema == "vhrs-motion/1"`) AND the server's own deterministic validation passes. Turn this on for
     # any station that drives a real robot. Left off, old clients that only report `passed` keep working.
     motion_validation_required: bool = False
-    workshop_name: str = "Xuong Net Viet"
-    workshop_phone: str | None = None
-    workshop_address: str | None = None
-    workshop_province: str | None = None
-    workshop_district: str | None = None
-    workshop_ward: str | None = None
     # Google sign-in: OAuth *Web* client id(s) from Google Cloud Console, comma separated. Empty = the endpoint answers 503.
     # Env name GOOGLE_CLIENT (what Render uses); GOOGLE_CLIENT_ID is still accepted.
     google_client_id: str | None = Field(default=None, validation_alias=AliasChoices("GOOGLE_CLIENT", "GOOGLE_CLIENT_ID"))

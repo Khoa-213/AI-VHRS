@@ -125,7 +125,8 @@ class SketchService:
                 font_size_mm=float(first.font_size_mm) if first and first.font_size_mm else None,
                 alignment=first.alignment if first else None, paper_size=size,
                 seed=seed if seed is not None else order.id, v_max_mm_s=v_max, pen_category=category,
-                chars=order.char_count or 0, font_loader=store.read)
+                chars=order.char_count or 0, font_loader=store.read,
+                layout=first.layout if first else None)             # the first text row starts the joined text: offsets hold
         row = self._persist(order, gen.pages, gen.engine, gen.metrics, gen.similarity, gen.complexity, approach_note)
         return row, gen.warnings
 

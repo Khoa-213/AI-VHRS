@@ -19,7 +19,7 @@ class DeliveryOptionOut(BaseModel):
 
 
 class ServiceOptionOut(BaseModel):
-    carrier: Literal["GHN", "GHTK"]
+    carrier: Literal["GHN"]
     service_code: str
     service_name: str
     fee: Decimal
@@ -42,13 +42,13 @@ class DeliveryQuoteOut(BaseModel):
 
 class DeliveryIn(BaseModel):
     method: DeliveryMethod
-    address: Address | None = Field(default=None, description="Bắt buộc khi DELIVERY (địa chỉ giao hàng, mã tỉnh/huyện/xã theo hãng).")
+    address: Address | None = Field(default=None, description="Bắt buộc khi DELIVERY (địa chỉ giao hàng: mã tỉnh và phường/xã lấy từ `GET /locations/...`).")
     pickup_slot_start: datetime | None = Field(default=None, description="Bắt buộc khi PICKUP; có múi giờ, trong giờ làm việc.")
     pickup_slot_end: datetime | None = None
     contact_phone: str | None = Field(default=None, pattern=_PHONE,
                                       description="Bắt buộc khi PICKUP: Staff đối chiếu số này khi bàn giao.")
     receiver: str | None = Field(default=None, max_length=150)
-    carrier: Literal["GHN", "GHTK"] | None = Field(default=None, description="DELIVERY: hãng khách chọn (cùng với service_code). Bỏ trống = dịch vụ rẻ nhất.")
+    carrier: Literal["GHN"] | None = Field(default=None, description="DELIVERY: hãng khách chọn (cùng với service_code). Bỏ trống = dịch vụ rẻ nhất.")
     service_code: str | None = Field(default=None, max_length=30)
 
     @model_validator(mode="after")

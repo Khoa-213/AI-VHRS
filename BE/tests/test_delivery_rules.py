@@ -60,8 +60,8 @@ def test_amount_due_refuses_nonsense(total, deposit, method):
 
 
 # ---- address and contact ------------------------------------------------------------------------------
-GOOD = {"receiver": " An ", "phone": "0901234567", "street": "1 Lê Lợi", "province_code": "79",
-        "district_code": "760", "ward_code": "26734", "label": "Nhà", "extra": "ignored"}
+GOOD = {"receiver": " An ", "phone": "0901234567", "street": "1 Lê Lợi", "province_code": "1000001",
+        "ward_code": "1003506", "label": "Nhà", "extra": "ignored", "district_code": "760"}
 
 
 def test_address_is_checked_trimmed_and_limited_to_known_fields():

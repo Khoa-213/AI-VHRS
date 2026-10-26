@@ -166,9 +166,13 @@ class TextInputIn(BaseModel):
     text_content: str = Field(min_length=1, max_length=20000)
     template_id: int | None = None
     handwriting_style_id: int | None = None
-    font_size_mm: Decimal | None = Field(default=None, gt=0, le=100)
+    font_size_mm: Decimal | None = Field(default=None, ge=4, le=100, description="Cỡ chữ (chiều cao chữ hoa, mm), 4–100; bỏ trống = 8.")
     alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY"] | None = None
-    layout: dict[str, Any] | None = None
+    layout: dict[str, Any] | None = Field(default=None, description=(
+        'Cỡ chữ và kiểu chữ theo từng đoạn (xem `GET /catalog/text-styles`): {"version": 1, "line_spacing": 1.2, "spans": '
+        '[{"start": 0, "end": 12, "size_mm": 14, "italic": true, "underline": "single"|"double", "strike": true}]}. '
+        '`start`/`end` là vị trí ký tự (code point) trong nội dung đã chuẩn hoá NFC, [start, end). PUT thay thế toàn bộ: '
+        'không gửi `layout` nghĩa là xoá định dạng. Không có chữ đậm.'))
 
 
 class CanvasInputIn(BaseModel):
