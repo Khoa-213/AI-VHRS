@@ -88,7 +88,7 @@ eggs/
 .eggs/
 lib/
 # The Python rule above must not hide the Flutter sources.
-!Mobile/lib/
+!DesktopApp/lib/
 lib64/
 parts/
 sdist/
@@ -110,6 +110,7 @@ pip-delete-this-directory.txt
 uploads/
 media/
 storage/
+!DesktopApp/lib/core/storage/
 temp/
 tmp/
 
@@ -155,15 +156,15 @@ dmypy.json
 # (đã cover bởi node_modules/ & dist/ ở trên)
 
 # ========================
-# Mobile - Flutter / Dart
+# DesktopApp - Flutter / Dart
 # ========================
-Mobile/build/
-Mobile/.dart_tool/
-Mobile/.packages
-Mobile/.pub-cache/
-Mobile/.pub/
-Mobile/.flutter-plugins
-Mobile/.flutter-plugins-dependencies
+DesktopApp/build/
+DesktopApp/.dart_tool/
+DesktopApp/.packages
+DesktopApp/.pub-cache/
+DesktopApp/.pub/
+DesktopApp/.flutter-plugins
+DesktopApp/.flutter-plugins-dependencies
 *.iml
 
 # ========================
