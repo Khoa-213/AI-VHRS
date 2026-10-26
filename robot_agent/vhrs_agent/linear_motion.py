@@ -75,6 +75,7 @@ class LinearExecutor:
         # length/speed. These numbers let a person judge "stop and go" without watching: logged by the runner as `motion_stats`.
         t_begin = time.perf_counter()
         move_s, gap_s, last_return, ideal_s, path_mm = [], [], None, 0.0, 0.0
+        end_err: list = []
         try:
             for start, target, speed in moves:
                 ctl.checkpoint()
@@ -106,8 +107,10 @@ class LinearExecutor:
                     gap_s.append(sent - last_return)                 # dead time between segments: checks, inverse kinematics, state reads
                 robot._send_linear(payload(robot._pose(target), joints, robot.cfg.tool_id, speed,
                                            robot.cfg.linear_accel_mm_s2))
-                self.wait(start, target, speed, previous_packet, ctl, on_tcp)
+                end_pose = self.wait(start, target, speed, previous_packet, ctl, on_tcp)
                 last_return = time.perf_counter()
+                if end_pose is not None:
+                    end_err.append(np.asarray(end_pose[:3], float) - target)          # real end of the segment minus the commanded end
                 move_s.append(last_return - sent)
                 seg = float(np.linalg.norm(target - start))
                 path_mm += seg
@@ -119,7 +122,12 @@ class LinearExecutor:
                                   "slowdown_factor": round(total / ideal_s, 2) if ideal_s > 0 else None,
                                   "gap_mean_s": round(float(np.mean(gap_s)), 3) if gap_s else None,
                                   "gap_max_s": round(float(np.max(gap_s)), 3) if gap_s else None,
-                                  "segment_wall_mean_s": round(float(np.mean(move_s)), 3) if move_s else None}
+                                  "segment_wall_mean_s": round(float(np.mean(move_s)), 3) if move_s else None,
+                                  # where the controller really stopped, compared with where it was told to: 0 means the robot tracks its commands,
+                                  # so a pen that rises over the page is physical (pen slipping, spring, paper), not the robot
+                                  "end_error_z_mean_mm": round(float(np.mean([e[2] for e in end_err])), 3) if end_err else None,
+                                  "end_error_z_max_mm": round(float(np.max(np.abs([e[2] for e in end_err]))), 3) if end_err else None,
+                                  "end_error_xy_max_mm": round(float(np.max([np.linalg.norm(e[:2]) for e in end_err])), 3) if end_err else None}
         except (RobotError, StopRequested):
             robot.stop()
             raise
@@ -177,7 +185,7 @@ class LinearExecutor:
                 if anchor is None or np.linalg.norm(pose[:3] - anchor) > SETTLE_JITTER_MM:
                     anchor, stable_at = pose[:3].copy(), now
                 elif now - stable_at >= .1:
-                    return
+                    return pose
             else:
                 anchor, stable_at = None, None
             time.sleep(.02)
