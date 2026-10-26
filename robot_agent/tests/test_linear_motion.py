@@ -195,6 +195,7 @@ def test_a_completed_move_leaves_smoothness_statistics(rig):
     st = robot.motion_stats
     assert st["segments"] >= 2 and st["path_mm"] == pytest.approx(2.0, abs=0.01) and st["wall_s"] > 0
     assert st["effective_mm_s"] > 0 and st["slowdown_factor"] >= 0 and st["gap_mean_s"] is not None
+    assert st["end_error_z_max_mm"] is not None and st["end_error_z_max_mm"] < 0.2 and st["end_error_xy_max_mm"] < 0.2    # the fake robot arrives where told
 
 
 # ---------------------------------------------------------------- align to the fixed start
