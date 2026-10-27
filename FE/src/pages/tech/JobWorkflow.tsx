@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import type { Job } from '../../services/async'
-import { downloadJobPackage, finishJob, jobPermissions, prepareJob, startJob, type TechJobDetail, type VerifiedPackage } from '../../services/technician'
+import { downloadJobPackage, finishJob, jobPermissions, prepareJob, type TechJobDetail, type VerifiedPackage } from '../../services/technician'
 import { flowError, type TechRun } from './flow'
 import JobPreparation from './JobPreparation'
 import JobEvents from './JobEvents'
 import JobPhotos from './JobPhotos'
 import JobHistory from './JobHistory'
+import RobotConsole from './RobotConsole'
+import RobotView3D from './RobotView3D'
 
 export default function JobWorkflow({ job, refresh, stale }: { job: TechJobDetail; refresh: Job; stale: boolean }) {
   const t = useT()
@@ -85,12 +87,8 @@ export default function JobWorkflow({ job, refresh, stale }: { job: TechJobDetai
       <button type="button" className="sd-btn" disabled={disabled || !gates.prepare} onClick={() => void run(() => prepareJob(job.id))}>{t('td.flow.prepare')}</button>
     </section>}
     {job.status === 'PREPARING' && <JobPreparation job={job} disabled={disabled} gates={gates} run={run} />}
-    {job.status === 'PREPARING' && <section className="panel"><h2>{t('td.flow.start')}</h2>
-      <ul className="tech-gates">
-        {[['td.flow.verified', !!current], ['td.api.calibration', !!job.calibration?.is_valid], ['td.api.simulation', job.simulationPassed === true]].map(([key, ok]) => <li key={String(key)}><span className={`chip ${ok ? 'good' : 'warn'}`}>{t(ok ? 'td.api.passed' : 'td.api.notRecorded')}</span>{t(String(key))}</li>)}
-      </ul>
-      <button type="button" className="sd-btn" disabled={disabled || !gates.start} onClick={() => void run(() => startJob(job.id), t('td.flow.confirmStart'))}>{t('td.flow.start')}</button>
-    </section>}
+    {['SCHEDULED', 'PREPARING', 'WRITING', 'PAUSED'].includes(job.status) && <RobotView3D robotId={job.robotId} robotCode={job.robotCode} />}
+    {['PREPARING', 'WRITING', 'PAUSED'].includes(job.status) && <RobotConsole job={job} refresh={refresh} run={run} verified={!!current} disabled={disabled} />}
     <JobEvents job={job} disabled={disabled} run={run} />
     {gates.finish && <section className="panel"><h2>{t('td.flow.finish')}</h2><p className="sub">{t('td.flow.finishHelp')}</p>
       <button type="button" className="sd-btn" disabled={disabled} onClick={() => void run(() => finishJob(job.id), t('td.flow.confirmFinish'))}>{t('td.flow.finish')}</button>

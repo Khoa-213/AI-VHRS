@@ -5,6 +5,7 @@ import Shell from '../../components/ws/Shell'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
+import { useRobotStatus } from '../../store/robotStatus'
 import { ACTIVE_JOB_STATUSES, allTechJobs, jobPath, jobTone, type TechJob, type JobStatus } from '../../services/technician'
 import { useUser } from '../../store/store'
 import JobFeedback from './JobFeedback'
@@ -18,12 +19,15 @@ const GROUPS: { key: string; statuses: JobStatus[] }[] = [
   { key: 'history', statuses: ['PHOTO_UPLOADED', 'DONE', 'CANCELLED'] },
 ]
 
+const STATE_TONE: Record<string, string> = { OFFLINE: 'mute', IDLE: 'good', PREPARING: 'info', WRITING: 'orange', PAUSED_SAFE: 'warn', DANGER: 'bad' }
+
 export default function TechDashboard() {
   const t = useT()
   const locale = useLocale()
   const user = useUser()
   const [openedAt] = useState(() => new Date())
   const q = useAsync(allTechJobs, [user?.id], 30000)
+  const st = useRobotStatus()
   const mine = q.data ?? []
   const inStatus = (statuses: JobStatus[]) => mine.filter((j) => statuses.includes(j.status))
   const qc = inStatus(['WRITTEN']).length
@@ -60,10 +64,16 @@ export default function TechDashboard() {
       </section>
       <section className="panel" style={{ flex: '1 1 340px' }} aria-labelledby="td-robots-h">
         <div className="ph"><h2 id="td-robots-h">{t('td.api.assignedRobots')}</h2></div>
-        <div className="list">{robots.map((r) => <div key={r.id} className="item tech-job-row">
-          <div className="t"><b>{r.code || r.id}</b>{open.filter((j) => j.robotId === r.id).map((j) => <Link key={j.id} to={jobPath(j.id)}>{j.orderCode || j.orderId} / {t(`js.${j.status}`)}</Link>)}</div>
-        </div>)}</div>
+        <div className="list">{robots.map((r) => {
+          const s = st.data?.find((x) => x.robotId === r.id)
+          return <div key={r.id} className="item tech-job-row">
+            <div className="t"><b>{r.code || r.id}</b>{s && <span>{s.headline}</span>}
+              {open.filter((j) => j.robotId === r.id).map((j) => <Link key={j.id} to={jobPath(j.id)}>{j.orderCode || j.orderId} / {t(`js.${j.status}`)}</Link>)}</div>
+            {s && <span className={`chip ${STATE_TONE[s.state]}`}>{t(`rb.state.${s.state}`)}</span>}
+          </div>
+        })}</div>
         {q.data && !q.error && !robots.length && <p className="sub">{t('td.noRobots')}</p>}
+        {st.data?.some((s) => s.level >= 4) && <p className="rb-estop" role="alert"><b>{t('rb.estopNow')}</b></p>}
         <p className="sub">{t('td.api.robotNote')}</p>
       </section>
     </div>

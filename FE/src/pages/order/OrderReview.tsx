@@ -1,5 +1,5 @@
-import { ChatCircleDots } from '@phosphor-icons/react'
-import { useEffect, useRef, useState } from 'react'
+import { ChatCircleDots, Check } from '@phosphor-icons/react'
+import { useState } from 'react'
 import Page from '../../components/layout/Page'
 import OrderPreview from '../../components/ui/OrderPreview'
 import ProductViewer from '../../components/ui/ProductViewer'
@@ -36,7 +36,8 @@ export default function OrderReview({ id }: { id: string | null }) {
   const pens = useAsync(() => getPens(), [])
   const inks = useAsync(() => (order?.penId ? getInks(order.penId) : Promise.resolve([])), [order?.penId])
   const quote = useAsync(() => (status && HAS_QUOTE.includes(status) ? getQuotation(orderId) : Promise.resolve(null)), [orderId, status])
-  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' ? getPrivacyPolicy() : Promise.resolve(null)), [status])
+  // The policy is read and agreed to right above the deposit button, both before the quotation (AWAITING_PRIVACY) and on it.
+  const policy = useAsync(() => (status === 'AWAITING_PRIVACY' || status === 'QUOTED' ? getPrivacyPolicy() : Promise.resolve(null)), [status])
   // Once the technician submits, the order shows the real photos of the written product, not the customer's input.
   const product = useAsync(() => (status && HAS_PRODUCT_PHOTOS.includes(status) ? getProductPhotos(orderId) : Promise.resolve(null)), [orderId, status])
 
@@ -47,16 +48,8 @@ export default function OrderReview({ id }: { id: string | null }) {
   const [text, setText] = useState('')
   const [option, setOption] = useState<number | null>(null)
   const [policyOpen, setPolicyOpen] = useState(false)
-  const autoOpened = useRef(false)
-
-  // The policy opens by itself the first time the order lands on the privacy step.
-  useEffect(() => {
-    if (status !== 'AWAITING_PRIVACY') autoOpened.current = false
-    else if (policy.data && !autoOpened.current) {
-      autoOpened.current = true
-      setPolicyOpen(true)
-    }
-  }, [status, policy.data])
+  // Ticked only from the policy dialog, after reading it to the end; the deposit button waits for it.
+  const [agreed, setAgreed] = useState(false)
 
   const run = async (job: Job, after?: () => void) => {
     if (busy) return
@@ -142,6 +135,31 @@ export default function OrderReview({ id }: { id: string | null }) {
           {t(kind === 'cancel' ? 'ov.cancelConfirm' : 'ov.changesSend')}
         </button>
       </div>
+    </div>
+  )
+
+  const [consentBefore, consentAfter = ''] = t('ov.consent').split('{link}')
+  const consent = (
+    <div className={`ov-consent${agreed ? ' on' : ''}`}>
+      <button type="button" role="checkbox" aria-checked={agreed} aria-label={t('ov.consentLabel')} className="ov-check"
+        disabled={busy || !policy.data} onClick={() => (agreed ? setAgreed(false) : setPolicyOpen(true))}>
+        {agreed && <Check size={14} weight="bold" aria-hidden />}
+      </button>
+      <span>{consentBefore}<button type="button" className="vh-link ov-consent-link" disabled={!policy.data} onClick={() => setPolicyOpen(true)}>{t('ov.privacyTitle')}</button>{consentAfter}</span>
+      {policyOpen && policy.data && (
+        <PrivacyDialog
+          policy={policy.data}
+          busy={busy}
+          agreeLabel={t('ov.privacyAgreeRead')}
+          declineLabel={t(status === 'AWAITING_PRIVACY' ? 'ov.decline' : 'common.close')}
+          onClose={() => setPolicyOpen(false)}
+          onDecline={() => { setPolicyOpen(false); if (status === 'AWAITING_PRIVACY') setPanel('decline') }}
+          onAgree={() => status === 'AWAITING_PRIVACY'
+            // The backend shows the quotation only after the policy is accepted: record it, then the quotation loads.
+            ? void run(() => decidePrivacy(orderId, true), () => { setAgreed(true); setPolicyOpen(false) })
+            : (setAgreed(true), setPolicyOpen(false))}
+        />
+      )}
     </div>
   )
 
@@ -268,7 +286,8 @@ export default function OrderReview({ id }: { id: string | null }) {
 
               {status === 'AWAITING_PRIVACY' && (
                 <>
-                  <div className="vh-callout vh-callout--teal"><b>{t('ov.privacyNeeded')}</b><span>{t('ov.privacyBody')}</span></div>
+                  {consent}
+                  <button className="vh-btn vh-btn--primary vh-btn--md" disabled>{t('ov.approve')}</button>
                   {panel === 'decline' ? (
                     <div className="vh-callout vh-callout--red">
                       <b>{t('ov.declineTitle')}</b>
@@ -279,19 +298,7 @@ export default function OrderReview({ id }: { id: string | null }) {
                       </div>
                     </div>
                   ) : (
-                    <div className="or-actions">
-                      <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => setPanel('decline')}>{t('ov.decline')}</button>
-                      <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || !policy.data} onClick={() => setPolicyOpen(true)}>{t('ov.privacyRead')}</button>
-                    </div>
-                  )}
-                  {policyOpen && policy.data && (
-                    <PrivacyDialog
-                      policy={policy.data}
-                      busy={busy}
-                      onClose={() => setPolicyOpen(false)}
-                      onDecline={() => { setPolicyOpen(false); setPanel('decline') }}
-                      onAgree={() => void run(() => decidePrivacy(orderId, true), () => setPolicyOpen(false))}
-                    />
+                    <button className="vh-link" onClick={() => setPanel('decline')}>{t('ov.decline')}</button>
                   )}
                 </>
               )}
@@ -314,9 +321,10 @@ export default function OrderReview({ id }: { id: string | null }) {
                     confirmBox('changes', t('ov.changesLabel'), () => void run(() => requestChanges(orderId, text.trim())))
                   ) : (
                     <>
+                      {consent}
                       <button
                         className="vh-btn vh-btn--primary vh-btn--md"
-                        disabled={busy || (multi && chosen === null)}
+                        disabled={busy || !agreed || (multi && chosen === null)}
                         onClick={() => void run(
                           () => approveQuotation(orderId, { ...(multi && chosen !== null ? { option: chosen } : {}), deposit_pct: depositPct }),
                           () => navigate(orderPath(orderId, 'deposit')),

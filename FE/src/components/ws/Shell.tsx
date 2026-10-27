@@ -11,6 +11,7 @@ import { signOut, useUser } from '../../store/store'
 import ChatDock from '../ui/ChatDock'
 import LanguageToggle from '../ui/LanguageToggle'
 import SkipLink from '../ui/SkipLink'
+import RobotAlertBell from './RobotAlertBell'
 import './ws.css'
 import './workshop.css'
 
@@ -53,13 +54,15 @@ function useCounts(area: Area) {
  * the pill shows what that role can open. Counts on the icons are what waits for the person.
  */
 export default function Shell({
-  area, active, title, lede, tools, children,
+  area, active, title, lede, tools, pinned, children,
 }: {
   area: Area
   active: RailKey
   title: string
   lede?: string
   tools?: ReactNode
+  /** Shown along the bottom of the header, which stays at the top of the page while scrolling (for example a job's progress). */
+  pinned?: ReactNode
   children: ReactNode
 }) {
   const t = useT()
@@ -138,9 +141,11 @@ export default function Shell({
             </div>
             <div className="tools">
               {tools}
+              {area === 'tech' && <RobotAlertBell />}
               <LanguageToggle />
               <div className="me2"><span className="avatar">{initials(name)}</span><div>{name}<small>{role}</small></div></div>
             </div>
+            {pinned && <div className="hd-pinned">{pinned}</div>}
           </header>
           {children}
         </main>
