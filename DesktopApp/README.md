@@ -1,6 +1,6 @@
 # AI-VHRS technician desk
 
-Flutter desktop app (Windows, also runs on macOS while developing) for the workshop's technical
+Flutter app (Windows and macOS desktop, Android and iOS phones) for the workshop's technical
 staff. It keeps the ink-on-paper theme (`lib/core/theme`) and follows the technician flow of the web
 FE (`FE/src/pages/tech`). The customer app now lives only on the web.
 
@@ -9,6 +9,7 @@ flutter run -d windows           # or -d macos on a Mac
 flutter build windows            # output: build/windows/x64/runner/Release/
 flutter test
 flutter test test/auth_live_test.dart --dart-define=LIVE_API=true   # real sign-in against the API
+flutter test test/tech_live_test.dart --dart-define=LIVE_API=true   # real job and robot reads
 ```
 
 Use another backend with `--dart-define=API_BASE_URL=https://.../api/v1`.
@@ -25,18 +26,17 @@ accounts get in. Customers and office staff are refused and their session is rev
 
 ## Flow
 
-Dashboard → Preview (pick an order → simulator, preflight, start robot) → QC (11 checks, 2 photos,
-send or reschedule).
+Dashboard → Jobs (list and open job: package with SHA-256 check, prepare, events, incidents, writing
+finished) → Robot control (3D view, commands, live data) → QC photos (upload, pass or fail, submit).
+An unacknowledged E-Stop alert covers the whole app until it is acknowledged.
 
-Orders, robots and QC use a local mock store (`lib/features/tech/data/tech_store.dart`, saved with
-shared_preferences) because the backend has no technician endpoints yet. Replace the method bodies
-with API calls when it does. The signed-in account is matched to a mock roster queue by email
-(`rosterIdForEmail` in `domain/roster.dart`).
+Everything runs on the real API (`lib/features/tech/data/`), the same calls as the web FE. Commands go
+to the backend, and the Robot Agent on the workstation pulls and runs them on the real arm.
 
 ## Languages
 
 English, Japanese and Vietnamese. Shared strings are generated from `FE/src/i18n` into
-`lib/features/tech/i18n/gen/`. Desktop-only keys (`dk.*`) live in `tech_strings.dart`.
+`lib/features/tech/i18n/gen/` with `dart run tool/gen_i18n.dart`. Desktop-only keys (`dk.*`) live in `tech_strings.dart`.
 
 ## Layout
 
@@ -47,9 +47,8 @@ lib/
 └── features/
     ├── auth/                 # /auth/login, /auth/refresh, /auth/logout, /me, password reset
     └── tech/
-        ├── data/             # mock store, seed orders, QC photos, prefs
-        ├── domain/           # order model + phases, roster, QC checklist
+        ├── data/             # API clients, polling providers, prefs
+        ├── domain/           # jobs, photos, robot commands, status and alerts
         ├── i18n/             # en / ja / vi
-        ├── sim/              # robot simulator (path planning, IK arm, painter)
-        └── presentation/     # router, shell + rail, login, dashboard, preview, QC
+        └── presentation/     # router, shell, login, dashboard, jobs, robot control, QC, settings
 ```

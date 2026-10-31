@@ -6,14 +6,16 @@ import '../../../core/widgets/widgets.dart';
 import '../../auth/domain/models/auth_state.dart';
 import '../../auth/presentation/auth_notifier.dart';
 import '../i18n/tech_strings.dart';
-import 'screens/preview_orders_screen.dart';
-import 'screens/quality_check_screen.dart';
-import 'screens/robot_preview_screen.dart';
+import 'screens/jobs_screen.dart';
+import 'screens/job_detail_screen.dart';
+import 'screens/job_photos_screen.dart';
+import 'screens/robot_control_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/tech_dashboard_screen.dart';
 import 'screens/tech_login_screen.dart';
 import 'widgets/tech_shell.dart';
 
-/// Routes for the Windows technician desk, the same paths as the FE `/tech/*` pages.
+/// Routes for the technician app, the same paths as the FE `/tech/*` pages.
 final desktopRouterProvider = Provider<GoRouter>((ref) {
   final auth = ValueNotifier<AuthState>(ref.read(authNotifierProvider));
   ref.listen<AuthState>(authNotifierProvider, (_, next) => auth.value = next);
@@ -36,35 +38,44 @@ final desktopRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', pageBuilder: (_, _) => const NoTransitionPage(child: TechLoginScreen())),
       ShellRoute(
         pageBuilder: (context, state, child) =>
-            NoTransitionPage(child: TechShell(location: state.matchedLocation, child: child)),
+            NoTransitionPage(child: TechShell(location: state.uri.toString(), child: child)),
         routes: [
           GoRoute(path: '/tech', pageBuilder: (_, _) => const NoTransitionPage(child: TechDashboardScreen())),
           GoRoute(
-            path: '/tech/preview',
-            pageBuilder: (_, _) => const NoTransitionPage(child: PreviewOrdersScreen(mode: PickMode.preview)),
-            routes: [
-              GoRoute(
-                path: ':id',
-                pageBuilder: (_, s) {
-                  final id = s.pathParameters['id']!;
-                  return NoTransitionPage(key: ValueKey('rp-$id'), child: RobotPreviewScreen(key: ValueKey(id), orderId: id));
-                },
-              ),
-            ],
+            path: '/tech/jobs',
+            pageBuilder: (_, s) => NoTransitionPage(child: JobsScreen(filter: JobFilter.parse(s.uri.queryParameters['filter']))),
+          ),
+          GoRoute(
+            path: '/tech/jobs/:id',
+            pageBuilder: (_, s) {
+              // A bad id reaches the backend's check as 0 and reads as "not found".
+              final id = int.tryParse(s.pathParameters['id']!) ?? 0;
+              final filter = s.uri.queryParameters['filter'];
+              return NoTransitionPage(
+                key: ValueKey('job-$id'),
+                child: JobDetailScreen(key: ValueKey(id), jobId: id, backTo: filter == null ? '/tech/jobs' : '/tech/jobs?filter=$filter'),
+              );
+            },
+          ),
+          GoRoute(
+            path: '/tech/jobs/:id/control',
+            pageBuilder: (_, s) {
+              final id = int.tryParse(s.pathParameters['id']!) ?? 0;
+              return NoTransitionPage(key: ValueKey('control-$id'), child: RobotControlScreen(key: ValueKey(id), jobId: id));
+            },
           ),
           GoRoute(
             path: '/tech/qc',
-            pageBuilder: (_, _) => const NoTransitionPage(child: PreviewOrdersScreen(mode: PickMode.qc)),
-            routes: [
-              GoRoute(
-                path: ':id',
-                pageBuilder: (_, s) {
-                  final id = s.pathParameters['id']!;
-                  return NoTransitionPage(key: ValueKey('qc-$id'), child: QualityCheckScreen(key: ValueKey(id), orderId: id));
-                },
-              ),
-            ],
+            pageBuilder: (_, _) => const NoTransitionPage(child: JobsScreen(filter: JobFilter.qc)),
           ),
+          GoRoute(
+            path: '/tech/qc/:id',
+            pageBuilder: (_, s) {
+              final id = int.tryParse(s.pathParameters['id']!) ?? 0;
+              return NoTransitionPage(key: ValueKey('photos-$id'), child: JobPhotosScreen(key: ValueKey(id), jobId: id));
+            },
+          ),
+          GoRoute(path: '/settings', pageBuilder: (_, _) => const NoTransitionPage(child: SettingsScreen())),
         ],
       ),
     ],
@@ -82,7 +93,7 @@ final desktopRouterProvider = Provider<GoRouter>((ref) {
                 const SizedBox(height: 8),
                 Text(state.matchedLocation, style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 28),
-                CustomButton(label: t('qc.toDash'), isExpanded: false, onPressed: () => context.go('/tech')),
+                CustomButton(label: t('rail.dashboard'), isExpanded: false, onPressed: () => context.go('/tech')),
               ],
             ),
           ),

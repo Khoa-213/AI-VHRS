@@ -30,6 +30,10 @@ class AppColors {
   static const Color error = Color(0xFFA8322A);
   static const Color info = Color(0xFF52525B);
 
+  // E-Stop alarm: the only saturated colours in the app, so they stand out.
+  static const Color alarm = Color(0xFFC8102E);
+  static const Color hazardYellow = Color(0xFFFFD500);
+
   // Neutral / Surface Colors
   static const Color background = paper;
   static const Color surface = Color(0xFFFFFFFF);

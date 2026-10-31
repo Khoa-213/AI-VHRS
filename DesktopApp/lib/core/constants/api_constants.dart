@@ -23,6 +23,10 @@ class ApiConstants {
   static const String profile = '/me';
   static const String changePassword = '/me/change-password';
 
-  // Technician orders, robots and QC: no backend endpoints yet. The desk
-  // uses its local mock store (features/tech/data/tech_store.dart) until then.
+  // Technician jobs, QC photos and robots
+  static const String technicianJobs = '/technician/jobs';
+  static const String technicianRobots = '/technician/robots';
+  static const String technicianAlerts = '/technician/alerts';
+  static const String robotCommands = '/technician/robot-commands';
+  static const String robotStatus = '/technician/robot-status';
 }
