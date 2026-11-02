@@ -32,11 +32,20 @@ const HOUR = 3_600_000
 const LATE_MS = 48 * HOUR
 const UNSCHEDULED = ['NOT_STARTED', 'PENDING_SCHEDULE', 'FAILED', 'REWRITE_REQUIRED']
 
+/** The shipping desk reads the same orders by hand-over state instead of by next step. */
+const FULFILLMENT_FILTERS: { id: string; statuses: OrderStatus[] }[] = [
+  { id: 'ready', statuses: ['READY_TO_DELIVER'] },
+  { id: 'delivering', statuses: ['DELIVERING'] },
+  { id: 'awaiting', statuses: ['AWAITING_FINAL_PAYMENT'] },
+  { id: 'completed', statuses: ['COMPLETED'] },
+  { id: 'handoff', statuses: ['AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'] },
+]
+
 const sentAt = (o: WorkOrder) => Date.parse(o.submittedAt ?? o.createdAt)
 const waitsOnUs = (o: WorkOrder) => o.status === 'SUBMITTED' || o.status === 'ACCEPTED' || (o.status === 'CONFIRMED' && UNSCHEDULED.includes(o.production))
 
 /** Orders on the left, grouped by the next step; the selected one on the right: intake, sketch, quotation and chat all happen here. */
-export default function Workbench({ id }: { id?: number }) {
+export default function Workbench({ id, fulfillment = false }: { id?: number; fulfillment?: boolean }) {
   const t = useT()
   const user = useUser()
   const manager = isManagerRole(user?.apiRole)
@@ -44,6 +53,7 @@ export default function Workbench({ id }: { id?: number }) {
   const [stage, setStage] = useState<Stage>('open')
   const [q, setQ] = useState('')
   const [limit, setLimit] = useState(PAGE)
+  const [filter, setFilter] = useState('ready')
   const [closedGroups, setClosedGroups] = useState<GroupId[]>([])
   const list = useAsync(() => allWork(), [], 30000)
   const all = list.data ?? []
@@ -82,7 +92,7 @@ export default function Workbench({ id }: { id?: number }) {
     const amount = o.total ?? o.estMax
     return (
       <li key={o.id}>
-        <Link to={`/staff/review/${o.id}`} className={`ol-row${o.id === id ? ' on' : ''}`} aria-current={o.id === id ? 'page' : undefined}>
+        <Link to={`/staff/${fulfillment ? 'fulfillment' : 'review'}/${o.id}`} className={`ol-row${o.id === id ? ' on' : ''}`} aria-current={o.id === id ? 'page' : undefined}>
           <span className="ol-row-top">
             <b>{o.code}</b>
             {o.assignedStaffId === null && <span className="ol-pool">{t('wk.unclaimed')}</span>}
@@ -103,7 +113,19 @@ export default function Workbench({ id }: { id?: number }) {
   let body: ReactNode
   let shown = 0
   let total = 0
-  if (needle) {
+  if (fulfillment && !needle) {
+    const f = FULFILLMENT_FILTERS.find((x) => x.id === filter) ?? FULFILLMENT_FILTERS[0]
+    const rows = all.filter((o) => f.statuses.includes(o.status)).sort(f.id === 'completed' ? newest : oldest)
+    shown = Math.min(limit, rows.length)
+    total = rows.length
+    body = (
+      <section className="ol-sec">
+        <ul>{rows.slice(0, limit).map(row)}</ul>
+        {rows.length > limit && more(rows.length - limit)}
+        {!rows.length && <p className="ol-empty">{t('wk.ol.empty')}</p>}
+      </section>
+    )
+  } else if (needle) {
     // Search covers every order the account can see, whatever the scope or stage.
     const hits = all.filter((o) => o.code.toLowerCase().includes(needle) || o.customerName.toLowerCase().includes(needle)).sort(newest)
     shown = Math.min(limit, hits.length)
@@ -163,22 +185,34 @@ export default function Workbench({ id }: { id?: number }) {
   ]
 
   return (
-    <Shell area={manager ? 'manager' : 'staff'} active="review" title={t('wk.title')} lede={t('wk.lede')}>
+    <Shell
+      area={manager ? 'manager' : 'staff'}
+      active={fulfillment ? 'fulfillment' : 'review'}
+      title={t(fulfillment ? 'sp.title' : 'wk.title')}
+      lede={t(fulfillment ? 'sp.lede' : 'wk.lede')}
+      tools={fulfillment &&
+        <div className="wk-tabs" role="tablist" aria-label={t('wk.queue')}>
+          {FULFILLMENT_FILTERS.map((x) => (
+            <button key={x.id} role="tab" aria-selected={filter === x.id} className={filter === x.id ? 'on' : ''} onClick={() => { setFilter(x.id); setLimit(PAGE); setQ('') }}>{t(`sp.filter.${x.id}`)}</button>
+          ))}
+        </div>
+      }
+    >
       <div className="wk-layout">
         <aside className="ol" aria-label={t('wk.queue')}>
           <div className="ol-top">
-            <div className="ol-scope" role="group" aria-label={t('wk.ol.scope')}>
+            {!fulfillment && <div className="ol-scope" role="group" aria-label={t('wk.ol.scope')}>
               {scopes.map((s) => (
                 <button key={s} aria-pressed={scope === s} className={scope === s ? 'on' : ''} onClick={() => { setScope(s); setLimit(PAGE) }}>
                   {t(`wk.ol.${s}`)} {list.data && <span>{openIn(s)}</span>}
                 </button>
               ))}
-            </div>
+            </div>}
             <label className="ol-search">
               <MagnifyingGlass size={16} aria-hidden="true" />
               <input type="search" value={q} placeholder={t('wk.search')} aria-label={t('wk.search')} onChange={(e) => { setQ(e.target.value); setLimit(PAGE) }} />
             </label>
-            <div className="ol-stages" role="group" aria-label={t('wk.ol.stages')}>
+            {!fulfillment && <div className="ol-stages" role="group" aria-label={t('wk.ol.stages')}>
               {stages.map((s) => {
                 const on = !needle && stage === s.id
                 return (
@@ -187,7 +221,7 @@ export default function Workbench({ id }: { id?: number }) {
                   </button>
                 )
               })}
-            </div>
+            </div>}
           </div>
           <div className="ol-scroll">
             {!!list.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(list.error))}</p>}

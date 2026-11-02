@@ -44,6 +44,8 @@ export type ProductionStatus =
 export type InputKind = 'ORIGINAL_IMAGE' | 'HANDWRITING_SAMPLE' | 'TEXT_CONTENT' | 'CANVAS'
 export type Alignment = 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY'
 export type Gateway = 'VNPAY' | 'MOMO' | 'PAYOS'
+export type DeliveryMethod = 'DELIVERY' | 'PICKUP'
+export type Carrier = 'GHN' | 'GHTK'
 
 /** Statuses in which the customer can still change the order. */
 export const EDITABLE: OrderStatus[] = ['DRAFT', 'NEED_INFO']
@@ -114,6 +116,27 @@ export const getTemplates = async (): Promise<Template[]> =>
 /** PNG preview of a template with the customer's own words (the endpoint caps the text at 200 characters). */
 export const templatePreviewUrl = (id: number, text: string) =>
   `${API_BASE}/catalog/templates/${id}/preview?text=${encodeURIComponent((text.trim() || 'Nét Việt').slice(0, 200))}`
+
+/**
+ * PNG preview that also follows the alignment and letter height (`POST /catalog/templates/{id}/preview`, public).
+ * The plain GET above ignores both, so this is what makes the alignment buttons visible before the order is saved.
+ */
+export async function fetchStyledPreview(
+  id: number, text: string, alignment: Alignment | null, fontSizeMm: number | null, signal: AbortSignal,
+): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/catalog/templates/${id}/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify({
+      text: (text.trim() || 'Nét Việt').slice(0, 200),
+      alignment: alignment ?? 'LEFT',
+      ...(fontSizeMm && fontSizeMm >= 4 && fontSizeMm <= 100 ? { font_size_mm: fontSizeMm } : {}),
+    }),
+  })
+  if (!res.ok) throw new Error(`preview ${res.status}`)
+  return res.blob()
+}
 
 // ---------- estimate ----------
 
@@ -206,6 +229,16 @@ export interface Order {
   createdAt: string
   inputs: OrderInput[]
   warnings: string[]
+  deliveryMethod: DeliveryMethod | null
+  /** DELIVERY: the whole address; PICKUP: only `receiver` and `phone`. */
+  deliveryAddress: Partial<DeliveryAddress> | null
+  pickupStart: string | null
+  pickupEnd: string | null
+  shippingCarrier: Carrier | null
+  shippingService: string | null
+  shippingEta: string | null
+  completedAt: string | null
+  receivedConfirmedAt: string | null
 }
 
 export interface RawInput {
@@ -225,6 +258,10 @@ export interface RawOrder {
   customer_note: string | null; info_request_note: string | null; reject_reason: string | null; reject_note: string | null
   eta: unknown; last_saved_at: string; submitted_at: string | null; created_at: string
   inputs?: RawInput[]; warnings?: string[]
+  delivery_method?: DeliveryMethod | null; delivery_address?: Partial<DeliveryAddress> | null
+  pickup_slot_start?: string | null; pickup_slot_end?: string | null
+  completed_at?: string | null; received_confirmed_at?: string | null
+  shipping_carrier?: Carrier | null; shipping_service_code?: string | null; shipping_eta?: string | null
 }
 
 export const toInput = (i: RawInput): OrderInput => ({
@@ -244,6 +281,10 @@ export const toOrder = (o: RawOrder): Order => ({
   eta: typeof o.eta === 'string' ? o.eta : null,
   savedAt: o.last_saved_at, submittedAt: o.submitted_at, createdAt: o.created_at,
   inputs: (o.inputs ?? []).map(toInput), warnings: o.warnings ?? [],
+  deliveryMethod: o.delivery_method ?? null, deliveryAddress: o.delivery_address ?? null,
+  pickupStart: o.pickup_slot_start ?? null, pickupEnd: o.pickup_slot_end ?? null,
+  completedAt: o.completed_at ?? null, receivedConfirmedAt: o.received_confirmed_at ?? null,
+  shippingCarrier: o.shipping_carrier ?? null, shippingService: o.shipping_service_code ?? null, shippingEta: o.shipping_eta ?? null,
 })
 
 export interface Page<T> {
@@ -492,6 +533,14 @@ export const refreshPayment = (paymentId: number) =>
 export const startDeposit = async (id: number, gateway: Gateway): Promise<Payment> =>
   toPayment(await api<RawPayment>(`/orders/${id}/payments/deposit`, { method: 'POST', body: { gateway } }))
 
+/** One gateway checkout settles the remaining balance and shipping together. */
+export async function startFinalPayment(id: number, gateway: Gateway, expectedTotal: number) {
+  const r = await api<{ payment_required: boolean; total_due: string; order_status: OrderStatus; payments: RawPayment[] }>(
+    `/orders/${id}/payments/final`, { method: 'POST', body: { gateway, expected_total: expectedTotal } },
+  )
+  return { required: r.payment_required, total: Number(r.total_due), payments: r.payments.map(toPayment) }
+}
+
 export const mockCheckout = (paymentId: number, result: 'SUCCESS' | 'FAILED') =>
   api<{ result: string; status: string; order_status: OrderStatus }>(`/payments/${paymentId}/mock-checkout`, {
     method: 'POST',
@@ -536,6 +585,90 @@ export const acceptProduct = async (id: number): Promise<Order> =>
 
 export const requestRewrite = async (id: number, reason_code: RewriteReason, note: string): Promise<Order> =>
   toOrder(await api<RawOrder>(`/orders/${id}/rewrite`, { method: 'POST', body: { reason_code, note } }))
+
+// ---------- delivery or pick-up (after acceptance, before the final payment) ----------
+
+/** A delivery address as the backend takes and stores it: codes from `services/locations.ts`, names for GHTK. */
+export interface DeliveryAddress {
+  receiver: string
+  phone: string
+  street: string
+  province_code: string
+  district_code: string
+  ward_code: string
+  province_name?: string
+  district_name?: string
+  ward_name?: string
+  label?: string
+}
+
+export interface ShippingService {
+  carrier: Carrier
+  code: string
+  name: string
+  fee: number
+  /** (G − D) + this fee: what the customer pays at once. */
+  totalDue: number
+  eta: string | null
+  /** The carrier's API is off or failed, so the price comes from the workshop's table. */
+  fallback: boolean
+  /** MOCK | SANDBOX | LIVE | FALLBACK */
+  mode: string
+}
+
+export interface DeliveryQuote {
+  paperSize: string
+  packageType: string
+  /** G − D: the rest of the order, before shipping. */
+  balance: number
+  /** The delivery price shown in `options` comes from the fallback table. */
+  fallback: boolean
+  options: Record<DeliveryMethod, { fee: number; totalDue: number }>
+  chosen: DeliveryMethod | null
+  services: ShippingService[]
+  chosenService: ShippingService | null
+}
+
+interface RawService {
+  carrier: Carrier; service_code: string; service_name: string; fee: string; total_due: string
+  eta: string | null; is_fallback_fee: boolean; mode: string
+}
+
+interface RawQuote {
+  paper_size: string; package_type: string; balance: string; is_fallback_fee: boolean
+  options: Record<DeliveryMethod, { fee: string; total_due: string }>
+  chosen: DeliveryMethod | null; services: RawService[]; chosen_service: RawService | null
+}
+
+const toService = (s: RawService): ShippingService => ({
+  carrier: s.carrier, code: s.service_code, name: s.service_name, fee: num(s.fee) ?? 0, totalDue: num(s.total_due) ?? 0,
+  eta: s.eta, fallback: s.is_fallback_fee, mode: s.mode,
+})
+
+const toQuote = (r: RawQuote): DeliveryQuote => ({
+  paperSize: r.paper_size, packageType: r.package_type, balance: num(r.balance) ?? 0, fallback: r.is_fallback_fee,
+  options: {
+    DELIVERY: { fee: num(r.options.DELIVERY.fee) ?? 0, totalDue: num(r.options.DELIVERY.total_due) ?? 0 },
+    PICKUP: { fee: num(r.options.PICKUP.fee) ?? 0, totalDue: num(r.options.PICKUP.total_due) ?? 0 },
+  },
+  chosen: r.chosen, services: r.services.map(toService), chosenService: r.chosen_service && toService(r.chosen_service),
+})
+
+/** Both ways of receiving, for the address saved on the order (none yet: the table price only). */
+export const getDeliveryQuote = async (id: number): Promise<DeliveryQuote> =>
+  toQuote(await api<RawQuote>(`/orders/${id}/delivery-quote`))
+
+/** The carriers' services and prices for an address that is not saved yet. Changes nothing. */
+export const previewDeliveryQuote = async (id: number, address: DeliveryAddress): Promise<DeliveryQuote> =>
+  toQuote(await api<RawQuote>(`/orders/${id}/delivery-quote`, { method: 'POST', body: { address } }))
+
+export type DeliveryChoice =
+  | { method: 'DELIVERY'; address: DeliveryAddress; carrier: Carrier; service_code: string }
+  | { method: 'PICKUP'; pickup_slot_start: string; pickup_slot_end: string; contact_phone: string; receiver?: string }
+
+/** Saves how the customer receives the order. Cancels a final payment still open, since its amount was for the old choice. */
+export const chooseDelivery = async (id: number, choice: DeliveryChoice): Promise<Order> =>
+  toOrder(await api<RawOrder>(`/orders/${id}/delivery`, { method: 'PUT', body: choice }))
 
 // ---------- errors ----------
 
@@ -660,6 +793,31 @@ const ERROR_KEYS: Record<string, string> = {
   ACCEPTANCE_CLOSED: 'err.acceptanceClosed',
   DOWNLOAD_FAILED: 'err.downloadFailed',
   FILE_MISSING: 'err.fileMissing',
+  INVALID_ADDRESS: 'err.invalidAddress',
+  ADDRESS_NAMES_REQUIRED: 'err.addressNames',
+  SERVICE_NOT_AVAILABLE: 'err.serviceGone',
+  INVALID_SLOT: 'err.invalidSlot',
+  SLOT_TOO_FAR: 'err.slotFar',
+  INVALID_CONTACT: 'err.invalidContact',
+  FINAL_ALREADY_PAID: 'err.finalPaid',
+  FINAL_PAYMENT_NOT_EXPECTED: 'err.finalNotExpected',
+  DELIVERY_NOT_READY: 'err.deliveryNotReady',
+  SHIPPING_FEE_UNAVAILABLE: 'err.shippingFee',
+  FEE_CHANGED: 'err.feeChanged',
+  SHIPMENT_NOT_EXPECTED: 'sp.error.SHIPMENT_NOT_EXPECTED',
+  SHIPPING_SERVICE_NOT_CHOSEN: 'sp.error.SHIPPING_SERVICE_NOT_CHOSEN',
+  SHIPMENT_ALREADY_EXISTS: 'sp.error.SHIPMENT_ALREADY_EXISTS',
+  SHIPMENT_NOT_CANCELLABLE: 'sp.error.SHIPMENT_NOT_CANCELLABLE',
+  CARRIER_REJECTED: 'sp.error.CARRIER_REJECTED',
+  CARRIER_UNAVAILABLE: 'sp.error.CARRIER_UNAVAILABLE',
+  CARRIER_NOT_CONFIGURED: 'sp.error.CARRIER_NOT_CONFIGURED',
+  SHIPMENT_NOT_FOUND: 'sp.error.SHIPMENT_NOT_FOUND',
+  NOT_A_MOCK_SHIPMENT: 'sp.error.NOT_A_MOCK_SHIPMENT',
+  PICKUP_NOT_EXPECTED: 'sp.error.PICKUP_NOT_EXPECTED',
+  PICKUP_PHONE_MISMATCH: 'sp.error.PICKUP_PHONE_MISMATCH',
+  ORDER_NOT_DELIVERED: 'sp.error.ORDER_NOT_DELIVERED',
+  RECEIPT_ALREADY_CONFIRMED: 'sp.error.RECEIPT_ALREADY_CONFIRMED',
+  DELIVERY_NOT_CHOSEN: 'fp.chooseFirst',
 }
 
 /**

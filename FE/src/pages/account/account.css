@@ -80,3 +80,71 @@
 }
 
 .ac-pager{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:20px}
+
+/* ---------- homepage shell: header with the one primary action, grouped menu, overview ---------- */
+.ac-frame{padding-top:clamp(110px,10vw,132px)}
+.ac{max-width:1200px;margin:0 auto;width:100%}
+.ac-head{flex-wrap:wrap}
+.ac-head-text{flex:1;min-width:200px}
+.ac-h1{font-size:clamp(28px,3.4vw,44px);margin:0}
+.ac-head p{margin:4px 0 0;font-size:14px;color:var(--t5);overflow-wrap:anywhere}
+.ac-avatar--initial{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.ac-avatar--lg{width:88px;height:88px;font-size:34px}
+.ac-new{flex:none}
+
+.ac-nav-group{margin:20px 0 6px}
+.ac-nav-item{border-radius:12px}
+.ac-nav-item.on::before{display:none}
+.ac-nav-item.on{background:var(--tray);box-shadow:inset 0 0 0 1px var(--line-strong)}
+.ac-nav-out{margin-top:20px;border-top:1px solid var(--line-strong);border-radius:12px}
+.ac-h2{border-bottom-color:var(--line-strong)}
+.ac-h2-row{border-bottom:0;align-items:center;margin-bottom:0}
+.ac-h3{margin:0;font-size:17px;font-weight:600;letter-spacing:-.02em;color:var(--t1)}
+.ac-block{display:flex;flex-direction:column;gap:12px}
+.ac-muted{margin:0;font-size:14px;color:var(--t5)}
+
+.ac-tip{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:14px 18px;border-radius:14px;background:var(--st-pending-bg);font-size:14px;color:var(--t1)}
+.ac-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.ac-tile{display:flex;flex-direction:column;gap:6px;padding:20px 22px;border:1px solid var(--line-strong);border-radius:16px;color:inherit;transition:background .2s,border-color .2s}
+.ac-tile:hover{background:var(--tray);border-color:var(--t6);color:inherit}
+.ac-tile-n{font-size:34px;font-weight:600;letter-spacing:-.03em;line-height:1;color:var(--t1)}
+.ac-tile-k{font-size:13px;color:var(--t4)}
+
+.ac-order{border:1px solid var(--line-strong);border-radius:14px;background:transparent}
+.ac-order:hover{background:var(--tray)}
+.ac-orders{gap:8px}
+.ac-empty{align-items:flex-start;border:1px dashed var(--line-strong);border-radius:16px;background:transparent}
+
+/* profile: photo on top, then three titled groups */
+.ac-photo{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.ac-photo-text{display:flex;flex-direction:column;gap:8px}
+.ac-photo-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.ac-form{max-width:none;gap:16px}
+.ac-group{margin:0;min-width:0;display:flex;flex-direction:column;gap:18px;padding:clamp(18px,2.4vw,26px);border:1px solid var(--line-strong);border-radius:16px}
+.ac-group legend{padding:0 8px;margin-left:-8px;font-size:15px;font-weight:600;color:var(--t1)}
+.ac-field .vh-input,.ac-field .vh-textarea{border-radius:12px;background:transparent;border-color:var(--line-strong)}
+.ac-field .vh-input:focus,.ac-field .vh-textarea:focus{border-color:var(--t1)}
+.ac-field .vh-input[readonly]{background:var(--tray);color:var(--t4)}
+.ac-unsaved{font-size:13px;color:var(--t4)}
+.ac-seg{border-radius:999px;background:var(--tray)}
+.ac-seg button{border-radius:999px}
+.ac-pref{border:1px solid var(--line-strong);border-radius:16px;background:transparent}
+
+@media (max-width:860px){
+  .ac-grid{gap:16px}
+  .ac-nav{flex-wrap:nowrap;overflow-x:auto;gap:6px;padding-bottom:10px;border-bottom:0;scrollbar-width:thin}
+  .ac-nav-item{flex:none;white-space:nowrap;padding:10px 16px;border:1px solid var(--line-strong);border-radius:999px}
+  .ac-nav-item.on{background:var(--btn-inv-bg);color:var(--btn-inv-fg);box-shadow:none}
+  .ac-nav-item.on b{color:inherit}
+  .ac-nav-out{margin:0;border-top:1px solid var(--line-strong)}
+  .ac-new{width:100%}
+}
+@media (max-width:560px){
+  .ac-tiles{grid-template-columns:minmax(0,1fr)}
+}
+
+/* Overview rows have two cells (name, then a button or status). Only the orders list adds a third for the total. */
+.ac-order:not(:has(.ac-order-total)){grid-template-columns:minmax(0,1fr) auto}
+.ac-order>:nth-child(2){justify-self:end}
+.ac-order>.co-btn,.ac-order>.vh-chip{margin:0}
+.ac-block .ac-h2-row .vh-link{font-size:13px;color:var(--t1);text-decoration:underline;text-underline-offset:3px}

@@ -150,3 +150,10 @@
 .ov-check:disabled{cursor:not-allowed;opacity:.5}
 .ov-consent.on .ov-check{background:var(--accent);border-color:var(--accent)}
 .ov-consent-link{font:inherit;font-weight:700}
+.sp-customer-rows{display:flex;flex-direction:column;gap:10px;margin:0;font-size:13px;line-height:1.7}
+.sp-customer-rows>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 16px}
+.sp-customer-rows dt{color:var(--t4)}
+.sp-customer-rows dd{margin:0;overflow-wrap:anywhere;max-width:100%}
+.sp-customer-shipment{padding:16px 0;border-top:1px solid var(--line-strong);overflow-wrap:anywhere}
+.sp-receipt{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.7}
+.sp-receipt input{flex:none;margin-top:5px;accent-color:var(--accent)}
