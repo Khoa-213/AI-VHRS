@@ -21,6 +21,7 @@ import PreviewOrders from './pages/tech/PreviewOrders'
 
 import RequireStaff from './pages/staff/RequireStaff'
 import ChatDock from './components/ui/ChatDock'
+import Delivery from './pages/order/Delivery'
 import Deposit from './pages/order/Deposit'
 import OrderReview from './pages/order/OrderReview'
 import PrivacyPreview from './pages/order/PrivacyPreview'
@@ -76,10 +77,12 @@ function Routes() {
   if (staffReview) {
     return (
       <RequireStaff>
-        <Workbench id={staffReview[1] ? Number(staffReview[1]) : undefined} />
+        <Workbench key="review" id={staffReview[1] ? Number(staffReview[1]) : undefined} />
       </RequireStaff>
     )
   }
+  const fulfillment = /^\/staff\/fulfillment(?:\/(\d+))?\/?$/.exec(path)
+  if (fulfillment) return <RequireStaff><Workbench key="fulfillment" fulfillment id={fulfillment[1] ? Number(fulfillment[1]) : undefined} /></RequireStaff>
   if (path === '/staff/catalog') return <RequireStaff manager><Catalog /></RequireStaff>
   if (path === '/staff/pricing') return <RequireStaff manager><Pricing /></RequireStaff>
   if (path === '/staff/approvals') return <RequireStaff manager><Approvals /></RequireStaff>
@@ -111,6 +114,10 @@ function Routes() {
   if (review) return <OrderReview key={review} id={review} />
   const deposit = matchOrderRoute(path, 'deposit')
   if (deposit) return <Deposit key={deposit} id={deposit} />
+  const finalPayment = matchOrderRoute(path, 'payment')
+  if (finalPayment) return <Deposit key={`final-${finalPayment}`} id={finalPayment} final />
+  const delivery = matchOrderRoute(path, 'delivery')
+  if (delivery) return <Delivery key={delivery} id={delivery} />
 
   return <Landing />
 }

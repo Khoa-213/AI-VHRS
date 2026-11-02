@@ -7,7 +7,7 @@ import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link, orderPath } from '../../router/router'
 import {
-  getGateways, getOrder, getQuotation, listPayments, mockCheckout, orderErrorKey, refreshPayment, startDeposit, type Gateway, type Payment, errText,
+  getGateways, getOrder, getQuotation, listPayments, mockCheckout, orderErrorKey, refreshPayment, startDeposit, startFinalPayment, getDeliveryQuote, type Gateway, type Payment, errText,
 } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { useProfile } from '../../store/store'
@@ -23,11 +23,11 @@ const GATEWAY_META: Record<Gateway, { logo: string; name: string }> = {
 const expired = (p: Payment, now: number) => !!p.payUrlExpiresAt && now >= Date.parse(p.payUrlExpiresAt)
 
 /**
- * Pays the deposit. The gateways and their mode come from the backend: a MOCK payment is settled here with the
+ * Pays the deposit or the final balance and shipping. The gateways and their mode come from the backend: a MOCK payment is settled here with the
  * simulated buttons, a real one (SANDBOX or LIVE) sends the customer to the gateway's page, which brings them back to
  * /payment/result. The order only moves when the gateway's webhook reaches the backend.
  */
-export default function Deposit({ id }: { id: string | null }) {
+export default function Deposit({ id, final = false }: { id: string | null; final?: boolean }) {
   const t = useT()
   const locale = useLocale()
   const profile = useProfile()
@@ -35,14 +35,17 @@ export default function Deposit({ id }: { id: string | null }) {
   const [payment, setPayment] = useState<Payment | null>(null)
   const [failed, setFailed] = useState(false)
   const pays = useAsync(() => listPayments(orderId), [orderId])
-  const open = payment ?? pays.data?.find((p) => p.status === 'PENDING') ?? null
+  const relevant = (p: Payment) => final ? p.type === 'FINAL' || p.type === 'SHIPPING' : p.type === 'DEPOSIT'
+  const open = payment ?? pays.data?.find((p) => relevant(p) && p.status === 'PENDING') ?? null
+  const waitingStatus = final ? 'AWAITING_FINAL_PAYMENT' : 'AWAITING_DEPOSIT'
   // While a payment is open the webhook can land at any moment, so the order is asked again until it moves.
-  const q = useAsync(() => getOrder(orderId), [orderId], (o) => (open && o?.status === 'AWAITING_DEPOSIT' && !failed ? 4000 : undefined))
+  const q = useAsync(() => getOrder(orderId), [orderId], (o) => (open && o?.status === waitingStatus && !failed ? 4000 : undefined))
   const gws = useAsync(getGateways, [])
   // The approved quotation carries the workshop's sketch, which is what the customer is paying for.
-  const quote = useAsync(() => getQuotation(orderId), [orderId])
+  const sketchQuote = useAsync(() => getQuotation(orderId), [orderId])
   const order = q.data
-  const paid = !!order && order.status !== 'AWAITING_DEPOSIT' && order.status !== 'QUOTED' && order.depositAmount !== null
+  const paid = !!order && (final ? ['READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(order.status) : order.status !== 'AWAITING_DEPOSIT' && order.status !== 'QUOTED' && order.depositAmount !== null)
+  const quote = useAsync(() => final && order?.status === waitingStatus ? getDeliveryQuote(orderId) : Promise.resolve(null), [orderId, final, order?.status])
   const enabled = (gws.data ?? []).filter((g) => g.enabled)
   const preferred: Gateway = profile.payMethod === 'momo' ? 'MOMO' : 'VNPAY'
   const [picked, setPicked] = useState<Gateway | null>(null)
@@ -71,6 +74,7 @@ export default function Deposit({ id }: { id: string | null }) {
       await job()
     } catch (e) {
       setErr(orderErrorKey(e))
+      if (final) await Promise.all([q.reload(), quote.reload(), pays.reload()])
     } finally {
       setBusy(false)
     }
@@ -97,8 +101,13 @@ export default function Deposit({ id }: { id: string | null }) {
   }
 
   const total = order.total ?? 0
-  const deposit = order.depositAmount ?? 0
-  const waiting = order.status === 'AWAITING_DEPOSIT'
+  const selected = quote.data?.chosen === 'PICKUP' ? quote.data.options.PICKUP : quote.data?.chosenService
+  const due = selected?.totalDue ?? null
+  const finalRows = (pays.data ?? []).filter(relevant)
+  const charged = finalRows.filter((p) => p.status === (paid ? 'SUCCESS' : 'PENDING')).reduce((sum, p) => sum + p.amount, 0)
+  const deposit = final ? (open || paid ? charged : due ?? 0) : order.depositAmount ?? 0
+  const ready = !final || (!!order.deliveryMethod && due !== null)
+  const waiting = order.status === waitingStatus
   const mockOpen = open?.mode === 'MOCK' ? open : null
   // A real payment that is still usable, on the gateway the customer has selected.
   const realOpen = open && open.mode !== 'MOCK' && open.payUrl && open.gateway === gateway && !expired(open, now) ? open : null
@@ -112,7 +121,17 @@ export default function Deposit({ id }: { id: string | null }) {
       if (!gateway) return
       setFailed(false)
       setChecked(false)
-      const p = await startDeposit(orderId, gateway)
+      let p: Payment | undefined
+      if (final) {
+        if (due === null) return
+        const result = await startFinalPayment(orderId, gateway, due)
+        if (!result.required) {
+          await Promise.all([q.reload(), pays.reload()])
+          return
+        }
+        p = result.payments[0]
+      } else p = await startDeposit(orderId, gateway)
+      if (!p) return
       if (p.payUrl) {
         // The gateway's own page takes over; it sends the customer back to /payment/result.
         window.location.assign(p.payUrl)
@@ -155,7 +174,7 @@ export default function Deposit({ id }: { id: string | null }) {
       <div className="ov">
         <div className="vh-head-text">
           <span className="vh-eyebrow">{t('dp.eyebrow', { id: order.code })}</span>
-          <h1 className="vh-h1">{t(paid ? 'dp.title.paid' : 'dp.title')}</h1>
+          <h1 className="vh-h1">{t(final ? paid ? 'fp.paid' : 'fp.title' : paid ? 'dp.title.paid' : 'dp.title')}</h1>
         </div>
 
         <div className="vh-cols">
@@ -183,7 +202,7 @@ export default function Deposit({ id }: { id: string | null }) {
 
                 <div className="vh-stack">
                   <h2 className="vh-h2">{t('dp.method')}</h2>
-                  <p className="vh-lede">{t('dp.lede')}</p>
+                  <p className="vh-lede">{t(final ? 'fp.body' : 'dp.lede')}</p>
                 </div>
                 {gws.loading && !gws.data && <p className="vh-fine" role="status">{t('co.loading')}</p>}
                 {gws.error != null && !gws.data && <p className="lg-error" role="alert">{errText(t, orderErrorKey(gws.error))}</p>}
@@ -214,7 +233,7 @@ export default function Deposit({ id }: { id: string | null }) {
                   <div className="vh-stack" style={{ gap: 12 }}>
                     <div className="vh-callout vh-callout--teal">
                       <b>{t('dp.mockCheckout')}</b>
-                      <span>{t('dp.mockCheckoutBody', { amount: fmt(mockOpen.amount) })}</span>
+                      <span>{t('dp.mockCheckoutBody', { amount: fmt(final ? charged : mockOpen.amount) })}</span>
                     </div>
                     <div className="or-actions">
                       <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => void finish('FAILED')}>{t('dp.simFail')}</button>
@@ -266,11 +285,14 @@ export default function Deposit({ id }: { id: string | null }) {
                 ) : (
                   <>
                     {realExpired && <p className="vh-fine" role="status">{t('dp.expired')}</p>}
-                    <button className="vh-btn vh-btn--primary" disabled={busy || !gateway} onClick={() => void start()}>
-                      {t(busy ? 'pay.processing' : realExpired ? 'dp.newLink' : 'dp.start', { amount: fmt(deposit) })}
+                    <button className="vh-btn vh-btn--primary" disabled={busy || !gateway || !ready || quote.loading} onClick={() => void start()}>
+                      {t(busy ? 'pay.processing' : realExpired ? 'dp.newLink' : final ? 'fp.start' : 'dp.start', { amount: fmt(deposit) })}
                     </button>
                   </>
                 )}
+                {final && <Link to={orderPath(order.id, 'delivery')} className="vh-link">{t('dl.change')}</Link>}
+                {final && !ready && <p className="vh-fine" role="status">{t('fp.chooseFirst')}</p>}
+                {quote.error != null && final && <p className="lg-error" role="alert">{errText(t, orderErrorKey(quote.error))}</p>}
                 <span className="vh-fine">{t('dp.refund')}</span>
               </>
             ) : paid ? (
@@ -280,8 +302,8 @@ export default function Deposit({ id }: { id: string | null }) {
                     <path d="M20 6 9 17l-5-5" />
                   </svg>
                 </span>
-                <h2>{t('dp.received')}</h2>
-                <p>{t('dp.receivedBody', { amount: fmt(deposit), id: order.code })}</p>
+                <h2>{t(final ? 'fp.paid' : 'dp.received')}</h2>
+                <p>{final ? t('fp.paidBody') : t('dp.receivedBody', { amount: fmt(deposit), id: order.code })}</p>
                 <div className="pay-done-actions">
                   <Link to={orderPath(order.id, 'review')} className="vh-btn vh-btn--white vh-btn--md">{t('dp.viewOrder')}</Link>
                   <Link to="/" className="vh-btn vh-btn--ghost vh-btn--md">{t('dp.home')}</Link>
@@ -289,16 +311,16 @@ export default function Deposit({ id }: { id: string | null }) {
               </div>
             ) : (
               <div className="vh-stack">
-                <p className="vh-lede">{t('dp.notReady')}</p>
+                <p className="vh-lede">{t(final ? 'fp.notReady' : 'dp.notReady')}</p>
                 <Link to={orderPath(order.id, 'review')} className="vh-btn vh-btn--white vh-btn--md">{t('dp.viewOrder')}</Link>
               </div>
             )}
 
-            {!!pays.data?.length && (
+            {!!pays.data?.filter(relevant).length && (
               <div className="vh-stack" style={{ gap: 8 }}>
                 <span className="vh-label">{t('dp.history')}</span>
                 <div className="vh-rows">
-                  {pays.data.map((p) => (
+                  {pays.data.filter(relevant).map((p) => (
                     <div key={p.id} className="vh-row vh-row--mono">
                       <span style={{ fontFamily: 'inherit' }}>
                         {GATEWAY_META[p.gateway]?.name ?? p.gateway} · {t(`pst.${p.status}`)}
@@ -315,16 +337,16 @@ export default function Deposit({ id }: { id: string | null }) {
 
           <aside className="vh-aside" style={{ flex: '1 1 320px' }}>
             <div className="pay-preview">
-              <OrderPreview order={order} sketchUrls={quote.data?.sketch?.previewUrls} />
+              <OrderPreview order={order} sketchUrls={sketchQuote.data?.sketch?.previewUrls} />
             </div>
             <div className="ov-rail-body">
               <span className="ov-rail-title">{order.code}</span>
               <div className="vh-rows">
-                <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t('dp.orderTotal')}</span><span>{fmt(total)}</span></div>
-                <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t('dp.dueDelivery')}</span><span>{fmt(Math.max(0, total - deposit))}</span></div>
+                <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t(final ? 'dl.balance' : 'dp.orderTotal')}</span><span>{fmt(final ? quote.data?.balance ?? Math.max(0, total - (order.depositAmount ?? 0)) : total)}</span></div>
+                <div className="vh-row vh-row--mono"><span style={{ fontFamily: 'inherit' }}>{t(final ? 'dl.shipping' : 'dp.dueDelivery')}</span><span>{fmt(final ? selected?.fee ?? finalRows.filter((p) => p.type === 'SHIPPING' && p.status === (paid ? 'SUCCESS' : 'PENDING')).reduce((sum, p) => sum + p.amount, 0) : Math.max(0, total - deposit))}</span></div>
               </div>
               <div className="vh-total-row">
-                <span>{t('dp.depositRow')}{order.depositPct !== null ? ` · ${order.depositPct}%` : ''}</span>
+                <span>{t(final ? 'dl.total' : 'dp.depositRow')}{!final && order.depositPct !== null ? ` · ${order.depositPct}%` : ''}</span>
                 <span>{fmt(deposit)}</span>
               </div>
             </div>

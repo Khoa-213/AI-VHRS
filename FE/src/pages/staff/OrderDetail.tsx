@@ -17,6 +17,7 @@ import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
 import ChangeRequests from './ChangeRequests'
 import { isManagerRole } from './RequireStaff'
+import FulfillmentPanel, { FULFILLMENT_STATES } from './FulfillmentPanel'
 import QuotationPanel from './QuotationPanel'
 import SketchPanel from './SketchPanel'
 
@@ -71,6 +72,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
   const chosen = unassigned && manager ? (staffId ?? staff.data?.[0]?.id ?? null) : null
   // A Staff who decides on an unclaimed order claims it in the same step.
   const canDecide = order.status === 'SUBMITTED' && (manager ? !unassigned || chosen !== null : mine || unassigned)
+  const canAssign = manager && ['SUBMITTED', 'NEED_INFO', 'ACCEPTED', ...AFTER_QUOTE.filter((status) => status !== 'COMPLETED')].includes(order.status)
   const withStaff = chosen ?? undefined
   const inputs = order.inputs
   const blurry = inputs.some((i) => i.kind === 'ORIGINAL_IMAGE' && i.qualityWarning)
@@ -98,6 +100,18 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         </div>
         <span className="vh-chip" style={{ color: STATUS_COLOR[order.status] }}>{t(`os.${order.status}`)}</span>
       </header>
+
+      {canAssign && <section className="wk-block">
+        <label className="vh-label">{t('wk.reassign')}
+          <select className="vh-select" value={order.assignedStaffId ?? ''} disabled={busy || staff.loading} onChange={(e) => { if (e.target.value) void run(() => assignStaff(id, Number(e.target.value))) }}>
+            <option value="" disabled>{t('wk.pickStaff')}</option>
+            {(staff.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.fullName} · {t('wk.openOrders', { n: s.openOrders })}</option>)}
+          </select>
+        </label>
+        {staff.error != null && <p className="lg-error" role="alert">{errText(t, orderErrorKey(staff.error))}</p>}
+      </section>}
+
+      {FULFILLMENT_STATES.includes(order.status) && <FulfillmentPanel order={order} onChanged={async () => { await q.reload(); onChanged() }} />}
 
       <section className="wk-block" aria-label={t('wk.content')}>
         <h3>{t('wk.content')}</h3>
@@ -169,14 +183,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
               </div>
             </div>
           )}
-          {manager && !unassigned && (
-            <label className="vh-label">
-              {t('wk.reassign')}
-              <select className="vh-select" value={order.assignedStaffId ?? ''} disabled={busy} onChange={(e) => void run(() => assignStaff(id, Number(e.target.value)))}>
-                {(staff.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.fullName} · {t('wk.openOrders', { n: s.openOrders })}</option>)}
-              </select>
-            </label>
-          )}
+
         </section>
       )}
 

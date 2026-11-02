@@ -1,4 +1,26 @@
 /* Workshop building blocks (order list and detail, quotation, sketch, schedule, catalog) in the Paperpillar look. */
+.ws .sp-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.ws .sp-heading h3,.ws .sp-heading h4,.ws .fulfillment h4{margin:0}
+.ws .sp-notice{padding:12px 16px;margin:0;border-radius:14px;background:var(--acc-soft);color:var(--ink);line-height:1.7;font-size:14px}
+.ws .sp-form{display:flex;flex-direction:column;gap:14px;min-width:0;margin:0;border:1px solid var(--line);border-radius:18px;padding:18px}
+.ws .sp-form legend{font-size:14px;font-weight:600;padding:0 6px}
+.ws .sp-form .vh-label{display:flex;flex-direction:column;gap:8px;min-width:0}
+.ws .sp-form .wk-check{align-items:flex-start;line-height:1.7}
+.ws .sp-form .wk-check input{flex:none;margin-top:3px}
+.ws .sp-form>.vh-btn{align-self:flex-start}
+.ws .sp-shipment{display:flex;flex-direction:column;gap:14px;min-width:0;background:var(--field);border-radius:18px;padding:18px}
+.ws .sp-shipment .sp-heading h4{overflow-wrap:anywhere;min-width:0}
+.ws .sp-payment{display:flex;flex-direction:column;gap:12px;padding-block:16px;border-block:1px solid var(--line)}
+.ws .fulfillment .wk-rows>div{flex-wrap:wrap}
+.ws .fulfillment .wk-rows dd{max-width:100%}
+.ws .sp-demo{background:var(--beige1)}
+.ws .wk-filters [hidden]{display:none}
+@media(max-width:760px){
+  .ws.ws-fulfillment .app2{align-content:flex-start}
+  .ws.ws-fulfillment .rail-col{height:auto;position:static;top:auto;align-self:auto;flex-wrap:wrap;gap:10px;min-width:0}
+  .ws.ws-fulfillment .rail{flex:1 1 170px;min-width:0;justify-content:center}
+  .ws.ws-fulfillment .rail .gap{display:none}
+}
 .ws .wk-layout{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
 .ws .wk-list{flex:0 1 380px;min-width:300px;background:#fff;border-radius:26px;padding:22px 24px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px}
 .ws .wk-list-title{margin:0;font-size:18px;font-weight:600}

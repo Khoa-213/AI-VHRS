@@ -1,4 +1,4 @@
-import { CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
+import { Truck, CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
@@ -16,7 +16,7 @@ import './ws.css'
 import './workshop.css'
 
 export type Area = 'staff' | 'manager' | 'tech' | 'admin'
-export type RailKey = 'dashboard' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit'
+export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit'
 
 interface Item {
   key: RailKey
@@ -88,6 +88,7 @@ export default function Shell({
       : [
         { key: 'dashboard', to: '/staff', label: t('rail.dashboard'), icon: icon(SquaresFour) },
         { key: 'review', to: '/staff/review', label: t('rail.review'), icon: icon(ClipboardText), count: c.intake },
+        { key: 'fulfillment', to: '/staff/fulfillment', label: t('sp.title'), icon: icon(Truck) },
         ...(area === 'manager'
           ? ([
             'gap',
@@ -103,7 +104,7 @@ export default function Shell({
   const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
 
   return (
-    <div className={area === 'tech' ? 'ws ws-tech' : 'ws'}>
+    <div className={`ws${area === 'tech' ? ' ws-tech' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
       <SkipLink />
       <div className="app2">
         <div className="rail-col">

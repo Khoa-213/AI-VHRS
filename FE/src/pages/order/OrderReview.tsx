@@ -15,8 +15,10 @@ import {
   errText } from '../../services/orders'
 import type { Job } from '../../services/async'
 import { fmt } from '../../utils/format'
+import { WORKSHOP_TZ } from '../../utils/pickupSlots'
 import { openChat } from '../../store/chatDock'
 import PrivacyDialog from './PrivacyDialog'
+import FulfillmentStatus from './FulfillmentStatus'
 import './order.css'
 
 const HAS_QUOTE = ['QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED']
@@ -123,6 +125,16 @@ export default function OrderReview({ id }: { id: string | null }) {
     ...(order.note ? [{ k: t('co.sum.note'), v: order.note }] : []),
     { k: t(order.total !== null ? 'or.total' : 'ov.estimate'), v: money(order) },
     ...(order.eta ? [{ k: t('ov.eta'), v: day(order.eta) }] : []),
+    ...(order.deliveryMethod ? [{
+      k: t('dl.row'),
+      v: order.deliveryMethod === 'DELIVERY'
+        ? t('dl.rowDelivery', { carrier: order.shippingCarrier ?? '–' })
+        : t('dl.rowPickup', {
+          when: order.pickupStart
+            ? new Date(order.pickupStart).toLocaleString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: WORKSHOP_TZ })
+            : '–',
+        }),
+    }] : []),
   ]
 
   const confirmBox = (kind: 'cancel' | 'changes', label: string, onSend: () => void, danger = false) => (
@@ -405,9 +417,17 @@ export default function OrderReview({ id }: { id: string | null }) {
                     <b>{t('or.depositPaid', { status: t(`os.${status}`) })}</b>
                     <span>{t(`ps.${order.production}`)}</span>
                   </div>
-                  <span className="co-fine">{t('ov.contactWorkshop')}</span>
+                  {status === 'AWAITING_FINAL_PAYMENT' ? (
+                    <Link to={orderPath(order.id, order.deliveryMethod ? 'payment' : 'delivery')} className="vh-btn vh-btn--primary">
+                      {t(order.deliveryMethod ? 'fp.continue' : 'dl.choose')}
+                    </Link>
+                  ) : (
+                    <span className="co-fine">{t('ov.contactWorkshop')}</span>
+                  )}
                 </>
               )}
+
+              {['READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(status) && <FulfillmentStatus order={order} onChanged={q.reload} />}
 
               {status === 'CANCELLED' && (
                 <>
