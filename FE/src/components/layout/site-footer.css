@@ -3,7 +3,7 @@
 .sf-inner{max-width:1320px;margin:0 auto}
 .sf a{color:inherit;text-decoration:none;transition:color .2s}
 .sf a:hover{color:var(--t1)}
-.sf-top{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(0,1fr));gap:32px 48px;padding-bottom:40px}
+.sf-top{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(2,minmax(0,1fr)) minmax(0,1.15fr) minmax(0,1fr);gap:32px 48px;padding-bottom:40px}
 .sf-block{display:flex;flex-direction:column;align-items:flex-start;gap:12px;min-width:0;font-size:14px;line-height:1.7}
 .sf-block h2{margin:0 0 6px;color:var(--t1);font-size:14px;font-weight:600;line-height:1.5}
 .sf-block p{margin:0}
@@ -25,3 +25,12 @@
 @media(max-width:900px){.sf-top{grid-template-columns:repeat(2,minmax(0,1fr));gap:32px}}
 @media(max-width:560px){.sf{padding:32px 22px 0}.sf-top{gap:28px 20px;padding-bottom:28px}.sf-contact-block,.sf-support{grid-column:1/-1}.sf-copy{flex-direction:column;align-items:flex-start;gap:10px;padding:18px 0}}
 @media(prefers-reduced-motion:reduce){.sf a,.sf-langs button{transition:none}}
+
+/* Payment: three tiles to a row, like a marketplace footer */
+.sf-pay-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,62px);gap:8px}
+.sf-pay-grid li{display:flex}
+.sf .sf-pay-grid .pl-tile{width:62px;height:38px;border-radius:4px;background:#fff;box-shadow:0 0 0 1px color-mix(in srgb,var(--t1) 10%,transparent),0 1px 3px color-mix(in srgb,var(--t1) 12%,transparent)}
+.sf .sf-pay-grid .pl-tile img{max-width:78%;max-height:68%}
+@media(max-width:1100px){.sf-top{grid-template-columns:repeat(3,minmax(0,1fr))}.sf-contact-block{grid-column:1/-1}}
+@media(max-width:900px){.sf-top{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.sf-pay{grid-column:1/-1}}

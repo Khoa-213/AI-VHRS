@@ -10,7 +10,6 @@ import {
   getGateways, getOrder, getQuotation, listPayments, mockCheckout, orderErrorKey, refreshPayment, startDeposit, startFinalPayment, getDeliveryQuote, type Gateway, type Payment, errText,
 } from '../../services/orders'
 import type { Job } from '../../services/async'
-import { useProfile } from '../../store/store'
 import { fmt } from '../../utils/format'
 import './order.css'
 
@@ -30,7 +29,6 @@ const expired = (p: Payment, now: number) => !!p.payUrlExpiresAt && now >= Date.
 export default function Deposit({ id, final = false }: { id: string | null; final?: boolean }) {
   const t = useT()
   const locale = useLocale()
-  const profile = useProfile()
   const orderId = Number(id)
   const [payment, setPayment] = useState<Payment | null>(null)
   const [failed, setFailed] = useState(false)
@@ -47,7 +45,8 @@ export default function Deposit({ id, final = false }: { id: string | null; fina
   const paid = !!order && (final ? ['READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(order.status) : order.status !== 'AWAITING_DEPOSIT' && order.status !== 'QUOTED' && order.depositAmount !== null)
   const quote = useAsync(() => final && order?.status === waitingStatus ? getDeliveryQuote(orderId) : Promise.resolve(null), [orderId, final, order?.status])
   const enabled = (gws.data ?? []).filter((g) => g.enabled)
-  const preferred: Gateway = profile.payMethod === 'momo' ? 'MOMO' : 'VNPAY'
+  // VietQR (payOS) is the main way to pay; VNPay and MoMo are test gateways and are never preselected.
+  const preferred: Gateway = 'PAYOS'
   const [picked, setPicked] = useState<Gateway | null>(null)
   const gateway = picked && enabled.some((g) => g.gateway === picked) ? picked
     : enabled.find((g) => g.gateway === preferred)?.gateway ?? enabled[0]?.gateway ?? null
@@ -221,6 +220,7 @@ export default function Deposit({ id, final = false }: { id: string | null; fina
                         <MethodLogos id={GATEWAY_META[g.gateway].logo} />
                         <span className="vh-choice-name">{GATEWAY_META[g.gateway].name}</span>
                         <span className="vh-choice-sub">{t(`dp.via.${g.gateway}`)}</span>
+                        {g.gateway !== 'PAYOS' && <span className="vh-choice-test">{t('pay.testOnly')}</span>}
                       </button>
                     ))}
                   </div>

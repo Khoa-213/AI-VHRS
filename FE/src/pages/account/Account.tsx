@@ -1,15 +1,12 @@
 import { openAuth } from '../../store/authDialog'
-import { Check, ClockCounterClockwise, CreditCard, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
+import { Check, ClockCounterClockwise, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
 import { useRef, useState } from 'react'
 import SiteFooter from '../../components/layout/SiteFooter'
 import Header from '../landing/components/Header'
-import { MethodLogos } from '../../components/ui/PaymentLogos'
-import PaymentLogos from '../../components/ui/PaymentLogos'
 import { ORDER_HREF } from '../../constants'
-import { PAYMENT_BADGES, PAY_METHODS } from '../../constants/catalog'
 import { STATUS_COLOR, orderLink } from '../../constants/orderStatus'
 import { useAsync } from '../../hooks/useAsync'
-import { LANGS, setLang, useLang, useLocale, useT, useTn } from '../../i18n'
+import { LANGS, setLang, useLang, useLocale, useT } from '../../i18n'
 import { Link, navigate } from '../../router/router'
 import { SENT, listOrders, orderErrorKey, type Order, errText } from '../../services/orders'
 import { setTheme, useTheme } from '../../store/theme'
@@ -25,8 +22,8 @@ import DraftsSection from './DraftsSection'
 import '../create-order/co-home.css'
 import './account.css'
 
-export type Section = 'overview' | 'profile' | 'preferences' | 'orders' | 'drafts' | 'payment'
-const CUSTOMER_ONLY: Section[] = ['overview', 'orders', 'drafts', 'payment']
+export type Section = 'overview' | 'profile' | 'preferences' | 'orders' | 'drafts'
+const CUSTOMER_ONLY: Section[] = ['overview', 'orders', 'drafts']
 
 /** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
 function Frame({ children, narrow = false }: { children: React.ReactNode; narrow?: boolean }) {
@@ -108,7 +105,6 @@ export default function Account({ section }: { section: Section }) {
             )}
             <span className="ac-nav-group">{t('acct.group.settings')}</span>
             {item('profile', customer ? '/account/profile' : '/account', t('acct.nav.profile'), <UserIcon size={20} aria-hidden />)}
-            {customer && item('payment', '/account/payment', t('acct.nav.payment'), <CreditCard size={20} aria-hidden />)}
             {item('preferences', '/account/preferences', t('acct.nav.preferences'), <SlidersHorizontal size={20} aria-hidden />)}
             <button type="button" className="ac-nav-item ac-nav-out" onClick={() => { signOut(); navigate('/') }}>
               <SignOut size={20} aria-hidden />
@@ -127,7 +123,6 @@ export default function Account({ section }: { section: Section }) {
                 <DraftsSection />
               </>
             )}
-            {current === 'payment' && <PaymentSection />}
           </section>
         </div>
       </div>
@@ -436,34 +431,6 @@ function OrdersSection() {
           <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>{t('acct.o.next')}</button>
         </div>
       )}
-    </>
-  )
-}
-
-function PaymentSection() {
-  const t = useT()
-  const tn = useTn()
-  const profile = useProfile()
-  return (
-    <>
-      <h2 className="ac-h2">{t('acct.pay.title')}</h2>
-      <p className="vh-lede ac-lede">{t('acct.pay.lede')}</p>
-      <div className="vh-choice-grid vh-choice-grid--170">
-        <button className={`vh-choice${profile.payMethod === null ? ' on' : ''}`} onClick={() => updateProfile({ payMethod: null })}>
-          <span className="vh-choice-name">{t('acct.pay.none')}</span>
-        </button>
-        {PAY_METHODS.filter((m) => m.id === 'vnpay' || m.id === 'momo').map((m) => (
-          <button key={m.id} className={`vh-choice${profile.payMethod === m.id ? ' on' : ''}`} onClick={() => updateProfile({ payMethod: m.id })}>
-            <MethodLogos id={m.id} />
-            <span className="vh-choice-name">{tn(m.name)}</span>
-            <span className="vh-choice-sub">{tn(m.spec)}</span>
-          </button>
-        ))}
-      </div>
-      <section className="ct-pay ac-supported">
-        <h3>{t('acct.pay.supported')}</h3>
-        <PaymentLogos names={PAYMENT_BADGES.map((p) => p.name)} />
-      </section>
     </>
   )
 }
