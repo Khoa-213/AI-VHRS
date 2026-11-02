@@ -338,6 +338,24 @@ export interface SuggestionSet {
   suggestions: Suggestion[]
 }
 
+export interface ScheduleConfig {
+  workingHours: { days: number[]; start: string; end: string; utcOffsetMin: number }
+  etaBufferDays: number
+  leadMin: number
+  slotStepMin: number
+}
+
+export async function scheduleConfig(): Promise<ScheduleConfig> {
+  const r = await api<{
+    working_hours: { days: number[]; start: string; end: string; utc_offset_min: number }
+    eta_buffer_days: number; lead_min: number; slot_step_min: number
+  }>('/manager/schedule/config')
+  return {
+    workingHours: { days: r.working_hours.days, start: r.working_hours.start, end: r.working_hours.end, utcOffsetMin: r.working_hours.utc_offset_min },
+    etaBufferDays: r.eta_buffer_days, leadMin: r.lead_min, slotStepMin: r.slot_step_min,
+  }
+}
+
 export async function scheduleSuggestion(orderId: number): Promise<SuggestionSet> {
   const r = await api<{
     duration_min: number; writing_sec_per_copy: number; quantity: number; eta: string | null; stock_warnings: string[]
@@ -364,6 +382,15 @@ export const unscheduleJob = async (jobId: number, reason: string) =>
 
 export const rescheduleJob = async (jobId: number, body: { robot_id?: number; technician_id?: number; slot_start?: string; reason: string }) =>
   toJob(await api<RawJob>(`/manager/jobs/${jobId}/reschedule`, { method: 'POST', body }))
+
+/** Jobs that hold a robot and a technician, overlapping [from, to) (the backend's `ACTIVE_JOB_STATUSES`). */
+export const calendarJobs = (from: string, to: string): Promise<Job[]> =>
+  allPages(async (page) => {
+    const q = new URLSearchParams({ from, to, page: String(page), page_size: '200' })
+    for (const st of ['SCHEDULED', 'PREPARING', 'WRITING', 'PAUSED']) q.append('status', st)
+    const r = await api<{ items: RawJob[]; total: number }>(`/manager/jobs?${q}`)
+    return { items: r.items.map(toJob), total: r.total }
+  }, 200)
 
 export async function listJobs(opts: { status?: JobStatus[]; page?: number } = {}): Promise<Page<Job>> {
   const q = new URLSearchParams()

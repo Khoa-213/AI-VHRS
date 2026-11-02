@@ -6,14 +6,22 @@ import { useLocale, useT } from '../../i18n'
 import { Link, navigate } from '../../router/router'
 import { orderErrorKey, errText } from '../../services/orders'
 import {
-  listJobs, listRobots, listTechnicians, orderJobs, rescheduleJob, scheduleOrder, scheduleQueue, scheduleSuggestion, unscheduleJob, type Job,
+  listJobs, listRobots, listTechnicians, orderJobs, rescheduleJob, scheduleQueue, unscheduleJob, type Job,
 } from '../../services/workshop'
+import ScheduleCalendar from './ScheduleCalendar'
 
 /** Manager only: paid orders waiting for a robot, a technician and a time slot (FR-40 to FR-42). This only writes the schedule; nothing contacts a robot. */
 export default function Schedule({ id }: { id?: number }) {
   const t = useT()
   const queue = useAsync(() => scheduleQueue(), [], 30000)
   const rows = queue.data?.items ?? []
+  const locale = useLocale()
+  const [version, setVersion] = useState(0)
+  const changed = () => {
+    setVersion((v) => v + 1)
+    void queue.reload()
+  }
+  const current = rows.find((r) => r.orderId === id)
   return (
     <Shell area="manager" active="schedule" title={t('wk.scheduleTitle')} lede={t('wk.scheduleLede')}>
       <div className="wk-layout">
@@ -28,6 +36,7 @@ export default function Schedule({ id }: { id?: number }) {
                   <span className="wk-item-main">
                     <b>{r.code}</b>
                     <span>{r.customerName} · {t(`ot.${r.type}`)} × {r.quantity}</span>
+                    <span>{r.eta ? t('wk.cal.etaOn', { date: new Date(`${r.eta}T00:00:00Z`).toLocaleDateString(locale, { timeZone: 'UTC', day: '2-digit', month: '2-digit' }) }) : t('wk.cal.noEta')}</span>
                   </span>
                   <span className="wk-item-side">
                     <span className="chip info">{t(`wk.ps.${r.production}`)}</span>
@@ -40,24 +49,33 @@ export default function Schedule({ id }: { id?: number }) {
           </ul>
         </aside>
         <section className="wk-detail">
-          {id ? <ScheduleOrder key={id} id={id} onChanged={() => void queue.reload()} /> : <UpcomingJobs />}
+          <div className="wk-order">
+            <ScheduleCalendar
+              key={id ?? 'all'}
+              order={id ? { id, code: current?.code ?? t('wk.orderN', { id }) } : undefined}
+              version={version}
+              onBooked={() => {
+                changed()
+                navigate('/staff/schedule')
+              }}
+            />
+            {id ? <OrderJobs id={id} version={version} onChanged={changed} /> : <UpcomingJobs version={version} onChanged={changed} />}
+          </div>
         </section>
       </div>
     </Shell>
   )
 }
 
-function UpcomingJobs() {
+function UpcomingJobs({ version, onChanged }: { version: number; onChanged: () => void }) {
   const t = useT()
-  const jobs = useAsync(() => listJobs({ status: ['SCHEDULED', 'PREPARING', 'WRITING', 'PAUSED'] }), [], 30000)
+  const jobs = useAsync(() => listJobs({ status: ['SCHEDULED', 'PREPARING', 'WRITING', 'PAUSED'] }), [version], 30000)
   return (
-    <div className="wk-order">
-      <section className="wk-block">
-        <h3>{t('wk.upcoming')}</h3>
-        {jobs.data && !jobs.data.items.length && <p className="sd-sub">{t('wk.noJobs')}</p>}
-        <JobList jobs={jobs.data?.items ?? []} onChanged={() => void jobs.reload()} />
-      </section>
-    </div>
+    <section className="wk-block">
+      <h3>{t('wk.upcoming')}</h3>
+      {jobs.data && !jobs.data.items.length && <p className="sd-sub">{t('wk.noJobs')}</p>}
+      <JobList jobs={jobs.data?.items ?? []} onChanged={onChanged} />
+    </section>
   )
 }
 
@@ -167,117 +185,19 @@ function JobList({ jobs, onChanged }: { jobs: Job[]; onChanged: () => void }) {
   )
 }
 
-function ScheduleOrder({ id, onChanged }: { id: number; onChanged: () => void }) {
+function OrderJobs({ id, version, onChanged }: { id: number; version: number; onChanged: () => void }) {
   const t = useT()
-  const locale = useLocale()
-  const sug = useAsync(() => scheduleSuggestion(id), [id])
-  const jobs = useAsync(() => orderJobs(id), [id])
-  const robots = useAsync(listRobots, [])
-  const techs = useAsync(listTechnicians, [])
-  const [robotId, setRobotId] = useState('')
-  const [techId, setTechId] = useState('')
-  const [slot, setSlot] = useState('')
-  const [note, setNote] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
+  const jobs = useAsync(() => orderJobs(id), [id, version])
   const active = (jobs.data ?? []).filter((j) => !['CANCELLED', 'DONE'].includes(j.status))
-
-  const book = async (body: { robot_id: number; technician_id: number; slot_start: string; note?: string }) => {
-    if (busy) return
-    setBusy(true)
-    setErr('')
-    try {
-      await scheduleOrder(id, body)
-      await Promise.all([jobs.reload(), sug.reload()])
-      onChanged()
-      if (!active.length) navigate('/staff/schedule')
-    } catch (e) {
-      setErr(orderErrorKey(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const when = (iso: string) => new Date(iso).toLocaleString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-  const s = sug.data
-
   return (
-    <div className="wk-order">
-      <header className="wk-order-head">
-        <div>
-          <h2>{t('wk.orderN', { id })}</h2>
-          <Link to={`/staff/review/${id}`} className="vh-link">{t('wk.openOrder')}</Link>
-        </div>
-      </header>
-      {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
-
+    <>
+      <Link to={`/staff/review/${id}`} className="vh-link wk-self">{t('wk.openOrder')}</Link>
       {!!active.length && (
         <section className="wk-block">
           <h3>{t('wk.jobs')}</h3>
-          <JobList jobs={active} onChanged={() => { void jobs.reload(); void sug.reload(); onChanged() }} />
+          <JobList jobs={active} onChanged={onChanged} />
         </section>
       )}
-
-      <section className="wk-block">
-        <h3>{t('wk.suggestions')}</h3>
-        {sug.loading && !s && <p className="sd-sub" role="status">{t('co.loading')}</p>}
-        {!!sug.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(sug.error))}</p>}
-        {s && (
-          <>
-            <p className="sd-sub">{t('wk.durationNote', { min: s.durationMin, qty: s.quantity })}</p>
-            {s.stockWarnings.map((w) => <p key={w} className="wk-warn">{w}</p>)}
-            {!s.suggestions.length && <p className="sd-sub">{t('wk.noSuggestions')}</p>}
-            <ul className="wk-jobs">
-              {s.suggestions.map((x) => (
-                <li key={`${x.robotId}-${x.slotStart}`}>
-                  <span>
-                    <b>{x.robotCode}</b>{x.isSimulated ? ` · ${t('wk.simulated')}` : ''} · {x.technicianName}
-                    <br />
-                    <span className="sd-sub">{when(x.slotStart)} → {when(x.slotEnd)}{x.etaRisk ? ` · ${t('wk.etaRisk')}` : ''}</span>
-                  </span>
-                  <button className="vh-btn vh-btn--primary vh-btn--sm" disabled={busy} onClick={() => void book({ robot_id: x.robotId, technician_id: x.technicianId, slot_start: x.slotStart })}>{t('wk.bookThis')}</button>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
-
-      <section className="wk-block">
-        <h3>{t('wk.manual')}</h3>
-        <div className="wk-form">
-          <label className="vh-label">
-            {t('wk.robot')}
-            <select className="vh-select" value={robotId} onChange={(e) => setRobotId(e.target.value)}>
-              <option value="">{t('wk.choose')}</option>
-              {(robots.data ?? []).map((r) => <option key={r.id} value={r.id} disabled={r.status === 'MAINTENANCE' || r.status === 'BROKEN'}>{r.code} · {t(`rs.${r.status}`)}</option>)}
-            </select>
-          </label>
-          <label className="vh-label">
-            {t('wk.technician')}
-            <select className="vh-select" value={techId} onChange={(e) => setTechId(e.target.value)}>
-              <option value="">{t('wk.choose')}</option>
-              {(techs.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.fullName} · {t('wk.activeJobs', { n: x.activeJobs })}</option>)}
-            </select>
-          </label>
-          <label className="vh-label">
-            {t('wk.slot')}
-            <input className="vh-input" type="datetime-local" value={slot} onChange={(e) => setSlot(e.target.value)} />
-          </label>
-          <label className="vh-label wk-grow">
-            {t('co.sum.note')}
-            <input className="vh-input" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} />
-          </label>
-          <button
-            className="vh-btn vh-btn--primary vh-btn--md"
-            disabled={busy || !robotId || !techId || !slot}
-            onClick={() => void book({ robot_id: Number(robotId), technician_id: Number(techId), slot_start: new Date(slot).toISOString(), ...(note.trim() ? { note: note.trim() } : {}) })}
-          >
-            {t('wk.book')}
-          </button>
-        </div>
-        <p className="sd-sub">{t('wk.slotHint')}</p>
-      </section>
-    </div>
+    </>
   )
 }

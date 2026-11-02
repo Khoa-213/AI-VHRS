@@ -74,7 +74,8 @@ def _minutes(oid) -> int:
 
 # ---- access -----------------------------------------------------------------------------------------
 def test_scheduling_is_manager_only(client, cust):
-    calls = [("get", "/manager/orders/1/schedule-suggestion", None),
+    calls = [("get", "/manager/schedule/config", None),
+             ("get", "/manager/orders/1/schedule-suggestion", None),
              ("post", "/manager/orders/1/schedule", {"robot_id": 1, "technician_id": 1, "slot_start": "2030-01-01T09:00:00+07:00"}),
              ("post", "/manager/jobs/1/reschedule", {"reason": "x"}), ("post", "/manager/jobs/1/unschedule", {"reason": "x"}),
              ("get", "/manager/jobs/1", None)]
@@ -83,6 +84,17 @@ def test_scheduling_is_manager_only(client, cust):
         for method, path, body in calls:
             r = client.request(method.upper(), f"{API}{path}", headers=h, json=body)
             assert r.status_code == (403 if role else 401), (role, path)
+
+
+def test_config_matches_the_calendar_the_service_uses(client, mgr):
+    r = client.get(f"{M}/schedule/config", headers=mgr)
+    assert r.status_code == 200
+    d = r.json()
+    wh = d["working_hours"]
+    assert wh == {"days": sorted(CAL.days), "start": CAL.start.strftime("%H:%M"), "end": CAL.end.strftime("%H:%M"),
+                  "utc_offset_min": int(CAL.tz.utcoffset(None).total_seconds() // 60)}
+    assert d["slot_step_min"] == sr.SLOT_STEP_MIN
+    assert d["eta_buffer_days"] >= 0 and d["lead_min"] >= 0
 
 
 # ---- queue, suggestion, validation (no state change) --------------------------------------------------
