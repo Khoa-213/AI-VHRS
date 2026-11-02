@@ -77,20 +77,20 @@ export const getWork = async (id: number): Promise<WorkOrder> => toWork(await ap
 
 export const claimOrder = async (id: number) => toWork(await api<RawWork>(`/workshop/orders/${id}/claim`, { method: 'POST' }))
 
-/** `staffId` is only for a Manager acting on an order nobody has claimed yet. */
-export const acceptOrder = async (id: number, staffId?: number) =>
-  toWork(await api<RawWork>(`/workshop/orders/${id}/accept`, { method: 'POST', body: staffId ? { staff_id: staffId } : {} }))
+/** Intake decisions are Staff only: a Manager gets 403 and assigns the order with `assignStaff` instead. */
+export const acceptOrder = async (id: number) =>
+  toWork(await api<RawWork>(`/workshop/orders/${id}/accept`, { method: 'POST', body: {} }))
 
-export const rejectOrder = async (id: number, reason: RejectReason, note: string, staffId?: number) =>
+export const rejectOrder = async (id: number, reason: RejectReason, note: string) =>
   toWork(await api<RawWork>(`/workshop/orders/${id}/reject`, {
     method: 'POST',
-    body: { reason, note: note.trim() || null, ...(staffId ? { staff_id: staffId } : {}) },
+    body: { reason, note: note.trim() || null },
   }))
 
-export const requestInfo = async (id: number, note: string, staffId?: number) =>
+export const requestInfo = async (id: number, note: string) =>
   toWork(await api<RawWork>(`/workshop/orders/${id}/request-info`, {
     method: 'POST',
-    body: { note, ...(staffId ? { staff_id: staffId } : {}) },
+    body: { note },
   }))
 
 // ---------- sketches ----------
@@ -106,27 +106,23 @@ export interface Sketch {
   note: string | null
   isFinal: boolean
   createdAt: string
-  /** SHA-256 of the stored robot file (FR-38). */
-  contentHash: string | null
   /** Temporary links (10 minutes) to the JPEG the customer sees, one per page. */
   imageUrls: string[]
-  /** Temporary link (10 minutes) to the stored `trajectory.json`, the file the robot runs. */
-  trajectoryUrl: string | null
   warnings: string[]
 }
 
 interface RawSketch {
   id: number; version: number; similarity_score: string | null; suggested_complexity: Complexity | null
   estimated_writing_sec: number | null; total_stroke_mm: string | null; pen_lift_count: number | null
-  approach_note: string | null; content_hash: string | null; is_final: boolean; created_at: string
-  image_urls?: string[]; trajectory_url?: string | null; warnings?: string[]
+  approach_note: string | null; is_final: boolean; created_at: string
+  image_urls?: string[]; warnings?: string[]
 }
 
 const toSketch = (s: RawSketch): Sketch => ({
   id: s.id, version: s.version, similarity: num(s.similarity_score), complexity: s.suggested_complexity,
   writingSec: s.estimated_writing_sec, strokeMm: num(s.total_stroke_mm), penLifts: s.pen_lift_count,
-  note: s.approach_note, isFinal: s.is_final, createdAt: s.created_at, contentHash: s.content_hash,
-  imageUrls: s.image_urls ?? [], trajectoryUrl: s.trajectory_url ?? null, warnings: s.warnings ?? [],
+  note: s.approach_note, isFinal: s.is_final, createdAt: s.created_at,
+  imageUrls: s.image_urls ?? [], warnings: s.warnings ?? [],
 })
 
 export const listSketches = async (orderId: number) => (await api<RawSketch[]>(`/workshop/orders/${orderId}/sketches`)).map(toSketch)
@@ -140,13 +136,6 @@ export const patchSketch = async (orderId: number, version: number, body: { appr
 /** The full pen path of a version (`vhrs-trajectory/1`, millimetres), to download or check. */
 export const sketchTrajectory = async (orderId: number, version: number): Promise<unknown> =>
   (await api<{ trajectory: unknown }>(`/workshop/orders/${orderId}/sketches/${version}`)).trajectory
-
-/** The exact bytes of the stored robot file. A signed storage link must not carry the app's token. */
-export async function sketchFileBytes(url: string): Promise<Blob> {
-  const res = await fetch(url, { credentials: 'omit' })
-  if (!res.ok) throw new Error('wk.file.expired')
-  return res.blob()
-}
 
 /** Saves a hand-made or edited trajectory as a new version (the only way to sketch a learned-handwriting order). */
 export const uploadTrajectory = async (orderId: number, trajectory: unknown, note?: string) =>
