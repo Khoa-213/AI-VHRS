@@ -148,3 +148,32 @@
 .ac-order>:nth-child(2){justify-self:end}
 .ac-order>.co-btn,.ac-order>.vh-chip{margin:0}
 .ac-block .ac-h2-row .vh-link{font-size:13px;color:var(--t1);text-decoration:underline;text-underline-offset:3px}
+
+/* ---------- sizing: a settings area reads at 100% zoom like a dashboard, not like a landing page ---------- */
+.co-root .ac-frame{padding-top:clamp(88px,7vw,96px);padding-bottom:clamp(40px,5vw,64px)}
+.co-root .ac{gap:clamp(20px,2.4vw,28px)}
+.co-root .ac-head{gap:16px}
+.co-root .ac-h1{font-size:clamp(22px,2.2vw,30px);font-weight:600;letter-spacing:-.03em;line-height:1.15}
+.co-root .ac-head p{margin:2px 0 0;font-size:13px}
+.co-root .ac-avatar{width:52px;height:52px}
+.co-root .ac-avatar--initial,.co-root .ac-avatar--lg{font-size:20px}
+.co-root .ac-new{min-height:42px;padding:0 20px;font-size:13px}
+.co-root .ac-grid{grid-template-columns:230px minmax(0,1fr);gap:clamp(24px,3.4vw,48px)}
+.co-root .ac-nav{top:84px}
+.co-root .ac-nav-item{gap:10px;padding:9px 12px;font-size:14px}
+.co-root .ac-nav-group{margin:16px 0 4px;font-size:11px}
+.co-root .ac-h2{font-size:clamp(18px,1.7vw,22px);font-weight:600;padding-bottom:12px}
+.co-root .ac-h3{font-size:15px}
+.co-root .ac-body{gap:18px}
+.co-root .ac-order{padding:12px 16px;gap:14px}
+.co-root .ac-order-title{font-size:14px}
+.co-root .ac-order-total{font-size:13px}
+.co-root .ac-tile{padding:16px 18px}
+.co-root .ac-tile-n{font-size:28px}
+@media (max-width:860px){
+  .co-root .ac-grid{grid-template-columns:1fr}
+}
+
+/* Saved: stays until the next edit, so it cannot be missed below a long form */
+.co-root .ac-saved{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--good-1);color:var(--good);font-size:13px;font-weight:600}
+.co-root .ac-actions .co-btn:disabled{opacity:.55}

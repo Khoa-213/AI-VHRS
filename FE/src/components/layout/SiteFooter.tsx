@@ -2,11 +2,14 @@ import { ArrowUpRight } from '@phosphor-icons/react'
 import { ORDER_HREF } from '../../constants'
 import { LANGS, setLang, useLang, useT } from '../../i18n'
 import { Link } from '../../router/router'
+import { PayLogo } from '../ui/PaymentLogos'
 import './site-footer.css'
 
 const CONTACT_EMAIL = 'Seventeengfa97@gmail.com'
 const CONTACT_PHONE = '0900 000 000'
 const YEAR = new Date().getFullYear()
+/** The methods checkout offers (VietQR is the main one) and the card brands behind the gateways. */
+const PAY_LOGOS = ['VietQR', 'VNPay', 'MoMo', 'VISA', 'Mastercard', 'JCB']
 
 /** Shared customer footer with contact details and useful links. */
 export default function SiteFooter({ framed = false }: { framed?: boolean }) {
@@ -35,6 +38,13 @@ export default function SiteFooter({ framed = false }: { framed?: boolean }) {
           <Link to={`${ORDER_HREF}#mode=draw`}>{t('ft.fromDrawing')}<ArrowUpRight size={12} aria-hidden /></Link>
           <p className="sf-service-note">{t('ft.materials')}</p>
         </nav>
+        <section className="sf-block sf-pay" aria-label={t('ft.payment')}>
+          <h2>{t('ft.payment')}</h2>
+          <ul className="sf-pay-grid">
+            {PAY_LOGOS.map((name) => <li key={name}><PayLogo name={name} /></li>)}
+          </ul>
+          <p className="sf-service-note">{t('ft.paymentNote')}</p>
+        </section>
         <nav className="sf-block sf-support" aria-label={t('ft.support')}>
           <h2>{t('ft.support')}</h2>
           <a href={`mailto:${CONTACT_EMAIL}`}>{t('ft.emailUs')}<ArrowUpRight size={12} aria-hidden /></a>

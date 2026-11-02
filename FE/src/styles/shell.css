@@ -170,3 +170,5 @@
    into public/fonts/ and it is used; until then the page falls back to Great Vibes, already loaded for the catalog. */
 @font-face{font-family:'Bickham Script Pro';src:local('Bickham Script Pro'),local('BickhamScriptPro-Regular'),local('Bickham Script Pro 3'),url('/fonts/BickhamScriptPro.woff2') format('woff2');font-display:swap}
 .vh-start{white-space:nowrap}
+/* One line on the methods that only work in a test environment */
+.vh-choice-test{margin-top:6px;padding-top:8px;border-top:1px dashed var(--line-strong,var(--fx-14));font-size:12px;line-height:1.45;color:var(--warn)}

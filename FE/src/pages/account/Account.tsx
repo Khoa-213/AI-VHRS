@@ -1,15 +1,12 @@
 import { openAuth } from '../../store/authDialog'
-import { ClockCounterClockwise, CreditCard, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
-import { useEffect, useRef, useState } from 'react'
+import { Check, ClockCounterClockwise, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
+import { useRef, useState } from 'react'
 import SiteFooter from '../../components/layout/SiteFooter'
 import Header from '../landing/components/Header'
-import { MethodLogos } from '../../components/ui/PaymentLogos'
-import PaymentLogos from '../../components/ui/PaymentLogos'
 import { ORDER_HREF } from '../../constants'
-import { PAYMENT_BADGES, PAY_METHODS } from '../../constants/catalog'
 import { STATUS_COLOR, orderLink } from '../../constants/orderStatus'
 import { useAsync } from '../../hooks/useAsync'
-import { LANGS, setLang, useLang, useLocale, useT, useTn } from '../../i18n'
+import { LANGS, setLang, useLang, useLocale, useT } from '../../i18n'
 import { Link, navigate } from '../../router/router'
 import { SENT, listOrders, orderErrorKey, type Order, errText } from '../../services/orders'
 import { setTheme, useTheme } from '../../store/theme'
@@ -25,8 +22,8 @@ import DraftsSection from './DraftsSection'
 import '../create-order/co-home.css'
 import './account.css'
 
-export type Section = 'overview' | 'profile' | 'preferences' | 'orders' | 'drafts' | 'payment'
-const CUSTOMER_ONLY: Section[] = ['overview', 'orders', 'drafts', 'payment']
+export type Section = 'overview' | 'profile' | 'preferences' | 'orders' | 'drafts'
+const CUSTOMER_ONLY: Section[] = ['overview', 'orders', 'drafts']
 
 /** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
 function Frame({ children, narrow = false }: { children: React.ReactNode; narrow?: boolean }) {
@@ -108,7 +105,6 @@ export default function Account({ section }: { section: Section }) {
             )}
             <span className="ac-nav-group">{t('acct.group.settings')}</span>
             {item('profile', customer ? '/account/profile' : '/account', t('acct.nav.profile'), <UserIcon size={20} aria-hidden />)}
-            {customer && item('payment', '/account/payment', t('acct.nav.payment'), <CreditCard size={20} aria-hidden />)}
             {item('preferences', '/account/preferences', t('acct.nav.preferences'), <SlidersHorizontal size={20} aria-hidden />)}
             <button type="button" className="ac-nav-item ac-nav-out" onClick={() => { signOut(); navigate('/') }}>
               <SignOut size={20} aria-hidden />
@@ -127,7 +123,6 @@ export default function Account({ section }: { section: Section }) {
                 <DraftsSection />
               </>
             )}
-            {current === 'payment' && <PaymentSection />}
           </section>
         </div>
       </div>
@@ -230,8 +225,6 @@ function ProfileSection() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const file = useRef<HTMLInputElement>(null)
-  const timer = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const set = (patch: Partial<typeof form>) => {
     setForm((f) => ({ ...f, ...patch }))
@@ -257,8 +250,6 @@ function ProfileSection() {
       setBaseline({ ...form, phone: phone || '' })
       setForm((f) => ({ ...f, phone: phone || '' }))
       setSaved(true)
-      window.clearTimeout(timer.current)
-      timer.current = window.setTimeout(() => setSaved(false), 3000)
     } catch (err) {
       setFormError(t(authErrorKey(err)))
     } finally {
@@ -345,8 +336,8 @@ function ProfileSection() {
         </fieldset>
 
         <div className="ac-actions">
-          <button type="submit" className="co-btn co-btn--solid" disabled={saving || !dirty}>{t(saving ? 'acct.p.saving' : 'acct.p.save')}</button>
-          {saved && !dirty && <span className="ac-saved" role="status">{t('acct.p.saved')}</span>}
+          <button type="submit" className="co-btn co-btn--solid" disabled={saving || !dirty}>{t(saving ? 'acct.p.saving' : saved && !dirty ? 'acct.p.savedShort' : 'acct.p.save')}</button>
+          {saved && !dirty && <span className="ac-saved" role="status"><Check size={16} weight="bold" aria-hidden />{t('acct.p.saved')}</span>}
           {dirty && !saving && <span className="ac-unsaved">{t('acct.p.unsaved')}</span>}
           {formError && <span className="ac-error" role="alert">{formError}</span>}
         </div>
@@ -440,34 +431,6 @@ function OrdersSection() {
           <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>{t('acct.o.next')}</button>
         </div>
       )}
-    </>
-  )
-}
-
-function PaymentSection() {
-  const t = useT()
-  const tn = useTn()
-  const profile = useProfile()
-  return (
-    <>
-      <h2 className="ac-h2">{t('acct.pay.title')}</h2>
-      <p className="vh-lede ac-lede">{t('acct.pay.lede')}</p>
-      <div className="vh-choice-grid vh-choice-grid--170">
-        <button className={`vh-choice${profile.payMethod === null ? ' on' : ''}`} onClick={() => updateProfile({ payMethod: null })}>
-          <span className="vh-choice-name">{t('acct.pay.none')}</span>
-        </button>
-        {PAY_METHODS.filter((m) => m.id === 'vnpay' || m.id === 'momo').map((m) => (
-          <button key={m.id} className={`vh-choice${profile.payMethod === m.id ? ' on' : ''}`} onClick={() => updateProfile({ payMethod: m.id })}>
-            <MethodLogos id={m.id} />
-            <span className="vh-choice-name">{tn(m.name)}</span>
-            <span className="vh-choice-sub">{tn(m.spec)}</span>
-          </button>
-        ))}
-      </div>
-      <section className="ct-pay ac-supported">
-        <h3>{t('acct.pay.supported')}</h3>
-        <PaymentLogos names={PAYMENT_BADGES.map((p) => p.name)} />
-      </section>
     </>
   )
 }

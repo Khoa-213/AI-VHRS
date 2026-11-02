@@ -899,7 +899,6 @@ export const en = {
   "acct.nav.preferences": "Preferences",
   "acct.nav.orders": "Order history",
   "acct.nav.drafts": "Drafts",
-  "acct.nav.payment": "Payment methods",
   "acct.signOut": "Sign out",
   "acct.guestTitle": "Sign in to see your account",
   "acct.guestBody": "Your profile, orders and drafts live here once you sign in.",
@@ -924,10 +923,6 @@ export const en = {
   "acct.o.emptyBody": "Orders you place show up here with their progress.",
   "acct.o.count": "{n} orders",
   "acct.d.title": "Drafts",
-  "acct.pay.title": "Payment methods",
-  "acct.pay.lede": "Pick the method checkout selects for you. You can still change it on each order.",
-  "acct.pay.none": "No preference",
-  "acct.pay.supported": "Supported payment methods",
   "acct.pf.title": "Preferences",
   "acct.pf.theme": "Appearance",
   "acct.pf.themeHelp": "Choose light or dark for every page.",
@@ -2239,6 +2234,10 @@ export const en = {
   "acct.p.sec.delivery": "Delivery",
   "acct.p.sec.about": "About you",
   "acct.p.unsaved": "You have unsaved changes",
+  "acct.p.savedShort": "Saved",
+  "pay.testOnly": "Test environment only. Real payments use VietQR.",
+  "ft.payment": "Payment",
+  "ft.paymentNote": "VietQR is the main method. VNPay and MoMo are for testing only.",
 } as const
 
 export type Key = keyof typeof en
