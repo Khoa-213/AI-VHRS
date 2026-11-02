@@ -315,7 +315,7 @@ export default function Deposit({ id }: { id: string | null }) {
 
           <aside className="vh-aside" style={{ flex: '1 1 320px' }}>
             <div className="pay-preview">
-              <OrderPreview order={order} sketchUrls={quote.data?.sketch?.previewUrls} />
+              <OrderPreview order={order} sketchUrls={quote.data?.sketch?.imageUrls} />
             </div>
             <div className="ov-rail-body">
               <span className="ov-rail-title">{order.code}</span>
