@@ -1,6 +1,6 @@
 import { openAuth } from '../../store/authDialog'
-import { ClockCounterClockwise, CreditCard, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
-import { useEffect, useRef, useState } from 'react'
+import { Check, ClockCounterClockwise, CreditCard, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
+import { useRef, useState } from 'react'
 import SiteFooter from '../../components/layout/SiteFooter'
 import Header from '../landing/components/Header'
 import { MethodLogos } from '../../components/ui/PaymentLogos'
@@ -230,8 +230,6 @@ function ProfileSection() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const file = useRef<HTMLInputElement>(null)
-  const timer = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const set = (patch: Partial<typeof form>) => {
     setForm((f) => ({ ...f, ...patch }))
@@ -257,8 +255,6 @@ function ProfileSection() {
       setBaseline({ ...form, phone: phone || '' })
       setForm((f) => ({ ...f, phone: phone || '' }))
       setSaved(true)
-      window.clearTimeout(timer.current)
-      timer.current = window.setTimeout(() => setSaved(false), 3000)
     } catch (err) {
       setFormError(t(authErrorKey(err)))
     } finally {
@@ -345,8 +341,8 @@ function ProfileSection() {
         </fieldset>
 
         <div className="ac-actions">
-          <button type="submit" className="co-btn co-btn--solid" disabled={saving || !dirty}>{t(saving ? 'acct.p.saving' : 'acct.p.save')}</button>
-          {saved && !dirty && <span className="ac-saved" role="status">{t('acct.p.saved')}</span>}
+          <button type="submit" className="co-btn co-btn--solid" disabled={saving || !dirty}>{t(saving ? 'acct.p.saving' : saved && !dirty ? 'acct.p.savedShort' : 'acct.p.save')}</button>
+          {saved && !dirty && <span className="ac-saved" role="status"><Check size={16} weight="bold" aria-hidden />{t('acct.p.saved')}</span>}
           {dirty && !saving && <span className="ac-unsaved">{t('acct.p.unsaved')}</span>}
           {formError && <span className="ac-error" role="alert">{formError}</span>}
         </div>

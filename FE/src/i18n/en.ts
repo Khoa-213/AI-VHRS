@@ -2239,6 +2239,7 @@ export const en = {
   "acct.p.sec.delivery": "Delivery",
   "acct.p.sec.about": "About you",
   "acct.p.unsaved": "You have unsaved changes",
+  "acct.p.savedShort": "Saved",
 } as const
 
 export type Key = keyof typeof en

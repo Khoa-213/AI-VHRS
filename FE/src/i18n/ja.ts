@@ -2223,4 +2223,5 @@ export const ja: Record<Key, string> = {
   "acct.p.sec.delivery": "お届け先",
   "acct.p.sec.about": "自己紹介",
   "acct.p.unsaved": "未保存の変更があります",
+  "acct.p.savedShort": "保存しました",
 }

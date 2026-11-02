@@ -2223,4 +2223,5 @@ export const vi: Record<Key, string> = {
   "acct.p.sec.delivery": "Giao hàng",
   "acct.p.sec.about": "Về bạn",
   "acct.p.unsaved": "Bạn có thay đổi chưa lưu",
+  "acct.p.savedShort": "Đã lưu",
 }
