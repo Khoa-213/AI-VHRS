@@ -69,6 +69,7 @@
 .vh-btn--dashed{height:44px;background:transparent;border:1px dashed var(--fx-22);color:var(--t4);font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700}
 .vh-link{border:none;background:none;padding:0;color:var(--accent-text);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .vh-link:hover{color:var(--accent-text-hover)}
+.ov-rail-body>a.vh-link{text-align:center}
 
 /* ---------- forms ---------- */
 .vh-input,.vh-textarea,.vh-select{box-sizing:border-box;width:100%;background:var(--fx-04);border:1px solid var(--fx-1);border-radius:14px;color:var(--t1);padding:0 16px;font-family:inherit;font-size:15px;outline:none;transition:border-color .2s}

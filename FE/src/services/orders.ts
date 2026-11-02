@@ -426,7 +426,8 @@ export interface Quotation {
   note: string
   sketch: {
     version: number
-    previewUrls: string[]
+    /** The sketch JPEGs the customer decides on (one per page, links last 10 minutes). */
+    imageUrls: string[]
     approachNote: string | null
     estimatedWritingSec: number | null
     similarity: number | null
@@ -441,7 +442,7 @@ interface RawQuotation {
   final_total: string; min_deposit_pct: string; eta: string | null; valid_until: string | null
   pdf_url: string | null; note: string
   sketch: {
-    version: number; preview_urls: string[]; approach_note: string | null
+    version: number; image_urls?: string[]; preview_urls: string[]; approach_note: string | null
     estimated_writing_sec: number | null; similarity_score: string | null
   } | null
 }
@@ -456,7 +457,7 @@ export async function getQuotation(id: number): Promise<Quotation> {
     finalTotal: num(q.final_total) ?? 0, minDepositPct: num(q.min_deposit_pct) ?? 50,
     eta: q.eta, validUntil: q.valid_until, pdfUrl: q.pdf_url, note: q.note,
     sketch: q.sketch && {
-      version: q.sketch.version, previewUrls: q.sketch.preview_urls, approachNote: q.sketch.approach_note,
+      version: q.sketch.version, imageUrls: q.sketch.image_urls?.length ? q.sketch.image_urls : q.sketch.preview_urls, approachNote: q.sketch.approach_note,
       estimatedWritingSec: q.sketch.estimated_writing_sec, similarity: num(q.sketch.similarity_score),
     },
   }

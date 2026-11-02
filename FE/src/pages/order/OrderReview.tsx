@@ -205,7 +205,7 @@ export default function OrderReview({ id }: { id: string | null }) {
               </div>
             ) : (
               <div className="or-stage">
-                <OrderPreview order={order} sketchUrls={quotation?.sketch?.previewUrls} inkColor={ink?.hex} />
+                <OrderPreview order={order} sketchUrls={quotation?.sketch?.imageUrls} inkColor={ink?.hex} />
               </div>
             )}
 
