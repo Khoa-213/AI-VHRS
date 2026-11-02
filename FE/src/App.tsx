@@ -67,8 +67,8 @@ function Routes() {
   if (path === '/create-order' || path === '/create-order/draw') return <CreateOrder key="create" />
   const account = /^\/account(?:\/([^/]+))?\/?$/.exec(path)
   if (account) {
-    const known: Section[] = ['orders', 'drafts', 'payment', 'preferences']
-    const section = known.find((s) => s === account[1]) ?? 'profile'
+    const known: Section[] = ['orders', 'drafts', 'payment', 'preferences', 'profile']
+    const section = known.find((s) => s === account[1]) ?? 'overview'
     return <Account section={section} />
   }
 

@@ -117,6 +117,27 @@ export const getTemplates = async (): Promise<Template[]> =>
 export const templatePreviewUrl = (id: number, text: string) =>
   `${API_BASE}/catalog/templates/${id}/preview?text=${encodeURIComponent((text.trim() || 'Nét Việt').slice(0, 200))}`
 
+/**
+ * PNG preview that also follows the alignment and letter height (`POST /catalog/templates/{id}/preview`, public).
+ * The plain GET above ignores both, so this is what makes the alignment buttons visible before the order is saved.
+ */
+export async function fetchStyledPreview(
+  id: number, text: string, alignment: Alignment | null, fontSizeMm: number | null, signal: AbortSignal,
+): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/catalog/templates/${id}/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify({
+      text: (text.trim() || 'Nét Việt').slice(0, 200),
+      alignment: alignment ?? 'LEFT',
+      ...(fontSizeMm && fontSizeMm >= 4 && fontSizeMm <= 100 ? { font_size_mm: fontSizeMm } : {}),
+    }),
+  })
+  if (!res.ok) throw new Error(`preview ${res.status}`)
+  return res.blob()
+}
+
 // ---------- estimate ----------
 
 export interface Estimate {
