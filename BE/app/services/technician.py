@@ -226,7 +226,7 @@ class TechnicianJobService:
         job = self._job(job_id, lock=True)
         order = self._order(job)
         self._require_open(job, order)
-        self._require_status(job, JobStatus.PREPARING, what="Chỉ hiệu chuẩn")
+        self._require_status(job, JobStatus.PREPARING, JobStatus.PAUSED, what="Chỉ hiệu chuẩn")   # PAUSED: the gripper/paper changed after an abort
         try:
             jr.check_checklist(checklist)
             jr.check_probe_points(probe_points)
@@ -239,7 +239,13 @@ class TechnicianJobService:
             probe_points=probe_points, frame_transform=frame_transform, height_map=height_map,
             force_curve=force_curve, is_valid=True))
         # A new paper plane changes the robot-frame path, so an older simulation no longer proves anything.
-        job.simulation_passed, job.simulation_report = None, None
+        if job.status == JobStatus.PAUSED:
+            # The database requires a passed simulation on a job that has started writing (chk_job_run_requires_sim): keep
+            # the flag, mark the report stale, and let the next simulation result replace it.
+            job.simulation_report = {**(job.simulation_report or {}), "stale_after_recalibration": True,
+                                     "calibration_id": row.id}
+        else:
+            job.simulation_passed, job.simulation_report = None, None
         self._event(job, JobEventType.CALIBRATED, payload={"calibration_id": row.id, "probe_points": len(probe_points)})
         audit.record(self.session, actor_id=self.tech.id, action="JOB_CALIBRATE", entity_type="production_job",
                      entity_id=job.id, new={"calibration_id": row.id}, ip=self.ip)
@@ -252,7 +258,7 @@ class TechnicianJobService:
         job = self._job(job_id, lock=True)
         order = self._order(job)
         self._require_open(job, order)
-        self._require_status(job, JobStatus.PREPARING, what="Chỉ ghi kết quả mô phỏng")
+        self._require_status(job, JobStatus.PREPARING, JobStatus.PAUSED, what="Chỉ ghi kết quả mô phỏng")
         cal = self.calibrations.valid(job.id)
         if cal is None:
             raise AppError(409, "CALIBRATION_REQUIRED", "Cần hiệu chuẩn trước khi mô phỏng (BR-19).")
@@ -263,6 +269,9 @@ class TechnicianJobService:
         server = self._server_validation(job, order, cal)
         if server is not None and not server["passed"]:       # the server does not take the client's word for it
             passed, errors = False, errors + [f"SERVER {t}" for t in server["error_texts"]]
+        if job.status != JobStatus.PREPARING and not passed:
+            raise AppError(409, "SIMULATION_NOT_PASSED", "Job đã bắt đầu viết nên không thể ghi mô phỏng không đạt; "
+                           "sửa hiệu chuẩn rồi mô phỏng lại.", {"errors": errors})
         job.simulation_passed = passed
         job.simulation_report = {"errors": errors, "report": report, "calibration_id": cal.id,
                                  "reported_at": _now().isoformat(),
