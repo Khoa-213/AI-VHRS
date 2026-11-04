@@ -29,6 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.domain import job_rules as jr
 from app.models.account import Account, RoleCode
 from app.models.ops import ACTIVE_JOB_STATUSES, JobStatus, ProductionJob, Robot, RobotAgent, RobotCommand, RobotRun
 from app.services import audit
@@ -311,6 +312,9 @@ class RobotLinkService:
         if job is not None and kind == "RUN" and job.status not in (JobStatus.WRITING, JobStatus.PAUSED):
             raise AppError(409, "JOB_STATE_CONFLICT", "Hãy bấm Bắt đầu viết (POST /technician/jobs/{id}/start) trước khi gửi lệnh RUN.",
                            {"job_status": job.status.value})
+        if (job is not None and kind in ("RUN", "RESUME") and job.status == JobStatus.PAUSED
+                and jr.simulation_stale(job.simulation_report)):
+            raise AppError(409, *jr.STALE_SIMULATION, {"job_status": job.status.value})
         if not self._agent_online(robot):
             raise AppError(409, "AGENT_OFFLINE", "Máy trạm của robot chưa kết nối tới hệ thống. Không gửi lệnh; kiểm tra Robot Agent "
                            "(nếu đang có nguy hiểm: nhấn nút E-Stop vật lý).", {"robot_id": robot.id})

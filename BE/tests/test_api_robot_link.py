@@ -7,7 +7,7 @@ import pytest
 from app.services.robot_link import hub
 from tests.test_api_orders import API, _sql
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
-from tests.test_api_technician import CAL, T, _err, _job, _post
+from tests.test_api_technician import CAL, T, _err, _job, _post, _running
 from tests.test_api_workshop import _user, cust, policy, staff, store, wcat  # noqa: F401
 
 M = f"{API}/manager"
@@ -104,6 +104,7 @@ def test_validation_of_commands(client, cust, staff, mgr, wcat, robot, tech):
     assert post(kind="RUN", job_id=jid, params={"mode": "SIM"}).status_code == 409          # PREPARING is still not WRITING
     _post(client, tech, jid, "calibration", CAL, status=201)
     _post(client, tech, jid, "simulation", {"passed": True}, status=200)
+    sync(client, ah)                         # keep the agent online (15 s) on a slow database
     assert post(kind="DRY_RUN", job_id=jid, params={"mode": "SIM"}).status_code == 201       # rehearsal is allowed while PREPARING
     _post(client, tech, jid, "start", status=200)
     ok = post(kind="RUN", job_id=jid, params={"mode": "REAL", "authorization": f"AUTHORIZE-{jid}-abcd1234"})
@@ -341,3 +342,37 @@ def test_align_start_is_a_job_command_that_needs_the_authorization_for_real(clie
     assert [c["kind"] for c in sync(client, ah)["commands"]] == ["ALIGN_START"]
     mgr_try = client.post(f"{M}/robots/{robot}/robot-commands", headers=_h(mgr), json={"kind": "ALIGN_START", "job_id": jid, "params": {"mode": "SIM"}})
     assert mgr_try.status_code == 403                                                                  # a Manager only pauses/resumes/stops
+
+
+def test_after_recalibrating_a_paused_job_nothing_writes_until_a_new_simulation_passes(client, cust, staff, mgr, wcat, robot,
+                                                                                       tech):
+    """1af20f3 keeps simulation_passed on a recalibrated PAUSED job (DB rule) and only marks the report stale: every path that would
+    put the pen back on the paper must refuse until a new simulation passes."""
+    from tests.test_api_robot_ops import open_run
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    _, ah = key_for(client, mgr, robot)
+    sync(client, ah)
+    cmd = lambda kind, **p: client.post(f"{T}/robot-commands", headers=tech[0],   # noqa: E731
+                                        json={"kind": kind, "job_id": jid, "params": p})
+    _post(client, tech, jid, "events", {"event_type": "ESTOP"}, status=201)
+    _post(client, tech, jid, "calibration", CAL, status=201)                        # gripper / paper changed while paused
+
+    assert _err(_post(client, tech, jid, "events", {"event_type": "RESUME"}, status=409)) == "SIMULATION_STALE"
+    assert _err(cmd("RUN", mode="SIM")) == "SIMULATION_STALE"
+    assert _err(cmd("RESUME")) == "SIMULATION_STALE"
+    r, _ = open_run(client, tech, jid)
+    assert r.status_code == 409 and _err(r) == "SIMULATION_STALE"
+    sync(client, ah)
+    r = cmd("DRY_RUN", mode="SIM")
+    assert r.status_code == 201, r.text                                              # a pen-up rehearsal is still allowed
+    assert _sql("select status::text from production_jobs where id=:j", j=jid) == "PAUSED"
+
+    _post(client, tech, jid, "simulation", {"passed": True}, status=200)            # the new simulation clears the flag
+    sync(client, ah)                         # keep the agent online (15 s) on a slow database: these commands need it
+    for kind, params in (("RESUME", {}), ("RUN", {"mode": "SIM"})):
+        r = cmd(kind, **params)
+        assert r.status_code == 201, r.text
+    r, _ = open_run(client, tech, jid)
+    assert r.status_code == 201, r.text
+    _post(client, tech, jid, "events", {"event_type": "RESUME"}, status=201)
+    assert _sql("select status::text from production_jobs where id=:j", j=jid) == "WRITING"

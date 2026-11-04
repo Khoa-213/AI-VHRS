@@ -347,6 +347,8 @@ class TechnicianJobService:
         order = self._order(job)
         if job.status != JobStatus.WRITTEN:        # after WRITTEN only a closing force summary may still arrive
             self._require_open(job, order)
+        if kind == JobEventType.RESUME and jr.simulation_stale(job.simulation_report):
+            raise AppError(409, *jr.STALE_SIMULATION, {"calibration_id": job.simulation_report.get("calibration_id")})
         try:
             dst = jr.event_effect(kind, job.status)
             if kind == JobEventType.FORCE_SUMMARY:

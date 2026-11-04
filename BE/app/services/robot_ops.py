@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.domain import job_rules as jr
 from app.integrations.mailer import get_mailer
 from app.models.account import Account, AccountStatus, Role, RoleCode
 from app.models.ops import (ACTIVE_JOB_STATUSES, AlertCatalog, Calibration, Incident, JobEvent, JobEventType, JobStatus,
@@ -103,6 +104,8 @@ class RobotOpsService:
             if job.status not in (DRY_RUN_STATUSES if dry_run else WRITE_RUN_STATUSES):
                 raise AppError(409, "JOB_STATE_CONFLICT", f"Không mở lần chạy {'thử' if dry_run else 'viết'} khi job đang {job.status.value}.",
                                {"job_status": job.status.value})
+            if not dry_run and jr.simulation_stale(job.simulation_report):
+                raise AppError(409, *jr.STALE_SIMULATION, {"job_status": job.status.value})
             if mode == "REAL" and not authorized:
                 raise AppError(422, "AUTHORIZATION_REQUIRED", "Chạy robot thật cần người vận hành xác nhận cho job và kế hoạch này.")
         elif job.status not in ACTIVE_JOB_STATUSES:

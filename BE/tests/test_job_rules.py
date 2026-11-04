@@ -122,3 +122,9 @@ def test_stock_use_and_deduct():
     assert jr.deduct(4, 4) == (0, 0)
     assert jr.deduct(3, 5) == (0, 2)                                         # cannot go below 0; the gap is reported
     assert jr.deduct(0, 1) == (0, 1)
+
+
+def test_simulation_is_stale_only_when_flagged_after_a_recalibration():
+    assert jr.simulation_stale({"stale_after_recalibration": True, "calibration_id": 3}) is True
+    assert jr.simulation_stale({"errors": [], "calibration_id": 3}) is False
+    assert jr.simulation_stale(None) is False
