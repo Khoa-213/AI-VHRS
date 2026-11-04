@@ -85,9 +85,10 @@ SETTINGS.update({
     "working_hours": ({"days": [1, 2, 3, 4, 5, 6], "start": "08:00", "end": "17:00", "utc_offset_min": 420},
                       "Giờ làm việc của xưởng cho lập lịch sản xuất (ISO weekday 1=T2; giờ địa phương = UTC + utc_offset_min). "
                       "GIẢ ĐỊNH: T2–T7, 08:00–17:00; Manager cần xác nhận."),
-    "schedule_params": ({"prep_min": 15, "photo_min": 5, "lead_min": 60, "eta_buffer_days": 2},
+    "schedule_params": ({"prep_min": 15, "photo_min": 5, "lead_min": 60, "eta_buffer_days": 2, "eta_delivery_days": 3},
                         "Tham số lập lịch: chuẩn bị 15', chụp ảnh 5' (FR-40); bắt đầu sớm nhất sau lead_min phút; "
-                        "ETA = ngày viết xong + eta_buffer_days. GIẢ ĐỊNH, cần xác nhận."),
+                        "ETA = ngày viết xong + eta_buffer_days + eta_delivery_days (tới khi khách chọn dịch vụ vận chuyển, "
+                        "BR-15). GIẢ ĐỊNH, cần xác nhận."),
 })
 
 

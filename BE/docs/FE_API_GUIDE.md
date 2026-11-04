@@ -662,6 +662,29 @@ Từ `AWAITING_ACCEPTANCE` trở đi không huỷ được. Đơn chưa cọc v�
 
 Hoàn tiền **chưa** gọi API của cổng (payOS không có API hoàn tiền; VNPay cần whitelist IP; MoMo chưa thử): Staff chuyển khoản tay (hoặc hoàn trong trang quản trị của cổng) rồi bấm xác nhận. Thông báo (`ORDER_CANCELLED`, `REFUND_REQUESTED`, `REFUND_SENT`, `JOB_CANCELLED`) mới ghi log, gửi thật ở Phase 4e: FE poll `GET /orders/{id}/payments`.
 
+## 7i. Ngày giao dự kiến (ETA) và dời ETA – Phase 4d-2 (FR-26, UC-30; BR-15, BR-16, MSG11)
+
+**Cách BE tính (BR-15):** ETA = ngày cọc + chờ robot (khung trống sớm nhất của robot phù hợp) + `eta_buffer_days` (ảnh, QC, nghiệm thu; mặc định 2) + số ngày giao (`eta_delivery_days`, mặc định 3, cho tới khi khách chọn dịch vụ vận chuyển; sau đó dùng ngày giao dự kiến của dịch vụ đó). Hai tham số nằm trong `GET /manager/schedule/config`.
+
+| Lúc | ETA |
+|---|---|
+| Staff lập báo giá, để trống `eta` | BE tự điền ETA ước tính vào báo giá (khách thấy ở báo giá) |
+| Trước khi cọc | `order.eta = null`; ETA hiện cho khách lấy từ báo giá |
+| Cọc thành công | ETA đầu tiên của đơn = muộn hơn giữa ETA báo giá và ETA tính lại từ ngày cọc. **Không** tính là dời |
+| Manager xếp lịch / xếp lại (sự cố, viết lại, đổi lịch) | Nếu dự kiến giao muộn hơn ETA: tự dời, lý do `Lịch sản xuất: …`, `Sự cố, xếp lại lịch: …`, `Viết lại: …`, `Đổi lịch sản xuất: …`. Xếp sớm hơn thì ETA giữ nguyên |
+| Khách chọn dịch vụ vận chuyển | Nếu hãng giao muộn hơn ETA: tự dời, lý do `Hãng GHN (…) dự kiến giao …` |
+| Staff đổi tay | Sớm hơn hoặc muộn hơn, bắt buộc lý do |
+
+Mọi lần **dời muộn hơn** được ghi lịch sử và cộng vào `postponed_days`; dời sớm hơn không trừ. `postponed_days > threshold_days` (mặc định 7) thì khách được huỷ và hoàn 100% (BR-16, mục 7h).
+
+| Ai | Endpoint |
+|---|---|
+| Khách | `GET /orders/{id}/eta` → `{order_id, eta, postponed_days, threshold_days, can_cancel_full_refund, history: [{old_eta, new_eta, reason, changed_at}]}` |
+| Staff / Manager (chỉ đọc) | `GET /workshop/orders/{id}/eta` → như trên + `history[].actor_id` (null = hệ thống) + `suggested_eta` (ETA ước tính nếu xác nhận lúc này, để điền sẵn ô ETA khi lập báo giá) |
+| Staff được giao đơn | `POST /workshop/orders/{id}/eta {eta, reason}` → `EtaOut`. Chỉ khi đơn đã cọc và chưa giao xong (`409 ETA_NOT_EDITABLE`); `422 ETA_IN_PAST`, `ETA_TOO_FAR` (quá 1 năm), `ETA_UNCHANGED` |
+
+Thông báo `ETA_POSTPONED` (MSG11) / `ETA_CHANGED` mới ghi log, gửi thật ở Phase 4e: FE poll `GET /orders/{id}/eta` ở màn chi tiết đơn.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -679,6 +702,7 @@ Hoàn tiền **chưa** gọi API của cổng (payOS không có API hoàn tiền
 | `DEPOSIT_NOT_EXPECTED`, `DEPOSIT_ALREADY_PAID` | 409 | Sai thời điểm đặt cọc | tải lại đơn |
 | `ORDER_CANCEL_UNSUPPORTED` | 409 | Không huỷ online được (kể cả khi cọc vừa được xác nhận đúng lúc khách bấm huỷ: hãy tải lại đơn, nó đang `CONFIRMED`, rồi gọi `cancel-preview` để khách xem số tiền hoàn) | "Liên hệ xưởng" / tải lại |
 | `JOB_RUNNING`, `CANCEL_AFTER_WRITING_STARTED` | 409 | Robot đang viết / đơn đã bắt đầu viết và ETA chưa dời quá ngưỡng (BR-14/16, mục 7h) | ẩn nút huỷ, hiện `message` |
+| `ETA_NOT_EDITABLE`, `ETA_IN_PAST`, `ETA_TOO_FAR`, `ETA_UNCHANGED` | 409/422 | Đổi ETA sai bước / ngày không hợp lệ (mục 7i) | hiện `message` |
 | `REFUND_ACCOUNT_REQUIRED` | 422 | Cọc qua payOS: phải nhập tài khoản nhận hoàn tiền | hiện form `refund_account` |
 | `REFUND_EXISTS`, `REFUND_NOT_PENDING`, `NOT_REFUNDABLE`, `INVALID_REFUND_AMOUNT` | 409/422 | Hoàn tiền sai bước / trùng / sai số tiền (mục 7h) | tải lại danh sách, hiện `message` |
 | `UNSUPPORTED_CHARS`, `TEXT_TOO_LONG`, `FONT_TOO_LARGE`, `CANVAS_OUT_OF_PAPER` | 422 | Nội dung không sinh được nét | nêu lỗi, cho sửa |
@@ -721,7 +745,7 @@ Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thậ
 
 ## 10. Chưa có / sẽ có (đừng chờ ở Phase này)
 
-- Huỷ sau cọc + hoàn tiền: **đã có** (mục 7h, 2026-11-04). ETA tự tính và dời ETA có lý do (MSG11): Phase 4d-2, **chưa có**.
+- Huỷ sau cọc + hoàn tiền: **đã có** (mục 7h). ETA tự tính và dời ETA có lý do (MSG11): **đã có** (mục 7i).
 - Technical Staff: **đã có** xem job, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố (mục 7b), ảnh sản phẩm + QC và nộp ảnh (mục 7c). Ảnh chồng phác thảo do client tự làm.
 - Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4); **chưa có** đẩy tức thời (SSE/WebSocket).
 - Khách: **đã có** xem ảnh, nghiệm thu, viết lại 1 lần, tự nghiệm thu sau 7 ngày (mục 7c). Thanh toán cuối + nhận tại xưởng **đã có** (mục 7d). Chọn dịch vụ vận chuyển, vận đơn và giao hàng qua hãng **đã có** (mục 7e). **Chưa có**: huỷ sau cọc + hoàn tiền (kể cả khoản `needs_refund`), dời ETA, **thông báo (in-app + email)** (Phase 4d/4e).

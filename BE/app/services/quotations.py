@@ -24,6 +24,7 @@ from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.services import audit, notifications, quotation_pdf
+from app.services.eta import EtaService
 from app.services.orders import DEFAULT_COMPLEXITY, PricingService
 from app.services.pricing import MaterialPrices, compute_price
 from app.services.workshop_access import WorkshopAccess
@@ -177,7 +178,8 @@ class QuotationService:
             pricing_config_id=cfg.id, created_by=self.actor.id, status=QuotationStatus.DRAFT, line_items=line_items,
             char_count=chars, quantity=order.quantity, complexity=ComplexityLevel(level),
             computed_total=built[0].total, adjustment_status=AdjustmentStatus.NONE, min_deposit_pct=cfg.p_min_pct,
-            price_snapshot=snapshot, eta=eta if eta and eta >= date.today() else None))
+            price_snapshot=snapshot,
+            eta=eta if eta and eta >= date.today() else EtaService(self.session, self.actor).estimate(order)))   # BR-15
         audit.record(self.session, actor_id=self.actor.id, action="QUOTATION_CREATE", entity_type="quotation",
                      entity_id=row.id, new={"order_id": order.id, "version": row.version,
                                             "computed_total": str(row.computed_total), "options": len(picks)},
@@ -388,9 +390,7 @@ class QuotationService:
         self.storage.write(path, self._pdf(q, order), "application/pdf")
         q.file_url = path
 
-        if q.eta and q.eta != order.eta:
-            set_actor(self.session, self.actor.id, "Cập nhật ETA theo báo giá")
-            order.eta = q.eta
+        # The order's own ETA is set when the deposit succeeds (services/eta.py); until then the quotation's ETA is what counts.
         order.complexity = q.complexity
         consented = (order.privacy_accepted_at is not None and order.privacy_policy_version == policy["version"])
         set_actor(self.session, self.actor.id, f"Gửi báo giá v{q.version}")

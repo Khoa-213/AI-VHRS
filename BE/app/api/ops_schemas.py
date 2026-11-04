@@ -380,6 +380,7 @@ class ScheduleConfigOut(BaseModel):
     eta_buffer_days: int = Field(description="Margin added to a job's finish date before comparing it with the ETA.")
     lead_min: int = Field(description="Suggestions start at least this long from now.")
     slot_step_min: int = Field(description="Step between the start times the suggestion tries.")
+    eta_delivery_days: int = Field(description="BR-15: delivery days counted in the ETA until a carrier service is chosen.")
 
 
 class Suggestion(BaseModel):
@@ -674,6 +675,31 @@ class OrphanOut(BaseModel):
 class RefundListOut(BaseModel):
     refunds: list[RefundOut]
     orphans: list[OrphanOut] = Field(description="Money flagged needs_refund that has no refund request yet.")
+
+
+
+# ---------------------------------------------------------------- ETA and its postponements (Phase 4d-2)
+class EtaChange(BaseModel):
+    old_eta: date | None
+    new_eta: date
+    reason: str | None
+    changed_at: datetime = Field(validation_alias="created_at")
+    actor_id: int | None = Field(default=None, description="Workshop view only; null = the system.")
+
+
+class EtaOut(BaseModel):
+    order_id: int
+    eta: date | None = Field(description="Null until the deposit succeeds (the quotation carries its own ETA before that).")
+    postponed_days: int = Field(description="BR-16: days the ETA was moved later in total (the database adds them up).")
+    threshold_days: int
+    can_cancel_full_refund: bool = Field(description="postponed_days > threshold_days: the customer may cancel with a 100 % refund.")
+    history: list[EtaChange]
+    suggested_eta: date | None = Field(default=None, description="Workshop view only: BR-15 estimate if confirmed now.")
+
+
+class EtaSetIn(BaseModel):
+    eta: date
+    reason: Reason
 
 
 PaymentOut.model_rebuild()
