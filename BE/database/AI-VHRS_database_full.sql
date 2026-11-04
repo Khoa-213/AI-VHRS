@@ -1,7 +1,6 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0014 (alembic head), generated 2026-10-25 by scripts/build_database_script.py, 0014 patched in 2026-11-04 (see
--- migrations/versions/0014_refunds.py; rebuild with the script when a local Postgres is at hand). DO NOT EDIT BY HAND:
+-- Revision 0014 (alembic head), generated 2026-11-04 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
@@ -430,9 +429,7 @@ CREATE TYPE public.template_kind AS ENUM (
 CREATE FUNCTION public.fn_current_actor() RETURNS bigint
     LANGUAGE sql STABLE
     AS $$
-
   SELECT NULLIF(current_setting('app.current_account_id', true), '')::bigint
-
 $$;
 
 --
@@ -442,207 +439,111 @@ $$;
 CREATE FUNCTION public.fn_order_state_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-
 DECLARE
-
   o_ok boolean := TRUE;
-
   p_ok boolean := TRUE;
-
 BEGIN
-
   IF TG_OP = 'INSERT' THEN
-
     IF NEW.order_status <> 'DRAFT' OR NEW.production_status <> 'NOT_STARTED' THEN
-
       RAISE EXCEPTION 'Đơn mới phải ở DRAFT / NOT_STARTED' USING ERRCODE = 'P0409';
-
     END IF;
-
     RETURN NEW;
-
   END IF;
 
   -- D3: cumulative ETA postponement is derived here, never trusted from the client.
-
   IF NEW.eta IS DISTINCT FROM OLD.eta AND OLD.eta IS NOT NULL AND NEW.eta IS NOT NULL AND NEW.eta > OLD.eta THEN
-
     NEW.eta_postponed_days := OLD.eta_postponed_days + (NEW.eta - OLD.eta);
-
   ELSE
-
     NEW.eta_postponed_days := OLD.eta_postponed_days;
-
   END IF;
 
   IF NEW.order_status IS DISTINCT FROM OLD.order_status THEN
-
     o_ok := CASE OLD.order_status
-
       WHEN 'DRAFT'                  THEN NEW.order_status IN ('SUBMITTED')
-
       WHEN 'SUBMITTED'              THEN NEW.order_status IN ('ACCEPTED','REJECTED','NEED_INFO','CANCELLED')
-
       WHEN 'NEED_INFO'              THEN NEW.order_status IN ('SUBMITTED','CANCELLED')
-
       WHEN 'ACCEPTED'               THEN NEW.order_status IN ('AWAITING_PRIVACY','CANCELLED')
-
                                          OR (NEW.order_status = 'QUOTED' AND NEW.privacy_accepted_at IS NOT NULL)
-
       WHEN 'AWAITING_PRIVACY'       THEN NEW.order_status IN ('QUOTED','CANCELLED')
-
       WHEN 'QUOTED'                 THEN NEW.order_status IN ('AWAITING_DEPOSIT','ACCEPTED','CANCELLED')
-
       WHEN 'AWAITING_DEPOSIT'       THEN NEW.order_status IN ('CONFIRMED','CANCELLED')
-
       WHEN 'CONFIRMED'              THEN NEW.order_status IN ('AWAITING_ACCEPTANCE','CANCELLED')
-
       WHEN 'AWAITING_ACCEPTANCE'    THEN NEW.order_status IN ('AWAITING_FINAL_PAYMENT','CONFIRMED')
-
       WHEN 'AWAITING_FINAL_PAYMENT' THEN NEW.order_status IN ('READY_TO_DELIVER')
-
       WHEN 'READY_TO_DELIVER'       THEN NEW.order_status IN ('DELIVERING','COMPLETED')
-
       WHEN 'DELIVERING'             THEN NEW.order_status IN ('COMPLETED')
-
       ELSE FALSE
-
     END;
-
     IF NOT o_ok THEN
-
       RAISE EXCEPTION 'Chuyển trạng thái đơn không hợp lệ: % -> %', OLD.order_status, NEW.order_status
-
         USING ERRCODE = 'P0409';
-
     END IF;
-
   END IF;
 
   IF NEW.production_status IS DISTINCT FROM OLD.production_status THEN
-
     p_ok := CASE OLD.production_status
-
       WHEN 'NOT_STARTED'      THEN NEW.production_status IN ('PENDING_SCHEDULE')
-
       WHEN 'PENDING_SCHEDULE' THEN NEW.production_status IN ('SCHEDULED')
-
       WHEN 'SCHEDULED'        THEN NEW.production_status IN ('PREPARING','PENDING_SCHEDULE')
-
       WHEN 'PREPARING'        THEN NEW.production_status IN ('WRITING','FAILED')
-
       WHEN 'WRITING'          THEN NEW.production_status IN ('PAUSED','WRITTEN','FAILED')
-
       WHEN 'PAUSED'           THEN NEW.production_status IN ('WRITING','FAILED')
-
       WHEN 'FAILED'           THEN NEW.production_status IN ('PENDING_SCHEDULE')
-
       WHEN 'WRITTEN'          THEN NEW.production_status IN ('PHOTO_UPLOADED','REWRITE_REQUIRED')
-
       WHEN 'PHOTO_UPLOADED'   THEN NEW.production_status IN ('FINISHED','REWRITE_REQUIRED')
-
       WHEN 'REWRITE_REQUIRED' THEN NEW.production_status IN ('PENDING_SCHEDULE')
-
       ELSE FALSE
-
     END;
-
     -- D1: a cancelled order may reset production from ANY state (BR-14 pre-start, BR-16 after start).
-
     IF NOT p_ok AND NEW.order_status = 'CANCELLED' AND NEW.production_status = 'NOT_STARTED' THEN
-
       p_ok := TRUE;
-
     END IF;
-
     IF NOT p_ok THEN
-
       RAISE EXCEPTION 'Chuyển trạng thái sản xuất không hợp lệ: % -> %', OLD.production_status, NEW.production_status
-
         USING ERRCODE = 'P0409';
-
     END IF;
-
   END IF;
 
   -- BR-17 / bảng 2.5.3. D1: a CANCELLED order is exempt from the "production only when CONFIRMED" rule.
-
   IF NEW.order_status <> 'CANCELLED' AND NEW.production_status <> 'NOT_STARTED' AND NEW.order_status NOT IN
-
        ('CONFIRMED','AWAITING_ACCEPTANCE','AWAITING_FINAL_PAYMENT','READY_TO_DELIVER','DELIVERING','COMPLETED') THEN
-
     RAISE EXCEPTION 'Sản xuất chỉ bắt đầu khi đơn CONFIRMED (BR-17)' USING ERRCODE = 'P0409';
-
   END IF;
-
   IF NEW.order_status = 'CONFIRMED' AND OLD.order_status = 'AWAITING_DEPOSIT' AND NEW.production_status <> 'PENDING_SCHEDULE' THEN
-
     RAISE EXCEPTION 'Cọc thành công phải chuyển sản xuất sang PENDING_SCHEDULE' USING ERRCODE = 'P0409';
-
   END IF;
-
   IF NEW.order_status = 'AWAITING_ACCEPTANCE' AND NEW.production_status <> 'PHOTO_UPLOADED' THEN
-
     RAISE EXCEPTION 'Đơn chỉ chờ nghiệm thu khi sản xuất PHOTO_UPLOADED (BR-17)' USING ERRCODE = 'P0409';
-
   END IF;
-
   IF NEW.order_status IN ('AWAITING_FINAL_PAYMENT','READY_TO_DELIVER','DELIVERING','COMPLETED')
-
      AND NEW.production_status <> 'FINISHED' THEN
-
     RAISE EXCEPTION 'Đơn chỉ được thanh toán cuối/giao khi sản xuất FINISHED (BR-17)' USING ERRCODE = 'P0409';
-
   END IF;
-
   IF OLD.order_status = 'AWAITING_ACCEPTANCE' AND NEW.order_status = 'CONFIRMED'
-
      AND NEW.production_status NOT IN ('REWRITE_REQUIRED','PENDING_SCHEDULE') THEN
-
     RAISE EXCEPTION 'Yêu cầu viết lại phải chuyển sản xuất sang REWRITE_REQUIRED' USING ERRCODE = 'P0409';
-
   END IF;
-
   -- BR-14 / BR-16
-
   IF NEW.order_status = 'CANCELLED' AND OLD.order_status = 'CONFIRMED'
-
      AND OLD.production_status IN ('WRITING','PAUSED','WRITTEN','PHOTO_UPLOADED','REWRITE_REQUIRED','FAILED')
-
      AND NEW.eta_postponed_days <= COALESCE((SELECT (value #>> '{}')::int FROM system_settings WHERE key = 'eta_cancel_threshold_days'), 7) THEN
-
     RAISE EXCEPTION 'Không thể huỷ đơn đã bắt đầu viết (BR-14)' USING ERRCODE = 'P0409';
-
   END IF;
 
   IF NEW.order_status IS DISTINCT FROM OLD.order_status THEN
-
     CASE NEW.order_status
-
       WHEN 'SUBMITTED' THEN NEW.submitted_at := COALESCE(NEW.submitted_at, now());
-
       WHEN 'CONFIRMED' THEN NEW.confirmed_at := COALESCE(NEW.confirmed_at, now());
-
       WHEN 'AWAITING_ACCEPTANCE' THEN NEW.awaiting_acceptance_at := now(); NEW.acceptance_reminded_at := NULL;
-
       WHEN 'COMPLETED' THEN NEW.completed_at := now();
-
       WHEN 'CANCELLED' THEN NEW.cancelled_at := now();
-
       ELSE NULL;
-
     END CASE;
-
   END IF;
-
   IF OLD.order_status = 'DRAFT' AND NEW.order_status = 'DRAFT' THEN
-
     NEW.last_saved_at := now();
-
   END IF;
-
   RETURN NEW;
-
 END $$;
 
 --
@@ -652,57 +553,31 @@ END $$;
 CREATE FUNCTION public.fn_order_status_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-
 DECLARE
-
   v_actor  bigint := fn_current_actor();
-
   v_reason text   := NULLIF(current_setting('app.status_reason', true), '');
-
 BEGIN
-
   IF TG_OP = 'INSERT' THEN
-
     INSERT INTO status_histories (order_id, state_type, from_status, to_status, actor_id)
-
     VALUES (NEW.id, 'ORDER', NULL, NEW.order_status::text, COALESCE(v_actor, NEW.customer_id));
-
     RETURN NEW;
-
   END IF;
-
   IF NEW.order_status IS DISTINCT FROM OLD.order_status THEN
-
     INSERT INTO status_histories (order_id, state_type, from_status, to_status, reason, actor_id)
-
     VALUES (NEW.id, 'ORDER', OLD.order_status::text, NEW.order_status::text, v_reason, v_actor);
-
   END IF;
-
   IF NEW.production_status IS DISTINCT FROM OLD.production_status THEN
-
     INSERT INTO status_histories (order_id, state_type, from_status, to_status, reason, actor_id)
-
     VALUES (NEW.id, 'PRODUCTION', OLD.production_status::text, NEW.production_status::text, v_reason, v_actor);
-
   END IF;
-
   IF NEW.eta IS DISTINCT FROM OLD.eta AND OLD.eta IS NOT NULL THEN
-
     IF v_reason IS NULL THEN
-
       RAISE EXCEPTION 'Dời ETA phải có lý do (BR-16): SET LOCAL app.status_reason' USING ERRCODE = 'P0409';
-
     END IF;
-
     INSERT INTO status_histories (order_id, state_type, old_eta, new_eta, reason, actor_id)
-
     VALUES (NEW.id, 'ETA', OLD.eta, NEW.eta, v_reason, v_actor);
-
   END IF;
-
   RETURN NEW;
-
 END $$;
 
 --
@@ -712,39 +587,22 @@ END $$;
 CREATE FUNCTION public.fn_photo_uploaded_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-
 DECLARE v_job bigint;
-
 BEGIN
-
   IF NEW.production_status = 'PHOTO_UPLOADED' AND OLD.production_status IS DISTINCT FROM 'PHOTO_UPLOADED' THEN
-
     SELECT id INTO v_job FROM production_jobs
-
      WHERE order_id = NEW.id AND status IN ('WRITTEN','PHOTO_UPLOADED')
-
      ORDER BY created_at DESC LIMIT 1;
-
     IF v_job IS NULL
-
        OR (SELECT count(*) FROM product_photos WHERE job_id = v_job AND deleted_at IS NULL) < 2
-
        OR NOT EXISTS (SELECT 1 FROM product_photos WHERE job_id = v_job AND kind = 'OVERALL'  AND deleted_at IS NULL)
-
        OR NOT EXISTS (SELECT 1 FROM product_photos WHERE job_id = v_job AND kind = 'CLOSE_UP' AND deleted_at IS NULL)
-
        OR EXISTS (SELECT 1 FROM product_photos WHERE job_id = v_job AND deleted_at IS NULL
-
                     AND qc_result IS DISTINCT FROM 'PASS') THEN
-
       RAISE EXCEPTION 'Cần ≥ 2 ảnh (toàn cảnh + cận cảnh) và QC đạt trước PHOTO_UPLOADED (BR-21)' USING ERRCODE = 'P0409';
-
     END IF;
-
   END IF;
-
   RETURN NEW;
-
 END $$;
 
 --
@@ -754,21 +612,13 @@ END $$;
 CREATE FUNCTION public.fn_review_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-
 BEGIN
-
   IF NOT EXISTS (SELECT 1 FROM orders o
-
                  WHERE o.id = NEW.order_id AND o.customer_id = NEW.customer_id
-
                    AND o.order_status = 'COMPLETED') THEN
-
     RAISE EXCEPTION 'Chỉ đánh giá được đơn đã hoàn thành của chính mình' USING ERRCODE = 'P0409';
-
   END IF;
-
   RETURN NEW;
-
 END $$;
 
 --
@@ -778,13 +628,9 @@ END $$;
 CREATE FUNCTION public.fn_set_updated_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-
 BEGIN
-
   NEW.updated_at := now();
-
   RETURN NEW;
-
 END $$;
 
 SET default_tablespace = '';
@@ -872,7 +718,7 @@ CREATE TABLE public.audit_logs (
     policy_version character varying(20),
     ip_address inet,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_audit_privacy CHECK ((((action)::text <> ALL (ARRAY[('PRIVACY_ACCEPT'::character varying)::text, ('PRIVACY_DECLINE'::character varying)::text])) OR (policy_version IS NOT NULL)))
+    CONSTRAINT chk_audit_privacy CHECK ((((action)::text <> ALL ((ARRAY['PRIVACY_ACCEPT'::character varying, 'PRIVACY_DECLINE'::character varying])::text[])) OR (policy_version IS NOT NULL)))
 );
 
 --
@@ -1078,7 +924,7 @@ CREATE TABLE public.messages (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     kind character varying(20) DEFAULT 'TEXT'::character varying NOT NULL,
     CONSTRAINT chk_message_not_empty CHECK ((((kind)::text = 'ORDER_CARD'::text) OR (body IS NOT NULL) OR (jsonb_array_length(attachments) > 0))),
-    CONSTRAINT chk_messages_kind CHECK (((kind)::text = ANY (ARRAY[('TEXT'::character varying)::text, ('ORDER_CARD'::character varying)::text])))
+    CONSTRAINT chk_messages_kind CHECK (((kind)::text = ANY ((ARRAY['TEXT'::character varying, 'ORDER_CARD'::character varying])::text[])))
 );
 
 --
@@ -1154,10 +1000,10 @@ CREATE TABLE public.order_inputs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT chk_input_payload CHECK ((((kind = ANY (ARRAY['ORIGINAL_IMAGE'::public.order_input_kind, 'HANDWRITING_SAMPLE'::public.order_input_kind])) AND ((file_url IS NOT NULL) OR (deleted_at IS NOT NULL))) OR (kind = 'TEXT_CONTENT'::public.order_input_kind) OR ((kind = 'CANVAS'::public.order_input_kind) AND ((canvas_data IS NOT NULL) OR (deleted_at IS NOT NULL))))),
-    CONSTRAINT order_inputs_alignment_check CHECK (((alignment)::text = ANY (ARRAY[('LEFT'::character varying)::text, ('CENTER'::character varying)::text, ('RIGHT'::character varying)::text, ('JUSTIFY'::character varying)::text]))),
+    CONSTRAINT order_inputs_alignment_check CHECK (((alignment)::text = ANY ((ARRAY['LEFT'::character varying, 'CENTER'::character varying, 'RIGHT'::character varying, 'JUSTIFY'::character varying])::text[]))),
     CONSTRAINT order_inputs_file_size_bytes_check CHECK (((file_size_bytes > 0) AND (file_size_bytes <= 20971520))),
     CONSTRAINT order_inputs_font_size_mm_check CHECK ((font_size_mm > (0)::numeric)),
-    CONSTRAINT order_inputs_mime_type_check CHECK (((mime_type)::text = ANY (ARRAY[('image/jpeg'::character varying)::text, ('image/png'::character varying)::text, ('application/pdf'::character varying)::text]))),
+    CONSTRAINT order_inputs_mime_type_check CHECK (((mime_type)::text = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'application/pdf'::character varying])::text[]))),
     CONSTRAINT order_inputs_rotation_deg_check CHECK ((rotation_deg = ANY (ARRAY[0, 90, 180, 270])))
 );
 
@@ -1567,7 +1413,7 @@ CREATE TABLE public.quality_evaluations (
     created_by bigint NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT quality_evaluations_page_no_check CHECK ((page_no >= 1)),
-    CONSTRAINT quality_evaluations_verdict_check CHECK (((verdict)::text = ANY (ARRAY[('PASS'::character varying)::text, ('NEEDS_REVIEW'::character varying)::text, ('FAIL'::character varying)::text])))
+    CONSTRAINT quality_evaluations_verdict_check CHECK (((verdict)::text = ANY ((ARRAY['PASS'::character varying, 'NEEDS_REVIEW'::character varying, 'FAIL'::character varying])::text[])))
 );
 
 --
@@ -1803,7 +1649,7 @@ CREATE TABLE public.robot_commands (
     delivered_at timestamp with time zone,
     finished_at timestamp with time zone,
     CONSTRAINT chk_robot_command_kind CHECK (((kind)::text = ANY ((ARRAY['LOAD'::character varying, 'PREFLIGHT'::character varying, 'DRY_RUN'::character varying, 'RUN'::character varying, 'PAUSE'::character varying, 'RESUME'::character varying, 'STOP'::character varying, 'PAPER_CHANGED'::character varying, 'IDENTIFY'::character varying, 'ALIGN_START'::character varying])::text[]))),
-    CONSTRAINT chk_robot_command_status CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('DELIVERED'::character varying)::text, ('DONE'::character varying)::text, ('FAILED'::character varying)::text, ('EXPIRED'::character varying)::text, ('CANCELLED'::character varying)::text])))
+    CONSTRAINT chk_robot_command_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'DELIVERED'::character varying, 'DONE'::character varying, 'FAILED'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying])::text[])))
 );
 
 --
@@ -1833,8 +1679,8 @@ CREATE TABLE public.robot_runs (
     CONSTRAINT chk_run_progress CHECK (((total_strokes = 0) OR (completed_strokes <= total_strokes))),
     CONSTRAINT chk_run_real_authorized CHECK ((((mode)::text <> 'REAL'::text) OR (authorized_by IS NOT NULL) OR (NOT ((result)::text IS DISTINCT FROM 'REFUSED'::text)))),
     CONSTRAINT robot_runs_completed_strokes_check CHECK ((completed_strokes >= 0)),
-    CONSTRAINT robot_runs_mode_check CHECK (((mode)::text = ANY (ARRAY[('MOCK'::character varying)::text, ('SIM'::character varying)::text, ('REAL'::character varying)::text]))),
-    CONSTRAINT robot_runs_result_check CHECK (((result)::text = ANY (ARRAY[('DONE'::character varying)::text, ('STOPPED'::character varying)::text, ('FAULT'::character varying)::text, ('UNKNOWN'::character varying)::text, ('DRY_RUN_DONE'::character varying)::text, ('REFUSED'::character varying)::text]))),
+    CONSTRAINT robot_runs_mode_check CHECK (((mode)::text = ANY ((ARRAY['MOCK'::character varying, 'SIM'::character varying, 'REAL'::character varying])::text[]))),
+    CONSTRAINT robot_runs_result_check CHECK (((result)::text = ANY ((ARRAY['DONE'::character varying, 'STOPPED'::character varying, 'FAULT'::character varying, 'UNKNOWN'::character varying, 'DRY_RUN_DONE'::character varying, 'REFUSED'::character varying])::text[]))),
     CONSTRAINT robot_runs_total_strokes_check CHECK ((total_strokes >= 0))
 );
 
@@ -1873,8 +1719,8 @@ CREATE TABLE public.robots (
     connection_state character varying(10) DEFAULT 'UNKNOWN'::character varying NOT NULL,
     last_seen_at timestamp with time zone,
     last_mode character varying(10),
-    CONSTRAINT chk_robots_connection_state CHECK (((connection_state)::text = ANY (ARRAY[('ONLINE'::character varying)::text, ('OFFLINE'::character varying)::text, ('UNKNOWN'::character varying)::text]))),
-    CONSTRAINT chk_robots_last_mode CHECK (((last_mode IS NULL) OR ((last_mode)::text = ANY (ARRAY[('MOCK'::character varying)::text, ('SIM'::character varying)::text, ('REAL'::character varying)::text]))))
+    CONSTRAINT chk_robots_connection_state CHECK (((connection_state)::text = ANY ((ARRAY['ONLINE'::character varying, 'OFFLINE'::character varying, 'UNKNOWN'::character varying])::text[]))),
+    CONSTRAINT chk_robots_last_mode CHECK (((last_mode IS NULL) OR ((last_mode)::text = ANY ((ARRAY['MOCK'::character varying, 'SIM'::character varying, 'REAL'::character varying])::text[]))))
 );
 
 --
@@ -1925,7 +1771,7 @@ CREATE TABLE public.shipments (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT shipments_fee_check CHECK ((fee >= (0)::numeric)),
-    CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY (ARRAY[('FLAT_BOX_A5'::character varying)::text, ('FLAT_BOX_A4'::character varying)::text, ('TUBE'::character varying)::text]))),
+    CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY ((ARRAY['FLAT_BOX_A5'::character varying, 'FLAT_BOX_A4'::character varying, 'TUBE'::character varying])::text[]))),
     CONSTRAINT shipments_weight_g_check CHECK ((weight_g > 0))
 );
 

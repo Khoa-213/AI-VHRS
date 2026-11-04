@@ -62,6 +62,16 @@ CLIENT_EVENTS: dict[JobEventType, EventRule] = {
 }
 
 
+def simulation_stale(report: dict[str, Any] | None) -> bool:
+    """True after a PAUSED job was recalibrated and has not passed a new simulation yet. The flag cannot clear
+    `simulation_passed` (the DB requires it on a job that started writing), so every path that would put the pen back
+    on the paper must check it: the workstation's RESUME event, the RUN / RESUME robot commands, a writing run."""
+    return bool((report or {}).get("stale_after_recalibration"))
+
+
+STALE_SIMULATION = ("SIMULATION_STALE", "Đã hiệu chuẩn lại sau khi tạm dừng: phải mô phỏng lại và đạt trước khi viết tiếp.")
+
+
 def event_effect(event: JobEventType, current: JobStatus) -> JobStatus | None:
     """Status the job moves to after `event`, or None when it stays. Raises when the event is not allowed now."""
     rule = CLIENT_EVENTS.get(event)
