@@ -197,6 +197,7 @@ robot_agent/vhrs_agent/static/vendor/
 robot_agent/agent.json
 robot_agent/console.json
 robot_agent/calibration.json
+robot_agent/*.json.bak-*
 robot_agent/.console_state.json
 robot_agent/.tech_credentials.dpapi*
 BE/be_stdout.log
