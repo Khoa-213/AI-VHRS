@@ -60,6 +60,27 @@ class PaymentOut(_ORM):
     bank: dict | None = Field(default=None, description="PAYOS: who receives the transfer and what it must say "
                               "({bin, account_number, account_name, amount, content}); show it next to the QR as a fallback.")
     needs_refund: bool = False
+    refund: RefundInfo | None = Field(default=None, description="REFUND rows only: why, from which payment, where to and the "
+                                      "bank / gateway reference once Staff has paid it out.")
+
+
+class RefundAccount(BaseModel):
+    """Where the customer wants a refund sent (bank transfer). Shown in full to Staff, masked to the customer."""
+    bank_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)]
+    account_number: Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^[0-9]{6,20}$")]
+    account_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=100)]
+
+
+class RefundInfo(BaseModel):
+    kind: Literal["CANCELLATION", "ORPHAN"]
+    refund_of_id: int
+    reason: str | None
+    rule: str | None = Field(default=None, description="CANCELLATION: BR14_BEFORE_SCHEDULE | BR14_AFTER_SCHEDULE | "
+                             "BR16_ETA_POSTPONED | WORKSHOP_CANCEL")
+    deduction: int = Field(default=0, description="Kept by the workshop (the setup fee under BR14_AFTER_SCHEDULE).")
+    account: RefundAccount | None = None
+    reference: str | None = Field(default=None, description="Bank / gateway reference Staff entered when confirming.")
+    confirmed_at: datetime | None = None
 
 
 class GatewayInfo(BaseModel):
@@ -574,3 +595,71 @@ class TechJobDetail(JobOut):
     calibration: CalibrationOut | None = None
     can_start: bool = Field(default=False, description="Downloaded, valid calibration and a passed simulation.")
     incidents: list[IncidentOut] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------- cancellation after the deposit and refunds (Phase 4d-1)
+class CancelPreviewOut(BaseModel):
+    order_id: int
+    order_status: str
+    production_status: str
+    allowed: bool
+    rule: str | None = Field(description="NO_PAYMENT | BR14_BEFORE_SCHEDULE | BR14_AFTER_SCHEDULE | BR16_ETA_POSTPONED | "
+                                         "WORKSHOP_CANCEL; null when not allowed")
+    error_code: str | None = Field(description="Why not: ORDER_CANCEL_UNSUPPORTED | JOB_RUNNING | CANCEL_AFTER_WRITING_STARTED")
+    message: str
+    paid: Decimal
+    refund_amount: Decimal
+    deduction: Decimal = Field(description="Kept by the workshop: the setup fee S_type of the approved quotation.")
+    setup_fee: Decimal
+    eta_postponed_days: int
+    threshold_days: int = Field(description="BR-16: beyond this cumulative postponement a started order may be cancelled.")
+    account_required: bool = Field(description="True: the cancel request must carry `refund_account` (payOS transfer).")
+
+
+class WorkshopCancelIn(BaseModel):
+    reason: Reason
+
+
+class OrphanRefundIn(BaseModel):
+    reason: Reason
+    amount: int | None = Field(default=None, gt=0, description="Default: the whole amount that reached us.")
+    refund_account: RefundAccount | None = None
+
+
+class RefundConfirmIn(BaseModel):
+    reference: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)] = Field(
+        description="Bank transfer / gateway refund reference.")
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] | None = None
+    refund_account: RefundAccount | None = Field(default=None, description="The account actually paid, if it was not on file.")
+
+
+class RefundOut(BaseModel):
+    id: int
+    order_id: int
+    order_code: str
+    amount: Decimal
+    gateway: PaymentGateway
+    status: PaymentStatus
+    mode: str
+    created_at: datetime
+    paid_at: datetime | None
+    refund: RefundInfo
+
+
+class OrphanOut(BaseModel):
+    payment_id: int = Field(description="Pass this to POST /workshop/payments/{payment_id}/refund.")
+    order_id: int
+    order_code: str
+    order_status: str
+    gateway: PaymentGateway
+    types: list[str]
+    received_amount: int
+    payment_status: PaymentStatus
+
+
+class RefundListOut(BaseModel):
+    refunds: list[RefundOut]
+    orphans: list[OrphanOut] = Field(description="Money flagged needs_refund that has no refund request yet.")
+
+
+PaymentOut.model_rebuild()

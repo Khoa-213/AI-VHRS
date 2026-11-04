@@ -256,8 +256,9 @@ class PaymentService:
             return {"result": "PROCESSED", "status": "SUCCESS", "order_status": "CONFIRMED"}
         # Money arrived for an order that is no longer waiting for it (cancelled meanwhile): keep the record
         # and flag it, the refund is handled with the cancellation/refund flow (BR-14, BR-16).
+        received = int(sum((p.amount for p in group), Decimal(0)))
         for row in group:
-            row.gateway_payload = {**(row.gateway_payload or {}), "needs_refund": True}
+            row.gateway_payload = {**(row.gateway_payload or {}), "needs_refund": True, "received_amount": received}
         self.session.flush()
         audit.record(self.session, actor_id=None, action="PAYMENT_ORPHAN", entity_type="payment",
                      entity_id=payment.id, new={"order_id": order.id, "order_status": order.order_status.value})
@@ -265,12 +266,17 @@ class PaymentService:
         return {"result": "PROCESSED", "status": "SUCCESS", "order_status": order.order_status.value,
                 "needs_refund": True}
 
-    def _flag_orphan(self, order: Order, payment: Payment, group: list[Payment], why: str) -> None:
-        """Money reached us for a payment that no longer counts. Keep the record and flag it for the refund flow (BR-14/16)."""
+    def _flag_orphan(self, order: Order, payment: Payment, group: list[Payment], why: str,
+                     received: int | None = None) -> None:
+        """Money reached us for a payment that no longer counts. Keep the record and flag it for the refund flow (BR-14/16).
+        `received_amount` is what actually arrived (payOS: the customer may transfer another amount than the link asked for);
+        the Staff refund list (services/refunds.py) proposes that amount."""
         if any((r.gateway_payload or {}).get("needs_refund") for r in group):
             return
+        if received is None:
+            received = int(sum((p.amount for p in group), Decimal(0)))
         for row in group:
-            row.gateway_payload = {**(row.gateway_payload or {}), "needs_refund": True}
+            row.gateway_payload = {**(row.gateway_payload or {}), "needs_refund": True, "received_amount": received}
         self.session.flush()
         audit.record(self.session, actor_id=None, action="PAYMENT_ORPHAN", entity_type="payment", entity_id=payment.id,
                      new={"order_id": order.id, "order_status": order.order_status.value, "reason": why})
@@ -337,7 +343,8 @@ class PaymentService:
         if result.success and result.amount != expected and payment.status == PaymentStatus.PENDING:
             # The customer sent a different amount than the link asks for. The money is here, but it is not this payment:
             # keep the record for the refund flow and leave the payment pending (it expires or the customer pays correctly).
-            self._flag_orphan(order, payment, self._group(payment), f"paid {result.amount}, expected {expected}")
+            self._flag_orphan(order, payment, self._group(payment), f"paid {result.amount}, expected {expected}",
+                              received=result.amount)
             return {"result": "AMOUNT_MISMATCH", "status": "PENDING", "needs_refund": True}
         return self._settle(PaymentGateway.PAYOS, txn_id=result.txn_ref, code=None, amount=result.amount,
                             ok=result.success, raw=result.raw)

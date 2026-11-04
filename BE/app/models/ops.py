@@ -124,6 +124,8 @@ class Payment(Base):
         Enum(PaymentStatus, name="payment_status", create_type=False), default=PaymentStatus.PENDING)
     refund_of_id: Mapped[int | None] = mapped_column(ForeignKey("payments.id"))
     refund_reason: Mapped[str | None] = mapped_column(Text)
+    confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))     # Staff who confirmed a refund (UC-28)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     gateway_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())

@@ -8,8 +8,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import (BigInteger, Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, SmallInteger, String,
-                        Text)
+from sqlalchemy import (BigInteger, Boolean, Date, DateTime, Enum, FetchedValue, ForeignKey, Integer, Numeric, SmallInteger,
+                        String, Text)
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -116,6 +116,8 @@ class Order(Base):
     privacy_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     privacy_declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     eta: Mapped[date | None] = mapped_column(Date)
+    # BR-16: cumulative ETA postponement, maintained by the DB trigger on every UPDATE (never written by the app)
+    eta_postponed_days: Mapped[int] = mapped_column(Integer, server_default=FetchedValue(), server_onupdate=FetchedValue())
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Acceptance (FR-28, BR-13). awaiting_acceptance_at is set by the DB trigger when the order reaches AWAITING_ACCEPTANCE.
     awaiting_acceptance_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

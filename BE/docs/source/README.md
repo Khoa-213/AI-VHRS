@@ -59,8 +59,15 @@ Cho tới khi có, nguồn thực tế là trigger DB `fn_order_state_guard` và
 - Thanh toán thật VNPay/MoMo và hãng thật GHN/GHTK nằm cùng phase, mặc định vẫn MOCK (`PAYMENT_MODE`, `CARRIER_MODE`). Adapter thật **chưa chạy với bên thật** (tài liệu chính thức không truy cập được lúc viết).
 - Giao thất bại/hoàn hàng giữ đơn ở `DELIVERING`; callback hãng `DELIVERED` → `COMPLETED`.
 
+## Quyết định đã chốt 2026-11-04 (Phase 4d-1, huỷ sau cọc + hoàn tiền, người quyết định: chủ dự án theo đề xuất của AI)
+- Phí `S_type` bị trừ khi huỷ đã xếp lịch (BR-14) lấy từ `price_snapshot.pricing_config.setup_fee` của **báo giá `APPROVED`**; Staff có điều chỉnh tổng giá thì vẫn trừ đúng `S_type` gốc, không trừ quá số đã cọc.
+- `PREPARING` (đã lắp giấy, chưa viết) tính là "đã xếp lịch, chưa viết". `WRITING` (robot đang chạy) không huỷ được kể cả khi đủ BR-16; đơn viết lại đã từng viết tính là "đã bắt đầu viết".
+- Hoàn tiền: Staff **chuyển khoản tay** cho mọi cổng rồi xác nhận kèm mã tham chiếu (`Payment(type=REFUND)` `PENDING → SUCCESS`); chưa gọi API hoàn tiền của VNPay/MoMo. Tài khoản nhận tiền lưu trong `gateway_payload.refund_account`, khách thấy số đã che, Staff thấy đủ; bắt buộc khi khách tự huỷ đơn cọc qua payOS.
+- Xưởng (Staff được giao) được huỷ đơn đã cọc vì không làm được, **luôn hoàn 100%** số đã trả, vẫn theo mốc "chưa bắt đầu viết" của trigger.
+- ETA tự dời vì sự cố / viết lại **có tính** vào ngưỡng BR-16 (phần ETA ở Phase 4d-2). Ngưỡng đọc từ `system_settings.eta_cancel_threshold_days` (migration 0014), cả ở BE lẫn trigger.
+
 ## Điểm tài liệu còn **không nói** hoặc mơ hồ (cần hỏi chủ dự án khi gặp)
-1. Phí `S_type` bị trừ khi hoàn tiền (BR-14): lấy từ snapshot báo giá nào? (báo giá `APPROVED`).
+1. *(đã chốt 2026-11-04, xem mục trên)* phí `S_type` khi hoàn tiền lấy từ báo giá `APPROVED`.
 2. *(đã chốt 2026-10-18, xem bảng trên)* viết lại lần 2 · giao thất bại · xác nhận nhận hàng.
 5. Khách có huỷ được ở `AWAITING_ACCEPTANCE` không (SRS không nói; trigger không cho).
 6. Bảng phí ship dự phòng, cân nặng gói, mức giảm "viết lại" – không có số liệu.
