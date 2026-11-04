@@ -30,6 +30,7 @@ from app.repositories.ops import PaymentRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository
 from app.services import audit, gateway_checkout as checkout, notifications, quotations
+from app.services.eta import EtaService
 
 log = logging.getLogger("app")
 
@@ -78,9 +79,7 @@ class QuotationApprovalService:
             chosen["paper"]["id"], chosen["pen"]["id"], chosen["ink"]["id"])
         order.workshop_suggest_materials = False
         order.total_amount, order.deposit_pct, order.deposit_amount = total, pct, amount
-        order.complexity = q.complexity
-        if q.eta:
-            order.eta = q.eta
+        order.complexity = q.complexity                     # the order's ETA is set at deposit success (services/eta.py)
         q.status, q.chosen_option, q.customer_responded_at = QuotationStatus.APPROVED, chosen["option"], _now()
         set_actor(self.session, self.customer.id, f"Khách duyệt báo giá v{q.version}")
         order.order_status = OrderStatus.AWAITING_DEPOSIT
@@ -249,6 +248,8 @@ class PaymentService:
             set_actor(self.session, None, "Đặt cọc thành công")
             order.order_status, order.production_status = OrderStatus.CONFIRMED, ProductionStatus.PENDING_SCHEDULE
             self.session.flush()
+            approved = QuotationRepository(self.session).latest(order.id, (QuotationStatus.APPROVED,))
+            EtaService(self.session).set_initial(order, approved.eta if approved else None)        # BR-15
             audit.record(self.session, actor_id=None, action="PAYMENT_SUCCESS", entity_type="payment",
                          entity_id=payment.id, new={"order_id": order.id, "amount": str(payment.amount)})
             notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="DEPOSIT_PAID",

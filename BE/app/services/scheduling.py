@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.db.session import set_actor
+from app.domain import eta_rules as er
 from app.domain import scheduling_rules as sr
 from app.models.account import Account, AccountStatus, RoleCode
 from app.models.ops import Incident, JobEvent, JobStatus, ProductionJob, Robot, RobotStatus
@@ -24,6 +25,7 @@ from app.repositories.ops import EventRepository, IncidentRepository, JobReposit
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit, notifications
+from app.services.eta import EtaService
 
 SCHEDULABLE = (ProductionStatus.PENDING_SCHEDULE, ProductionStatus.FAILED, ProductionStatus.REWRITE_REQUIRED)
 DEFAULT_LEAD_MIN = 60            # earliest start = now + lead (time to prepare paper/pen)
@@ -55,7 +57,7 @@ class SchedulingService:
             raise AppError(503, "WORKING_HOURS_INVALID", "Cấu hình giờ làm việc (working_hours) không hợp lệ.") from exc
         raw = self.catalog.setting("schedule_params") or {}
         p = {"prep_min": sr.DEFAULT_PREP_MIN, "photo_min": sr.DEFAULT_PHOTO_MIN, "lead_min": DEFAULT_LEAD_MIN,
-             "eta_buffer_days": DEFAULT_ETA_BUFFER_DAYS}
+             "eta_buffer_days": DEFAULT_ETA_BUFFER_DAYS, "eta_delivery_days": er.DEFAULT_DELIVERY_DAYS}
         p.update({k: int(v) for k, v in raw.items() if k in p})
         return cal, p
 
@@ -64,7 +66,8 @@ class SchedulingService:
         return {"working_hours": {"days": sorted(cal.days), "start": cal.start.strftime("%H:%M"),
                                   "end": cal.end.strftime("%H:%M"),
                                   "utc_offset_min": int(cal.tz.utcoffset(None).total_seconds() // 60)},
-                "eta_buffer_days": p["eta_buffer_days"], "lead_min": p["lead_min"], "slot_step_min": sr.SLOT_STEP_MIN}
+                "eta_buffer_days": p["eta_buffer_days"], "eta_delivery_days": p["eta_delivery_days"], "lead_min": p["lead_min"],
+                "slot_step_min": sr.SLOT_STEP_MIN}
 
     # ------------------------------------------------------------------ queue
     def queue(self, page: int, page_size: int):
@@ -150,7 +153,7 @@ class SchedulingService:
             out.append({"robot_id": robot.id, "robot_code": robot.code, "is_simulated": robot.is_simulated,
                         "technician_id": tech.id, "technician_name": tech.full_name, "slot_start": start,
                         "slot_end": end, "finish_by": finish_by,
-                        "eta_risk": bool(order.eta and finish_by > order.eta)})
+                        "eta_risk": bool(order.eta and er.eta_from(finish_by, p["eta_delivery_days"]) > order.eta)})
         return {"order_id": order.id, "duration_min": minutes, "writing_sec_per_copy": sketch.estimated_writing_sec,
                 "quantity": order.quantity, "eta": order.eta, "stock_warnings": self._stock_warnings(order),
                 "suggestions": out}
@@ -199,6 +202,7 @@ class SchedulingService:
             raise AppError(409, "SLOT_CONFLICT", f"{tech.full_name} đã có job trong khung giờ này.",
                            {"resource": "technician"})
 
+        was_failed = order.production_status == ProductionStatus.FAILED
         prior = self.jobs.previous_outcomes(order.id)
         rewrite = order.production_status == ProductionStatus.REWRITE_REQUIRED or (
             _replacing.is_rewrite if _replacing else JobStatus.REWRITE_REQUIRED in prior)
@@ -226,9 +230,13 @@ class SchedulingService:
             raise
         set_actor(self.session, self.manager.id, note or "Xếp lịch sản xuất")
         order.production_status = ProductionStatus.SCHEDULED
-        if order.eta is None:
-            order.eta = (slot_end + timedelta(days=p["eta_buffer_days"])).astimezone(cal.tz).date()
         self.session.flush()
+        # BR-15/16: the planned finish + delivery moves the ETA later when needed (a postponement with its reason).
+        planned = er.eta_from(er.finish_date(slot_end, p["eta_buffer_days"], cal.tz), p["eta_delivery_days"])
+        why = ("Viết lại" if rewrite else "Sự cố, xếp lại lịch" if was_failed else
+               "Đổi lịch sản xuất" if _replacing else "Lịch sản xuất")
+        EtaService(self.session, self.manager, self.ip).apply(order, planned,
+                                                            f"{why}: dự kiến giao {planned.strftime('%d/%m/%Y')}")
         audit.record(self.session, actor_id=self.manager.id, action="JOB_SCHEDULE", entity_type="production_job",
                      entity_id=job.id, new={"order_id": order.id, "robot_id": robot.id, "technician_id": tech.id,
                                             "slot_start": slot_start.isoformat(), "slot_end": slot_end.isoformat(),

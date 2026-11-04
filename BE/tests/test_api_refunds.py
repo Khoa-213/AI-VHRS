@@ -62,6 +62,10 @@ def _set_prod(oid, job_id, status, **job_cols):
     _sql("update orders set production_status=cast(:s as production_status) where id=:o returning 1", s=status, o=oid)
 
 
+def _postponed(oid) -> int:
+    return _sql("select eta_postponed_days from orders where id=:o", o=oid)
+
+
 def _postpone(oid, days):
     """Give the order an ETA (no reason needed the first time), then move it `days` later with a reason (BR-16 trigger)."""
     _sql("update orders set eta = coalesce(eta, current_date + 5) where id=:o returning 1", o=oid)
@@ -137,7 +141,9 @@ def test_once_writing_started_only_br16_opens_the_cancel(client, cust, staff, wc
     _set_prod(oid, job, "PAUSED")
     r = _cancel(client, cust, oid)
     assert r.status_code == 409 and _err(r) == "CANCEL_AFTER_WRITING_STARTED"
-    _postpone(oid, 7)
+    already = _postponed(oid)                       # scheduling later than the deposit-time ETA already moved it (4d-2)
+    assert already < 7
+    _postpone(oid, 7 - already)
     assert _preview(client, cust, oid)["error_code"] == "CANCEL_AFTER_WRITING_STARTED"     # exactly 7 days: not yet
     _postpone(oid, 1)
     p = _preview(client, cust, oid)
@@ -160,7 +166,8 @@ def test_the_br16_threshold_comes_from_system_settings(client, cust, staff, wcat
     _set_prod(oid, job, "PREPARING")
     _set_prod(oid, job, "WRITING", simulation_passed="true", started_at="now()")
     _set_prod(oid, job, "PAUSED")
-    _postpone(oid, 4)
+    _postpone(oid, max(4 - _postponed(oid), 1))
+    assert 3 < _postponed(oid) <= 7                 # beyond the setting below, within the default 7: the setting decides
     old = _sql("select value::text from system_settings where key='eta_cancel_threshold_days'")
     try:
         _sql("update system_settings set value='3'::jsonb where key='eta_cancel_threshold_days' returning 1")

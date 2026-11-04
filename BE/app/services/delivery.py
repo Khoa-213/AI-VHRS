@@ -22,6 +22,7 @@ from app.integrations import carrier as cx
 from app.integrations.locations import normalize_address
 from app.domain import carrier_rules as cr
 from app.domain import delivery_rules as dr
+from app.domain import eta_rules as er
 from app.domain.scheduling_rules import NoSlotError, WorkCalendar
 from app.models.account import Account
 from app.models.ops import Payment, PaymentGateway, PaymentStatus, PaymentType
@@ -31,6 +32,7 @@ from app.repositories.ops import JobRepository, PaymentRepository
 from app.repositories.orders import OrderRepository
 from app.services import audit, gateway_checkout as checkout, notifications
 from app.services import parcel as parcel_svc
+from app.services.eta import EtaService
 from app.services.workshop_access import WorkshopAccess
 
 log = logging.getLogger("app")
@@ -192,6 +194,12 @@ class DeliveryService:
             stale.status = PaymentStatus.CANCELLED
             checkout.close(stale)
         self.session.flush()
+        if method == DeliveryMethod.DELIVERY and order.shipping_eta is not None:      # BR-15: the carrier's own estimate
+            tz = self._calendar().tz
+            proposed = er.carrier_eta(order.shipping_eta, _now().astimezone(tz).date(), tz)
+            EtaService(self.session, self.customer, self.ip).apply(
+                order, proposed, f"Hãng {order.shipping_carrier} ({order.shipping_service_code}) dự kiến giao "
+                                 f"{proposed.strftime('%d/%m/%Y')}")
         audit.record(self.session, actor_id=self.customer.id, action="DELIVERY_CHOOSE", entity_type="order",
                      entity_id=order.id, new={"method": method.value, "carrier": order.shipping_carrier,
                                               "service": order.shipping_service_code}, ip=self.ip)
