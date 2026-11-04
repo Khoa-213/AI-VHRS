@@ -265,6 +265,21 @@ def test_job_lifecycle_from_download_to_written(client, cust, staff, mgr, wcat, 
     assert client.get(f"{M}/jobs/999999999/events", headers=mgr).status_code == 404
 
 
+def test_a_paused_job_can_be_recalibrated_and_re_simulated_but_a_writing_one_cannot(client, cust, staff, mgr, wcat, robot, tech):
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    assert _err(_post(client, tech, jid, "calibration", CAL, status=409)) == "JOB_STATE_CONFLICT"          # WRITING: closed
+    _post(client, tech, jid, "events", {"event_type": "ESTOP"}, status=201)
+    assert _status(jid) == "PAUSED"
+    cal = _post(client, tech, jid, "calibration", CAL, status=201).json()                                  # new gripper / paper
+    assert _sql("select simulation_passed from production_jobs where id=:j", j=jid) is True               # DB rule keeps the flag...
+    assert _sql("select simulation_report->>'stale_after_recalibration' from production_jobs where id=:j", j=jid) == "true"
+    assert _err(_post(client, tech, jid, "simulation", {"passed": False, "errors": ["x"]}, status=409)) == "SIMULATION_NOT_PASSED"
+    _post(client, tech, jid, "simulation", {"passed": True}, status=200)                                   # ...until replaced
+    assert _sql("select simulation_report->>'stale_after_recalibration' from production_jobs where id=:j", j=jid) is None
+    assert _sql("select is_valid from calibrations where id=:c", c=cal["id"]) is True
+    assert _status(jid) == "PAUSED" and _prod(oid) == "PAUSED"
+
+
 # ---- stock, concurrency -----------------------------------------------------------------------------
 def test_finish_is_idempotent_under_concurrency_and_never_blocked_by_stale_stock(client, cust, staff, mgr, wcat, robot, tech):
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech, qty=3)
