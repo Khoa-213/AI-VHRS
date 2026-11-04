@@ -53,6 +53,41 @@ class PaymentRepository:
         return self.s.scalar(select(Payment).where(
             Payment.order_id == order_id, Payment.type == ptype, Payment.status == PaymentStatus.SUCCESS))
 
+    def paid_rows(self, order_id: int) -> list[Payment]:
+        """Money received for the order through its normal payments (deposit, final, shipping)."""
+        return list(self.s.scalars(select(Payment).where(
+            Payment.order_id == order_id, Payment.type != PaymentType.REFUND, Payment.status == PaymentStatus.SUCCESS)
+            .order_by(Payment.id)))
+
+    def refunds(self, *, status: PaymentStatus | None = None, order_id: int | None = None,
+                staff_id: int | None = None) -> list[Payment]:
+        from app.models.order import Order
+        stmt = select(Payment).where(Payment.type == PaymentType.REFUND)
+        if status is not None:
+            stmt = stmt.where(Payment.status == status)
+        if order_id is not None:
+            stmt = stmt.where(Payment.order_id == order_id)
+        if staff_id is not None:
+            stmt = stmt.join(Order, Order.id == Payment.order_id).where(Order.assigned_staff_id == staff_id)
+        return list(self.s.scalars(stmt.order_by(Payment.created_at, Payment.id)))
+
+    def live_refund(self, refund_of_id: int, kind: str) -> Payment | None:
+        return self.s.scalar(select(Payment).where(
+            Payment.type == PaymentType.REFUND, Payment.refund_of_id == refund_of_id,
+            Payment.gateway_payload["refund_kind"].astext == kind,
+            Payment.status.in_((PaymentStatus.PENDING, PaymentStatus.SUCCESS))))
+
+    def flagged_orphans(self, *, order_id: int | None = None, staff_id: int | None = None) -> list[Payment]:
+        """Rows flagged `needs_refund` (money that reached us for a payment that no longer counted)."""
+        from app.models.order import Order
+        stmt = select(Payment).where(Payment.type != PaymentType.REFUND,
+                                     Payment.gateway_payload["needs_refund"].astext == "true")
+        if order_id is not None:
+            stmt = stmt.where(Payment.order_id == order_id)
+        if staff_id is not None:
+            stmt = stmt.join(Order, Order.id == Payment.order_id).where(Order.assigned_staff_id == staff_id)
+        return list(self.s.scalars(stmt.order_by(Payment.id)))
+
 
 class RobotRepository:
     def __init__(self, session: Session):

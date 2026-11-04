@@ -1,12 +1,13 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0013 (alembic head), generated 2026-10-25 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0014 (alembic head), generated 2026-10-25 by scripts/build_database_script.py, 0014 patched in 2026-11-04 (see
+-- migrations/versions/0014_refunds.py; rebuild with the script when a local Postgres is at hand). DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0013);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0013;
+--      baseline schema and every migration up to 0014);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0014;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -608,7 +609,7 @@ BEGIN
 
      AND OLD.production_status IN ('WRITING','PAUSED','WRITTEN','PHOTO_UPLOADED','REWRITE_REQUIRED','FAILED')
 
-     AND NEW.eta_postponed_days <= 7 THEN
+     AND NEW.eta_postponed_days <= COALESCE((SELECT (value #>> '{}')::int FROM system_settings WHERE key = 'eta_cancel_threshold_days'), 7) THEN
 
     RAISE EXCEPTION 'Không thể huỷ đơn đã bắt đầu viết (BR-14)' USING ERRCODE = 'P0409';
 
@@ -2781,6 +2782,12 @@ CREATE UNIQUE INDEX ux_accounts_verified_phone ON public.accounts USING btree (p
 CREATE UNIQUE INDEX ux_jobs_one_active_per_order ON public.production_jobs USING btree (order_id) WHERE (status = ANY (ARRAY['SCHEDULED'::public.job_status, 'PREPARING'::public.job_status, 'WRITING'::public.job_status, 'PAUSED'::public.job_status, 'WRITTEN'::public.job_status]));
 
 --
+-- Name: ux_payments_active_refund; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_payments_active_refund ON public.payments USING btree (refund_of_id, ((gateway_payload ->> 'refund_kind'::text))) WHERE ((type = 'REFUND'::public.payment_type) AND (status = ANY (ARRAY['PENDING'::public.payment_status, 'SUCCESS'::public.payment_status])));
+
+--
 -- Name: ux_payments_gateway_txn; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3836,7 +3843,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0013');
+INSERT INTO alembic_version (version_num) VALUES ('0014');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

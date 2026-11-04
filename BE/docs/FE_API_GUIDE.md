@@ -151,6 +151,7 @@ stateDiagram-v2
   AWAITING_DEPOSIT --> CONFIRMED: webhook cọc SUCCESS
   AWAITING_DEPOSIT --> CANCELLED: customer cancel
   CONFIRMED --> AWAITING_ACCEPTANCE: technician nộp ảnh (≥ 2 ảnh QC đạt)
+  CONFIRMED --> CANCELLED: customer cancel / Staff huỷ (BR-14/16, mở yêu cầu hoàn tiền, mục 7h)
   AWAITING_ACCEPTANCE --> AWAITING_FINAL_PAYMENT: customer accept / tự nghiệm thu sau 7 ngày
   AWAITING_ACCEPTANCE --> CONFIRMED: customer rewrite (1 lần miễn phí), production = REWRITE_REQUIRED
   AWAITING_FINAL_PAYMENT --> READY_TO_DELIVER: webhook thanh toán cuối thành công (hoặc không còn gì phải trả)
@@ -173,7 +174,7 @@ stateDiagram-v2
 | `AWAITING_PRIVACY` | **Phải** đọc & đồng ý chính sách riêng tư mới xem được báo giá | `GET /privacy-policy`, `POST /orders/{id}/privacy` |
 | `QUOTED` | Xem phác thảo + báo giá (hiệu lực `valid_until`) | `approve`, `request-changes`, `cancel` |
 | `AWAITING_DEPOSIT` | Chờ cọc (`deposit_amount`) | `payments/deposit`, mock-checkout, `cancel` |
-| `CONFIRMED` | Đã cọc, xưởng sắp xếp sản xuất (`production_status` cho biết bước; `REWRITE_REQUIRED` = đang viết lại) | chat |
+| `CONFIRMED` | Đã cọc, xưởng sắp xếp sản xuất (`production_status` cho biết bước; `REWRITE_REQUIRED` = đang viết lại) | chat; `GET cancel-preview` rồi `cancel` nếu `allowed` (mục 7h) |
 | `AWAITING_ACCEPTANCE` | Sản phẩm đã viết xong, có ảnh thật để nghiệm thu (`awaiting_acceptance_at`) | `GET /orders/{id}/product-photos`, `accept`, `rewrite` (xem mục 7c). **Không huỷ được ở bước này** |
 | `AWAITING_FINAL_PAYMENT` | Đã nghiệm thu (`accepted_product_at`); chờ thanh toán phần còn lại | `GET delivery-quote`, `PUT delivery`, `POST payments/final`, mock-checkout (mục 7d) |
 | `READY_TO_DELIVER` | Đã thanh toán đủ; chờ nhận tại xưởng (`pickup_slot_*`) hoặc chờ hãng vận chuyển lấy hàng (`shipping_carrier`, `shipping_service_code`, `shipping_eta`) | chỉ xem. Nhận tại xưởng: Staff bàn giao → `COMPLETED`. Giao hàng: Staff tạo vận đơn, khách theo dõi bằng `GET /orders/{id}/shipment` (mục 7e) |
@@ -628,6 +629,39 @@ READY_TO_DELIVER ──Staff tạo vận đơn (CREATED)──▶ hãng lấy h�
 - Lỗi riêng: `409 SHIPMENT_NOT_EXPECTED`, `409 SHIPPING_SERVICE_NOT_CHOSEN`, `409 SHIPMENT_ALREADY_EXISTS` (`details.shipment_id`), `409 SHIPMENT_NOT_CANCELLABLE`, `409 CARRIER_CANCEL_REFUSED`, `409 NOT_A_MOCK_SHIPMENT`, `404 SHIPMENT_NOT_FOUND`, `502 CARRIER_REJECTED` / `502 CARRIER_UNAVAILABLE` (hãng từ chối/lỗi: chưa tạo vận đơn), `503 CARRIER_NOT_CONFIGURED`.
 - Hãng mặc định là **MOCK** (`mode:"MOCK"`, mã vận đơn dạng `MOCK-GHN-...`, nhãn PDF có chữ MÔ PHỎNG). Khi máy chủ bật hãng thật, `mode` là `SANDBOX`/`LIVE` và hợp đồng API giữ nguyên.
 
+## 7h. Huỷ đơn sau cọc và hoàn tiền – Phase 4d-1 (FR-19, FR-20, UC-21, UC-28; BR-14, BR-16)
+
+**Luật** (BE tính, FE chỉ hiển thị): đơn `CONFIRMED`
+
+| Lúc huỷ (`production_status`) | Được huỷ? | Hoàn | `rule` |
+|---|---|---|---|
+| `PENDING_SCHEDULE` (chưa xếp lịch) | có | 100% tiền cọc | `BR14_BEFORE_SCHEDULE` |
+| `SCHEDULED`, `PREPARING` (đã xếp lịch, chưa viết) | có | cọc − phí setup `S_type` của báo giá đã duyệt (không âm) | `BR14_AFTER_SCHEDULE` |
+| `WRITING` | **không** (robot đang chạy) | – | lỗi `JOB_RUNNING` |
+| đã bắt đầu viết (`PAUSED`, `WRITTEN`, `PHOTO_UPLOADED`, `REWRITE_REQUIRED`, `FAILED`, hoặc đơn viết lại đã từng viết) | chỉ khi ETA dời lũy kế **> `threshold_days`** (mặc định 7) | 100% số đã trả | `BR16_ETA_POSTPONED`; nếu chưa đủ: `CANCEL_AFTER_WRITING_STARTED` |
+| Xưởng (Staff) huỷ vì không làm được | như trên về thời điểm | 100% số đã trả | `WORKSHOP_CANCEL` |
+
+Từ `AWAITING_ACCEPTANCE` trở đi không huỷ được. Đơn chưa cọc vẫn huỷ như cũ (`rule = NO_PAYMENT`).
+
+**Khách**
+
+1. `GET /orders/{id}/cancel-preview` → `{allowed, rule, error_code, message, paid, refund_amount, deduction, setup_fee, eta_postponed_days, threshold_days, account_required}`. Hiện số tiền hoàn và khoản bị giữ **trước** khi cho bấm huỷ; `allowed=false` thì ẩn nút và hiện `message`.
+2. `POST /orders/{id}/cancel {reason, refund_account?}`. `account_required = true` (cọc qua payOS) thì **bắt buộc** `refund_account = {bank_name, account_number (6–20 chữ số), account_name}`, thiếu → `422 REFUND_ACCOUNT_REQUIRED`. Thành công: đơn `CANCELLED`, `production_status = NOT_STARTED`, job của đơn bị huỷ, và (nếu `refund_amount > 0`) có một dòng `type = "REFUND"`, `status = "PENDING"` trong `GET /orders/{id}/payments`.
+3. Dòng REFUND có thêm `refund = {kind: "CANCELLATION"|"ORPHAN", refund_of_id, reason, rule, deduction, account (số tài khoản che còn 4 số cuối), reference, confirmed_at}`. `PENDING` = xưởng chưa chuyển; `SUCCESS` = đã chuyển (`reference` là mã giao dịch ngân hàng).
+4. Chưa nhập tài khoản / muốn đổi: `PUT /orders/{id}/refunds/{refund_id}/account {bank_name, account_number, account_name}` (chỉ khi `PENDING`, sau đó `409 REFUND_NOT_PENDING`).
+
+**Staff / Manager** (Manager chỉ đọc)
+
+| Việc | Endpoint |
+|---|---|
+| Xem trước khi xưởng huỷ | `GET /workshop/orders/{id}/cancel-preview` (luôn `WORKSHOP_CANCEL` khi được phép) |
+| Xưởng huỷ đơn đã cọc | `POST /workshop/orders/{id}/cancel {reason}` (Staff được giao đơn) → `OrderOut` |
+| Danh sách cần hoàn tiền | `GET /workshop/refunds?status=PENDING\|SUCCESS` → `{refunds: [...], orphans: [...]}`. Staff: đơn của mình; Manager: tất cả. `refunds[].refund.account` hiện **đầy đủ** số tài khoản để chuyển |
+| Tiền về muộn / sai số tiền (`orphans`, cờ `needs_refund`) | `POST /workshop/payments/{payment_id}/refund {reason, amount?, refund_account?}` → `201`; `amount` mặc định = `received_amount`, không được lớn hơn. Mỗi khoản chỉ một yêu cầu (`409 REFUND_EXISTS`) |
+| Đã chuyển tiền | `POST /workshop/refunds/{id}/confirm {reference, note?, refund_account?}` → `SUCCESS`, ghi người xác nhận. Lần hai → `409 REFUND_NOT_PENDING` |
+
+Hoàn tiền **chưa** gọi API của cổng (payOS không có API hoàn tiền; VNPay cần whitelist IP; MoMo chưa thử): Staff chuyển khoản tay (hoặc hoàn trong trang quản trị của cổng) rồi bấm xác nhận. Thông báo (`ORDER_CANCELLED`, `REFUND_REQUESTED`, `REFUND_SENT`, `JOB_CANCELLED`) mới ghi log, gửi thật ở Phase 4e: FE poll `GET /orders/{id}/payments`.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -643,7 +677,10 @@ READY_TO_DELIVER ──Staff tạo vận đơn (CREATED)──▶ hãng lấy h�
 | `INVALID_DEPOSIT` | 422 | % cọc ngoài khoảng | hiện `details.min_deposit_pct` |
 | `OPTION_REQUIRED`, `INVALID_OPTION` | 422 | Chưa chọn phương án | bắt chọn |
 | `DEPOSIT_NOT_EXPECTED`, `DEPOSIT_ALREADY_PAID` | 409 | Sai thời điểm đặt cọc | tải lại đơn |
-| `ORDER_CANCEL_UNSUPPORTED` | 409 | Không huỷ online được (kể cả khi cọc vừa được xác nhận đúng lúc khách bấm huỷ: hãy tải lại đơn, nó đang `CONFIRMED`) | "Liên hệ xưởng" |
+| `ORDER_CANCEL_UNSUPPORTED` | 409 | Không huỷ online được (kể cả khi cọc vừa được xác nhận đúng lúc khách bấm huỷ: hãy tải lại đơn, nó đang `CONFIRMED`, rồi gọi `cancel-preview` để khách xem số tiền hoàn) | "Liên hệ xưởng" / tải lại |
+| `JOB_RUNNING`, `CANCEL_AFTER_WRITING_STARTED` | 409 | Robot đang viết / đơn đã bắt đầu viết và ETA chưa dời quá ngưỡng (BR-14/16, mục 7h) | ẩn nút huỷ, hiện `message` |
+| `REFUND_ACCOUNT_REQUIRED` | 422 | Cọc qua payOS: phải nhập tài khoản nhận hoàn tiền | hiện form `refund_account` |
+| `REFUND_EXISTS`, `REFUND_NOT_PENDING`, `NOT_REFUNDABLE`, `INVALID_REFUND_AMOUNT` | 409/422 | Hoàn tiền sai bước / trùng / sai số tiền (mục 7h) | tải lại danh sách, hiện `message` |
 | `UNSUPPORTED_CHARS`, `TEXT_TOO_LONG`, `FONT_TOO_LARGE`, `CANVAS_OUT_OF_PAPER` | 422 | Nội dung không sinh được nét | nêu lỗi, cho sửa |
 | `SLOT_CONFLICT`, `ROBOT_UNAVAILABLE`, `ROBOT_NOT_SUITABLE` | 409/422 | Lịch sản xuất | đổi robot/giờ |
 | `JOB_STATE_CONFLICT`, `JOB_NOT_ACTIVE`, `ORDER_NOT_ACTIVE` | 409 | Job/đơn không ở bước đó (xem mục 7b) | tải lại job, vô hiệu nút |
@@ -683,6 +720,7 @@ Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thậ
 
 ## 10. Chưa có / sẽ có (đừng chờ ở Phase này)
 
+- Huỷ sau cọc + hoàn tiền: **đã có** (mục 7h, 2026-11-04). ETA tự tính và dời ETA có lý do (MSG11): Phase 4d-2, **chưa có**.
 - Technical Staff: **đã có** xem job, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố (mục 7b), ảnh sản phẩm + QC và nộp ảnh (mục 7c). Ảnh chồng phác thảo do client tự làm.
 - Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4); **chưa có** đẩy tức thời (SSE/WebSocket).
 - Khách: **đã có** xem ảnh, nghiệm thu, viết lại 1 lần, tự nghiệm thu sau 7 ngày (mục 7c). Thanh toán cuối + nhận tại xưởng **đã có** (mục 7d). Chọn dịch vụ vận chuyển, vận đơn và giao hàng qua hãng **đã có** (mục 7e). **Chưa có**: huỷ sau cọc + hoàn tiền (kể cả khoản `needs_refund`), dời ETA, **thông báo (in-app + email)** (Phase 4d/4e).

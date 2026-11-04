@@ -238,13 +238,19 @@ class OrderService:
                 warnings.append("INK_RESET")
         order.paper_type_id, order.pen_type_id, order.ink_color_id = paper_id, pen_id, ink_id
 
-    def cancel(self, order_id: int, reason: str) -> Order:
-        """UC-21 for the part that needs no refund: SUBMITTED / NEED_INFO, and QUOTED / AWAITING_DEPOSIT where the
-        customer declines the quotation or abandons the deposit (nothing paid yet). Cancelling after the deposit
-        involves the refund policy (BR-14/16) and is handled in the production phase."""
+    def cancel(self, order_id: int, reason: str, refund_account: dict[str, str] | None = None) -> Order:
+        """UC-21. Nothing paid yet (SUBMITTED / NEED_INFO, and QUOTED / AWAITING_DEPOSIT where the customer declines the
+        quotation or abandons the deposit): cancelled here. After the deposit (CONFIRMED) the refund policy applies
+        (BR-14/16): services/refunds.py. A deposit confirmed while an unpaid cancel waits for the lock still answers
+        ORDER_CANCEL_UNSUPPORTED: the customer saw an unpaid order and must look at the refund terms first."""
         order = self._get(order_id)
         if order.order_status == OrderStatus.DRAFT:
             raise AppError(409, "ORDER_IS_DRAFT", "Bản nháp không cần hủy, hãy xóa bản nháp.")
+        if order.order_status == OrderStatus.CONFIRMED:
+            from app.domain.refund_rules import Initiator
+            from app.services.refunds import CancellationService
+            return CancellationService(self.session, self.customer, Initiator.CUSTOMER, self.ip).cancel(
+                order.id, reason, refund_account)[0]
         if order.order_status not in CANCELLABLE_ONLINE:
             raise AppError(409, "ORDER_CANCEL_UNSUPPORTED", "Đơn ở trạng thái này chưa thể hủy trực tuyến.")
         order = self.orders.get(order.id, lock=True)

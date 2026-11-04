@@ -316,10 +316,11 @@ def test_money_arriving_for_a_closed_order_is_kept_and_flagged_for_refund(client
     assert _sql("select count(*) from audit_logs where action='PAYMENT_ORPHAN' and entity_id=:p", p=p["id"]) == 1
 
 
-def test_cancelling_after_the_deposit_is_not_available_online(client, cust, staff, wcat):
+def test_cancelling_after_the_deposit_opens_a_refund(client, cust, staff, wcat):
     oid, q, p = _paid(client, cust, staff[0], wcat)
     r = client.post(f"{API}/orders/{oid}/cancel", headers=cust, json={"reason": "x"})
-    assert r.status_code == 409 and _err(r) == "ORDER_CANCEL_UNSUPPORTED"            # refund policy comes with Phase 4
+    assert r.status_code == 200 and r.json()["order_status"] == "CANCELLED", r.text   # Phase 4d: tests/test_api_refunds.py
+    assert _sql("select count(*) from payments where order_id=:o and type='REFUND' and status='PENDING'", o=oid) == 1
 
 
 # ---- workshop read access ----------------------------------------------------------------------------

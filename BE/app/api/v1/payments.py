@@ -11,24 +11,36 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import GatewayInfo, MockCheckoutIn, PaymentOut, StartDepositIn, VnpayIpnAck, WebhookResult
+from app.api.ops_schemas import (GatewayInfo, MockCheckoutIn, PaymentOut, RefundAccount, RefundInfo, StartDepositIn, VnpayIpnAck,
+                                 WebhookResult)
 from app.api.schemas import ErrorOut
 from app.core.errors import AppError
 from app.core.ratelimit import rate_limit
+from app.domain.refund_rules import mask_account
 from app.integrations.payment_gateway import SIGNATURE_HEADER, get_gateway
 from app.models.account import Account, RoleCode
-from app.models.ops import Payment, PaymentGateway, PaymentStatus
+from app.models.ops import Payment, PaymentGateway, PaymentStatus, PaymentType
 from app.services.payments import PaymentService
 
 router = APIRouter(tags=["Payments"])
 CustomerDep = Annotated[Account, Depends(require_roles(RoleCode.CUSTOMER.value))]
 
 
-def payment_out(p: Payment) -> PaymentOut:
+def payment_out(p: Payment, *, masked: bool = True) -> PaymentOut:
+    """`masked`: the customer sees only the last digits of the refund account; Staff (refund list) sees all of it."""
     payload = p.gateway_payload or {}
     out = PaymentOut.model_validate(p)
     out.mode = payload.get("mode", get_gateway().mode)
     out.needs_refund = bool(payload.get("needs_refund"))
+    if p.type == PaymentType.REFUND and p.refund_of_id is not None:
+        account = payload.get("refund_account")
+        if account and masked:
+            account = {**account, "account_number": mask_account(account.get("account_number"))}
+        out.refund = RefundInfo(kind=payload.get("refund_kind", "CANCELLATION"), refund_of_id=p.refund_of_id,
+                                reason=p.refund_reason, rule=payload.get("rule"), deduction=int(payload.get("deduction") or 0),
+                                account=RefundAccount.model_construct(**account) if account else None,
+                                reference=payload.get("reference"), confirmed_at=p.confirmed_at)
+        return out
     if p.status == PaymentStatus.PENDING:
         if out.mode == "MOCK":
             out.checkout_path = get_gateway().checkout_path(p.id)

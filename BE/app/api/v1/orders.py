@@ -137,9 +137,11 @@ def provide_info(order_id: int, body: SubmitIn, svc: Svc) -> OrderDetailOut:
 
 
 @router.post("/{order_id}/cancel", response_model=OrderDetailOut,
-             summary="UC-21 Hủy đơn khi chưa cọc: SUBMITTED, NEED_INFO, QUOTED, AWAITING_DEPOSIT (sau cọc: Phase 4)")
+             summary="UC-21 · BR-14/16 Hủy đơn: chưa cọc (SUBMITTED, NEED_INFO, QUOTED, AWAITING_DEPOSIT) hoặc đã cọc (CONFIRMED, "
+                     "mở yêu cầu hoàn tiền theo GET /orders/{id}/cancel-preview)")
 def cancel(order_id: int, body: CancelIn, svc: Svc) -> OrderDetailOut:
-    return _detail(svc, svc.cancel(order_id, body.reason))
+    account = body.refund_account.model_dump() if body.refund_account else None
+    return _detail(svc, svc.cancel(order_id, body.reason, account))
 
 
 @router.get("/{order_id}/inputs/{input_id}/file", response_model=FileUrlOut,

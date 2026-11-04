@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.order import DeliveryMethod, OrderInputKind, OrderStatus, OrderType, ProductionStatus
+from app.api.ops_schemas import RefundAccount
 
 
 class _ORM(BaseModel):
@@ -207,6 +208,9 @@ class SubmitIn(BaseModel):
 
 class CancelIn(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
+    refund_account: RefundAccount | None = Field(
+        default=None, description="Only when cancelling after the deposit: where to send the refund. Required when "
+                                  "GET /orders/{id}/cancel-preview says account_required (deposit paid via payOS).")
 
 
 class FileUrlOut(BaseModel):
