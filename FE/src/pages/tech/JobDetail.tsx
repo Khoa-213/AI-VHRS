@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import Shell from '../../components/ws/Shell'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT, useTn } from '../../i18n'
@@ -14,13 +15,30 @@ export default function JobDetail({ id }: { id: number }) {
   const tn = useTn()
   const locale = useLocale()
   const user = useUser()
-  const q = useAsync(() => getTechJob(id), [id, user?.id], 30000)
+  // While the robot writes, progress moves every few seconds; otherwise a slow refresh is enough.
+  const q = useAsync(() => getTechJob(id), [id, user?.id], (j) => (j && ['WRITING', 'PAUSED'].includes(j.status) ? 5000 : 30000))
   const job = q.data
+  const progressRef = useRef<HTMLElement>(null)
+  const [pinned, setPinned] = useState(false)
+  // A job that has not started writing has no progress yet: it reads as 0%.
+  const hasJob = !!job
+  // Once the progress panel has scrolled under the sticky header, the same bar is shown along the header's bottom.
+  useEffect(() => {
+    const el = progressRef.current
+    if (!el || !hasJob) return
+    const header = document.querySelector<HTMLElement>('.ws .hd')?.offsetHeight ?? 0
+    const io = new IntersectionObserver(([e]) => setPinned(!e.isIntersecting && header + 1 > e.boundingClientRect.top), { rootMargin: `-${header}px 0px 0px 0px` })
+    io.observe(el)
+    return () => { io.disconnect(); setPinned(false) }
+  }, [hasJob])
+  const pct = Math.max(0, Math.min(100, job?.progress ?? 0))
   const stamp = (value: string | null) => value ? new Date(value).toLocaleString(locale, { timeZone: 'Asia/Ho_Chi_Minh' }) : t('td.api.unavailable')
   const outcome = (value: boolean | null) => t(value === null ? 'td.api.notRecorded' : value ? 'td.api.passed' : 'td.api.notPassed')
   return <Shell area="tech" active={job?.status === 'WRITTEN' ? 'qc' : 'preview'}
     title={job ? t('td.api.detailTitle', { code: job.orderCode || job.orderId }) : t('td.api.view')}
     lede={job ? t('td.api.jobId', { id: job.id }) : undefined}
+    pinned={pinned && <div className="tech-pinned-progress" role="progressbar" aria-label={t('td.api.progress')} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+      <div className="bar"><i style={{ width: `${pct}%` }} /></div><span className="mono">{pct}%</span></div>}
     tools={<div className="wk-actions"><Link to={job?.status === 'WRITTEN' ? '/tech/qc' : '/tech/preview'} className="sd-btn">{t('td.api.back')}</Link>
       <button type="button" className="sd-btn" onClick={() => void q.reload()}>{t('td.api.reload')}</button></div>}>
     <JobFeedback loading={q.loading && !job} error={q.error} retry={q.reload} />
@@ -49,11 +67,11 @@ export default function JobDetail({ id }: { id: number }) {
           {job.note && <p className="wk-text">{job.note}</p>}
         </section>
       </div>
-      <section className="panel" aria-labelledby="tech-job-progress">
+      <section ref={progressRef} className="panel" aria-labelledby="tech-job-progress">
         <div className="ph"><h2 id="tech-job-progress">{t('td.api.progress')}</h2></div>
-        {job.progress !== null && <div role="progressbar" aria-label={t('td.api.progress')} aria-valuenow={job.progress} aria-valuemin={0} aria-valuemax={100}>
-          <div className="bar"><i style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} /></div><span className="sub">{job.progress}%</span>
-        </div>}
+        <div role="progressbar" aria-label={t('td.api.progress')} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <div className="bar"><i style={{ width: `${pct}%` }} /></div><span className="sub">{pct}%</span>
+        </div>
         <dl className="wk-rows">
           <div><dt>{t('td.api.downloaded')}</dt><dd>{stamp(job.downloadedAt)}</dd></div>
           <div><dt>{t('td.api.calibration')}</dt><dd>{outcome(job.calibration?.is_valid ?? null)}</dd></div>

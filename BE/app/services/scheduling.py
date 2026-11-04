@@ -59,6 +59,13 @@ class SchedulingService:
         p.update({k: int(v) for k, v in raw.items() if k in p})
         return cal, p
 
+    def config(self) -> dict[str, Any]:
+        cal, p = self._params()
+        return {"working_hours": {"days": sorted(cal.days), "start": cal.start.strftime("%H:%M"),
+                                  "end": cal.end.strftime("%H:%M"),
+                                  "utc_offset_min": int(cal.tz.utcoffset(None).total_seconds() // 60)},
+                "eta_buffer_days": p["eta_buffer_days"], "lead_min": p["lead_min"], "slot_step_min": sr.SLOT_STEP_MIN}
+
     # ------------------------------------------------------------------ queue
     def queue(self, page: int, page_size: int):
         return self.orders.production_queue(production_statuses=list(SCHEDULABLE), offset=(page - 1) * page_size,

@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import Page from '../../components/layout/Page'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import SiteFooter from '../../components/layout/SiteFooter'
 import OrderPreview from '../../components/ui/OrderPreview'
 import { useAsync } from '../../hooks/useAsync'
 import { useDebounced } from '../../hooks/useDebounced'
+import { useStyledPreview } from '../../hooks/useStyledPreview'
 import { useSaveQueue } from '../../hooks/useSaveQueue'
 import { useT } from '../../i18n'
 import { Link, navigate, orderPath } from '../../router/router'
 import {
   ACCEPTED_UPLOADS, MAX_UPLOAD_MB, createOrder, deleteInput, editPhoto, estimate, getInks, getOrder, getPapers, getPens, getTemplates,
-  incompleteFields, orderErrorKey, patchOrder, provideInfo, putText, submitOrder, templatePreviewUrl, uploadOriginal,
+  incompleteFields, orderErrorKey, patchOrder, provideInfo, putText, submitOrder, uploadOriginal,
   type Alignment, type CropBox, type Estimate, type Order, type OrderPatch, type OrderType, errText } from '../../services/orders'
 import { useUser } from '../../store/store'
 import type { InputMode } from '../../types'
@@ -24,6 +25,7 @@ import '../landing/landing.css'
 import '../landing/landing-redesign.css'
 import './create-order.css'
 import './order-entry.css'
+import './co-home.css'
 
 const MODES: InputMode[] = ['text', 'upload', 'draw']
 const STEPS = ['co.step.0', 'co.step.1', 'co.step.2']
@@ -35,6 +37,17 @@ const typeOf = (m: InputMode): OrderType => (m === 'upload' ? 'OT1_COPY_RESTORE'
 function initialMode(): InputMode | null {
   const m = /mode=(text|upload|draw)/.exec(window.location.hash)
   return (m?.[1] as InputMode | undefined) ?? null
+}
+
+/** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
+function Frame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
+  return (
+    <div className="lp-root co-root">
+      <Header />
+      <main className={`co-frame${narrow ? ' co-frame--narrow' : ''}`} data-screen-label="Create Order">{children}</main>
+      <SiteFooter framed />
+    </div>
+  )
 }
 
 /** The order is a draft on the server from the first thing the customer enters; every change is saved there. */
@@ -357,6 +370,10 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   // ---------- estimate ----------
 
   const dTextForEst = useDebounced(text, 900)
+  // The preview is only a picture, so it follows the typing more closely than the autosave does.
+  const dPreview = useDebounced(text, 300)
+  const sizeMm = Number(dSize)
+  const previewSrc = useStyledPreview(mode === 'text' ? templateId : null, dPreview, alignment, sizeMm > 0 ? sizeMm : null)
   useEffect(() => {
     if (loading) return
     let live = true
@@ -388,7 +405,9 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   }
   const ok = valid(step) && !busy && uploading === 0
   const hints = [
-    t(mode === 'text' ? 'co.hint0.text' : mode === 'upload' ? 'co.hint0.upload' : 'co.hint0.draw'),
+    t(mode === 'text'
+      ? (!text.trim() ? 'co.hint0.textEmpty' : 'co.hint0.textStyle')
+      : mode === 'upload' ? 'co.hint0.upload' : 'co.hint0.draw'),
     t(!materialsOk ? (!paperId ? 'co.hint1.paper' : !penId ? 'co.hint1.pen' : 'co.hint1.ink') : 'co.hint1.qty'),
   ]
 
@@ -454,30 +473,30 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   }
   if (user.role !== 'customer') {
     return (
-      <Page label="Create Order" width={720}>
-        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
-          <h1 className="vh-h1">{t('co.customerOnlyTitle')}</h1>
-          <p className="vh-lede">{t('co.customerOnlyBody')}</p>
+      <Frame narrow>
+        <div className="co-card co-card--msg">
+          <h1 className="co-h1">{t('co.customerOnlyTitle')}</h1>
+          <p className="co-lede">{t('co.customerOnlyBody')}</p>
         </div>
-      </Page>
+      </Frame>
     )
   }
   if (loading) {
     return (
-      <Page label="Create Order" width={720}>
-        <p className="vh-lede" role="status">{t('co.loading')}</p>
-      </Page>
+      <Frame narrow>
+        <p className="co-lede" role="status">{t('co.loading')}</p>
+      </Frame>
     )
   }
   if (given !== null && !order) {
     return (
-      <Page label="Create Order" width={720}>
-        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
-          <h1 className="vh-h1">{t('np.title')}</h1>
+      <Frame narrow>
+        <div className="co-card co-card--msg">
+          <h1 className="co-h1">{t('np.title')}</h1>
           {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
-          <Link to="/account/drafts" className="vh-btn vh-btn--primary">{t('co.toDrafts')}</Link>
+          <Link to="/account/drafts" className="co-btn co-btn--solid">{t('co.toDrafts')}</Link>
         </div>
-      </Page>
+      </Frame>
     )
   }
 
@@ -487,7 +506,11 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const pen = pens.data?.find((p) => p.id === penId)
   const ink = inks.data?.find((i) => i.id === inkId)
   const template = templates.data?.find((x) => x.id === templateId)
-  const materialsLabel = suggest ? t('co.sum.suggest') : [paper?.name, pen?.name, ink?.name].filter(Boolean).join(', ') || t('co.sum.notChosen')
+  const picked = [paper?.name, pen?.name, ink?.name].filter(Boolean).join(', ')
+  const leftToWorkshop = [!paperId && t('co.paper'), !penId && t('co.pen'), !inkId && t('co.ink')].filter(Boolean).join(', ')
+  const materialsLabel = suggest
+    ? (!leftToWorkshop ? picked : picked ? t('co.sum.suggestRest', { picked }) : t('co.sum.suggest'))
+    : picked || t('co.sum.notChosen')
   const range = est ? (est.priceMin === est.priceMax ? fmt(est.priceMax) : `${fmt(est.priceMin)} – ${fmt(est.priceMax)}`) : '–'
   const saveLabel = pending > 0 || uploading > 0 ? t('co.saving') : order ? t('co.saved') : ''
   const rewrite = order?.status === 'NEED_INFO'
@@ -506,15 +529,23 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   ]
 
   return (
-    <Page label="Create Order">
+    <Frame>
       <div className="co">
-        <div className="vh-head-text">
-          <span className="vh-eyebrow">{order ? `${t('co.eyebrow')} · ${order.code}` : t('co.eyebrow')}</span>
-          <h1 className="vh-h1 vh-h1--lg">{t('co.h1')}</h1>
-        </div>
+        <header className="co-head">
+          <span className="co-eyebrow">{order ? `${t('co.eyebrow')} · ${order.code}` : t('co.eyebrow')}</span>
+          <h1 className="co-h1">{t('co.h1')}</h1>
+          <div className="co-head-row">
+            <span className="co-progress">{t('co.progress', { n: step + 1, total: STEPS.length })}</span>
+            {saveLabel && (
+              <span className={`co-save-state${pending > 0 || uploading > 0 ? ' busy' : ''}`} role="status">
+                <i aria-hidden="true" />{saveLabel}
+              </span>
+            )}
+          </div>
+        </header>
 
         {rewrite && order?.infoRequestNote && (
-          <div className="vh-callout vh-callout--amber" role="status">
+          <div className="co-callout" role="status">
             <b>{t('co.needInfo')}</b>
             <span>{order.infoRequestNote}</span>
           </div>
@@ -527,10 +558,10 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                 const cur = i === step
                 const done = i <= maxStep && !cur
                 return (
-                  <button key={key} className={`co-step${cur ? ' cur' : done ? ' done' : ''}`} disabled={i > maxStep} onClick={() => openStep(i)}>
+                  <button key={key} className={`co-step${cur ? ' cur' : done ? ' done' : ''}`} disabled={i > maxStep} aria-current={cur ? 'step' : undefined} onClick={() => openStep(i)}>
                     <span className="co-step-bar" />
                     <span className="co-step-label">
-                      <span className="co-step-num">0{i + 1}</span>
+                      <span className="co-step-num">{done ? '✓' : i + 1}</span>
                       <span>{t(key)}</span>
                     </span>
                   </button>
@@ -541,9 +572,9 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
             <div className="co-body">
               {step === 0 && (
                 <>
-                  <div className="vh-stack">
+                  <div className="co-intro">
                     <h2 className="co-h2">{t('co.s1.title')}</h2>
-                    <p className="vh-lede">{t('co.s1.lede')}</p>
+                    <p className="co-lede">{t('co.s1.lede')}</p>
                   </div>
 
                   <div className="co-tray co-tray--3">
@@ -557,25 +588,52 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
                   {mode === 'text' && (
                     <>
-                      <div className="co-field">
-                        <textarea
-                          className="co-text"
-                          rows={5}
-                          value={text}
-                          maxLength={20000}
-                          aria-label={t('co.message')}
-                          placeholder={t('co.placeholder')}
-                          onChange={(e) => setText(e.target.value)}
-                        />
-                        <div className="co-meta vh-mono">
-                          <span>{t('co.chars', { n: text.length })}</span>
-                          <span>{est ? t('co.charsCounted', { min: est.charsMin, max: est.charsMax }) : ''}</span>
+                      <section className="co-sub" aria-labelledby="co-t1">
+                        <div className="co-sub-head">
+                          <span className="co-sub-n" aria-hidden="true">1</span>
+                          <div>
+                            <h3 id="co-t1" className="co-h3">{t('co.t.1')}</h3>
+                            <p className="co-sub-hint">{t('co.t.1.sub')}</p>
+                          </div>
                         </div>
-                      </div>
+                        <div className="co-field">
+                          <textarea
+                            className="co-text"
+                            rows={5}
+                            value={text}
+                            maxLength={20000}
+                            aria-label={t('co.message')}
+                            placeholder={t('co.placeholder')}
+                            onChange={(e) => setText(e.target.value)}
+                          />
+                          <div className="co-meta vh-mono">
+                            <span>{t('co.chars', { n: text.length })}</span>
+                            <span>{est ? t('co.charsCounted', { min: est.charsMin, max: est.charsMax }) : ''}</span>
+                          </div>
+                          {!text.trim() && (
+                            <div className="co-try">
+                              <span>{t('co.try')}</span>
+                              <div className="co-try-list">
+                                {[1, 2, 3].map((n) => (
+                                  <button key={n} type="button" className="co-example" onClick={() => setText(t(`co.ex.${n}`))}>
+                                    {t(`co.ex.${n}`)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </section>
 
-                      <div className="co-group">
-                        <span className="co-group-label">{t('co.styleLabel')}</span>
-                        <div className="co-tray co-tray--3 co-tray--keep">
+                      <section className="co-sub" aria-labelledby="co-t2">
+                        <div className="co-sub-head">
+                          <span className="co-sub-n" aria-hidden="true">2</span>
+                          <div>
+                            <h3 id="co-t2" className="co-h3">{t('co.t.2')}</h3>
+                            <p className="co-sub-hint">{t('co.t.2.sub')}</p>
+                          </div>
+                        </div>
+                        <div className="co-tray co-tray--3 co-tray--keep" role="group" aria-label={t('co.styleLabel')}>
                           {(templates.data ?? []).map((s) => (
                             <TemplateCard
                               key={s.id}
@@ -590,31 +648,50 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                           {templates.loading && <span className="co-hint">{t('co.loading')}</span>}
                           {!!templates.error && <span className="co-hint">{errText(t, orderErrorKey(templates.error))}</span>}
                         </div>
-                      </div>
+                      </section>
 
-                      <div className="co-group">
-                        <span className="co-group-label">{t('co.align')}</span>
-                        <div className="co-tray co-tray--4 co-tray--keep">
-                          <button className={`co-opt${alignment === null ? ' on' : ''}`} onClick={() => setAlignment(null)}>
-                            <span className="co-opt-name">{t('co.align.auto')}</span>
-                          </button>
-                          {ALIGNMENTS.map((a) => (
-                            <button key={a} className={`co-opt${alignment === a ? ' on' : ''}`} onClick={() => setAlignment(a)}>
-                              <span className="co-opt-name">{t(`co.align.${a}`)}</span>
-                            </button>
-                          ))}
+                      <section className="co-sub" aria-labelledby="co-t3">
+                        <div className="co-sub-head">
+                          <span className="co-sub-n" aria-hidden="true">3</span>
+                          <div>
+                            <h3 id="co-t3" className="co-h3">{t('co.t.3')}</h3>
+                            <p className="co-sub-hint">{t('co.t.3.sub')}</p>
+                          </div>
                         </div>
-                      </div>
 
-                      <label className="co-cell">
-                        {t('co.fontSize')}
-                        <input
-                          inputMode="decimal"
-                          placeholder={t('co.fontSizePh')}
-                          value={fontSize}
-                          onChange={(e) => setFontSize(e.target.value.replace(/[^\d.]/g, '').slice(0, 5))}
-                        />
-                      </label>
+                        <div className="co-group">
+                          <span className="co-group-label">{t('co.align')}</span>
+                          <div className="co-seg" role="group" aria-label={t('co.align')}>
+                            <button type="button" className={alignment === null ? 'on' : ''} aria-pressed={alignment === null} onClick={() => setAlignment(null)}>
+                              {t('co.align.auto')}
+                            </button>
+                            {ALIGNMENTS.map((a) => (
+                              <button key={a} type="button" className={alignment === a ? 'on' : ''} aria-pressed={alignment === a} onClick={() => setAlignment(a)}>
+                                {t(`co.align.${a}`)}
+                              </button>
+                            ))}
+                          </div>
+                          {alignment === null && <span className="co-sub-hint">{t('co.align.autoNote')}</span>}
+                        </div>
+
+                        <div className="co-live" aria-live="polite">
+                          {previewSrc ? (
+                            <img className="co-live-img" src={previewSrc} alt={t('co.previewAlt')} />
+                          ) : (
+                            <span className="co-hint">{t('co.previewWait')}</span>
+                          )}
+                        </div>
+
+                        <label className="co-cell">
+                          {t('co.fontSize')}
+                          <input
+                            inputMode="decimal"
+                            placeholder={t('co.fontSizePh')}
+                            value={fontSize}
+                            onChange={(e) => setFontSize(e.target.value.replace(/[^\d.]/g, '').slice(0, 5))}
+                          />
+                        </label>
+                      </section>
                     </>
                   )}
 
@@ -662,7 +739,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                       <div className="co-sheet-text">
                         <span className="co-sheet-title">{t(strokes > 0 ? 'co.drawReady' : 'co.drawNone')}</span>
                         <span className="co-meta vh-mono">{t(strokes === 1 ? 'co.stroke' : 'co.strokes', { n: strokes })}</span>
-                        <button className="vh-btn vh-btn--primary vh-btn--sm" disabled={busy} onClick={() => void openCanvas()}>
+                        <button className="co-btn co-btn--solid co-btn--sm" disabled={busy} onClick={() => void openCanvas()}>
                           {t(strokes > 0 ? 'co.editCanvas' : 'co.openCanvas')}
                         </button>
                       </div>
@@ -673,27 +750,35 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
               {step === 1 && (
                 <>
-                  <div className="vh-stack">
+                  <div className="co-intro">
                     <h2 className="co-h2">{t('co.s2.title')}</h2>
-                    <p className="vh-lede">{t('co.s2.lede')}</p>
+                    <p className="co-lede">{t('co.s2.lede')}</p>
                   </div>
 
-                  <label className="co-switch">
-                    <input type="checkbox" checked={suggest} onChange={(e) => toggleSuggest(e.target.checked)} />
-                    <span className="co-switch-text">
+                  <div className="co-tray co-tray--2" role="radiogroup" aria-label={t('co.who')}>
+                    <button type="button" role="radio" aria-checked={!suggest} className={`co-opt${!suggest ? ' on' : ''}`} onClick={() => suggest && toggleSuggest(false)}>
+                      <span className="co-opt-name">{t('co.who.self')}</span>
+                      <span className="co-opt-sub">{t('co.who.selfSub')}</span>
+                    </button>
+                    <button type="button" role="radio" aria-checked={suggest} className={`co-opt${suggest ? ' on' : ''}`} onClick={() => !suggest && toggleSuggest(true)}>
                       <span className="co-opt-name">{t('co.suggest')}</span>
                       <span className="co-opt-sub">{t('co.suggestSub')}</span>
-                    </span>
-                  </label>
+                    </button>
+                  </div>
+                  {suggest && (
+                    <p className="co-note" role="status">
+                      {!leftToWorkshop ? t('co.suggest.none') : t(picked ? 'co.suggest.left' : 'co.suggest.all', { items: leftToWorkshop })}
+                    </p>
+                  )}
 
                   {notice && <p className="co-notice" role="status">{t(notice)}</p>}
 
                   <ol className="co-chain" aria-label={t('co.chain')}>
-                    <li className={paper ? 'done' : 'now'}><b>1</b> {t('co.paper')}: <span>{paper?.name ?? t('co.sum.notChosen')}</span></li>
-                    <li className={pen ? 'done' : paper ? 'now' : ''}><b>2</b> {t('co.pen')}: <span>{pen?.name ?? t('co.sum.notChosen')}</span></li>
+                    <li className={paper ? 'done' : 'now'}><b>1</b> {t('co.paper')}: <span>{paper?.name ?? t(suggest ? 'co.chain.workshop' : 'co.sum.notChosen')}</span></li>
+                    <li className={pen ? 'done' : paper ? 'now' : ''}><b>2</b> {t('co.pen')}: <span>{pen?.name ?? t(suggest ? 'co.chain.workshop' : 'co.sum.notChosen')}</span></li>
                     <li className={ink ? 'done' : pen ? 'now' : ''}>
                       <b>3</b> {t('co.ink')}:{' '}
-                      <span>{ink ? <><i className="co-ink-dot co-ink-dot--sm" style={{ background: ink.hex ?? 'var(--t5)' }} /> {ink.name}</> : t('co.sum.notChosen')}</span>
+                      <span>{ink ? <><i className="co-ink-dot co-ink-dot--sm" style={{ background: ink.hex ?? 'var(--t5)' }} /> {ink.name}</> : t(suggest ? 'co.chain.workshop' : 'co.sum.notChosen')}</span>
                     </li>
                   </ol>
 
@@ -723,7 +808,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
                   <div className="co-group">
                     <span className="co-group-label">2. {t('co.pen')}</span>
-                    {!paperId && <span className="co-hint">{t('co.pickPaperFirst')}</span>}
+                    {!paperId && <span className="co-hint">{t(suggest ? 'co.skipHint' : 'co.pickPaperFirst')}</span>}
                     <div className="co-tray co-tray--4">
                       {(paperId ? pens.data ?? [] : []).map((o) => (
                         <button key={o.id} className={`co-opt co-opt--pen${penId === o.id ? ' on' : ''}`} onClick={() => pickPen(o.id)}>
@@ -741,7 +826,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
                   <div className="co-group">
                     <span className="co-group-label">3. {t('co.ink')}</span>
-                    {!penId && <span className="co-hint">{t('co.pickPenFirst')}</span>}
+                    {!penId && <span className="co-hint">{t(suggest ? 'co.skipHint' : 'co.pickPenFirst')}</span>}
                     <div className="co-inks">
                       {(penId ? inks.data ?? [] : []).map((o) => (
                         <button key={o.id} className={`co-ink${inkId === o.id ? ' on' : ''}`} onClick={() => pickInk(o.id)} aria-pressed={inkId === o.id}>
@@ -784,9 +869,9 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
               {step === 2 && (
                 <>
-                  <div className="vh-stack">
+                  <div className="co-intro">
                     <h2 className="co-h2">{t('co.s3.title')}</h2>
-                    <p className="vh-lede">{t('co.s3.lede')}</p>
+                    <p className="co-lede">{t('co.s3.lede')}</p>
                   </div>
                   <div className="co-sum">
                     {summary.map((r) => (
@@ -802,7 +887,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                     </div>
                   </div>
                   {!!order?.warnings.length && (
-                    <div className="vh-callout vh-callout--amber" role="status">
+                    <div className="co-callout" role="status">
                       <b>{t('co.warnings')}</b>
                       {order.warnings.map((w) => <span key={w}>{t(`warn.${w}`)}</span>)}
                     </div>
@@ -814,12 +899,15 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
             {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
 
             <div className="co-nav">
-              <button className="vh-btn vh-btn--ghost vh-btn--md co-back" disabled={step === 0} onClick={() => step > 0 && goTo(step - 1)}>
+              <button className="co-btn co-btn--line co-back" disabled={step === 0} onClick={() => step > 0 && goTo(step - 1)}>
                 {t('co.back')}
               </button>
               <div className="co-next-wrap">
-                <span className="co-hint" role="status">{ok ? saveLabel : hints[step]}</span>
-                <button className={`vh-btn vh-btn--md ${step === 2 ? 'vh-btn--primary' : 'vh-btn--white'}`} disabled={!ok} onClick={next}>
+                <span className={`co-need${ok ? ' ok' : ''}`} role="status">
+                  <i aria-hidden="true" />
+                  {ok ? (step < 2 ? t(`co.ready.${step}`) : saveLabel) : <><b>{t('co.needLabel')}:</b> {hints[step]}</>}
+                </span>
+                <button className="co-btn co-btn--solid co-next" disabled={!ok} onClick={next}>
                   {step === 2 ? t(rewrite ? 'co.resubmit' : busy ? 'co.sending' : 'co.submit') : t('co.continue')}
                 </button>
               </div>
@@ -829,8 +917,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
           <div className="co-side">
             <aside className="co-rail">
               <div className="co-preview">
-                {mode === 'text' && templateId !== null && dText.trim() ? (
-                  <img className="co-preview-img" src={templatePreviewUrl(templateId, dText)} alt={t('co.previewAlt')} />
+                {mode === 'text' && previewSrc ? (
+                  <img className="co-preview-img" src={previewSrc} alt={t('co.previewAlt')} />
                 ) : order && order.inputs.length ? (
                   <OrderPreview order={order} inkColor={ink?.hex} />
                 ) : (
@@ -844,7 +932,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                   <div className="co-line"><span>{t('co.sum.qty')}</span><span>{qty}</span></div>
                   {est && <div className="co-line"><span>{t('co.chars.label')}</span><span>{est.charsMin === est.charsMax ? est.charsMax : `${est.charsMin} – ${est.charsMax}`}</span></div>}
                 </div>
-                <div className="vh-total-row">
+                <div className="co-total-row">
                   <span>{t('co.range')}</span>
                   <span className="co-total">{range}</span>
                 </div>
@@ -858,10 +946,10 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                 <span className="co-fine">{t('co.fine')}</span>
               </div>
             </aside>
-            <Link to="/account/drafts" className="vh-btn vh-btn--md vh-btn--white co-save">{t('co.saveExit')}</Link>
+            <Link to="/account/drafts" className="co-btn co-btn--line co-save">{t('co.saveExit')}</Link>
           </div>
         </div>
       </div>
-    </Page>
+    </Frame>
   )
 }

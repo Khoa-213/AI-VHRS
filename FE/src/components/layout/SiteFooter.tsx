@@ -1,15 +1,17 @@
 import { ArrowUpRight } from '@phosphor-icons/react'
-import robotArm from '../../assets/fr3-arm.png'
 import { ORDER_HREF } from '../../constants'
 import { LANGS, setLang, useLang, useT } from '../../i18n'
 import { Link } from '../../router/router'
+import { PayLogo } from '../ui/PaymentLogos'
 import './site-footer.css'
 
 const CONTACT_EMAIL = 'Seventeengfa97@gmail.com'
 const CONTACT_PHONE = '0900 000 000'
 const YEAR = new Date().getFullYear()
+/** The methods checkout offers (VietQR is the main one) and the card brands behind the gateways. */
+const PAY_LOGOS = ['VietQR', 'VNPay', 'MoMo', 'VISA', 'Mastercard', 'JCB']
 
-/** Shared customer footer with a large wordmark and robot illustration. */
+/** Shared customer footer with contact details and useful links. */
 export default function SiteFooter({ framed = false }: { framed?: boolean }) {
   const t = useT()
   const lang = useLang()
@@ -36,6 +38,13 @@ export default function SiteFooter({ framed = false }: { framed?: boolean }) {
           <Link to={`${ORDER_HREF}#mode=draw`}>{t('ft.fromDrawing')}<ArrowUpRight size={12} aria-hidden /></Link>
           <p className="sf-service-note">{t('ft.materials')}</p>
         </nav>
+        <section className="sf-block sf-pay" aria-label={t('ft.payment')}>
+          <h2>{t('ft.payment')}</h2>
+          <ul className="sf-pay-grid">
+            {PAY_LOGOS.map((name) => <li key={name}><PayLogo name={name} /></li>)}
+          </ul>
+          <p className="sf-service-note">{t('ft.paymentNote')}</p>
+        </section>
         <nav className="sf-block sf-support" aria-label={t('ft.support')}>
           <h2>{t('ft.support')}</h2>
           <a href={`mailto:${CONTACT_EMAIL}`}>{t('ft.emailUs')}<ArrowUpRight size={12} aria-hidden /></a>
@@ -47,18 +56,6 @@ export default function SiteFooter({ framed = false }: { framed?: boolean }) {
               aria-label={l.name} aria-pressed={l.id === lang} onClick={() => setLang(l.id)}>{l.code}</button>)}
           </div>
         </nav>
-        <div className="sf-intro">
-          <span className="sf-kicker"><span /><span>AI-VHRS</span> / <span>FR3</span></span>
-          <h2>{t('ft.projectTitle')}</h2>
-          <p>{t('ft.projectBody')}</p>
-          <Link className="sf-create" to={ORDER_HREF}>{t('nav.startWriting')}<ArrowUpRight size={18} aria-hidden /></Link>
-        </div>
-      </div>
-      <div className="sf-stage" aria-hidden="true">
-
-        <span className="sf-wordmark">AI-VHRS</span>
-        <img className="sf-robot" src={robotArm} alt="" loading="lazy" />
-        <span className="sf-stage-caption"><span>AI-VHRS</span> / <span>FR3</span></span>
       </div>
       <div className="sf-copy"><span>{t('ft.copyright', { year: YEAR })}. {t('ft.rights')}.</span><a href="#top" onClick={(event) => { event.preventDefault(); window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }) }}>{t('ft.backTop')}<ArrowUpRight size={14} aria-hidden /></a></div>
     </div>

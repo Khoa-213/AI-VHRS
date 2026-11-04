@@ -1,13 +1,12 @@
 import { openAuth } from '../../store/authDialog'
-import { ClockCounterClockwise, CreditCard, NotePencil, SignOut, SlidersHorizontal, User as UserIcon } from '@phosphor-icons/react'
-import { useEffect, useRef, useState } from 'react'
-import Page from '../../components/layout/Page'
-import { MethodLogos } from '../../components/ui/PaymentLogos'
-import PaymentLogos from '../../components/ui/PaymentLogos'
-import { PAYMENT_BADGES, PAY_METHODS } from '../../constants/catalog'
+import { Check, ClockCounterClockwise, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
+import { useRef, useState } from 'react'
+import SiteFooter from '../../components/layout/SiteFooter'
+import Header from '../landing/components/Header'
+import { ORDER_HREF } from '../../constants'
 import { STATUS_COLOR, orderLink } from '../../constants/orderStatus'
 import { useAsync } from '../../hooks/useAsync'
-import { LANGS, setLang, useLang, useLocale, useT, useTn } from '../../i18n'
+import { LANGS, setLang, useLang, useLocale, useT } from '../../i18n'
 import { Link, navigate } from '../../router/router'
 import { SENT, listOrders, orderErrorKey, type Order, errText } from '../../services/orders'
 import { setTheme, useTheme } from '../../store/theme'
@@ -18,11 +17,24 @@ import {
 } from '../../store/store'
 import { fmt } from '../../utils/format'
 import { shrinkImage } from '../../utils/shrinkImage'
+import { draftPathFor } from '../create-order/draft'
 import DraftsSection from './DraftsSection'
+import '../create-order/co-home.css'
 import './account.css'
 
-export type Section = 'profile' | 'preferences' | 'orders' | 'drafts' | 'payment'
-const CUSTOMER_ONLY: Section[] = ['orders', 'drafts', 'payment']
+export type Section = 'overview' | 'profile' | 'preferences' | 'orders' | 'drafts'
+const CUSTOMER_ONLY: Section[] = ['overview', 'orders', 'drafts']
+
+/** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
+function Frame({ children, narrow = false }: { children: React.ReactNode; narrow?: boolean }) {
+  return (
+    <div className="lp-root co-root">
+      <Header />
+      <main className={`co-frame ac-frame${narrow ? ' co-frame--narrow' : ''}`} data-screen-label="Account">{children}</main>
+      <SiteFooter framed />
+    </div>
+  )
+}
 
 export default function Account({ section }: { section: Section }) {
   const t = useT()
@@ -38,18 +50,19 @@ export default function Account({ section }: { section: Section }) {
 
   if (!user) {
     return (
-      <Page label="Account" width={720}>
-        <div className="vh-panel" style={{ alignItems: 'flex-start' }}>
-          <h1 className="vh-h1">{t('acct.guestTitle')}</h1>
-          <p className="vh-lede">{t('acct.guestBody')}</p>
-          <button className="vh-btn vh-btn--primary" onClick={() => openAuth('login', '/account')}>{t('nav.signIn')}</button>
+      <Frame narrow>
+        <div className="co-card co-card--msg">
+          <h1 className="co-h1">{t('acct.guestTitle')}</h1>
+          <p className="co-lede">{t('acct.guestBody')}</p>
+          <button className="co-btn co-btn--solid" onClick={() => openAuth('login', '/account')}>{t('nav.signIn')}</button>
         </div>
-      </Page>
+      </Frame>
     )
   }
 
   const customer = user.role === 'customer'
   const current: Section = !customer && CUSTOMER_ONLY.includes(section) ? 'profile' : section
+  const firstName = (profile.fullName || user.name).trim().split(/\s+/).slice(-1)[0] ?? ''
   const shownName = profile.fullName || user.name
   const initial = shownName.trim().charAt(0).toUpperCase()
 
@@ -62,40 +75,45 @@ export default function Account({ section }: { section: Section }) {
   )
 
   return (
-    <Page label="Account" width={1200}>
+    <Frame>
       <div className="ac">
         <header className="ac-head">
           {profile.avatar
             ? <img src={profile.avatar} alt="" className="ac-avatar" />
             : <span className="ac-avatar ac-avatar--initial">{initial}</span>}
-          <div>
-            <h1>
-              {shownName}
-              {shownName !== user.name && <span className="ac-handle"> ({user.name})</span>}
-            </h1>
-            <p>{t('acct.sub')}</p>
+          <div className="ac-head-text">
+            <h1 className="co-h1 ac-h1">{customer && current === 'overview' ? t('acct.ov.hello', { name: firstName }) : shownName}</h1>
+            <p>{user.email || t('acct.sub')}</p>
           </div>
+          {customer && (
+            <Link to={ORDER_HREF} className="co-btn co-btn--solid ac-new">
+              <Plus size={18} aria-hidden />
+              {t('acct.ov.newOrder')}
+            </Link>
+          )}
         </header>
 
         <div className="ac-grid">
           <nav className="ac-nav" aria-label={t('acct.navAria')}>
-            {item('profile', '/account', t('acct.nav.profile'), <UserIcon size={20} aria-hidden />)}
-            {item('preferences', '/account/preferences', t('acct.nav.preferences'), <SlidersHorizontal size={20} aria-hidden />)}
+            {customer && item('overview', '/account', t('acct.nav.overview'), <SquaresFour size={20} aria-hidden />)}
             {customer && (
               <>
-                <span className="ac-nav-group">{t('acct.group.activity')}</span>
+                <span className="ac-nav-group">{t('acct.group.orders')}</span>
                 {item('orders', '/account/orders', t('acct.nav.orders'), <ClockCounterClockwise size={20} aria-hidden />, counts.data?.orders)}
                 {item('drafts', '/account/drafts', t('acct.nav.drafts'), <NotePencil size={20} aria-hidden />, counts.data?.drafts)}
-                {item('payment', '/account/payment', t('acct.nav.payment'), <CreditCard size={20} aria-hidden />)}
               </>
             )}
+            <span className="ac-nav-group">{t('acct.group.settings')}</span>
+            {item('profile', customer ? '/account/profile' : '/account', t('acct.nav.profile'), <UserIcon size={20} aria-hidden />)}
+            {item('preferences', '/account/preferences', t('acct.nav.preferences'), <SlidersHorizontal size={20} aria-hidden />)}
             <button type="button" className="ac-nav-item ac-nav-out" onClick={() => { signOut(); navigate('/') }}>
               <SignOut size={20} aria-hidden />
               <span>{t('acct.signOut')}</span>
             </button>
           </nav>
 
-          <main className="ac-body" id="main">
+          <section className="ac-body" aria-live="polite">
+            {current === 'overview' && <OverviewSection counts={counts.data} />}
             {current === 'profile' && <ProfileSection />}
             {current === 'preferences' && <PreferencesSection />}
             {current === 'orders' && <OrdersSection />}
@@ -105,11 +123,96 @@ export default function Account({ section }: { section: Section }) {
                 <DraftsSection />
               </>
             )}
-            {current === 'payment' && <PaymentSection />}
-          </main>
+          </section>
         </div>
       </div>
-    </Page>
+    </Frame>
+  )
+}
+
+/** The landing page of the account: what to do next, and the latest orders and drafts at a glance. */
+function OverviewSection({ counts }: { counts: { orders: number; drafts: number } | null | undefined }) {
+  const t = useT()
+  const locale = useLocale()
+  const user = useUser()
+  const recent = useAsync(() => listOrders({ status: SENT, pageSize: 3 }), [])
+  const drafts = useAsync(() => listOrders({ status: 'DRAFT', pageSize: 2 }), [])
+  const orders: Order[] = recent.data?.items ?? []
+  const open: Order[] = drafts.data?.items ?? []
+  return (
+    <>
+      {!user?.phone && (
+        <div className="ac-tip" role="status">
+          <span>{t('acct.ov.addPhone')}</span>
+          <Link to="/account/profile" className="vh-link">{t('acct.ov.addPhoneCta')}</Link>
+        </div>
+      )}
+
+      <div className="ac-tiles">
+        <Link to="/account/orders" className="ac-tile">
+          <span className="ac-tile-n">{counts?.orders ?? '–'}</span>
+          <span className="ac-tile-k">{t('acct.ov.orders')}</span>
+        </Link>
+        <Link to="/account/drafts" className="ac-tile">
+          <span className="ac-tile-n">{counts?.drafts ?? '–'}</span>
+          <span className="ac-tile-k">{t('acct.ov.drafts')}</span>
+        </Link>
+      </div>
+
+      <div className="ac-block">
+        <div className="ac-h2-row">
+          <h2 className="ac-h3">{t('acct.ov.draftsTitle')}</h2>
+          {open.length > 0 && <Link to="/account/drafts" className="vh-link">{t('acct.ov.viewAll')}</Link>}
+        </div>
+        {open.length ? (
+          <ul className="ac-orders">
+            {open.map((d) => (
+              <li key={d.id}>
+                <Link to={draftPathFor(d.id)} className="ac-order">
+                  <span className="ac-order-main">
+                    <span className="ac-order-title">{t(`ot.${d.type}`)}</span>
+                    <span className="vh-mono ac-order-meta">{d.code} · {new Date(d.savedAt).toLocaleDateString(locale)}</span>
+                  </span>
+                  <span className="co-btn co-btn--line co-btn--sm">{t('dr.continue')}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          !drafts.loading && <p className="ac-muted">{t('acct.ov.noDrafts')}</p>
+        )}
+      </div>
+
+      <div className="ac-block">
+        <div className="ac-h2-row">
+          <h2 className="ac-h3">{t('acct.ov.recent')}</h2>
+          {orders.length > 0 && <Link to="/account/orders" className="vh-link">{t('acct.ov.viewAll')}</Link>}
+        </div>
+        {orders.length ? (
+          <ul className="ac-orders">
+            {orders.map((o) => (
+              <li key={o.id}>
+                <Link to={orderLink(o.id, o.status)} className="ac-order">
+                  <span className="ac-order-main">
+                    <span className="ac-order-title">{t(`ot.${o.type}`)} × {o.quantity}</span>
+                    <span className="vh-mono ac-order-meta">{o.code} · {new Date(o.submittedAt ?? o.createdAt).toLocaleDateString(locale)}</span>
+                  </span>
+                  <span className="vh-chip" style={{ color: STATUS_COLOR[o.status] }}>{t(`os.${o.status}`)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          !recent.loading && (
+            <div className="ac-empty">
+              <b>{t('acct.o.emptyTitle')}</b>
+              <span>{t('acct.o.emptyBody')}</span>
+              <Link to={ORDER_HREF} className="co-btn co-btn--solid co-btn--sm">{t('acct.ov.newOrder')}</Link>
+            </div>
+          )
+        )}
+      </div>
+    </>
   )
 }
 
@@ -118,11 +221,10 @@ function ProfileSection() {
   const user = useUser()
   const profile = useProfile()
   const [form, setForm] = useState({ fullName: profile.fullName, email: profile.email, phone: profile.phone, address: profile.address, bio: profile.bio })
+  const [baseline, setBaseline] = useState(form)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const file = useRef<HTMLInputElement>(null)
-  const timer = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const set = (patch: Partial<typeof form>) => {
     setForm((f) => ({ ...f, ...patch }))
@@ -145,9 +247,9 @@ function ProfileSection() {
       const fullName = form.fullName.trim() || user?.name || ''
       if (fullName !== user?.name || phone !== (user?.phone ?? '')) await saveAccount({ fullName, phone: phone || null })
       updateProfile({ address: form.address, bio: form.bio })
+      setBaseline({ ...form, phone: phone || '' })
+      setForm((f) => ({ ...f, phone: phone || '' }))
       setSaved(true)
-      window.clearTimeout(timer.current)
-      timer.current = window.setTimeout(() => setSaved(false), 3000)
     } catch (err) {
       setFormError(t(authErrorKey(err)))
     } finally {
@@ -164,20 +266,45 @@ function ProfileSection() {
     }
   }
 
+  const dirty = (Object.keys(form) as (keyof typeof form)[]).some((k) => form[k] !== baseline[k])
+
   return (
     <>
       <h2 className="ac-h2">{t('acct.p.title')}</h2>
-      <div className="ac-split">
-        <form className="ac-form" onSubmit={save}>
+
+      <div className="ac-photo">
+        {profile.avatar
+          ? <img src={profile.avatar} alt="" className="ac-avatar ac-avatar--lg" />
+          : <span className="ac-avatar ac-avatar--lg ac-avatar--initial">{(profile.fullName || user?.name || '').trim().charAt(0).toUpperCase()}</span>}
+        <div className="ac-photo-text">
+          <span className="ac-label">{t('acct.p.picture')}</span>
+          <div className="ac-photo-actions">
+            <button type="button" className="co-btn co-btn--line co-btn--sm" onClick={() => file.current?.click()}>{t('acct.p.edit')}</button>
+            {profile.avatar && (
+              <button type="button" className="vh-link" onClick={() => updateProfile({ avatar: null })}>{t('acct.p.remove')}</button>
+            )}
+          </div>
+          {error && <span className="ac-error" role="alert">{error}</span>}
+        </div>
+        <input
+          ref={file}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            void pick(e.target.files?.[0])
+            e.target.value = ''
+          }}
+        />
+      </div>
+
+      <form className="ac-form" onSubmit={save}>
+        <fieldset className="ac-group">
+          <legend>{t('acct.p.sec.contact')}</legend>
           <label className="ac-field">
             <span>{t('acct.p.name')}</span>
             <input className="vh-input" autoComplete="name" value={form.fullName} onChange={(e) => set({ fullName: e.target.value })} />
             <small>{t('acct.p.nameHelp')}</small>
-          </label>
-          <label className="ac-field">
-            <span>{t('acct.p.email')}</span>
-            <input className="vh-input" type="email" autoComplete="email" value={form.email} readOnly aria-readonly="true" />
-            <small>{t('acct.p.emailLocked')}</small>
           </label>
           <label className="ac-field">
             <span>{t('acct.p.phone')}</span>
@@ -185,45 +312,36 @@ function ProfileSection() {
             <small>{t('acct.p.phoneHelp')}</small>
           </label>
           <label className="ac-field">
+            <span>{t('acct.p.email')}</span>
+            <input className="vh-input" type="email" autoComplete="email" value={form.email} readOnly aria-readonly="true" />
+            <small>{t('acct.p.emailLocked')}</small>
+          </label>
+        </fieldset>
+
+        <fieldset className="ac-group">
+          <legend>{t('acct.p.sec.delivery')}</legend>
+          <label className="ac-field">
             <span>{t('acct.p.address')}</span>
             <input className="vh-input" autoComplete="street-address" value={form.address} onChange={(e) => set({ address: e.target.value })} />
             <small>{t('acct.p.addressHelp')}</small>
           </label>
+        </fieldset>
+
+        <fieldset className="ac-group">
+          <legend>{t('acct.p.sec.about')}</legend>
           <label className="ac-field">
             <span>{t('acct.p.bio')}</span>
-            <textarea className="vh-textarea" rows={4} placeholder={t('acct.p.bioPh')} value={form.bio} onChange={(e) => set({ bio: e.target.value })} />
+            <textarea className="vh-textarea" rows={3} placeholder={t('acct.p.bioPh')} value={form.bio} onChange={(e) => set({ bio: e.target.value })} />
           </label>
-          <div className="ac-actions">
-            <button type="submit" className="vh-btn vh-btn--primary vh-btn--md" disabled={saving}>{t(saving ? 'acct.p.saving' : 'acct.p.save')}</button>
-            {saved && <span className="ac-saved" role="status">{t('acct.p.saved')}</span>}
-            {formError && <span className="ac-error" role="alert">{formError}</span>}
-          </div>
-        </form>
+        </fieldset>
 
-        <aside className="ac-picture">
-          <span className="ac-label">{t('acct.p.picture')}</span>
-          <div className="ac-picture-frame">
-            {profile.avatar
-              ? <img src={profile.avatar} alt="" />
-              : <span className="ac-picture-initial">{(profile.fullName || user?.name || '').trim().charAt(0).toUpperCase()}</span>}
-            <button type="button" className="ac-edit" onClick={() => file.current?.click()}>{t('acct.p.edit')}</button>
-          </div>
-          <input
-            ref={file}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => {
-              void pick(e.target.files?.[0])
-              e.target.value = ''
-            }}
-          />
-          {profile.avatar && (
-            <button type="button" className="vh-link" onClick={() => updateProfile({ avatar: null })}>{t('acct.p.remove')}</button>
-          )}
-          {error && <span className="ac-error" role="alert">{error}</span>}
-        </aside>
-      </div>
+        <div className="ac-actions">
+          <button type="submit" className="co-btn co-btn--solid" disabled={saving || !dirty}>{t(saving ? 'acct.p.saving' : saved && !dirty ? 'acct.p.savedShort' : 'acct.p.save')}</button>
+          {saved && !dirty && <span className="ac-saved" role="status"><Check size={16} weight="bold" aria-hidden />{t('acct.p.saved')}</span>}
+          {dirty && !saving && <span className="ac-unsaved">{t('acct.p.unsaved')}</span>}
+          {formError && <span className="ac-error" role="alert">{formError}</span>}
+        </div>
+      </form>
     </>
   )
 }
@@ -313,34 +431,6 @@ function OrdersSection() {
           <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>{t('acct.o.next')}</button>
         </div>
       )}
-    </>
-  )
-}
-
-function PaymentSection() {
-  const t = useT()
-  const tn = useTn()
-  const profile = useProfile()
-  return (
-    <>
-      <h2 className="ac-h2">{t('acct.pay.title')}</h2>
-      <p className="vh-lede ac-lede">{t('acct.pay.lede')}</p>
-      <div className="vh-choice-grid vh-choice-grid--170">
-        <button className={`vh-choice${profile.payMethod === null ? ' on' : ''}`} onClick={() => updateProfile({ payMethod: null })}>
-          <span className="vh-choice-name">{t('acct.pay.none')}</span>
-        </button>
-        {PAY_METHODS.filter((m) => m.id === 'vnpay' || m.id === 'momo').map((m) => (
-          <button key={m.id} className={`vh-choice${profile.payMethod === m.id ? ' on' : ''}`} onClick={() => updateProfile({ payMethod: m.id })}>
-            <MethodLogos id={m.id} />
-            <span className="vh-choice-name">{tn(m.name)}</span>
-            <span className="vh-choice-sub">{tn(m.spec)}</span>
-          </button>
-        ))}
-      </div>
-      <section className="ct-pay ac-supported">
-        <h3>{t('acct.pay.supported')}</h3>
-        <PaymentLogos names={PAYMENT_BADGES.map((p) => p.name)} />
-      </section>
     </>
   )
 }

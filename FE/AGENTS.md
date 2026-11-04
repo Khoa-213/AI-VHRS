@@ -87,7 +87,11 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   `mode = MOCK` settles with the simulated buttons and keeps the "simulated payment" notice; `SANDBOX` / `LIVE` send the
   customer to `pay_url`, and the gateway brings them back to `/payment/result` (`PaymentResult.tsx`), which polls the order
   and never trusts the gateway's query parameters. `vercel.json` rewrites deep links to `index.html` so that page loads.
-- Result, final payment, tracking and shipping have no API yet (backend phase 4), so they have no pages. Add them when they do.
+- After acceptance (`AWAITING_FINAL_PAYMENT`) the order page links to `/orders/:id/delivery` (`pages/order/Delivery.tsx`):
+  delivery with a carrier service priced live for the typed address (`POST /orders/{id}/delivery-quote`), or pick-up at
+  the workshop at a booked slot, saved with `PUT /orders/{id}/delivery`. Provinces, districts and wards come from the
+  public provinces.open-api.vn (`services/locations.ts`, the backend has no location endpoint), and the pick-up hours
+  copy the backend's `working_hours` seed (`utils/pickupSlots.ts`). Final payment and tracking have no pages yet.
 - The workshop side lives in `src/pages/staff/` and `src/services/workshop.ts`: dashboard, `Workbench` (intake, sketch, quotation, chat),
   `Approvals`, `Schedule` and `Catalog` (Manager only, via `services/manage.ts`: templates, robots, price list, and `Materials.tsx`, where paper, pens, ink colors and paper-pen compatibility are one list-and-detail view because the customer only sees the chain paper → compatible active pen → that pen's active inks; a new paper is created with its pens, a new pen with its inks and papers, and anything a customer cannot order is flagged). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
 - Errors from the API go through `orderErrorKey` / `errText` (`services/orders.ts`): known codes have translated text, any other code shows the backend's own message. Add a code to `ERROR_KEYS` and `err.*` when you want it translated.
@@ -98,7 +102,14 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   an `ORDER_CARD` message (the backend returns the same card within 10 minutes); both sides render it from `order_card`.
   Read only only when the order is `REJECTED` or `CANCELLED` (a `COMPLETED` order stays open for complaints), or for a Staff who has not
   claimed the order. Contract: `BE/docs/FE_API_GUIDE.md` section 5.4.
-- The technician screens (`src/pages/tech/`) run on the API (`services/technician.ts`): jobs, the job screen (`JobDetail` and its workflow, preparation, events and photo parts, also reached at `/tech/preview/:id` and `/tech/qc/:id`). Details in `docs/TECHNICAL_STAFF_INTEGRATION.md`. `sim.ts` and `SimCanvas.tsx` are the old text-based arm simulation, not used by any screen.
+- The technician screens (`src/pages/tech/`) run on the API (`services/technician.ts`): jobs, the job screen (`JobDetail` and its workflow, preparation, events and photo parts, also reached at `/tech/preview/:id` and `/tech/qc/:id`). Details in `docs/TECHNICAL_STAFF_INTEGRATION.md`.
+- Robot control and simulation (`pages/tech/RobotConsole.tsx`, `services/robot.ts`, contract in `BE/docs/FE_API_GUIDE.md` 7f and 7g) never talk to the
+  workstation: they create commands (`POST /technician/robot-commands`: LOAD, PREFLIGHT, DRY_RUN, RUN, PAUSE, RESUME, STOP, PAPER_CHANGED, ALIGN_START,
+  each with a fresh `idempotency_key`) that the Robot Agent pulls and runs on the real arm (mode REAL only: the web offers no MOCK/SIM; every DRY_RUN/RUN/ALIGN_START carries the operator's `AUTHORIZE-…` code), and follow them with `GET .../robot-commands/{id}`.
+  Live frames come from `/technician/robots/{id}/live` (4 per second while running), status and alerts from `/technician/robot-status`, and the 3D view
+  is the backend page `/viewer/robot.html` in an iframe (`view-ticket`; Vite proxies `/viewer` in dev, production needs the site origin in the
+  backend's `CORS_ORIGINS`). Calibration is sent from the workstation (`robot_agent/scripts/robot_console.py calibrate`), not from the web. The simulation result the backend gates start on is recorded from the agent's LOAD check and PREFLIGHT; the manual form
+  stays as a fallback. A red (level 4) alert shows the E-Stop banner; software STOP never replaces the physical E-Stop.
 
 
 ## Account area

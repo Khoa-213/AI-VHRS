@@ -30,10 +30,9 @@ lib/
 └── features/
     ├── auth/                          # Real API: login, refresh, logout, /me, password reset
     └── tech/
-        ├── data/                      # Mock store for orders/robots/QC, seed orders, QC photos
-        ├── domain/                    # Order model + phases, roster, QC checklist
+        ├── data/                      # API clients and polling providers
+        ├── domain/                    # Jobs, photos, robot commands, status and alerts
         ├── i18n/                      # en / ja / vi (shared keys generated from FE)
-        ├── sim/                       # Robot simulator: path plan, 2-link IK, painter
         └── presentation/              # Router, rail shell, login, dashboard, preview, QC
 ```
 
@@ -46,7 +45,7 @@ lib/
 | **State** | `flutter_riverpod` 2.x | `StateNotifier` + `StateNotifierProvider` |
 | **Routing** | `go_router` | Auth-aware `redirect` (splash → login → /tech) |
 | **Network** | `dio` | `QueuedInterceptor` for JWT + auto-refresh |
-| **Storage** | `flutter_secure_storage`, `shared_preferences` | Tokens / mock orders and settings |
+| **Storage** | `flutter_secure_storage`, `shared_preferences` | Tokens / settings |
 | **Errors** | Sealed classes + backend error codes | Codes mapped to `dk.err.*` translations |
 
 ---
@@ -80,4 +79,4 @@ Login → Dashboard (orders by phase, robots, queue)
           └─ QC → 11-item checklist → 2 required photos → send to customer / reschedule
 ```
 
-Orders, robots and QC run on the local mock store until the backend has technician endpoints.
+Jobs, robots and QC run on the real API, the same calls as the web FE.

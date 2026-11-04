@@ -121,15 +121,6 @@ export async function getTechJob(id: number): Promise<TechJobDetail> {
 }
 
 export interface ProbePoint { x: number; y: number; z: number }
-export const CALIBRATION_CHECKS = ['frame_mounted', 'paper_clamped', 'pen_installed', 'force_zeroed'] as const
-export interface CalibrationInput {
-  checklist: Record<string, boolean>
-  force_zero_offset: number
-  probe_points: ProbePoint[]
-  frame_transform?: Record<string, unknown>
-  height_map?: Record<string, unknown> | unknown[]
-  force_curve?: Record<string, unknown> | unknown[]
-}
 export interface JobPackage {
   job_id: number; order_code: string; package_hash: string; hash_algorithm: 'SHA-256'
   trajectory_url: string; trajectory_url_expires_in: number; trajectory_format: string; pages: number
@@ -173,7 +164,6 @@ export async function downloadJobPackage(id: number): Promise<VerifiedPackage> {
 
 const jobAction = async (id: number, action: string, body?: unknown) => toJob(await techApi<RawJob>(`/technician/jobs/${id}/${action}`, { method: 'POST', body }))
 export const prepareJob = (id: number) => jobAction(id, 'prepare')
-export const calibrateJob = (id: number, body: CalibrationInput) => techApi<NonNullable<TechJobDetail['calibration']>>(`/technician/jobs/${id}/calibration`, { method: 'POST', body })
 export const simulateJob = (id: number, body: { passed: boolean; errors: string[]; report?: Record<string, unknown> }) => jobAction(id, 'simulation', body)
 export const startJob = (id: number) => jobAction(id, 'start')
 export const finishJob = (id: number) => jobAction(id, 'finish')
@@ -231,7 +221,6 @@ export function jobPermissions(job: TechJobDetail, hash?: string) {
   return {
     download: PREVIEW_JOB_STATUSES.includes(job.status),
     prepare: job.status === 'SCHEDULED' && verified && !!job.downloadedAt,
-    calibrate: job.status === 'PREPARING' && verified,
     simulate: job.status === 'PREPARING' && verified && !!job.calibration?.is_valid,
     start: job.status === 'PREPARING' && verified && !!job.downloadedAt && !!job.calibration?.is_valid && job.simulationPassed === true && job.canStart,
     finish: job.status === 'WRITING',

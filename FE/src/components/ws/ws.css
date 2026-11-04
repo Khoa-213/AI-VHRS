@@ -278,3 +278,8 @@
 .ws .sd-empty{display:flex;flex-direction:column;gap:6px;color:var(--ink2)}
 .ws .sd-meter{height:9px;border-radius:5px;background:var(--field);overflow:hidden}
 .ws .sd-meter i{display:block;height:100%;border-radius:5px;background:var(--acc)}
+
+/* The header follows the page while scrolling; `pinned` content (a job's progress) runs along its bottom at the same width. */
+.ws .hd{position:sticky;top:0;z-index:30;margin:-28px 0 0;padding:28px 0 14px;background:var(--bg)}
+.ws .hd-pinned{flex:1 0 100%;min-width:0}
+@media(max-width:760px){.ws .hd{margin-top:0;padding-top:10px}}

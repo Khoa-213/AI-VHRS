@@ -1,12 +1,8 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
-import '../../domain/tech_models.dart';
 import '../../i18n/tech_strings.dart';
 
 /// Desktop building blocks in the mobile app's ink-on-paper language:
@@ -23,21 +19,10 @@ class TechRadius {
   static const double control = 8;
 }
 
-/// Phase colours: an ink ramp, with the muted semantic hues for ready and waiting.
-Color phaseColor(Phase p) => switch (p) {
-  Phase.qc || Phase.live => AppColors.ink,
-  Phase.ready => AppColors.success,
-  Phase.wait => AppColors.warning,
-  Phase.done => AppColors.textSecondary,
-};
+/// Below this window width the app uses its phone layout: one column, tabs at the bottom.
+const double compactWidth = 700;
 
-Color statusColor(OrderStatus s) => switch (s) {
-  OrderStatus.Rejected => AppColors.error,
-  OrderStatus.Written || OrderStatus.Delivered => AppColors.success,
-  OrderStatus.Accepted => AppColors.warning,
-  OrderStatus.Queued || OrderStatus.Rewriting => AppColors.statusWriting,
-  _ => AppColors.textSecondary,
-};
+bool isCompact(BuildContext context) => MediaQuery.sizeOf(context).width < compactWidth;
 
 class TechCard extends StatelessWidget {
   final Widget child;
@@ -154,35 +139,46 @@ class KpiTile extends StatelessWidget {
   final String value;
   final String hint;
   final bool accent;
-  const KpiTile({super.key, required this.label, required this.value, required this.hint, this.accent = false});
+
+  /// Phone width: smaller, and the hint is left out.
+  final bool dense;
+  final VoidCallback? onTap;
+  const KpiTile({super.key, required this.label, required this.value, required this.hint, this.accent = false, this.dense = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final fg = accent ? AppColors.onInk : AppColors.textPrimary;
     final sub = accent ? AppColors.onInkMuted : AppColors.textSecondary;
-    return TechCard(
+    final tile = TechCard(
       color: accent ? AppColors.ink : null,
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      padding: dense ? const EdgeInsets.all(14) : const EdgeInsets.fromLTRB(20, 18, 20, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             label,
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: sub),
-            maxLines: 2,
+            style: TextStyle(fontSize: dense ? 12 : 13, fontWeight: FontWeight.w500, color: sub),
+            maxLines: dense ? 3 : 2,
           ),
-          const SizedBox(height: 8),
-          MonoText(value, size: 32, color: fg),
-          const SizedBox(height: 4),
-          Text(
-            hint,
-            style: TextStyle(fontSize: 12, color: sub),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          SizedBox(height: dense ? 4 : 8),
+          MonoText(value, size: dense ? 26 : 32, color: fg),
+          if (!dense) ...[
+            const SizedBox(height: 4),
+            Text(
+              hint,
+              style: TextStyle(fontSize: 12, color: sub),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ],
       ),
+    );
+    if (onTap == null) return tile;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Pressable(onTap: onTap, semanticLabel: '$label: $value', child: tile),
     );
   }
 }
@@ -215,84 +211,6 @@ class Meter extends StatelessWidget {
       ),
     ),
   );
-}
-
-class DonutSlice {
-  final String label;
-  final int value;
-  final Color color;
-  const DonutSlice(this.label, this.value, this.color);
-}
-
-class Donut extends StatelessWidget {
-  final List<DonutSlice> slices;
-  final String center;
-  final String caption;
-  final double size;
-  const Donut({super.key, required this.slices, required this.center, required this.caption, this.size = 132});
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: size,
-    height: size,
-    child: CustomPaint(
-      painter: _DonutPainter(slices),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            MonoText(center, size: 26),
-            Text(caption, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _DonutPainter extends CustomPainter {
-  final List<DonutSlice> slices;
-  _DonutPainter(this.slices);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const stroke = 14.0;
-    final rect = Offset.zero & size;
-    final arc = rect.deflate(stroke / 2);
-    final total = slices.fold<int>(0, (a, s) => a + s.value);
-    canvas.drawArc(
-      arc,
-      0,
-      math.pi * 2,
-      false,
-      Paint()
-        ..color = AppColors.surfaceVariant
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke,
-    );
-    if (total == 0) return;
-    var start = -math.pi / 2;
-    const gap = 0.04;
-    for (final s in slices) {
-      if (s.value == 0) continue;
-      final sweep = s.value / total * math.pi * 2;
-      canvas.drawArc(
-        arc,
-        start + gap / 2,
-        math.max(0.001, sweep - gap),
-        false,
-        Paint()
-          ..color = s.color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = stroke
-          ..strokeCap = StrokeCap.butt,
-      );
-      start += sweep;
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DonutPainter old) => true;
 }
 
 /// Pill button in the mobile `CustomButton` styles, with a disabled look, a
@@ -353,69 +271,6 @@ class TechButton extends StatelessWidget {
               if (icon != null) ...[Icon(icon, size: 18, color: fg), const SizedBox(width: 8)],
               Flexible(child: text),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Square ink checkbox with a label, for preflight and QC rows.
-class InkCheck extends StatelessWidget {
-  final bool value;
-  final ValueChanged<bool>? onChanged;
-  final String title;
-  final String? detail;
-  const InkCheck({super.key, required this.value, required this.onChanged, required this.title, this.detail});
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onChanged != null;
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      child: Semantics(
-        checked: value,
-        label: title,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: enabled ? () => onChanged!(!value) : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              crossAxisAlignment: detail == null ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-              children: [
-                AnimatedContainer(
-                  duration: AppTheme.motionFast,
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: value ? AppColors.ink : AppColors.surface,
-                    borderRadius: BorderRadius.circular(7),
-                    border: Border.all(color: value ? AppColors.ink : AppColors.textTertiary, width: 1.4),
-                  ),
-                  child: value ? const Icon(Icons.check_rounded, size: 16, color: AppColors.onInk) : null,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Opacity(
-                    opacity: enabled || value ? 1 : 0.55,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                        ),
-                        if (detail != null) ...[
-                          const SizedBox(height: 2),
-                          Text(detail!, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -584,37 +439,6 @@ class FactList extends StatelessWidget {
             ],
           ),
         ),
-    ],
-  );
-}
-
-/// Colour swatch with a name, for paper and ink.
-class Swatch extends StatelessWidget {
-  final int color;
-  final String label;
-  const Swatch(this.color, this.label, {super.key});
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        width: 12,
-        height: 12,
-        decoration: BoxDecoration(
-          color: Color(color),
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.border),
-        ),
-      ),
-      const SizedBox(width: 8),
-      Flexible(
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
     ],
   );
 }

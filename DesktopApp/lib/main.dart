@@ -8,17 +8,17 @@ import 'features/auth/presentation/auth_notifier.dart';
 import 'features/tech/data/prefs.dart';
 import 'features/tech/i18n/tech_strings.dart';
 import 'features/tech/presentation/desktop_router.dart';
+import 'features/tech/presentation/widgets/estop.dart';
 import 'features/tech/presentation/widgets/tech_ui.dart';
 
-/// AI-VHRS technician desk (Windows, also runs on macOS for development).
+/// AI-VHRS technician app: Windows and macOS desktop, Android and iOS phones, one code base.
 ///
 ///   flutter run -d windows        flutter build windows
 ///   flutter run -d macos
 ///
-/// Ink-on-paper theme (`AppTheme`), technician flow from the web FE
-/// (`/tech`, `/tech/preview/:id`, `/tech/qc/:id`). Sign-in uses the real API
-/// (`TECHNICAL_STAFF` accounts); orders, robots and QC use a local mock store
-/// until the backend has endpoints for them.
+/// Ink-on-paper theme (`AppTheme`), technician flow from the web FE, all of it on the real API
+/// (`TECHNICAL_STAFF` accounts only). Point it at another backend with
+/// `--dart-define=API_BASE_URL=https://.../api/v1`.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
@@ -51,6 +51,8 @@ class _TechDesktopAppState extends ConsumerState<TechDesktopApp> {
       // Light only, like the mobile app: the screens use light tokens directly.
       themeMode: ThemeMode.light,
       routerConfig: ref.watch(desktopRouterProvider),
+      // Above the router, so an E-Stop also covers any dialog that is open.
+      builder: (context, child) => EstopGate(child: child ?? const SizedBox.shrink()),
     );
   }
 }

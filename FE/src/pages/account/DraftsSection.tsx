@@ -62,41 +62,42 @@ export default function DraftsSection({ onCount }: { onCount?: (n: number) => vo
       <ul className="dr-list" aria-label={t('dr.listAria')}>
         {drafts.map((d) => {
           const asking = confirming === d.id
+          const est = d.estMax !== null
+            ? t('dr.estimate', { total: d.estMin === d.estMax ? fmt(d.estMax) : `${fmt(d.estMin ?? 0)} – ${fmt(d.estMax)}` })
+            : t('dr.noEstimate')
           return (
             <li key={d.id} className="dr-item">
               <div className="dr-main">
                 <span className="dr-name">{summary(d, t)}</span>
-                <span className="dr-meta vh-mono">{d.code}</span>
                 <span className="dr-meta">
-                  {t('dr.saved', { time: ago(d.savedAt, locale) })}
-                  {' · '}
-                  {t(d.quantity > 1 ? 'co.pieces' : 'co.piece', { n: d.quantity })}
-                  {' · '}
-                  {d.estMax !== null ? t('dr.estimate', { total: d.estMin === d.estMax ? fmt(d.estMax) : `${fmt(d.estMin ?? 0)} – ${fmt(d.estMax)}` }) : t('dr.noEstimate')}
+                  <span className="vh-mono">{d.code}</span>
+                  <span>{t('dr.saved', { time: ago(d.savedAt, locale) })}</span>
+                  <span>{t(d.quantity > 1 ? 'co.pieces' : 'co.piece', { n: d.quantity })}</span>
+                  <span>{est}</span>
                 </span>
               </div>
               <div className="dr-side">
-                <Link to={draftPathFor(d.id)} className="vh-btn vh-btn--primary vh-btn--sm dr-continue">{t('dr.continue')}</Link>
                 {asking ? (
                   <span className="dr-confirm" role="alert">
                     <span>{t('dr.confirm')}</span>
-                    <button className="ct-remove" onClick={() => void remove(d.id)}>{t('dr.yes')}</button>
-                    <button className="ct-remove dr-keep" onClick={() => setConfirming(null)}>{t('dr.no')}</button>
+                    <button className="dr-btn dr-btn--danger" onClick={() => void remove(d.id)}>{t('dr.yes')}</button>
+                    <button className="dr-btn" onClick={() => setConfirming(null)}>{t('dr.no')}</button>
                   </span>
                 ) : (
-                  <button className="ct-remove" onClick={() => setConfirming(d.id)}>{t('dr.delete')}</button>
+                  <>
+                    <button className="dr-btn" onClick={() => setConfirming(d.id)}>{t('dr.delete')}</button>
+                    <Link to={draftPathFor(d.id)} className="co-btn co-btn--solid co-btn--sm">{t('dr.continue')}</Link>
+                  </>
                 )}
               </div>
             </li>
           )
         })}
-        <li>
-          <Link to={ORDER_HREF} className="dr-new">
-            <span className="dr-new-plus" aria-hidden>+</span>
-            <span>{t('dr.newOrder')}</span>
-          </Link>
-        </li>
       </ul>
+      <Link to={ORDER_HREF} className="dr-new">
+        <span className="dr-new-plus" aria-hidden>+</span>
+        <span>{t('dr.newOrder')}</span>
+      </Link>
       {!list.loading && !drafts.length && <p className="dr-empty-note">{t('dr.emptyBody')}</p>}
     </div>
   )

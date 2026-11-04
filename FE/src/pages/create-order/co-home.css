@@ -1,0 +1,207 @@
+/* Create Order in the homepage's language: the landing navbar floats over one rounded surface on the page frame, the
+   footer is framed the same way, buttons are pills, and every choice is a rounded card with a hairline border.
+   --frame and --surface come from .lp-root, so light and dark follow the homepage exactly. */
+
+.co-root{min-height:100dvh;display:flex;flex-direction:column}
+.co-root>.co-frame{flex:1}
+.co-root .co-frame{position:relative;margin:clamp(8px,1.1vw,16px);border-radius:clamp(14px,1.8vw,24px);background:var(--surface);padding:clamp(92px,8vw,104px) clamp(18px,5vw,72px) clamp(48px,6vw,88px)}
+.co-root .co-frame--narrow{display:flex;flex-direction:column;align-items:center}
+.co-root .co-frame--narrow>*{width:100%;max-width:640px}
+.co-root .co{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(24px,3vw,36px)}
+
+/* ---------- title ---------- */
+.co-root .co-head{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.co-root .co-eyebrow{font-size:12px;font-weight:500;letter-spacing:.02em;color:var(--t5)}
+.co-root .co-h1{margin:0;font-size:clamp(34px,4.6vw,64px);font-weight:600;line-height:1.05;letter-spacing:-.045em;color:var(--t1);text-wrap:balance}
+.co-root .co-save-state{min-height:18px;font-size:12px;color:var(--t5)}
+.co-root .co-lede{margin:0;max-width:60ch;font-size:15px;line-height:1.6;color:var(--t4)}
+.co-root .co-intro{display:flex;flex-direction:column;gap:8px}
+.co-root .co-h2{font-size:clamp(22px,2.2vw,28px);font-weight:600;letter-spacing:-.03em}
+.co-root .co-callout{display:flex;flex-direction:column;gap:6px;padding:16px 20px;border-radius:16px;background:var(--st-pending-bg);color:var(--t1)}
+.co-root .co-callout b{font-size:15px;font-weight:700;color:var(--warn)}
+.co-root .co-callout span{font-size:14px;line-height:1.55;color:var(--t3)}
+.co-root .co-card--msg{display:flex;flex-direction:column;align-items:flex-start;gap:16px;padding:clamp(24px,4vw,40px);border-radius:20px;background:var(--tray)}
+
+/* ---------- buttons: the homepage pills ---------- */
+.co-root .co-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:48px;padding:0 28px;border-radius:999px;border:1px solid transparent;font-family:inherit;font-size:14px;font-weight:600;white-space:nowrap;cursor:pointer;transition:background .2s,color .2s,transform .15s}
+.co-root .co-btn:active:not(:disabled){transform:scale(.97)}
+.co-root .co-btn:disabled{opacity:.4;cursor:not-allowed}
+.co-root .co-btn--solid{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.co-root .co-btn--solid:hover:not(:disabled){background:var(--btn-inv-hover);color:var(--btn-inv-fg)}
+.co-root .co-btn--line{background:transparent;border-color:var(--line-strong);color:var(--t1)}
+.co-root .co-btn--line:hover:not(:disabled){background:var(--tray);color:var(--t1)}
+.co-root .co-btn--sm{min-height:40px;padding:0 20px;font-size:13px}
+.co-root .co-btn:focus-visible,.co-root .co-step:focus-visible,.co-root .co-opt:focus-visible,.co-root .co-ink:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.co-root .co .vh-btn{height:40px;padding:0 18px;font-size:13px;font-weight:600}
+.co-root .co .vh-btn--ghost{background:transparent;border:1px solid var(--line-strong)}
+.co-root .co .vh-btn--ghost:hover:not(:disabled){background:var(--tray)}
+.co-root .co .vh-btn--primary{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.co-root .co .vh-btn--primary:hover:not(:disabled){background:var(--btn-inv-hover);color:var(--btn-inv-fg)}
+.co-root .co .vh-link{color:var(--t1);text-decoration:underline;text-underline-offset:3px;font-weight:600}
+
+/* ---------- steps: numbered pills ---------- */
+.co-root .co-steps{display:flex;flex-wrap:wrap;gap:8px}
+.co-root .co-step{flex:0 1 auto;flex-direction:row;align-items:center;gap:0;padding:6px 18px 6px 6px;border-radius:999px;border:1px solid var(--line-strong);background:transparent;transition:background .2s,border-color .2s}
+.co-root .co-step:not(:disabled):hover{background:var(--tray)}
+.co-root .co-step-bar{display:none}
+.co-root .co-step-label{gap:10px;font-size:13px;font-weight:600}
+.co-root .co-step-num{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--tray);font-size:12px;font-weight:700;color:var(--t4)}
+.co-root .co-step.cur{background:var(--btn-inv-bg);border-color:var(--btn-inv-bg)}
+.co-root .co-step.cur .co-step-label{color:var(--btn-inv-fg)}
+.co-root .co-step.cur .co-step-num{background:var(--btn-inv-fg);color:var(--btn-inv-bg)}
+.co-root .co-step.done .co-step-num{background:var(--accent);color:var(--on-accent)}
+.co-root .co-step:disabled{opacity:.55}
+
+/* ---------- layout ---------- */
+.co-root .co-shell{grid-template-columns:minmax(0,1fr) minmax(300px,380px)}
+.co-root .co-main{gap:clamp(24px,3vw,36px)}
+.co-root .co-body{gap:clamp(22px,2.6vw,32px)}
+.co-root .co-side{top:96px}
+
+/* ---------- choices: rounded cards, hairline border, picked = ink ring ---------- */
+.co-root .co-tray{gap:12px}
+.co-root .co-opt,.co-root .co-ink{border:1px solid var(--line-strong);border-radius:16px;background:transparent;transition:background .2s,border-color .2s,box-shadow .2s}
+.co-root .co-opt{padding:18px 20px}
+.co-root .co-opt:hover,.co-root .co-ink:hover{background:var(--tray);border-color:var(--t6)}
+.co-root .co-opt.on,.co-root .co-ink.on{background:var(--tray);border-color:var(--t1);box-shadow:inset 0 0 0 1px var(--t1)}
+.co-root .co-opt.on::after{top:12px;right:12px;width:22px;height:22px;line-height:22px}
+.co-root .co-opt-name{font-size:15px;font-weight:600}
+.co-root .co-opt-sub{font-size:13px;color:var(--t5)}
+.co-root .co-price{font-size:12px;font-weight:600;color:var(--t1)}
+.co-root .co-ink{padding:10px 18px 10px 10px;flex:0 1 auto}
+.co-root .co-inks{gap:10px}
+.co-root .co-ink.on .co-ink-dot{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--t1)}
+.co-root .co-ink-name{font-weight:600}
+.co-root .co-group{gap:12px}
+.co-root .co-group-label{font-size:14px;font-weight:600;color:var(--t1)}
+.co-root .co-chip{border:1px solid var(--line-strong);border-radius:999px;background:transparent;padding:8px 16px;font-weight:600;color:var(--t2)}
+.co-root .co-chip:hover{background:var(--tray)}
+.co-root .co-chip.on{background:var(--btn-inv-bg);border-color:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.co-root .co-chain b{border-radius:50%}
+.co-root .co-switch,.co-root .co-sheet,.co-root .co-photo,.co-root .co-file-row,.co-root .co-qty{border:1px solid var(--line-strong);border-radius:16px;background:transparent}
+.co-root .co-switch{padding:18px 20px}
+.co-root .co-switch:has(input:checked){background:var(--tray);border-color:var(--t1)}
+.co-root .co-notice{border-radius:12px;background:var(--st-pending-bg)}
+.co-root .co-nib span{background:var(--t1)}
+
+/* ---------- inputs ---------- */
+.co-root .co-text,.co-root .co-cell{border:1px solid var(--line-strong);border-radius:16px;background:transparent;transition:border-color .2s,box-shadow .2s}
+.co-root .co-text{padding:18px 20px;min-height:170px}
+.co-root .co-text:focus,.co-root .co-cell:focus-within{border-color:var(--t1);box-shadow:0 0 0 1px var(--t1)}
+.co-root .co-cell{padding:14px 18px}
+.co-root .co-drop{min-height:240px;border:1.5px dashed var(--line-strong);border-radius:20px;background:transparent;transition:background .2s,border-color .2s}
+.co-root .co-drop:hover,.co-root .co-drop:focus-within{background:var(--tray);border-color:var(--t1)}
+.co-root .co-drop-icon{background:var(--tray)}
+.co-root .co-drop-title{font-weight:600}
+.co-root .co-font-frame,.co-root .co-font-preview{border-radius:10px}
+.co-root .co-qty{padding:14px 14px 14px 20px}
+.co-root .co-stepper{background:var(--tray)}
+.co-root .co-stepper button{color:var(--t1)}
+.co-root .co-sum{padding:6px 24px;border:1px solid var(--line-strong);border-radius:20px;background:transparent}
+.co-root .co-sum-row{padding:16px 0;border-top:1px solid var(--line-strong)}
+.co-root .co-sum-row:first-child{border-top:0}
+
+/* ---------- summary card: the homepage's tinted surface ---------- */
+.co-root .co-rail{border-radius:20px;overflow:hidden;background:var(--tray)}
+.co-root .co-preview{background:color-mix(in srgb,var(--t1) 5%,var(--surface))}
+.co-root .co-est-title{font-size:15px;font-weight:600}
+.co-root .co-total-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-top:16px;border-top:1px solid var(--line-strong);font-size:14px;color:var(--t4)}
+.co-root .co-total{font-size:30px;font-weight:600;color:var(--t1)}
+.co-root .co-save{width:100%}
+
+/* ---------- navigation ---------- */
+.co-root .co-nav{padding-top:8px}
+.co-root .co-next{min-width:160px}
+
+@media (max-width:1100px){
+  .co-root .co-frame{padding-top:28px}
+}
+@media (max-width:1040px){
+  .co-root .co-shell{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:560px){
+  .co-root .co-frame{padding-inline:16px}
+  .co-root .co-step{padding-right:10px}
+  .co-root .co-step-label span:last-child{display:none}
+  .co-root .co-nav{position:sticky;bottom:0;z-index:5;margin:0 -16px;padding:12px 16px;background:var(--surface);border-top:1px solid var(--line-strong)}
+  .co-root .co-next{flex:1}
+  .co-root .co-next-wrap .co-hint{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .co-root .co-btn,.co-root .co-opt,.co-root .co-ink,.co-root .co-step{transition:none}
+}
+
+/* ---------- guided text mode: write, pick a style, see it ---------- */
+.co-root .co-head-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.co-root .co-progress{font-size:13px;font-weight:600;color:var(--t1)}
+.co-root .co-save-state{display:inline-flex;align-items:center;gap:8px;padding:4px 12px;border-radius:999px;background:var(--tray);font-size:12px;color:var(--t4)}
+.co-root .co-save-state i{width:7px;height:7px;border-radius:50%;background:var(--good)}
+.co-root .co-save-state.busy i{background:var(--t5);animation:co-pulse 1s ease-in-out infinite}
+@keyframes co-pulse{50%{opacity:.25}}
+
+.co-root .co-sub{display:flex;flex-direction:column;gap:14px;padding:clamp(18px,2.4vw,26px);border-radius:20px;background:linear-gradient(135deg,transparent,var(--tray))}
+.co-root .co-sub-head{display:flex;align-items:flex-start;gap:14px}
+.co-root .co-sub-n{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--btn-inv-bg);color:var(--btn-inv-fg);font-size:13px;font-weight:700}
+.co-root .co-h3{margin:0;font-size:17px;font-weight:600;letter-spacing:-.02em;color:var(--t1)}
+.co-root .co-sub-hint{margin:2px 0 0;font-size:13px;line-height:1.5;color:var(--t5)}
+.co-root .co-try{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--t4)}
+.co-root .co-try-list{display:flex;flex-wrap:wrap;gap:8px}
+.co-root .co-example{max-width:100%;padding:8px 16px;border:1px dashed var(--line-strong);border-radius:999px;background:transparent;color:var(--t2);font-family:inherit;font-size:13px;font-weight:500;text-align:left;cursor:pointer;transition:background .2s,border-color .2s}
+.co-root .co-example:hover{background:var(--tray);border-color:var(--t1)}
+.co-root .co-example:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.co-root .co-live{display:flex;align-items:center;justify-content:center;min-height:150px;padding:20px;border-radius:14px;background:color-mix(in srgb,var(--t1) 5%,var(--surface));text-align:center}
+.co-root .co-live-img{display:block;max-width:100%;max-height:260px;border-radius:6px;background:#fbfaf5;box-shadow:0 14px 28px var(--sh-4)}
+
+.co-root .co-seg{display:flex;flex-wrap:wrap;gap:6px;padding:4px;border-radius:999px;background:var(--tray);width:fit-content;max-width:100%}
+.co-root .co-seg button{padding:9px 18px;border:0;border-radius:999px;background:transparent;color:var(--t3);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .2s,color .2s}
+.co-root .co-seg button:hover{color:var(--t1)}
+.co-root .co-seg button.on{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.co-root .co-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* What is still needed, or what comes next: sits beside the one filled button. */
+.co-root .co-need{display:inline-flex;align-items:center;gap:8px;font-size:13px;line-height:1.4;color:var(--t4);text-align:right}
+.co-root .co-need i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.co-root .co-need.ok i{background:var(--good)}
+.co-root .co-need b{font-weight:600;color:var(--t1)}
+@media (max-width:560px){
+  .co-root .co-need{display:flex;font-size:12px;text-align:left}
+  .co-root .co-next-wrap{flex-direction:column;align-items:stretch;gap:8px}
+  .co-root .co-nav{flex-direction:column;align-items:stretch}
+  .co-root .co-nav .co-back{order:2}
+  .co-root .co-sub{padding:16px}
+}
+@media (prefers-reduced-motion:reduce){.co-root .co-save-state.busy i{animation:none}}
+
+/* ---------- picked item: the same travelling light as the sign-in and register dialog ---------- */
+@property --co-angle{syntax:'<angle>';initial-value:0deg;inherits:false}
+@keyframes co-orbit{to{--co-angle:360deg}}
+@keyframes co-glow{0%,100%{box-shadow:0 0 12px color-mix(in srgb,var(--co-c1) var(--co-glow),transparent),0 0 26px color-mix(in srgb,var(--co-c2) calc(var(--co-glow) / 2),transparent)}50%{box-shadow:0 0 20px color-mix(in srgb,var(--co-c2) var(--co-glow),transparent),0 0 38px color-mix(in srgb,var(--co-c3) calc(var(--co-glow) / 2),transparent)}}
+/* dark: soft pastel light on black. light: a quiet slate-to-ink sweep, no colour, so it sits with the white and grey page */
+.co-root{--co-c1:#729dff;--co-c2:#ad83f5;--co-c3:#f291ae;--co-head:#fff;--co-glow:16%}
+:root[data-theme="light"] .co-root{--co-c1:#d3dbe8;--co-c2:#a4b2cc;--co-c3:#76869f;--co-head:#4a5973;--co-glow:6%}
+:root[data-theme="light"] .co-root .co-opt.on::before,:root[data-theme="light"] .co-root .co-ink.on::before,:root[data-theme="light"] .co-root .co-step.cur::before{padding:1.5px}
+
+.co-root .co-opt,.co-root .co-ink,.co-root .co-step{position:relative}
+.co-root .co-opt.on,.co-root .co-ink.on{box-shadow:none;animation:co-glow 3s ease-in-out infinite}
+.co-root .co-opt.on::before,.co-root .co-ink.on::before,.co-root .co-step.cur::before{content:'';position:absolute;inset:-1px;border-radius:inherit;padding:2px;pointer-events:none;
+  background:conic-gradient(from var(--co-angle),transparent 0deg 245deg,color-mix(in srgb,var(--co-c1) 35%,transparent) 275deg,var(--co-c2) 308deg,var(--co-c3) 330deg,var(--co-head) 352deg,transparent 357deg 360deg),linear-gradient(135deg,color-mix(in srgb,var(--co-c1) 40%,transparent),color-mix(in srgb,var(--co-c2) 40%,transparent),color-mix(in srgb,var(--co-c3) 40%,transparent));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);
+  animation:co-orbit 3s linear infinite}
+.co-root .co-step.cur{animation:co-glow 3s ease-in-out infinite}
+.co-root .co-step.cur::before{inset:-2px}
+/* a quiet check in ink instead of the old orange disc */
+.co-root .co-opt.on::after{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.co-root .co-ink.on .co-ink-dot{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--t5)}
+
+@media (prefers-reduced-motion:reduce){
+  .co-root .co-opt.on,.co-root .co-ink.on,.co-root .co-step.cur{animation:none}
+  .co-root .co-opt.on::before,.co-root .co-ink.on::before,.co-root .co-step.cur::before{animation:none}
+}
+
+/* ---------- header: solid bar that stays put while the page scrolls under it ---------- */
+.co-root>.lp-header{position:fixed;z-index:60;pointer-events:auto;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line-strong)}
+.co-root>.lp-header .lp-header-inner{padding-top:12px;padding-bottom:12px}
+@media (max-width:1100px){
+  .co-root>.lp-header{position:sticky;top:0}
+}

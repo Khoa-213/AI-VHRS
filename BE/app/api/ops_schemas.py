@@ -368,6 +368,20 @@ class ProductionQueueRow(BaseModel):
     duration_min: int | None
 
 
+class WorkingHoursOut(BaseModel):
+    days: list[int] = Field(description="ISO weekdays, Monday = 1.")
+    start: str = Field(description="Opening time, HH:MM in the workshop's time zone.")
+    end: str = Field(description="Closing time, HH:MM in the workshop's time zone.")
+    utc_offset_min: int
+
+
+class ScheduleConfigOut(BaseModel):
+    working_hours: WorkingHoursOut
+    eta_buffer_days: int = Field(description="Margin added to a job's finish date before comparing it with the ETA.")
+    lead_min: int = Field(description="Suggestions start at least this long from now.")
+    slot_step_min: int = Field(description="Step between the start times the suggestion tries.")
+
+
 class Suggestion(BaseModel):
     robot_id: int
     robot_code: str

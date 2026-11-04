@@ -130,22 +130,27 @@ function SketchCard({ s, orderId, busy, run, onEdit, onExpired }: {
   const [note, setNote] = useState(s.note ?? '')
   return (
     <article className={`wk-sketch${s.isFinal ? ' final' : ''}`}>
-      <header>
-        <b>{t('ov.sketch', { v: s.version })}</b>
-        {s.isFinal && <span className="wk-final">{t('wk.final')}</span>}
-      </header>
-      <div className="wk-previews">
-        {s.previewUrls.map((u, i) => <img key={u} src={u} alt={t('opv.sketch', { n: i + 1 })} onError={onExpired} />)}
-        {!s.previewUrls.length && <span className="sd-sub">{t('wk.noPreview')}</span>}
+      <div className="wk-sketch-paper">
+        {s.imageUrls.map((u, i) => (
+          <a key={u} href={u} target="_blank" rel="noreferrer" title={t('wk.openImage')}>
+            <img src={u} alt={t('opv.sketch', { n: i + 1 })} onError={onExpired} />
+          </a>
+        ))}
+        {!s.imageUrls.length && <span className="sd-sub">{t('wk.out.noImage')}</span>}
       </div>
-      <dl className="wk-rows">
-        {s.similarity !== null && <div><dt>{t('wk.similarity')}</dt><dd>{Math.round(s.similarity * 100) / 100}%</dd></div>}
-        {s.writingSec !== null && <div><dt>{t('wk.writingTime')}</dt><dd>{t('wk.minutes', { n: Math.max(1, Math.round(s.writingSec / 60)) })}</dd></div>}
-        {s.strokeMm !== null && <div><dt>{t('wk.strokeLength')}</dt><dd>{Math.round(s.strokeMm)} mm</dd></div>}
-        {s.penLifts !== null && <div><dt>{t('wk.penLifts')}</dt><dd>{s.penLifts}</dd></div>}
-      </dl>
-      {s.warnings.map((w) => <p key={w} className="wk-warn">{w}</p>)}
-      <div className="wk-form">
+      <div className="wk-sketch-body">
+        <header>
+          <b>{t('ov.sketch', { v: s.version })}</b>
+          {s.isFinal && <span className="wk-final">{t('wk.final')}</span>}
+        </header>
+        <p className="sd-sub">{t('wk.out.imageLede')}</p>
+        {(s.similarity !== null || s.writingSec !== null) && (
+          <dl className="wk-rows">
+            {s.similarity !== null && <div><dt>{t('wk.similarity')}</dt><dd>{Math.round(s.similarity * 100) / 100}%</dd></div>}
+            {s.writingSec !== null && <div><dt>{t('wk.writingTime')}</dt><dd>{t('wk.minutes', { n: Math.max(1, Math.round(s.writingSec / 60)) })}</dd></div>}
+          </dl>
+        )}
+        {s.warnings.map((w) => <p key={w} className="wk-warn">{w}</p>)}
         <label className="vh-label">
           {t('wk.complexity')}
           <select
@@ -158,26 +163,18 @@ function SketchCard({ s, orderId, busy, run, onEdit, onExpired }: {
             {COMPLEXITIES.map((c) => <option key={c} value={c}>{t(`cx.${c}`)}</option>)}
           </select>
         </label>
-        <label className="vh-label wk-grow">
-          {t('wk.approach')}
-          <input className="vh-input" value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
-        </label>
-        <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy || note === (s.note ?? '')} onClick={() => void run(() => patchSketch(orderId, s.version, { approach_note: note.trim() || null }))}>{t('wk.saveNote')}</button>
-        <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => void run(async () => download(orderId, s.version))}>{t('wk.downloadTrajectory')}</button>
-        <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => void run(async () => onEdit(pagesFromTrajectory(await sketchTrajectory(orderId, s.version))))}>{t('wk.editVersion')}</button>
-        {!s.isFinal && <button className="vh-btn vh-btn--primary vh-btn--sm" disabled={busy} onClick={() => void run(() => finalizeSketch(orderId, s.version))}>{t('wk.finalize')}</button>}
+        <div className="wk-form">
+          <label className="vh-label wk-grow">
+            {t('wk.approach')}
+            <input className="vh-input" value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy || note === (s.note ?? '')} onClick={() => void run(() => patchSketch(orderId, s.version, { approach_note: note.trim() || null }))}>{t('wk.saveNote')}</button>
+        </div>
+        <div className="wk-actions wk-sketch-foot">
+          <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => void run(async () => onEdit(pagesFromTrajectory(await sketchTrajectory(orderId, s.version))))}>{t('wk.editVersion')}</button>
+          {!s.isFinal && <button className="vh-btn vh-btn--primary vh-btn--sm" disabled={busy} onClick={() => void run(() => finalizeSketch(orderId, s.version))}>{t('wk.finalize')}</button>}
+        </div>
       </div>
     </article>
   )
-}
-
-/** Saves the pen path of a version as a JSON file. */
-async function download(orderId: number, version: number) {
-  const data = await sketchTrajectory(orderId, version)
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `order-${orderId}-sketch-v${version}.json`
-  a.click()
-  URL.revokeObjectURL(url)
 }

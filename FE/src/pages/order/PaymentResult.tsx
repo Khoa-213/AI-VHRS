@@ -95,7 +95,7 @@ export default function PaymentResult() {
 
   const deposit = order?.status === 'CONFIRMED' || order?.status === 'AWAITING_DEPOSIT'
   const back = order && PAYING.includes(order.status)
-    ? (order.status === 'AWAITING_DEPOSIT' ? orderPath(orderId, 'deposit') : orderPath(orderId, 'review'))
+    ? (order.status === 'AWAITING_DEPOSIT' ? orderPath(orderId, 'deposit') : orderPath(orderId, 'payment'))
     : orderPath(orderId, 'review')
 
   return (

@@ -17,6 +17,7 @@ import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
 import ChangeRequests from './ChangeRequests'
 import { isManagerRole } from './RequireStaff'
+import FulfillmentPanel, { FULFILLMENT_STATES } from './FulfillmentPanel'
 import QuotationPanel from './QuotationPanel'
 import SketchPanel from './SketchPanel'
 
@@ -67,11 +68,12 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
   const mine = order.assignedStaffId !== null && order.assignedStaffId === user?.id
   const assignee = staff.data?.find((s) => s.id === order.assignedStaffId)
   const unassigned = order.assignedStaffId === null
-  // A Manager acts on a pool order only after choosing the Staff who will own it.
+  // Intake decisions belong to the Staff (a Manager gets 403): the Manager only chooses who owns the order.
   const chosen = unassigned && manager ? (staffId ?? staff.data?.[0]?.id ?? null) : null
   // A Staff who decides on an unclaimed order claims it in the same step.
-  const canDecide = order.status === 'SUBMITTED' && (manager ? !unassigned || chosen !== null : mine || unassigned)
-  const withStaff = chosen ?? undefined
+  const canDecide = order.status === 'SUBMITTED' && !manager && (mine || unassigned)
+  // The intake panel below assigns an unclaimed new order; this block moves any other order to a different Staff.
+  const canAssign = manager && !(unassigned && order.status === 'SUBMITTED') && ['SUBMITTED', 'NEED_INFO', 'ACCEPTED', ...AFTER_QUOTE.filter((status) => status !== 'COMPLETED')].includes(order.status)
   const inputs = order.inputs
   const blurry = inputs.some((i) => i.kind === 'ORIGINAL_IMAGE' && i.qualityWarning)
   const canvas = inputs.find((i) => i.kind === 'CANVAS')
@@ -98,6 +100,18 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         </div>
         <span className="vh-chip" style={{ color: STATUS_COLOR[order.status] }}>{t(`os.${order.status}`)}</span>
       </header>
+
+      {canAssign && <section className="wk-block">
+        <label className="vh-label">{t('wk.reassign')}
+          <select className="vh-select" value={order.assignedStaffId ?? ''} disabled={busy || staff.loading} onChange={(e) => { if (e.target.value) void run(() => assignStaff(id, Number(e.target.value))) }}>
+            <option value="" disabled>{t('wk.pickStaff')}</option>
+            {(staff.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.fullName} · {t('wk.openOrders', { n: s.openOrders })}</option>)}
+          </select>
+        </label>
+        {staff.error != null && <p className="lg-error" role="alert">{errText(t, orderErrorKey(staff.error))}</p>}
+      </section>}
+
+      {FULFILLMENT_STATES.includes(order.status) && <FulfillmentPanel order={order} onChanged={async () => { await q.reload(); onChanged() }} />}
 
       <section className="wk-block" aria-label={t('wk.content')}>
         <h3>{t('wk.content')}</h3>
@@ -126,17 +140,21 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         <section className="wk-block" aria-label={t('wk.intake')}>
           <h3>{t('wk.intake')}</h3>
           {unassigned && !manager && <p className="sd-sub">{t('wk.decideClaims')}</p>}
+          {manager && <p className="sd-sub">{t('wk.managerIntake')}</p>}
           {manager && unassigned && (
-            <label className="vh-label">
-              {t('wk.pickStaff')}
-              <select className="vh-select" value={chosen ?? ''} onChange={(e) => setStaffId(Number(e.target.value))}>
-                {(staff.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.fullName} · {t('wk.openOrders', { n: s.openOrders })}</option>)}
-              </select>
-            </label>
+            <div className="wk-form">
+              <label className="vh-label wk-grow">
+                {t('wk.pickStaff')}
+                <select className="vh-select" value={chosen ?? ''} disabled={busy} onChange={(e) => setStaffId(Number(e.target.value))}>
+                  {(staff.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.fullName} · {t('wk.openOrders', { n: s.openOrders })}</option>)}
+                </select>
+              </label>
+              <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || chosen === null} onClick={() => void run(() => assignStaff(id, chosen!))}>{t('wk.assign')}</button>
+            </div>
           )}
           {canDecide && panel === '' && (
             <div className="wk-actions">
-              <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy} onClick={() => void run(() => acceptOrder(id, withStaff))}>{t('wk.accept')}</button>
+              <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy} onClick={() => void run(() => acceptOrder(id))}>{t('wk.accept')}</button>
               <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => setPanel('info')}>{t('wk.askInfo')}</button>
               <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => setPanel('reject')}>{t('wk.reject')}</button>
             </div>
@@ -147,7 +165,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
               <textarea id="wk-note" className="vh-textarea" rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} />
               <div className="wk-actions">
                 <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={() => setPanel('')}>{t('ov.back')}</button>
-                <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || !note.trim()} onClick={() => void run(() => requestInfo(id, note.trim(), withStaff))}>{t('wk.sendInfo')}</button>
+                <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || !note.trim()} onClick={() => void run(() => requestInfo(id, note.trim()))}>{t('wk.sendInfo')}</button>
               </div>
             </div>
           )}
@@ -165,18 +183,11 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
               </label>
               <div className="wk-actions">
                 <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={() => setPanel('')}>{t('ov.back')}</button>
-                <button className="vh-btn vh-btn--white vh-btn--md" disabled={busy} onClick={() => void run(() => rejectOrder(id, reason, note, withStaff))}>{t('wk.rejectConfirm')}</button>
+                <button className="vh-btn vh-btn--white vh-btn--md" disabled={busy} onClick={() => void run(() => rejectOrder(id, reason, note))}>{t('wk.rejectConfirm')}</button>
               </div>
             </div>
           )}
-          {manager && !unassigned && (
-            <label className="vh-label">
-              {t('wk.reassign')}
-              <select className="vh-select" value={order.assignedStaffId ?? ''} disabled={busy} onChange={(e) => void run(() => assignStaff(id, Number(e.target.value)))}>
-                {(staff.data ?? []).map((s) => <option key={s.id} value={s.id}>{s.fullName} · {t('wk.openOrders', { n: s.openOrders })}</option>)}
-              </select>
-            </label>
-          )}
+
         </section>
       )}
 

@@ -84,12 +84,13 @@ class _TechLoginScreenState extends ConsumerState<TechLoginScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          const Positioned(top: 24, right: 32, child: LanguageToggle()),
+      body: SafeArea(
+        child: Stack(
+          children: [
+          Positioned(top: isCompact(context) ? 12 : 24, right: isCompact(context) ? 16 : 32, child: const LanguageToggle()),
           Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(32),
+              padding: EdgeInsets.fromLTRB(isCompact(context) ? 16 : 32, 64, isCompact(context) ? 16 : 32, 32),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 440),
                 child: Column(
@@ -163,7 +164,8 @@ class _TechLoginScreenState extends ConsumerState<TechLoginScreen> {
               ),
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -245,7 +247,7 @@ class _ResetDialogState extends ConsumerState<_ResetDialog> {
                 children: [
                   TechButton(t('dk.reset.send'), onPressed: _sending ? null : _send),
                   const SizedBox(width: 12),
-                  TechButton(t('qc.cancel'),
+                  TechButton(t('dk.settings.cancel'),
                       style: CustomButtonStyle.text, small: true, onPressed: () => Navigator.of(context).pop()),
                 ],
               ),

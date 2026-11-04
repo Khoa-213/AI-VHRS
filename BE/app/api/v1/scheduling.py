@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (IncidentOut, JobEventOut, JobOut, ProductionQueueRow, RescheduleIn, ResolveIncidentIn,
-                                 ScheduleIn, SuggestionOut, TechnicianOut, UnscheduleIn)
+                                 ScheduleConfigOut, ScheduleIn, SuggestionOut, TechnicianOut, UnscheduleIn)
 from app.api.schemas import ErrorOut, Page
 from app.models.account import Account, RoleCode
 from app.models.ops import JobStatus, ProductionJob
@@ -45,6 +45,13 @@ def queue(svc: Svc, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1,
                                 quantity=o.quantity, eta=o.eta, production_status=o.production_status.value,
                                 confirmed_at=o.confirmed_at, duration_min=svc.duration_min(o)) for o, name in rows]
     return Page(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/schedule/config", response_model=ScheduleConfigOut,
+            summary="Giờ làm việc và tham số xếp lịch, để vẽ lịch và tính mốc hạn giống backend",
+            responses={503: {"model": ErrorOut, "description": "WORKING_HOURS_INVALID"}})
+def schedule_config(svc: Svc) -> ScheduleConfigOut:
+    return ScheduleConfigOut(**svc.config())
 
 
 @router.get("/orders/{order_id}/schedule-suggestion", response_model=SuggestionOut,
