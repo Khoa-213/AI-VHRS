@@ -241,7 +241,7 @@ class SchedulingService:
                      entity_id=job.id, new={"order_id": order.id, "robot_id": robot.id, "technician_id": tech.id,
                                             "slot_start": slot_start.isoformat(), "slot_end": slot_end.isoformat(),
                                             "is_rewrite": rewrite}, reason=note, ip=self.ip)
-        notifications.notify(account_id=tech.id, order_id=order.id, msg_code="JOB_ASSIGNED", code=order.code,
+        notifications.notify(self.session, account_id=tech.id, order_id=order.id, msg_code="JOB_ASSIGNED", code=order.code,
                              slot_start=slot_start.isoformat())
         return job
 

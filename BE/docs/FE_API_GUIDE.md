@@ -13,6 +13,7 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **Trang `/payment/result`** (cổng đưa khách về đây kèm `?order_id=<id>`): poll `GET /orders/{id}` tới ~60 giây, gọi `POST /payments/{id}/refresh` một lần nếu còn `PENDING` (bỏ qua lỗi 502 của VNPay), rồi đưa khách về đơn. Không tin tham số của cổng.
 - [ ] **`pages/order/Deposit.tsx`:** thêm lựa chọn **PAYOS** (đọc `GET /payments/gateways`, chỉ hiện cổng `enabled`); khi `PaymentOut.pay_url` có giá trị thì `window.location.assign(pay_url)` và không chạy luồng mock; nhãn "MOCK" chỉ hiện khi `mode === "MOCK"`; thêm `pay_url`, `pay_url_expires_at`, `qr_code`, `bank`, `needs_refund` vào kiểu `Payment` trong `services/orders.ts`.
 - [ ] **payOS:** hiện hạn của mã (`pay_url_expires_at`) và cho tạo mã mới khi hết hạn; thông báo "đã chuyển sai số tiền" khi `needs_refund`. Khi test, trang `pay.payos.vn/web/<id>` từng không mở được trên trình duyệt của chủ dự án (nghi sao chép sai đường dẫn): hãy thử luồng redirect thật và báo lại BE nếu vẫn lỗi. Tuỳ chọn: tự vẽ QR từ `qr_code`.
+- [ ] **Thông báo (2026-11-04, mục 7j):** chuông + badge (`GET /me/notifications/unread-count`), danh sách có "xem thêm" (`before_id`), đánh dấu đã đọc / đọc hết, mở `GET /me/notifications/stream` bằng fetch-stream (có header Bearer) để cập nhật tức thời và tải lại màn đơn đang xem; áp dụng cho cả web khách, web xưởng và DesktopApp kỹ thuật viên.
 - [ ] **Màn thanh toán cuối** (`POST /orders/{id}/payments/final`, mục 7d).
 
 **Giao hàng (mục 7d, 7e)**
@@ -43,7 +44,7 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **Màn Manager:** `GET /manager/robot-status`, `GET /manager/robots/{id}/health`, `GET /manager/alerts`, `GET /manager/jobs/{id}/compliance` (từng bước đạt/không + ngoại lệ), `GET /manager/runs`, `GET/PATCH /manager/alert-catalog`.
 - [ ] Cảnh báo mức 4 cũng được **gửi email** (BE làm); FE không cần gửi.
 
-**Chưa có ở BE (đừng chờ):** đẩy tức thời (SSE/WebSocket), thông báo in-app và email, huỷ sau cọc và hoàn tiền (xem mục 10).
+**Đã có từ 2026-11-04:** trung tâm thông báo in-app + email và đẩy tức thời qua SSE (mục 7j), huỷ sau cọc và hoàn tiền (mục 7h), ETA (mục 7i).
 
 ## 1. Kết nối nhanh
 
@@ -182,7 +183,7 @@ stateDiagram-v2
 | `COMPLETED` | Đã nhận hàng (`completed_at`) | `POST /orders/{id}/receipt` (ghi `received_confirmed_at`), đánh giá (Phase 5) |
 | `CANCELLED` | Đã huỷ (`cancel_reason`) | chỉ xem |
 
-> **Chưa có thông báo đẩy** (Phase 4). FE hiện phải **poll** `GET /orders/{id}` (ví dụ mỗi 15–30 giây ở màn chi tiết đơn) hoặc làm mới khi người dùng mở màn hình.
+> **Thông báo đẩy:** mở `GET /me/notifications/stream` (mục 7j); khi có sự kiện `notification` của đơn đang xem thì tải lại `GET /orders/{id}`. Không mở được stream thì poll như cũ (15–30 giây).
 
 ## 5. Luồng Customer (từ ý tưởng tới đã cọc)
 
@@ -330,9 +331,9 @@ GET /workshop/conversations/unread-count                 (Staff, Manager)  → {
 - Phạm vi: khách thấy đơn của mình (đã gửi); **Staff thấy đơn mình phụ trách và các đơn chưa ai nhận (`SUBMITTED`)**; Manager thấy mọi đơn đã gửi. Vì vậy **FE Staff không nên ẩn các đơn chưa ai nhận** nữa.
 - `unread-count` chỉ là một con số (một truy vấn đếm, có chỉ mục): gọi thoải mái cho badge nút chat (15–60 giây/lần). `unread` đếm tin của **bên kia** chưa `read_at`; `POST /orders/{id}/messages/read` đánh dấu đã đọc. Lưu ý: `read_at` gắn vào tin nhắn, không theo từng người đọc, nên khi Staff và Manager cùng xem một đơn thì một người đọc là cả hai thấy đã đọc.
 
-**Khách nhắn khi đơn chưa có Staff nhận:** tin vẫn được lưu; BE báo cho **mọi Manager đang hoạt động** (mã thông báo `MESSAGE_UNCLAIMED`; thông báo in-app/email ở Phase 4e, hiện mới ghi log). Staff đọc được nhưng **chưa nhắn được** cho tới khi nhận đơn (`409 ORDER_NOT_CLAIMED`); Manager trả lời được. FE khách có thể hiện dòng "Đơn chưa có nhân viên nhận, xưởng sẽ trả lời sớm".
+**Khách nhắn khi đơn chưa có Staff nhận:** tin vẫn được lưu; BE báo cho **mọi Manager đang hoạt động** (thông báo in-app `MESSAGE_UNCLAIMED`, mục 7j). Staff đọc được nhưng **chưa nhắn được** cho tới khi nhận đơn (`409 ORDER_NOT_CLAIMED`); Manager trả lời được. FE khách có thể hiện dòng "Đơn chưa có nhân viên nhận, xưởng sẽ trả lời sớm".
 
-**Chưa có:** thông báo tức thời (SSE/WebSocket): FE vẫn poll `unread-count` và `GET /orders/{id}/messages`.
+**Tin nhắn mới:** có thông báo in-app `NEW_MESSAGE` (không chồng: chỉ một thông báo chưa đọc mỗi đơn) và đẩy qua stream (mục 7j); bản thân tin nhắn chưa đẩy, FE tải lại `GET /orders/{id}/messages` khi nhận sự kiện của đơn đó.
 
 ## 6. Luồng Staff (`/workshop/*`; Manager chỉ đọc ở nhóm này)
 
@@ -660,7 +661,7 @@ Từ `AWAITING_ACCEPTANCE` trở đi không huỷ được. Đơn chưa cọc v�
 | Tiền về muộn / sai số tiền (`orphans`, cờ `needs_refund`) | `POST /workshop/payments/{payment_id}/refund {reason, amount?, refund_account?}` → `201`; `amount` mặc định = `received_amount`, không được lớn hơn. Mỗi khoản chỉ một yêu cầu (`409 REFUND_EXISTS`) |
 | Đã chuyển tiền | `POST /workshop/refunds/{id}/confirm {reference, note?, refund_account?}` → `SUCCESS`, ghi người xác nhận. Lần hai → `409 REFUND_NOT_PENDING` |
 
-Hoàn tiền **chưa** gọi API của cổng (payOS không có API hoàn tiền; VNPay cần whitelist IP; MoMo chưa thử): Staff chuyển khoản tay (hoặc hoàn trong trang quản trị của cổng) rồi bấm xác nhận. Thông báo (`ORDER_CANCELLED`, `REFUND_REQUESTED`, `REFUND_SENT`, `JOB_CANCELLED`) mới ghi log, gửi thật ở Phase 4e: FE poll `GET /orders/{id}/payments`.
+Hoàn tiền **chưa** gọi API của cổng (payOS không có API hoàn tiền; VNPay cần whitelist IP; MoMo chưa thử): Staff chuyển khoản tay (hoặc hoàn trong trang quản trị của cổng) rồi bấm xác nhận. Thông báo in-app (mục 7j): khách nhận `ORDER_CANCELLED`, `REFUND_REQUESTED`, `REFUND_SENT`; Staff nhận "Cần hoàn tiền"; kỹ thuật viên nhận "Huỷ việc".
 
 ## 7i. Ngày giao dự kiến (ETA) và dời ETA – Phase 4d-2 (FR-26, UC-30; BR-15, BR-16, MSG11)
 
@@ -683,7 +684,29 @@ Mọi lần **dời muộn hơn** được ghi lịch sử và cộng vào `post
 | Staff / Manager (chỉ đọc) | `GET /workshop/orders/{id}/eta` → như trên + `history[].actor_id` (null = hệ thống) + `suggested_eta` (ETA ước tính nếu xác nhận lúc này, để điền sẵn ô ETA khi lập báo giá) |
 | Staff được giao đơn | `POST /workshop/orders/{id}/eta {eta, reason}` → `EtaOut`. Chỉ khi đơn đã cọc và chưa giao xong (`409 ETA_NOT_EDITABLE`); `422 ETA_IN_PAST`, `ETA_TOO_FAR` (quá 1 năm), `ETA_UNCHANGED` |
 
-Thông báo `ETA_POSTPONED` (MSG11) / `ETA_CHANGED` mới ghi log, gửi thật ở Phase 4e: FE poll `GET /orders/{id}/eta` ở màn chi tiết đơn.
+Dời ETA gửi MSG11 (in-app + email, `type` `ETA_POSTPONED`); Staff kéo ETA sớm hơn chỉ gửi in-app (mục 7j).
+
+## 7j. Thông báo in-app, email và đẩy tức thời – Phase 4e (FR-27, FR-57; MSG07/08/10/11/12/15)
+
+Mọi vai trò đã đăng nhập (kể cả Staff, Technical Staff, Manager) có danh sách thông báo riêng, dưới `/me/notifications`:
+
+| Việc | API |
+|---|---|
+| Danh sách (mới nhất trước) | `GET /me/notifications?unread_only=false&limit=20&before_id=` → `{items: NotificationOut[], unread_count, next_before_id}`. Trang sau: gửi `before_id = next_before_id`; `null` là hết |
+| Badge | `GET /me/notifications/unread-count` → `{unread_count}` |
+| Đọc một | `POST /me/notifications/{id}/read` → `NotificationOut` (gọi lại vẫn 200; của người khác: `404 NOTIFICATION_NOT_FOUND`) |
+| Đọc hết | `POST /me/notifications/read-all` → `{updated}` |
+| Nhận tức thời | `GET /me/notifications/stream` (Server-Sent Events, xem dưới) |
+
+`NotificationOut`: `id, order_id, type, msg_code, title, body, is_read, read_at, created_at`. `title`/`body` là **tiếng Việt do BE soạn** (theo SRS mục 5.3) và giữ nguyên câu chữ lúc gửi; FE hiện thẳng, mở đơn theo `order_id` khi bấm. `type` (để chọn icon): `ORDER_REJECTED`, `QUOTATION_AVAILABLE`, `QUOTATION_EXPIRED`, `ETA_POSTPONED`, `PRODUCT_COMPLETED`, `DELIVERING`, `PAYMENT`, `ORDER_STATUS_CHANGED`, `PRODUCTION_STATUS_CHANGED`, `NEW_MESSAGE`, `SYSTEM`. `msg_code` chỉ có với các thông báo SRS đánh số (`MSG07`, `MSG08`, `MSG10`, `MSG11`, `MSG12`, `MSG15`): đúng các thông báo này **cũng được gửi email** tới email của tài khoản; còn lại chỉ in-app.
+
+**Stream (SSE):** gửi `Authorization: Bearer <access token>` như mọi API (BE **không** nhận token trên URL), nên trên web dùng thư viện fetch-stream (ví dụ `@microsoft/fetch-event-source`), không dùng `EventSource` thuần. Luồng sự kiện:
+- `event: ready`, `data: {"unread_count": n}` ngay khi mở;
+- `event: notification`, `id: <id>`, `data: <NotificationOut>` mỗi khi có thông báo mới (gửi **sau khi** giao dịch của sự kiện đã lưu);
+- dòng `: ping` mỗi 20 giây giữ kết nối;
+- BE tự đóng sau 30 phút; client nối lại (gợi ý chờ 5 giây, `retry: 5000`). Token hết hạn: refresh rồi nối lại; `401` khi mở là token sai.
+
+Stream chỉ là "có cái mới": nguồn đúng vẫn là `GET /me/notifications`. Khi nối lại, tải lại danh sách và badge (sự kiện trong lúc mất kết nối không được phát lại).
 
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
@@ -703,6 +726,7 @@ Thông báo `ETA_POSTPONED` (MSG11) / `ETA_CHANGED` mới ghi log, gửi thật 
 | `ORDER_CANCEL_UNSUPPORTED` | 409 | Không huỷ online được (kể cả khi cọc vừa được xác nhận đúng lúc khách bấm huỷ: hãy tải lại đơn, nó đang `CONFIRMED`, rồi gọi `cancel-preview` để khách xem số tiền hoàn) | "Liên hệ xưởng" / tải lại |
 | `JOB_RUNNING`, `CANCEL_AFTER_WRITING_STARTED` | 409 | Robot đang viết / đơn đã bắt đầu viết và ETA chưa dời quá ngưỡng (BR-14/16, mục 7h) | ẩn nút huỷ, hiện `message` |
 | `ETA_NOT_EDITABLE`, `ETA_IN_PAST`, `ETA_TOO_FAR`, `ETA_UNCHANGED` | 409/422 | Đổi ETA sai bước / ngày không hợp lệ (mục 7i) | hiện `message` |
+| `NOTIFICATION_NOT_FOUND` | 404 | Thông báo không tồn tại hoặc của người khác (mục 7j) | tải lại danh sách |
 | `REFUND_ACCOUNT_REQUIRED` | 422 | Cọc qua payOS: phải nhập tài khoản nhận hoàn tiền | hiện form `refund_account` |
 | `REFUND_EXISTS`, `REFUND_NOT_PENDING`, `NOT_REFUNDABLE`, `INVALID_REFUND_AMOUNT` | 409/422 | Hoàn tiền sai bước / trùng / sai số tiền (mục 7h) | tải lại danh sách, hiện `message` |
 | `UNSUPPORTED_CHARS`, `TEXT_TOO_LONG`, `FONT_TOO_LARGE`, `CANVAS_OUT_OF_PAPER` | 422 | Nội dung không sinh được nét | nêu lỗi, cho sửa |
@@ -747,8 +771,8 @@ Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thậ
 
 - Huỷ sau cọc + hoàn tiền: **đã có** (mục 7h). ETA tự tính và dời ETA có lý do (MSG11): **đã có** (mục 7i).
 - Technical Staff: **đã có** xem job, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố (mục 7b), ảnh sản phẩm + QC và nộp ảnh (mục 7c). Ảnh chồng phác thảo do client tự làm.
-- Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4); **chưa có** đẩy tức thời (SSE/WebSocket).
-- Khách: **đã có** xem ảnh, nghiệm thu, viết lại 1 lần, tự nghiệm thu sau 7 ngày (mục 7c). Thanh toán cuối + nhận tại xưởng **đã có** (mục 7d). Chọn dịch vụ vận chuyển, vận đơn và giao hàng qua hãng **đã có** (mục 7e). **Chưa có**: huỷ sau cọc + hoàn tiền (kể cả khoản `needs_refund`), dời ETA, **thông báo (in-app + email)** (Phase 4d/4e).
+- Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4), thông báo `NEW_MESSAGE` qua stream (mục 7j); bản thân tin nhắn chưa được đẩy.
+- Khách: **đã có** xem ảnh, nghiệm thu, viết lại 1 lần, tự nghiệm thu sau 7 ngày (mục 7c). Thanh toán cuối + nhận tại xưởng **đã có** (mục 7d). Chọn dịch vụ vận chuyển, vận đơn và giao hàng qua hãng **đã có** (mục 7e). Huỷ sau cọc + hoàn tiền (mục 7h), dời ETA (mục 7i), thông báo in-app + email + stream (mục 7j): **đã có**.
 - Cổng thanh toán thật (VNPay, MoMo) đã có code nhưng **chưa được thử với môi trường thật của họ**. **GHN** (hãng duy nhất) đã được thử trên staging ngày 2026-10-26: báo giá (`preview`), tạo/huỷ vận đơn, link nhãn, danh mục địa chỉ; **chưa** thử callback thật. Mặc định vẫn là MOCK cho tới khi cấu hình (xem `DEPLOY.md`).
 - Admin: tích hợp, tham số hệ thống, dashboard, OTP SMS, showcase, review (Phase 5).
 - OT-2 (nét đã học) khoá với khách; AI không sinh phác thảo cho OT-2.

@@ -16,7 +16,7 @@ from tests.conftest import auth
 from tests.test_api_orders import API, _sql
 from tests.test_api_payments import GW, _code, _hook, _paid, _signed
 from tests.test_api_photos_acceptance import _awaiting, _ost
-from tests.test_api_scheduling import CAL, _at, _prod, mgr, robot, tech  # noqa: F401
+from tests.test_api_scheduling import CAL, _ago, _at, _prod, mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import _err, _user, cust, manager, policy, staff, store, wcat  # noqa: F401
 
 ADDRESS = {"receiver": "Nguyễn An", "phone": "0901234567", "street": "1 Lê Lợi", "province_code": "1000001",
@@ -119,7 +119,7 @@ def test_quote_and_the_choice_of_delivery_are_validated(client, cust, staff, mgr
            (_delivery(ward_code=""), "INVALID_ADDRESS"), (_delivery(street="  "), "INVALID_ADDRESS"),
            (_delivery(ward_code="999"), "INVALID_ADDRESS"),                                    # not in the catalogue
            (_delivery(province_code="1000000"), "INVALID_ADDRESS"),                            # the ward is not in that province
-           (_pickup(**_slot(days=-2)), "SLOT_IN_PAST"),
+           (_pickup(pickup_slot_start=_ago(2).isoformat(), pickup_slot_end=(_ago(2) + timedelta(minutes=60)).isoformat()), "SLOT_IN_PAST"),
            # _at() rolls a closed hour forward to opening time, so build the 07:00 start by hand
            (_pickup(pickup_slot_start=_at(1, 9).replace(hour=7).isoformat(),
                     pickup_slot_end=_at(1, 9).replace(hour=8).isoformat()), "OUTSIDE_WORKING_HOURS"),

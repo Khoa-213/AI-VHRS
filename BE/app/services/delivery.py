@@ -255,7 +255,7 @@ class DeliveryService:
         return rows, due, order
 
     def _notify_ready(self, order: Order) -> None:
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="FINAL_PAID", code=order.code)
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="FINAL_PAID", code=order.code)
 
     # ------------------------------------------------------------------ the customer has the product
     def confirm_receipt(self, order_id: int) -> Order:
@@ -297,5 +297,5 @@ class PickupService:
         self.session.refresh(order)
         audit.record(self.session, actor_id=self.staff.id, action="ORDER_PICKUP_CONFIRM", entity_type="order",
                      entity_id=order.id, ip=self.ip)
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="ORDER_COMPLETED", code=order.code)
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="ORDER_COMPLETED", code=order.code)
         return order

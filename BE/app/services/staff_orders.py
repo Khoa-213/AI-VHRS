@@ -115,7 +115,7 @@ class StaffOrderService:
         order = self._intake_order(order_id, staff_id)
         order.reject_reason, order.reject_note = reason, (note or None)
         self._move(order, OrderStatus.REJECTED, (note or reason).strip())
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="MSG07", code=order.code,
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="MSG07", code=order.code,
                              reason=note or reason)
         return order
 

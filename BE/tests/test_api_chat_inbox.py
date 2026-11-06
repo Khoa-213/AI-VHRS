@@ -48,7 +48,7 @@ def _unread(client, headers, scope="me"):
 def alerts(monkeypatch):
     """Records every notification the chat sends instead of only logging it."""
     sent = []
-    monkeypatch.setattr(messages_service.notifications, "notify", lambda **kw: sent.append(kw))
+    monkeypatch.setattr(messages_service.notifications, "notify", lambda *a, **kw: sent.append(kw))
     return sent
 
 

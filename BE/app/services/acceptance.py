@@ -86,7 +86,7 @@ class AcceptanceService:
         audit.record(self.session, actor_id=actor_id, action="ORDER_AUTO_ACCEPT" if auto else "ORDER_ACCEPT_PRODUCT",
                      entity_type="order", entity_id=order.id, new={"job_id": job.id}, ip=self.ip)
         if order.assigned_staff_id:
-            notifications.notify(account_id=order.assigned_staff_id, order_id=order.id,
+            notifications.notify(self.session, account_id=order.assigned_staff_id, order_id=order.id,
                                  msg_code="PRODUCT_AUTO_ACCEPTED" if auto else "PRODUCT_ACCEPTED", code=order.code)
 
     def settle_overdue(self, order: Order) -> bool:
@@ -157,7 +157,7 @@ class AcceptanceService:
         audit.record(self.session, actor_id=self.customer.id, action="ORDER_REWRITE_REQUEST", entity_type="order",
                      entity_id=order.id, new={"job_id": job.id, "reason_code": reason_code}, reason=note, ip=self.ip)
         for account_id in {job.scheduled_by, order.assigned_staff_id} - {None}:
-            notifications.notify(account_id=account_id, order_id=order.id, msg_code="REWRITE_REQUESTED",
+            notifications.notify(self.session, account_id=account_id, order_id=order.id, msg_code="REWRITE_REQUESTED",
                                  code=order.code, reason_code=reason_code)
         self.session.refresh(order)
         return order

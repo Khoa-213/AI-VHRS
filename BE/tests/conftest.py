@@ -130,6 +130,10 @@ def _no_real_provider_credentials(monkeypatch):
         monkeypatch.setattr(s, name, None)
     from app.integrations.mailer import ConsoleMailer
     ConsoleMailer.outbox.clear()
+    # the notification stream would otherwise stay open for 30 minutes (TestClient reads the whole body)
+    from app.api.v1 import notifications as notification_api
+    monkeypatch.setattr(notification_api, "MAX_STREAM_S", 0.5)
+    monkeypatch.setattr(notification_api, "HEARTBEAT_S", 0.2)
 
 
 @pytest.fixture(scope="session")

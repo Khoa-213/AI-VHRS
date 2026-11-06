@@ -52,7 +52,7 @@ def _expire(session: Session, q: Quotation, order: Order) -> None:
     session.flush()
     audit.record(session, actor_id=None, action="QUOTATION_EXPIRE", entity_type="quotation", entity_id=q.id,
                  new={"order_id": order.id, "version": q.version})
-    notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="MSG08", code=order.code)
+    notifications.notify(session, account_id=order.customer_id, order_id=order.id, msg_code="MSG08", code=order.code)
 
 
 def expire_if_overdue(session: Session, order: Order) -> bool:
@@ -399,7 +399,7 @@ class QuotationService:
         audit.record(self.session, actor_id=self.actor.id, action="QUOTATION_SEND", entity_type="quotation",
                      entity_id=q.id, new={"order_id": order.id, "version": q.version,
                                           "final_total": str(q.final_total)}, ip=self.ip)
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="MSG10", code=order.code,
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="MSG10", code=order.code,
                              total=str(q.final_total))
         return q
 

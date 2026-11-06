@@ -101,7 +101,7 @@ class EtaService:
             audit.record(self.session, actor_id=self.actor.id if self.actor else None, action="ETA_POSTPONE",
                          entity_type="order", entity_id=order.id, old={"eta": old.isoformat()},
                          new={"eta": new.isoformat(), "postponed_days": order.eta_postponed_days}, reason=reason, ip=self.ip)
-            notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="ETA_POSTPONED", code=order.code,
+            notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="ETA_POSTPONED", code=order.code,
                                  eta=new.isoformat(), reason=reason)
         return True
 
@@ -141,7 +141,7 @@ class EtaService:
         audit.record(self.session, actor_id=self.actor.id, action="ETA_POSTPONE" if later else "ETA_ADVANCE",
                      entity_type="order", entity_id=order.id, old={"eta": old.isoformat() if old else None},
                      new={"eta": new_eta.isoformat(), "postponed_days": order.eta_postponed_days}, reason=reason, ip=self.ip)
-        notifications.notify(account_id=order.customer_id, order_id=order.id,
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id,
                              msg_code="ETA_POSTPONED" if later else "ETA_CHANGED", code=order.code, eta=new_eta.isoformat(),
                              reason=reason)
         return order

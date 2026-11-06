@@ -124,14 +124,14 @@ class MessageService:
 
     def _notify(self, order: Order) -> None:
         if self.role != RoleCode.CUSTOMER.value:
-            notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="MESSAGE", code=order.code)
+            notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="MESSAGE", code=order.code)
         elif order.assigned_staff_id:
-            notifications.notify(account_id=order.assigned_staff_id, order_id=order.id, msg_code="MESSAGE", code=order.code)
+            notifications.notify(self.session, account_id=order.assigned_staff_id, order_id=order.id, msg_code="MESSAGE", code=order.code)
         else:
             # Nobody has claimed the order, so there is no assigned Staff to tell. Every active Manager is told instead (they may
             # answer any order); otherwise the customer's message would sit unseen until someone happened to open the pool.
             for manager_id in self._managers():
-                notifications.notify(account_id=manager_id, order_id=order.id, msg_code="MESSAGE_UNCLAIMED", code=order.code)
+                notifications.notify(self.session, account_id=manager_id, order_id=order.id, msg_code="MESSAGE_UNCLAIMED", code=order.code)
 
     def _managers(self) -> list[int]:
         return list(self.session.scalars(select(Account.id).join(Account.role).where(

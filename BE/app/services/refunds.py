@@ -178,13 +178,13 @@ class CancellationService:
                           "refund_amount": str(decision.refund_amount), "deduction": str(decision.deduction),
                           "refund_id": refund.id if refund else None, "cancelled_jobs": [j.id for j in jobs]},
                      reason=reason, ip=self.ip)
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="ORDER_CANCELLED", code=order.code,
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="ORDER_CANCELLED", code=order.code,
                              refund_amount=str(decision.refund_amount))
         if order.assigned_staff_id and refund is not None:
-            notifications.notify(account_id=order.assigned_staff_id, order_id=order.id, msg_code="REFUND_REQUESTED",
+            notifications.notify(self.session, account_id=order.assigned_staff_id, order_id=order.id, msg_code="REFUND_TO_PROCESS",
                                  code=order.code, amount=str(refund.amount))
         for job in jobs:
-            notifications.notify(account_id=job.technician_id, order_id=order.id, msg_code="JOB_CANCELLED", code=order.code)
+            notifications.notify(self.session, account_id=job.technician_id, order_id=order.id, msg_code="JOB_CANCELLED", code=order.code)
         return order, refund
 
 
@@ -279,7 +279,7 @@ class RefundService:
         audit.record(self.session, actor_id=self.actor.id, action="REFUND_REQUEST", entity_type="payment",
                      entity_id=refund.id, new={"order_id": order.id, "refund_of_id": first.id, "kind": ORPHAN,
                                                "amount": amount}, reason=reason, ip=self.ip)
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="REFUND_REQUESTED", code=order.code,
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="REFUND_REQUESTED", code=order.code,
                              amount=str(amount))
         return refund
 
@@ -307,7 +307,7 @@ class RefundService:
         audit.record(self.session, actor_id=self.actor.id, action="REFUND_CONFIRM", entity_type="payment",
                      entity_id=refund.id, new={"order_id": order.id, "amount": str(refund.amount), "reference": reference},
                      reason=note, ip=self.ip)
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="REFUND_SENT", code=order.code,
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="REFUND_SENT", code=order.code,
                              amount=str(refund.amount))
         return refund
 
