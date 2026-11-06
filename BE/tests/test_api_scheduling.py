@@ -26,6 +26,11 @@ def _at(days: int = 1, hour: int = 9, minute: int = 0) -> datetime:
     return CAL.next_open(local)
 
 
+def _ago(days: int, hour: int = 9) -> datetime:
+    """A moment `days` in the past, NOT rolled to an open day (rolling a closed day forward could land in the future)."""
+    return (datetime.now(CAL.tz) - timedelta(days=days)).replace(hour=hour, minute=0, second=0, microsecond=0)
+
+
 def _iso(d: datetime) -> str:
     return d.isoformat()
 
@@ -144,7 +149,7 @@ def test_queue_suggestion_and_schedule_validation(client, cust, staff, mgr, wcat
     # validation: every one of these leaves the order untouched
     ok = _at(1, 9)
     cases = [
-        (_sched(client, mgr, oid, robot, tech[1], _at(-3, 9)), 422, "SLOT_IN_PAST"),
+        (_sched(client, mgr, oid, robot, tech[1], _ago(3)), 422, "SLOT_IN_PAST"),
         (_sched(client, mgr, oid, robot, tech[1], _at(1, 9).replace(hour=21)), 422, "OUTSIDE_WORKING_HOURS"),
         (client.post(f"{M}/orders/{oid}/schedule", headers=mgr, json={"robot_id": robot, "technician_id": tech[1],
                                                                        "slot_start": "2031-01-05T09:00:00"}), 422, "INVALID_SLOT"),

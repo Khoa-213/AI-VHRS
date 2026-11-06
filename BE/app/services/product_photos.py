@@ -181,7 +181,7 @@ class ProductPhotoService(TechnicianJobService):
                               order_status=OrderStatus.AWAITING_ACCEPTANCE, reason="Đã tải ảnh sản phẩm, QC đạt")
         audit.record(self.session, actor_id=self.tech.id, action="JOB_PHOTOS_SUBMIT", entity_type="production_job",
                      entity_id=job.id, new={"order_id": order.id, "photos": len(live)}, ip=self.ip)
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="MSG12", code=order.code)
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="MSG12", code=order.code)
         return job
 
     def qc_fail(self, job_id: int, note: str) -> ProductionJob:
@@ -194,5 +194,5 @@ class ProductPhotoService(TechnicianJobService):
                               reason=f"QC không đạt: {note}"[:200])
         audit.record(self.session, actor_id=self.tech.id, action="JOB_QC_FAIL", entity_type="production_job",
                      entity_id=job.id, new={"order_id": order.id}, reason=note, ip=self.ip)
-        notifications.notify(account_id=job.scheduled_by, order_id=order.id, msg_code="QC_FAILED", code=order.code)
+        notifications.notify(self.session, account_id=job.scheduled_by, order_id=order.id, msg_code="QC_FAILED", code=order.code)
         return job

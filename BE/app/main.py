@@ -8,7 +8,7 @@ from sqlalchemy import text
 from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
 from app.api.v1 import (quality, robot_link, acceptance, admin, robot_ops, auth, catalog, customer_quotes, delivery, locations, manager,
-                        manager_ops, me, conversations, eta, messages, orders, payments, pricing, refunds, scheduling, shipments,
+                        manager_ops, me, conversations, eta, messages, notifications, orders, payments, pricing, refunds, scheduling, shipments,
                         technician, workshop)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
@@ -41,6 +41,7 @@ TAGS = [
     {"name": "Payments", "description": "FR-17..20 · UC-16. Đặt cọc qua cổng thanh toán MOCK (không có tiền thật) + webhook có chữ ký."},
     {"name": "Refunds", "description": "FR-19, FR-20 · UC-21, UC-28 · BR-14, BR-16. Huỷ đơn sau cọc và hoàn tiền: xem trước số tiền hoàn, Staff chuyển khoản tay rồi xác nhận kèm mã tham chiếu; tiền về muộn (needs_refund)."},
     {"name": "ETA", "description": "FR-26 · UC-30 · BR-15, BR-16 · MSG11. Ngày giao dự kiến: tự tính khi cọc, tự dời khi lịch sản xuất / sự cố / viết lại / hãng vận chuyển cần thêm thời gian, Staff đổi tay kèm lý do; lịch sử dời và quyền huỷ hoàn 100%."},
+    {"name": "Notifications", "description": "FR-27 · FR-57 · MSG07/08/10/11/12/15. Trung tâm thông báo của mọi vai trò: danh sách, số chưa đọc, đánh dấu đã đọc, nhận tức thời qua Server-Sent Events; email cho các thông báo SRS đánh dấu Email + in-app."},
     {"name": "Scheduling", "description": "FR-37, FR-40 · BR-18. Manager: hàng đợi, gợi ý và xếp lịch sản xuất, đổi lịch."},
     {"name": "Technician", "description": "UC-31..39 · FR-43..49 · BR-19. Chỉ TECHNICAL_STAFF, chỉ job được giao: tải gói job (hash), chuẩn bị, hiệu chuẩn, kết quả mô phỏng, bắt đầu/kết thúc viết, sự kiện an toàn, sự cố. Chưa kết nối robot (chỉ làm khi chủ dự án yêu cầu)."},
     {"name": "Robot operations", "description": "Vận hành robot: lần chạy của Robot Agent, cảnh báo 4 mức (đỏ = bấm E-Stop ngay, kèm email), heartbeat, tình trạng robot, sức khoẻ, tuân thủ quy trình, danh mục cảnh báo."},
@@ -128,6 +129,7 @@ v1.include_router(shipments.router)
 v1.include_router(payments.router)
 v1.include_router(refunds.router)
 v1.include_router(eta.router)
+v1.include_router(notifications.router)
 v1.include_router(admin.router)
 
 

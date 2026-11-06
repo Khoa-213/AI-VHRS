@@ -278,7 +278,7 @@ def test_renewal_overlaps_so_there_is_no_gap(client, cust, staff, mgr, wcat, rob
     assert a["key"] != b["key"]
     assert sync(client, bearer(a["key"]))["robot_id"] == robot and sync(client, bearer(b["key"]))["robot_id"] == robot   # both work in the overlap
     left = _sql("select extract(epoch from (expires_at - now())) from robot_agents where key_prefix=:p", p=a["key_prefix"])
-    assert 0 < float(left) <= 120                                                         # the old key ends within the grace period
+    assert 0 < float(left) <= 120 + 30           # the old key ends within the grace period (+30 s: app clock vs Supabase clock)
     assert float(_sql("select extract(epoch from (expires_at - now())) from robot_agents where key_prefix=:p", p=b["key_prefix"])) > 3 * 3600
 
 

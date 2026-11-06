@@ -134,7 +134,7 @@ class ShipmentService:
                      new={"order_id": order.id, "carrier": row.carrier.value, "service": service_code,
                           "waybill": waybill.code, "customer_paid_fee": str(fee), "carrier_fee": waybill.fee,
                           "mode": adapter.mode}, ip=self.ip)
-        notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="SHIPMENT_CREATED", code=order.code,
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="SHIPMENT_CREATED", code=order.code,
                              waybill=waybill.code)
         return row
 
@@ -217,19 +217,19 @@ class ShipmentService:
         effect = cr.order_effect(new) if latest.id == row.id else None
         if effect == "DELIVERING" and order.order_status == OrderStatus.READY_TO_DELIVER:
             self._order_to(order, OrderStatus.DELIVERING, "Hãng vận chuyển đã nhận hàng")
-            notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="MSG15", code=order.code,
+            notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="MSG15", code=order.code,
                                  waybill=row.waybill_code)
         if effect == "COMPLETED":
             if order.order_status == OrderStatus.READY_TO_DELIVER:      # the first report we hear is already "delivered"
                 self._order_to(order, OrderStatus.DELIVERING, "Hãng vận chuyển đã nhận hàng")
             if order.order_status == OrderStatus.DELIVERING:
                 self._order_to(order, OrderStatus.COMPLETED, "Giao hàng thành công")
-                notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="ORDER_COMPLETED", code=order.code)
+                notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="ORDER_COMPLETED", code=order.code)
         audit.record(self.session, actor_id=None, action="SHIPMENT_STATUS", entity_type="shipment", entity_id=row.id,
                      old={"status": old.value}, new={"status": new.value, "raw": event.raw_status, "order_id": order.id,
                                                      "reason": event.reason})
         if new in (ShipmentStatus.FAILED, ShipmentStatus.RETURNED) and order.assigned_staff_id:
-            notifications.notify(account_id=order.assigned_staff_id, order_id=order.id, msg_code="SHIPMENT_PROBLEM",
+            notifications.notify(self.session, account_id=order.assigned_staff_id, order_id=order.id, msg_code="SHIPMENT_PROBLEM",
                                  code=order.code, status=new.value, reason=event.reason)
         return {"result": "PROCESSED", "status": new.value, "order_status": order.order_status.value}
 

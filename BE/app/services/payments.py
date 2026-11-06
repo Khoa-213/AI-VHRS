@@ -239,9 +239,9 @@ class PaymentService:
             audit.record(self.session, actor_id=None, action="PAYMENT_SUCCESS", entity_type="payment",
                          entity_id=payment.id, new={"order_id": order.id, "amount": str(sum((p.amount for p in group), Decimal(0))),
                                                     "types": [p.type.value for p in group]})
-            notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="FINAL_PAID", code=order.code)
+            notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="FINAL_PAID", code=order.code)
             if order.assigned_staff_id:
-                notifications.notify(account_id=order.assigned_staff_id, order_id=order.id, msg_code="ORDER_READY_TO_DELIVER",
+                notifications.notify(self.session, account_id=order.assigned_staff_id, order_id=order.id, msg_code="ORDER_READY_TO_DELIVER",
                                      code=order.code)
             return {"result": "PROCESSED", "status": "SUCCESS", "order_status": "READY_TO_DELIVER"}
         if payment.type == PaymentType.DEPOSIT and order.order_status == OrderStatus.AWAITING_DEPOSIT:
@@ -252,7 +252,7 @@ class PaymentService:
             EtaService(self.session).set_initial(order, approved.eta if approved else None)        # BR-15
             audit.record(self.session, actor_id=None, action="PAYMENT_SUCCESS", entity_type="payment",
                          entity_id=payment.id, new={"order_id": order.id, "amount": str(payment.amount)})
-            notifications.notify(account_id=order.customer_id, order_id=order.id, msg_code="DEPOSIT_PAID",
+            notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="DEPOSIT_PAID",
                                  code=order.code, amount=str(payment.amount))
             return {"result": "PROCESSED", "status": "SUCCESS", "order_status": "CONFIRMED"}
         # Money arrived for an order that is no longer waiting for it (cancelled meanwhile): keep the record

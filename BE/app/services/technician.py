@@ -366,7 +366,7 @@ class TechnicianJobService:
         if kind in (JobEventType.ESTOP, JobEventType.OVER_FORCE):
             audit.record(self.session, actor_id=self.tech.id, action=f"JOB_{kind.value}", entity_type="production_job",
                          entity_id=job.id, new=payload, ip=self.ip)
-            notifications.notify(account_id=job.scheduled_by, order_id=order.id, msg_code="JOB_SAFETY_STOP",
+            notifications.notify(self.session, account_id=job.scheduled_by, order_id=order.id, msg_code="JOB_SAFETY_STOP",
                                  code=order.code, event=kind.value)
         return event
 
@@ -422,6 +422,6 @@ class TechnicianJobService:
         audit.record(self.session, actor_id=self.tech.id, action="INCIDENT_REPORT", entity_type="incident",
                      entity_id=incident.id, new={"job_id": job.id, "type": kind.value,
                                                  "robot_status_after": robot_status_after}, reason=description, ip=self.ip)
-        notifications.notify(account_id=job.scheduled_by, order_id=order.id, msg_code="INCIDENT_REPORTED",
+        notifications.notify(self.session, account_id=job.scheduled_by, order_id=order.id, msg_code="INCIDENT_REPORTED",
                              code=order.code, robot_id=job.robot_id)
         return incident
