@@ -32,14 +32,15 @@ def test_the_layout_is_checked_stored_in_canonical_form_and_replaced_by_every_pu
     layout = {"version": 1, "line_spacing": 1.5, "spans": [_span("mới", underline="double", italic=False),
                                                            _span("Chúc", size_mm=12, italic=True)]}
     r = _put(client, cust, oid, layout).json()
-    assert r["layout"] == {"version": 1, "line_spacing": 1.5, "spans": [
+    assert r["layout"] == {"version": 1, "line_spacing": 1.5, "vertical_align": "MIDDLE", "spans": [
         {"start": 0, "end": 4, "size_mm": 12.0, "italic": True}, {"start": 14, "end": 17, "underline": "double"}]}
     shown = client.get(f"{O}/{oid}", headers=cust).json()
     assert next(i for i in shown["inputs"] if i["kind"] == "TEXT_CONTENT")["layout"] == r["layout"]
     assert _sql("select layout->>'line_spacing' from order_inputs where order_id=:o and kind='TEXT_CONTENT'", o=oid) == "1.5"
 
-    assert _put(client, cust, oid).json()["layout"] is None                         # a PUT without layout clears it
-    assert _put(client, cust, oid, {"version": 1, "spans": []}).json()["layout"] is None   # a plain layout is not stored
+    centred = {"version": 1, "line_spacing": 1.0, "spans": [], "vertical_align": "MIDDLE"}
+    assert _put(client, cust, oid).json()["layout"] == centred                     # a PUT without layout clears the styles
+    assert _put(client, cust, oid, {"version": 1, "spans": []}).json()["layout"] == centred
 
     # offsets index the NFC text that is stored, even if the client typed it decomposed
     nfd = unicodedata.normalize("NFD", TEXT)
@@ -51,7 +52,8 @@ def test_the_layout_is_checked_stored_in_canonical_form_and_replaced_by_every_pu
     for bad in ({"spans": [{"start": 0, "end": 99, "italic": True}]},                         # past the end
                 {"spans": [{"start": 0, "end": 3, "bold": True}]},                            # there is no bold
                 {"spans": [{"start": 0, "end": 5, "italic": True}, {"start": 4, "end": 8, "strike": True}]},
-                {"spans": [{"start": 0, "end": 3, "size_mm": 3}]}, {"line_spacing": 9}, {"version": 3}, {"colour": "red"}):
+                {"spans": [{"start": 0, "end": 3, "size_mm": 3}]}, {"line_spacing": 9}, {"version": 3}, {"colour": "red"},
+                {"margins_mm": {"top": 4}}, {"margins_mm": {"left": 90}}, {"vertical_align": "CENTER"}):
         r = _put(client, cust, oid, bad, expect=422)
         assert r.json()["error"]["code"] == "INVALID_LAYOUT", bad
     assert _put(client, cust, oid, {"spans": [_span("mừng", size_mm=4)]}).status_code == 200   # 4 mm is the floor
@@ -86,11 +88,38 @@ def test_a_styled_order_makes_a_styled_sketch_without_changing_the_complexity(cl
     assert r.status_code == 422 and r.json()["error"]["code"] == "INVALID_LAYOUT"
 
 
+def test_new_text_is_centred_on_the_sheet_and_the_customer_can_move_it(client, cust, staff, store, wcat):
+    sh, _ = staff
+    _put.tpl = wcat["tpl"]
+    oid = _draft(client, cust, wcat)
+    r = client.put(f"{O}/{oid}/inputs/text", headers=cust, json={"text_content": TEXT, "template_id": wcat["tpl"]}).json()
+    assert r["alignment"] == "CENTER" and r["layout"]["vertical_align"] == "MIDDLE"   # nothing chosen: middle of the sheet
+    chosen = {"margins_mm": {"top": 40, "bottom": 20, "left": 25, "right": 25}, "vertical_align": "TOP"}
+    r = _put(client, cust, oid, chosen, alignment="RIGHT").json()
+    assert r["alignment"] == "RIGHT" and r["layout"]["vertical_align"] == "TOP"
+    assert r["layout"]["margins_mm"] == {"top": 40.0, "bottom": 20.0, "left": 25.0, "right": 25.0}
+    _put(client, cust, oid, {"margins_mm": {"top": 30}, "vertical_align": "MIDDLE"}, alignment="CENTER")
+    assert client.post(f"{O}/{oid}/submit", headers=cust, json={"terms_accepted": True}).status_code == 200
+    assert client.post(f"{W}/orders/{oid}/accept", headers=sh, json={}).status_code == 200
+    g = client.post(f"{W}/orders/{oid}/sketches/generate", headers=sh, json={"seed": 1})
+    assert g.status_code == 201, g.text
+    engine = client.get(f"{W}/orders/{oid}/sketches/1", headers=sh).json()["trajectory"]["engine"]
+    assert engine["alignment"] == "CENTER" and engine["vertical_align"] == "MIDDLE"
+    assert engine["margins_mm"] == {"top": 30.0, "bottom": 15.0, "left": 15.0, "right": 15.0}
+
+    # margins too wide for the sheet are refused when the sketch is made (the sheet is known then), nothing is drawn wrongly
+    _sql("update order_inputs set layout = cast(:l as jsonb) where order_id=:o and kind='TEXT_CONTENT' returning 1",
+         l='{"version": 1, "margins_mm": {"left": 80, "right": 80}}', o=oid)
+    r = client.post(f"{W}/orders/{oid}/sketches/generate", headers=sh, json={})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "MARGINS_TOO_LARGE"
+
+
 def test_catalog_text_styles_and_styled_preview(client, wcat):
     caps = client.get(f"{API}/catalog/text-styles")
     assert caps.status_code == 200
     c = caps.json()
     assert c["min_font_size_mm"] == 4.0 and c["bold"] is False and "underline" in c["styles"] and c["max_spans"] == 200
+    assert c["default_alignment"] == "CENTER" and c["default_vertical_align"] == "MIDDLE" and c["margins_mm"]["min"] == 5.0
 
     url = f"{API}/catalog/templates/{wcat['tpl']}/preview"
     plain = client.post(url, json={"text": "Nét Việt"})
@@ -99,6 +128,11 @@ def test_catalog_text_styles_and_styled_preview(client, wcat):
                                     "layout": {"spans": [{"start": 0, "end": 3, "underline": "single", "italic": True}]}})
     assert styled.status_code == 200 and styled.content != plain.content
     assert client.get(url, params={"text": "Nét Việt"}).status_code == 200                      # the old GET still works
+    moved = client.post(url, json={"text": "Nét Việt", "alignment": "LEFT",
+                                   "layout": {"vertical_align": "TOP", "margins_mm": {"top": 30, "left": 30}}})
+    assert moved.status_code == 200 and moved.content != plain.content                    # the default is the middle of the sheet
+    wide = client.post(url, json={"text": "Nét", "layout": {"margins_mm": {"left": 70, "right": 70}}})
+    assert wide.status_code == 422 and wide.json()["error"]["code"] == "MARGINS_TOO_LARGE"
     bad = client.post(url, json={"text": "Nét", "layout": {"spans": [{"start": 0, "end": 99, "italic": True}]}})
     assert bad.status_code == 422 and bad.json()["error"]["code"] == "INVALID_LAYOUT"
     assert client.post(url, json={"text": "Nét", "font_size_mm": 3}).status_code == 422

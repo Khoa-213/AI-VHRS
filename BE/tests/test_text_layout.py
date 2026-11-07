@@ -258,3 +258,109 @@ def test_underlines_add_strokes_but_never_push_the_complexity_up():
     styled = engine.generate_ot3(TEXT, None, **kw, chars=chars, layout=lay)
     assert styled.metrics.pen_lift_count / chars > 2.5 >= plain.metrics.pen_lift_count / chars    # the styled page alone would tip it
     assert plain.complexity == styled.complexity == "SIMPLE"
+
+
+# ===================================================================================== placement on the page (2026-11-07)
+SHORT = "Kính gửi quý khách hàng thân mến"
+
+
+def centre(strokes):
+    x0, y0, x1, y1 = bbox(strokes)
+    return (x0 + x1) / 2, (y0 + y1) / 2
+
+
+def test_margins_and_vertical_alignment_are_checked_and_stored_in_canonical_form():
+    lay = tl.parse({"margins_mm": {"top": 40, "left": 25.5}, "vertical_align": "BOTTOM"}, 5)
+    assert lay.is_plain                                                               # placement is not a style
+    assert tl.to_json(lay) == {"version": 1, "line_spacing": 1.0, "spans": [], "vertical_align": "BOTTOM",
+                               "margins_mm": {"top": 40.0, "bottom": 15.0, "left": 25.5, "right": 15.0}}
+    old = tl.parse({"spans": []}, 5)                                                  # stored before: from the top, 15 mm
+    assert old.page_vertical_align == "TOP" and old.page_margins == tl.Margins.even(15) and "vertical_align" not in tl.to_json(old)
+    assert old.with_defaults().vertical_align == "MIDDLE" and lay.with_defaults().vertical_align == "BOTTOM"
+    assert tl.parse({"margins_mm": {"top": 5, "bottom": 80}}, 1).page_margins.bottom == 80      # limits are inclusive
+    for bad in ({"margins_mm": {"top": 4.9}}, {"margins_mm": {"left": 81}}, {"margins_mm": {"top": "10"}},
+                {"margins_mm": {"top": True}}, {"margins_mm": {"middle": 10}}, {"margins_mm": 10},
+                {"vertical_align": "CENTER"}, {"vertical_align": "middle"}):
+        with pytest.raises(tl.TextLayoutError):
+            tl.parse(bad, 5)
+
+
+def test_capabilities_describe_the_placement():
+    c = tl.capabilities()
+    assert c["default_alignment"] == "CENTER" and c["default_vertical_align"] == "MIDDLE"
+    assert c["vertical_alignments"] == ["TOP", "MIDDLE", "BOTTOM"]
+    assert c["margins_mm"] == {"min": 5.0, "max": 80.0, "default": 15.0, "sides": ["top", "bottom", "left", "right"],
+                               "min_writing_area_mm": 30.0}
+
+
+@pytest.mark.parametrize("styled", [False, True])
+def test_centred_text_sits_in_the_middle_of_the_sheet(styled):
+    kw = dict(KW, alignment="CENTER", vertical_align="MIDDLE", variation=0.0)
+    if styled:
+        page = st.compose_styled(SHORT, layout(span("quý", text=SHORT, size_mm=12), text=SHORT), **kw)[0]
+    else:
+        page = tts.compose_text(SHORT, **kw)[0]
+    cx, cy = centre(page.strokes)
+    assert abs(cx - 148 / 2) < 1.0 and abs(cy - 210 / 2) < 0.01                     # A5 is 148 x 210 mm
+
+
+def test_the_customer_margins_move_and_bound_the_text():
+    m = tl.Margins(top=40, bottom=20, left=25, right=35)
+    kw = dict(KW, variation=0.0, margins=m)
+    mid = tts.compose_text(SHORT, alignment="CENTER", vertical_align="MIDDLE", **kw)[0]
+    cx, cy = centre(mid.strokes)
+    assert abs(cy - (40 + 210 - 20) / 2) < 0.01 and abs(cx - (25 + 148 - 35) / 2) < 1.0
+    top = tts.compose_text(SHORT, alignment="LEFT", vertical_align="TOP", **kw)[0]
+    x0, y0, _, _ = bbox(top.strokes)
+    assert 25 - 0.5 <= x0 < 27 and 40 <= y0 < 40 + 8 * 2                               # from the top-left of the writing area
+    low = tts.compose_text(SHORT, alignment="RIGHT", vertical_align="BOTTOM", **kw)[0]
+    _, _, x1, y1 = bbox(low.strokes)
+    assert abs(y1 - (210 - 20)) < 0.01 and 148 - 35 - 2 < x1 <= 148 - 35 + 0.5
+    # wider side margins leave a narrower line: more lines for the same text
+    long = " ".join([SHORT] * 4)
+    assert len(set(round(y) for y in lines_of(tts.compose_text(long, **KW, margins=tl.Margins(left=50, right=50))[0]))) > \
+        len(set(round(y) for y in lines_of(tts.compose_text(long, **KW)[0])))
+
+
+def test_margins_that_leave_no_room_are_refused():
+    with pytest.raises(AppError) as exc:
+        tts.compose_text("Xin chào", font_name="futural", paper_size="A6", margins=tl.Margins(left=50, right=40))
+    assert exc.value.status == 422 and exc.value.code == "MARGINS_TOO_LARGE" and exc.value.details["area_mm"][0] == 15
+    with pytest.raises(AppError) as exc:
+        st.compose_styled("Xin chào", layout(text="Xin chào"), font_name="futural", paper_size="A5",
+                          margins=tl.Margins(left=60, right=60))
+    assert exc.value.code == "MARGINS_TOO_LARGE"
+
+
+def test_every_page_of_a_long_text_is_placed_and_stays_on_the_sheet():
+    long = "\n".join([SHORT] * 40)
+    top = tts.compose_text(long, **KW, variation=0.0)
+    mid = tts.compose_text(long, **KW, variation=0.0, vertical_align="MIDDLE")
+    assert len(top) == len(mid) > 1
+    for page in mid:
+        x0, y0, x1, y1 = bbox(page.strokes)
+        assert 0 <= y0 and y1 <= 210 and abs((y0 + y1) / 2 - 105) < 0.01
+    assert bbox(mid[-1].strokes)[1] > bbox(top[-1].strokes)[1] + 20                  # the short last page comes down
+
+
+def test_the_engine_places_the_text_and_keeps_the_complexity():
+    kw = dict(font_uri="hershey:futural", font_size_mm=8, paper_size="A5", seed=1, v_max_mm_s=40.0,
+              pen_category="BALLPOINT", chars=30)
+    legacy = engine.generate_ot3(SHORT, None, alignment="LEFT", **kw)                # no layout: as before
+    assert legacy.engine["vertical_align"] == "TOP" and legacy.engine["margins_mm"]["top"] == 15
+    assert legacy.pages[0].strokes[0].points == tts.compose_text(SHORT, font_name="futural", paper_size="A5", seed=1)[0].strokes[0].points
+    lay = {"version": 1, "vertical_align": "MIDDLE", "margins_mm": {"top": 30}}
+    placed = engine.generate_ot3(SHORT, None, alignment="CENTER", **kw, layout=lay)
+    assert placed.engine["vertical_align"] == "MIDDLE" and placed.engine["margins_mm"]["top"] == 30
+    assert "layout" not in placed.engine                                             # no styles
+    assert placed.complexity == legacy.complexity and placed.metrics.pen_lift_count == legacy.metrics.pen_lift_count
+    assert abs(centre(placed.pages[0].strokes)[1] - (30 + 210 - 15) / 2) < 0.01
+    canvas = {"strokes": [{"points": [{"x": 10, "y": 10}, {"x": 20, "y": 12}]}]}
+    drawn = engine.generate_ot3(SHORT, canvas, alignment="CENTER", **kw, layout=lay)
+    assert drawn.pages[0].strokes[-1].points[0] == (10.0, 10.0)                      # the drawing stays where it was drawn
+    with pytest.raises(AppError) as exc:
+        engine.generate_ot3(SHORT, None, alignment="LEFT", **kw, layout={"margins_mm": {"left": 80, "right": 80}})
+    assert exc.value.code == "MARGINS_TOO_LARGE"
+    with pytest.raises(AppError) as exc:
+        engine.generate_ot3(SHORT, None, alignment="LEFT", **kw, layout={"vertical_align": "UP"})
+    assert exc.value.code == "INVALID_LAYOUT"

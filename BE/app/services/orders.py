@@ -319,21 +319,21 @@ class OrderService:
             row = self.orders.add_input(OrderInput(order_id=order.id, kind=OrderInputKind.TEXT_CONTENT))
         data = {**data, "text_content": unicodedata.normalize("NFC", data["text_content"] or "")}   # S0: Unicode NFC
         data["layout"] = self._check_layout(data.get("layout"), data["text_content"])
+        data["alignment"] = data.get("alignment") or text_layout.DEFAULT_ALIGNMENT   # centred on the sheet unless chosen
         for k, v in data.items():
             setattr(row, k, v)
         self._touch_and_price(order)
         return row
 
     @staticmethod
-    def _check_layout(raw: dict[str, Any] | None, text: str) -> dict[str, Any] | None:
-        """FR-08: sizes and styles of parts of the text. Offsets index the NFC text just stored; stored in canonical form."""
-        if not raw:
-            return None
+    def _check_layout(raw: dict[str, Any] | None, text: str) -> dict[str, Any]:
+        """FR-08: sizes and styles of parts of the text and the placement on the page. Offsets index the NFC text just
+        stored; stored in canonical form, always with a vertical alignment (MIDDLE unless the customer chose another)."""
         try:
-            parsed = text_layout.parse(raw, len(text))
+            parsed = text_layout.parse(raw or {}, len(text))
         except text_layout.TextLayoutError as exc:
             raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
-        return None if parsed.is_plain else text_layout.to_json(parsed)
+        return text_layout.to_json(parsed.with_defaults())
 
     def set_canvas(self, order_id: int, canvas_data: dict[str, Any]) -> OrderInput:
         order = self._get_editable(order_id)

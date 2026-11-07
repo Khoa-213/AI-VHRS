@@ -62,15 +62,16 @@ def templates(session: SessionDep) -> list[TemplateOut]:
     return [TemplateOut.model_validate(t) for t in CatalogRepository(session).templates()]
 
 
-def _template_preview(tpl, text: str, *, size: float = 9.0, alignment: str = "LEFT", layout: dict | None = None) -> Response:
-    """PNG of the first page of `text` in a template, optionally with sizes and styles of parts of it."""
-    parsed = None
-    if layout:
-        try:
-            parsed = text_layout.parse(layout, len(unicodedata.normalize("NFC", text)))
-        except text_layout.TextLayoutError as exc:
-            raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
-        parsed = None if parsed.is_plain else parsed
+def _template_preview(tpl, text: str, *, size: float = 9.0, alignment: str = text_layout.DEFAULT_ALIGNMENT,
+                      layout: dict | None = None) -> Response:
+    """PNG of the first page of `text` in a template, optionally with sizes and styles of parts of it and its placement
+    (centred on the sheet unless chosen otherwise, as an order's text). A faint frame shows the margins."""
+    try:
+        placement = text_layout.parse(layout or {}, len(unicodedata.normalize("NFC", text))).with_defaults()
+    except text_layout.TextLayoutError as exc:
+        raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
+    parsed = None if placement.is_plain else placement
+    where = {"margins": placement.page_margins, "vertical_align": placement.page_vertical_align}
     if tpl.font_uri.startswith(outline_font.OUTLINE_PREFIX):
         if len(text) > 80:                                  # public endpoint: keep the work per request small
             raise AppError(422, "PREVIEW_TEXT_TOO_LONG", "Xem thử mẫu chữ này tối đa 80 ký tự.")
@@ -82,11 +83,11 @@ def _template_preview(tpl, text: str, *, size: float = 9.0, alignment: str = "LE
         source, name = None, text_to_stroke.font_name_from_uri(tpl.font_uri)
     if parsed:
         pages = styled_text.compose_styled(text, parsed, font_name=name, source=source, paper_size="A5",
-                                           font_size_mm=size, alignment=alignment)
+                                           font_size_mm=size, alignment=alignment, **where)
     else:
         pages = text_to_stroke.compose_text(text, font_name=name, source=source, paper_size="A5", font_size_mm=size,
-                                            alignment=alignment)
-    return Response(render_preview(pages[0], px_per_mm=4.0), media_type="image/png")
+                                            alignment=alignment, **where)
+    return Response(render_preview(pages[0], px_per_mm=4.0, margins=placement.page_margins), media_type="image/png")
 
 
 def _active_template(session, template_id: int):
@@ -107,8 +108,9 @@ def template_preview(template_id: int, session: SessionDep,
 class PreviewIn(BaseModel):
     text: str = Field(min_length=1, max_length=200)
     font_size_mm: float = Field(default=9.0, ge=text_layout.MIN_FONT_SIZE_MM, le=text_layout.MAX_FONT_SIZE_MM)
-    alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY"] = "LEFT"
-    layout: dict[str, Any] | None = Field(default=None, description="Như `layout` của `PUT /orders/{id}/inputs/text`.")
+    alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY"] = text_layout.DEFAULT_ALIGNMENT
+    layout: dict[str, Any] | None = Field(default=None, description=(
+        "Như `layout` của `PUT /orders/{id}/inputs/text` (kể cả `margins_mm`, `vertical_align`; mặc định căn giữa tờ giấy)."))
 
 
 @router.post("/templates/{template_id}/preview", response_class=Response,

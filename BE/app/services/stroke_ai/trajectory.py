@@ -138,11 +138,16 @@ def parse(data: Any) -> list[Page]:
     return pages
 
 
-def render_preview(page: Page, px_per_mm: float = 2.0) -> bytes:
-    """PNG preview of one page: strokes on white paper, green dot = where each stroke starts."""
+def render_preview(page: Page, px_per_mm: float = 2.0, margins=None) -> bytes:
+    """PNG preview of one page: strokes on white paper, green dot = where each stroke starts. With `margins` (top, bottom,
+    left, right in mm) a faint frame shows the writing area; it is only in the picture, never in the strokes."""
     w, h = int(round(page.width_mm * px_per_mm)), int(round(page.height_mm * px_per_mm))
     img = np.full((h, w, 3), 255, np.uint8)
     cv2.rectangle(img, (0, 0), (w - 1, h - 1), (200, 200, 200), 1)
+    if margins is not None:
+        cv2.rectangle(img, (int(round(margins.left * px_per_mm)), int(round(margins.top * px_per_mm))),
+                      (int(round((page.width_mm - margins.right) * px_per_mm)),
+                       int(round((page.height_mm - margins.bottom) * px_per_mm))), (225, 225, 240), 1)
     for s in page.strokes:
         pts = np.array([[x * px_per_mm, y * px_per_mm] for x, y in s.points], np.float32)
         cv2.polylines(img, [np.round(pts).astype(np.int32)], False, (30, 30, 30), 1, cv2.LINE_AA)

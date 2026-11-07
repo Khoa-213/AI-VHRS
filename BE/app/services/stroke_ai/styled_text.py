@@ -19,7 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from app.core.errors import AppError
-from app.domain.text_layout import CharStyle, TextLayout
+from app.domain.text_layout import CharStyle, Margins, TextLayout
 from app.services.stroke_ai import text_to_stroke as tts
 from app.services.stroke_ai.trajectory import MAX_PAGES, PAPER_MM, Page, Stroke
 
@@ -84,14 +84,17 @@ def _cells(text: str, styles: list[CharStyle]) -> list[tuple[str, CharStyle]]:
 
 def compose_styled(text: str, layout: TextLayout, *, font_name: str | None = None, source=None, paper_size: str,
                    font_size_mm: float = tts.DEFAULT_FONT_SIZE_MM, alignment: str = "LEFT", seed: int = 0,
-                   variation: float = 0.015, margin_mm: float = tts.MARGIN_MM) -> list[Page]:
+                   variation: float = 0.015, margin_mm: float = tts.MARGIN_MM, margins: Margins | None = None,
+                   vertical_align: str = "TOP") -> list[Page]:
+    """`margins` and `vertical_align` as in `text_to_stroke.compose_text`."""
     source = source or tts.HersheySource(font_name)
     styles = layout.styles_for(len(unicodedata.normalize("NFC", text)))
     cells = _cells(text, styles)
     base_k = font_size_mm / tts.CAP_UNITS
     width_mm, height_mm = PAPER_MM[paper_size]
-    avail = width_mm - 2 * margin_mm
-    page_avail = height_mm - 2 * margin_mm
+    m = tts.writing_area(margins or Margins.even(margin_mm), paper_size)
+    avail = width_mm - m.left - m.right
+    page_avail = height_mm - m.top - m.bottom
 
     def k_of(style: CharStyle) -> float:
         return (style.size_mm if style.size_mm is not None else font_size_mm) / tts.CAP_UNITS
@@ -191,7 +194,7 @@ def compose_styled(text: str, layout: TextLayout, *, font_name: str | None = Non
             continue
         page = pages[pn]
         line_k = line.size / tts.CAP_UNITS
-        baseline = margin_mm + top + (tts.CAP_UNITS + tts.HEADROOM_UNITS) * line_k
+        baseline = m.top + top + (tts.CAP_UNITS + tts.HEADROOM_UNITS) * line_k
         gaps = [space_u * w.gap_k for w in line.words[1:]]
         natural = sum(w.width() for w in line.words) + sum(gaps)
         extra_gap = 0.0
@@ -230,7 +233,7 @@ def compose_styled(text: str, layout: TextLayout, *, font_name: str | None = Non
                         for ux, uy in poly:
                             if item.style.italic:
                                 ux += (BASELINE_U - uy) * SLANT
-                            pts.append((margin_mm + x0 + (cx + (ux - cx) * s) * item.k,
+                            pts.append((m.left + x0 + (cx + (ux - cx) * s) * item.k,
                                         baseline + (s * (uy - BASELINE_U) + dy) * item.k))
                         target.append(pts)
                 cursor += item.advance_mm
@@ -246,11 +249,13 @@ def compose_styled(text: str, layout: TextLayout, *, font_name: str | None = Non
         for kind, runs in under.items():
             for run in runs:
                 y = baseline + UNDERLINE_U * run.k
-                page.strokes.append(Stroke([(margin_mm + run.start, y), (margin_mm + run.end, y)], "base"))
+                page.strokes.append(Stroke([(m.left + run.start, y), (m.left + run.end, y)], "base"))
                 if kind == "double":
                     y2 = baseline + (UNDERLINE_U + UNDERLINE_GAP_U) * run.k
-                    page.strokes.append(Stroke([(margin_mm + run.start, y2), (margin_mm + run.end, y2)], "base"))
+                    page.strokes.append(Stroke([(m.left + run.start, y2), (m.left + run.end, y2)], "base"))
         for run in struck:
             y = baseline + (STRIKE_U - BASELINE_U) * run.k
-            page.strokes.append(Stroke([(margin_mm + run.start, y), (margin_mm + run.end, y)], "base"))
-    return [p for p in pages if p.strokes] or pages[:1]
+            page.strokes.append(Stroke([(m.left + run.start, y), (m.left + run.end, y)], "base"))
+    pages = [p for p in pages if p.strokes] or pages[:1]
+    tts.place_vertically(pages, vertical_align, m, height_mm)
+    return pages

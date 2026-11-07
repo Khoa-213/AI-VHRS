@@ -198,7 +198,7 @@ stateDiagram-v2
 
 | Loại đơn | Gọi |
 |---|---|
-| `OT3_TEMPLATE` (viết theo mẫu) | `PUT /orders/{id}/inputs/text {text_content, template_id, font_size_mm? (4–100 mm), alignment?, layout?}` (`layout` = cỡ chữ/kiểu chữ theo đoạn, mục 5.1b); vẽ tay: `PUT /orders/{id}/inputs/canvas {canvas_data:{strokes:[{points:[{x,y,p}]}]}}` (x,y theo **mm**) |
+| `OT3_TEMPLATE` (viết theo mẫu) | `PUT /orders/{id}/inputs/text {text_content, template_id, font_size_mm? (4–100 mm), alignment?, layout?}` (`layout` = cỡ chữ/kiểu chữ theo đoạn, mục 5.1b, và lề / căn dọc trên trang, mục 5.1c; **mặc định khối chữ nằm giữa tờ giấy**); vẽ tay: `PUT /orders/{id}/inputs/canvas {canvas_data:{strokes:[{points:[{x,y,p}]}]}}` (x,y theo **mm**) |
 | `OT1_COPY_RESTORE` (sao chép) | **Upload ảnh 3 bước** (bên dưới) |
 
 **5.1b Cỡ chữ và kiểu chữ theo đoạn (đơn viết theo mẫu, FR-08).** Ngoài `font_size_mm` chung, khách có thể đổi **cỡ chữ**, **nghiêng**, **gạch chân** (đơn/đôi), **gạch ngang** cho từng đoạn và chỉnh **giãn dòng**. **Không có chữ đậm.** Kiểu chữ **không đổi giá** (báo giá vẫn theo số ký tự × độ phức tạp, và độ phức tạp được tính như khi chưa có kiểu chữ).
@@ -211,8 +211,29 @@ stateDiagram-v2
 ```
   `start`/`end` là vị trí ký tự **theo code point** trong nội dung **đã chuẩn hoá NFC**, khoảng `[start, end)` (khác chỉ số UTF-16 của JavaScript: dùng `Array.from(text.normalize('NFC'))` để đếm). Đoạn không nêu thuộc tính nào thì giữ cỡ chung và chữ thường; các đoạn không được chồng nhau, tối đa 200. Cỡ chữ của đoạn: 4–100 mm. **PUT thay thế toàn bộ**: không gửi `layout` nghĩa là xoá định dạng; sửa nội dung phải gửi lại `layout` cho khớp vị trí. Sai → `422 INVALID_LAYOUT` (`details` nói đoạn nào). Cỡ chữ chung dưới 4 mm → `422 VALIDATION_ERROR`.
 - Xem trước: `POST /catalog/templates/{id}/preview {text (≤200), font_size_mm?, alignment?, layout?}` → ảnh PNG trang đầu (A5), không cần đăng nhập, 60 lần/phút/IP; mẫu `TYPOGRAPHY` tối đa 80 ký tự. `GET .../preview?text=` cũ vẫn dùng được (không có kiểu chữ).
-- `InputOut.layout` trả đúng dạng đã lưu (đoạn theo thứ tự, bỏ giá trị mặc định); layout không đổi gì thì lưu `null`. Lúc Staff sinh phác thảo, nghiêng/gạch chân/cỡ chữ được vẽ thành nét thật (gạch chân là một nét thẳng dưới mỗi dòng của đoạn); layout hỏng → `422 INVALID_LAYOUT`.
+- `InputOut.layout` trả đúng dạng đã lưu (đoạn theo thứ tự, bỏ giá trị mặc định); từ 2026-11-07 luôn có `vertical_align` (mục 5.1c), nên nội dung lưu mới không còn `layout: null`. Lúc Staff sinh phác thảo, nghiêng/gạch chân/cỡ chữ được vẽ thành nét thật (gạch chân là một nét thẳng dưới mỗi dòng của đoạn); layout hỏng → `422 INVALID_LAYOUT`.
 - Cỡ tối thiểu 4 mm là giả định tạm (chưa thử với bút thật); độ nghiêng cố định khoảng 12°.
+
+**5.1c Vị trí chữ trên trang: lề 4 phía và căn giữa tờ giấy (đơn viết theo mẫu, 2026-11-07).** **Mặc định khối chữ nằm giữa tờ giấy**: căn ngang `CENTER` và căn dọc `MIDDLE`, lề 15 mm mỗi phía. Khách có thể đổi lề trên / dưới / trái / phải và kiểu căn nếu muốn. Vị trí **không đổi giá** (nét chữ không đổi, chỉ dời chỗ).
+- Hai khoá thêm vào `layout` (dùng chung với 5.1b):
+```json
+{"version": 1,
+ "margins_mm": {"top": 40, "bottom": 20, "left": 25, "right": 25},
+ "vertical_align": "MIDDLE",
+ "spans": []}
+```
+  - `margins_mm`: mỗi phía **5–80 mm**, phía nào không gửi lấy **15**. Lề tính từ mép giấy; chữ chỉ nằm trong vùng giữa các lề.
+  - `vertical_align`: `TOP` (chữ bắt đầu từ lề trên) | `MIDDLE` (khối chữ nằm giữa lề trên và lề dưới) | `BOTTOM` (dòng cuối chạm lề dưới). Không gửi = `MIDDLE`.
+  - `alignment` (trường riêng, không nằm trong `layout`): `LEFT | CENTER | RIGHT | JUSTIFY` trong vùng giữa lề trái và lề phải. Không gửi = `CENTER`.
+  - Muốn khối chữ nằm đúng giữa tờ: để mặc định (hoặc lề bằng nhau + `CENTER` + `MIDDLE`). Muốn nhích lên/xuống: tăng lề dưới/trên.
+- Nội dung nhiều trang: căn dọc áp dụng cho **từng trang**; trang đầy chữ gần như không dời, trang cuối ít chữ nằm giữa (hoặc trên/dưới) theo lựa chọn.
+- Hình vẽ tay (canvas) **giữ đúng vị trí đã vẽ**, không dời theo chữ.
+- `GET /catalog/text-styles` trả thêm: `default_alignment: "CENTER"`, `vertical_alignments: ["TOP","MIDDLE","BOTTOM"]`, `default_vertical_align: "MIDDLE"`, `margins_mm {min: 5, max: 80, default: 15, sides, min_writing_area_mm: 30}`.
+- Xem trước `POST /catalog/templates/{id}/preview` nhận cùng `alignment` / `layout` (mặc định cũng là giữa tờ) và vẽ thêm **khung lề mờ** để khách thấy vùng viết (khung chỉ có trong ảnh, robot không viết).
+- Lỗi: giá trị lề/căn sai → `422 INVALID_LAYOUT`. Lề hợp lệ từng phía nhưng vùng viết còn dưới **30 mm** một chiều trên khổ giấy của đơn → `422 MARGINS_TOO_LARGE` (`details {paper_size, area_mm:[rộng, cao]}`). Khổ giấy chỉ biết chắc khi sinh phác thảo / xem trước (A5), nên khi PUT nội dung chỉ kiểm tra từng phía; FE nên tự chặn trước bằng khổ giấy khách đã chọn (A6 105×148, A5 148×210, A4 210×297 mm).
+- Phác thảo ghi vị trí đã dùng vào `trajectory.engine`: `alignment`, `vertical_align`, `margins_mm`.
+- Nội dung lưu **trước 2026-11-07** (không có `vertical_align`) vẫn vẽ như cũ: từ lề trên, lề 15 mm, căn ngang như đã lưu. Lần PUT kế tiếp sẽ dùng mặc định mới.
+- Giới hạn lề 5–80 mm và vùng viết tối thiểu 30 mm là **giả định**, chưa thử robot viết sát mép 5 mm trên giấy thật.
 
 **Upload ảnh/PDF – 3 bước** (jpg/png/pdf, ≤ 20 MB, ≤ 10 tệp):
 ```
@@ -765,7 +786,7 @@ Khoá sửa được và khoảng hợp lệ: `quotation_valid_days` 1–60, `de
 | `NOTIFICATION_NOT_FOUND` | 404 | Thông báo không tồn tại hoặc của người khác (mục 7j) | tải lại danh sách |
 | `REFUND_ACCOUNT_REQUIRED` | 422 | Cọc qua payOS: phải nhập tài khoản nhận hoàn tiền | hiện form `refund_account` |
 | `REFUND_EXISTS`, `REFUND_NOT_PENDING`, `NOT_REFUNDABLE`, `INVALID_REFUND_AMOUNT` | 409/422 | Hoàn tiền sai bước / trùng / sai số tiền (mục 7h) | tải lại danh sách, hiện `message` |
-| `UNSUPPORTED_CHARS`, `TEXT_TOO_LONG`, `FONT_TOO_LARGE`, `CANVAS_OUT_OF_PAPER` | 422 | Nội dung không sinh được nét | nêu lỗi, cho sửa |
+| `UNSUPPORTED_CHARS`, `TEXT_TOO_LONG`, `FONT_TOO_LARGE`, `MARGINS_TOO_LARGE`, `CANVAS_OUT_OF_PAPER` | 422 | Nội dung không sinh được nét | nêu lỗi, cho sửa |
 | `SLOT_CONFLICT`, `ROBOT_UNAVAILABLE`, `ROBOT_NOT_SUITABLE` | 409/422 | Lịch sản xuất | đổi robot/giờ |
 | `JOB_STATE_CONFLICT`, `JOB_NOT_ACTIVE`, `ORDER_NOT_ACTIVE` | 409 | Job/đơn không ở bước đó (xem mục 7b) | tải lại job, vô hiệu nút |
 | `JOB_HASH_MISMATCH` | 409 | Gói job không khớp phác thảo đã duyệt (MSG14) | chặn chạy, báo Manager |

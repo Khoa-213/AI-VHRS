@@ -168,12 +168,16 @@ class TextInputIn(BaseModel):
     template_id: int | None = None
     handwriting_style_id: int | None = None
     font_size_mm: Decimal | None = Field(default=None, ge=4, le=100, description="Cỡ chữ (chiều cao chữ hoa, mm), 4–100; bỏ trống = 8.")
-    alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY"] | None = None
+    alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY"] | None = Field(
+        default=None, description="Căn ngang trong vùng giữa lề trái/phải; bỏ trống = CENTER.")
     layout: dict[str, Any] | None = Field(default=None, description=(
-        'Cỡ chữ và kiểu chữ theo từng đoạn (xem `GET /catalog/text-styles`): {"version": 1, "line_spacing": 1.2, "spans": '
-        '[{"start": 0, "end": 12, "size_mm": 14, "italic": true, "underline": "single"|"double", "strike": true}]}. '
-        '`start`/`end` là vị trí ký tự (code point) trong nội dung đã chuẩn hoá NFC, [start, end). PUT thay thế toàn bộ: '
-        'không gửi `layout` nghĩa là xoá định dạng. Không có chữ đậm.'))
+        'Cỡ chữ và kiểu chữ theo từng đoạn và vị trí trên trang (xem `GET /catalog/text-styles`): {"version": 1, '
+        '"line_spacing": 1.2, "margins_mm": {"top": 15, "bottom": 15, "left": 15, "right": 15}, "vertical_align": '
+        '"TOP"|"MIDDLE"|"BOTTOM", "spans": [{"start": 0, "end": 12, "size_mm": 14, "italic": true, "underline": '
+        '"single"|"double", "strike": true}]}. `start`/`end` là vị trí ký tự (code point) trong nội dung đã chuẩn hoá NFC, '
+        '[start, end). Lề mỗi phía 5–80 mm (mặc định 15, phía nào không gửi lấy 15); bỏ trống `vertical_align` = MIDDLE: '
+        'mặc định khối chữ nằm giữa tờ giấy. PUT thay thế toàn bộ: không gửi `layout` nghĩa là xoá định dạng và về vị trí '
+        'mặc định. Không có chữ đậm.'))
 
 
 class CanvasInputIn(BaseModel):
