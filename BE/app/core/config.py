@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     smtp_from: str | None = None
     smtp_starttls: bool = True
     smtp_timeout_seconds: float = 10.0
+    # ---- background jobs (Phase 5a): quotation expiry, deposit deadline, acceptance reminder / auto-accept, e-mail retry,
+    # BR-23 purge. Off by default (local runs, tests); set BACKGROUND_JOBS_ENABLED=true on the one deployed instance.
+    background_jobs_enabled: bool = False
+    background_jobs_interval_seconds: int = 600
     # ---- robot motion (Phase: FAIRINO FR3 integration) ----------------------------------------------------
     # When true, a job's simulation result is only accepted if the calibration carries the measured motion block
     # (`frame_transform.schema == "vhrs-motion/1"`) AND the server's own deterministic validation passes. Turn this on for

@@ -71,6 +71,18 @@ one waybill with GHN, and check the Render logs. GHN's preview / create / cancel
 against its staging API on 2026-10-26; its callback has not yet reached this server. The adapters' notes (`integrations/vnpay.py`,
 `momo.py`, `ghn.py`: "VERIFICATION") list exactly what is proven and what is not. Do not set `live` before that.
 
+## 1c. Background jobs and e-mail (Phase 4e / 5a)
+
+| Variable | Value |
+|---|---|
+| `BACKGROUND_JOBS_ENABLED` | `true` on the ONE deployed instance (quotation expiry, deposit deadline, acceptance reminder / auto-accept, e-mail retry, BR-23 photo purge); every 10 minutes (`BACKGROUND_JOBS_INTERVAL_SECONDS`, minimum 60). A Postgres advisory lock stops two runs overlapping |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | notification e-mails (MSG07/08/10/11/12/15) and robot alerts; without them mail is only logged |
+
+The photo purge only counts (dry run) until `system_settings.photo_purge_enabled` is `true`; it deletes real customer files, so
+only the owner switches it on. An Admin can run the jobs at once with `POST /api/v1/admin/jobs/run {"confirm": true}` and read
+the last run with `GET /api/v1/admin/jobs/last`. The live notification stream (`/me/notifications/stream`) assumes ONE uvicorn
+worker (the Dockerfile's `--workers 1`).
+
 ## 2. Verify
 
 ```bash

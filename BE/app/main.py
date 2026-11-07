@@ -1,6 +1,10 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -53,7 +57,29 @@ TAGS = [
 ]
 
 _settings = get_settings()
-app = FastAPI(
+
+
+async def _jobs_loop(interval: int) -> None:
+    """Phase 5a: run the background jobs every `interval` seconds (first run a minute after start). Errors never stop it."""
+    from app.services import background_jobs
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await run_in_threadpool(background_jobs.run_all)
+        except Exception:                                   # noqa: BLE001
+            logging.getLogger("app.jobs").exception("background jobs run failed")
+        await asyncio.sleep(interval)
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    task = asyncio.create_task(_jobs_loop(max(_settings.background_jobs_interval_seconds, 60)))         if _settings.background_jobs_enabled else None
+    yield
+    if task is not None:
+        task.cancel()
+
+
+app = FastAPI(lifespan=_lifespan,
     title="AI-VHRS API", version="0.1.0", description=DESCRIPTION, openapi_tags=TAGS,
     swagger_ui_parameters={"persistAuthorization": True, "displayRequestDuration": True,
                            "tryItOutEnabled": True, "docExpansion": "list"},
