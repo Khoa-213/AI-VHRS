@@ -11,6 +11,7 @@ from app.api.schemas import (AccountOut, AdminAccountCreateIn, AdminAccountUpdat
 from app.models.account import Account, AccountStatus, RoleCode
 from app.repositories.accounts import AccountRepository, AuditRepository
 from app.services import background_jobs
+from app.services.admin_system import AdminSystemService
 from app.services.accounts import AccountAdminService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -82,3 +83,43 @@ def run_jobs(body: JobsRunIn, admin: AdminDep) -> JobsRunOut:
 @router.get("/jobs/last", response_model=dict[str, Any] | None, summary="Phase 5a Kết quả lượt chạy tác vụ nền gần nhất")
 def last_jobs_run(_: AdminDep, session: SessionDep) -> dict[str, Any] | None:
     return background_jobs.last_run(session)
+
+
+class SettingIn(BaseModel):
+    value: Any
+    reason: str | None = None
+
+
+class IntegrationIn(BaseModel):
+    enabled: bool
+    reason: str | None = None
+
+
+@router.get("/settings", response_model=list[dict[str, Any]], summary="UC-50 Tham số hệ thống sửa được")
+def list_settings(admin: AdminDep, session: SessionDep) -> list[dict[str, Any]]:
+    return AdminSystemService(session, admin).settings()
+
+
+@router.put("/settings/{key}", response_model=dict[str, Any], summary="UC-50 Sửa một tham số hệ thống",
+            description="Chỉ các khoá trong `GET /admin/settings`; mỗi khoá có kiểm tra riêng (`422 INVALID_SETTING`). "
+                        "Ghi AuditLog `SETTING_UPDATE` với giá trị cũ và mới.")
+def put_setting(key: str, body: SettingIn, admin: AdminDep, session: SessionDep, request: Request) -> dict[str, Any]:
+    return AdminSystemService(session, admin, client_ip(request)).set_setting(key, body.value, body.reason)
+
+
+@router.get("/integrations", response_model=list[dict[str, Any]], summary="UC-49 Tình trạng tích hợp (không lộ khoá)")
+def list_integrations(admin: AdminDep, session: SessionDep) -> list[dict[str, Any]]:
+    return AdminSystemService(session, admin).integrations()
+
+
+@router.put("/integrations/{name}", response_model=dict[str, Any], summary="UC-49 Bật/tắt một tích hợp",
+            description="Hiện chỉ GHN bật/tắt được ở đây (`integrations_enabled.GHN`); khoá và chế độ của cổng thanh toán, "
+                        "SMTP, Storage đặt bằng biến môi trường trên server (`422 INTEGRATION_NOT_TOGGLEABLE`).")
+def put_integration(name: str, body: IntegrationIn, admin: AdminDep, session: SessionDep,
+                    request: Request) -> dict[str, Any]:
+    return AdminSystemService(session, admin, client_ip(request)).set_integration(name, body.enabled, body.reason)
+
+
+@router.get("/dashboard", response_model=dict[str, Any], summary="UC-52 Dashboard hệ thống")
+def system_dashboard(admin: AdminDep, session: SessionDep) -> dict[str, Any]:
+    return AdminSystemService(session, admin).dashboard()

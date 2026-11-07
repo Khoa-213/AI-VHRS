@@ -123,7 +123,8 @@ def test_quote_and_the_choice_of_delivery_are_validated(client, cust, staff, mgr
            # _at() rolls a closed hour forward to opening time, so build the 07:00 start by hand
            (_pickup(pickup_slot_start=_at(1, 9).replace(hour=7).isoformat(),
                     pickup_slot_end=_at(1, 9).replace(hour=8).isoformat()), "OUTSIDE_WORKING_HOURS"),
-           (_pickup(**_slot(h=16, minutes=120)), "OUTSIDE_WORKING_HOURS"),
+           (_pickup(pickup_slot_start=_at(1, 9).replace(hour=16).isoformat(),          # 16:00 of an OPEN day, ends 18:00
+                    pickup_slot_end=_at(1, 9).replace(hour=18).isoformat()), "OUTSIDE_WORKING_HOURS"),
            (_pickup(pickup_slot_start=_sunday().isoformat(),
                     pickup_slot_end=(_sunday() + timedelta(hours=1)).isoformat()), "OUTSIDE_WORKING_HOURS"),
            (_pickup(**_slot(minutes=5)), "INVALID_SLOT"), (_pickup(**_slot(minutes=600)), "INVALID_SLOT"),
