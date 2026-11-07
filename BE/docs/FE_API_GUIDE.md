@@ -100,7 +100,7 @@ Bản nháp (`DRAFT`) chỉ chủ đơn thấy; xưởng không thấy cho tới
 | `/workshop/*` **ghi** (claim, accept, reject, request-info, phác thảo, báo giá, điều chỉnh, gửi, huỷ báo giá) | ✘ | ✔ | ✘ | ✘ | ✘ |
 | `/manager/*` (phân công, duyệt giá, vật tư, mẫu chữ, robot, bảng giá, lịch sản xuất, **sự cố, nhật ký job**) | ✘ | ✘ | ✔ | ✘ | ✘ |
 | `/technician/*` (job của tôi, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố, ảnh sản phẩm + QC) | ✘ | ✘ | ✘ | ✔ (chỉ job được giao) | ✘ |
-| `/admin/*` (tài khoản, nhật ký hệ thống, tác vụ nền) | ✘ | ✘ | ✘ | ✘ | ✔ |
+| `/admin/*` (tài khoản, nhật ký, tham số hệ thống, tích hợp, dashboard hệ thống, tác vụ nền) | ✘ | ✘ | ✘ | ✘ | ✔ |
 | `POST /webhooks/payments/{gateway}` | không dùng token: xác thực bằng chữ ký HMAC | | | | |
 
 **Cách hoạt động:** đăng nhập → nhận `access_token` (JWT) → gắn `Authorization: Bearer <token>` vào MỌI request. BE giải token, **đọc lại tài khoản và phiên từ DB mỗi lần** (khoá tài khoản, đăng xuất, đổi vai trò có hiệu lực ngay) và lấy **vai trò từ DB, không từ nội dung token**. Thiếu/sai/hết hạn token → `401`; đúng token nhưng sai vai trò → `403 FORBIDDEN`. Bảng trên được test tự động cho **từng route** (`tests/test_permission_matrix.py`); thêm endpoint mà quên khai báo quyền sẽ làm test đỏ.
@@ -723,6 +723,25 @@ BE tự chạy mỗi 10 phút (khi bật `BACKGROUND_JOBS_ENABLED` trên server)
 
 Admin: `POST /admin/jobs/run {confirm: true, only?: ["quotation_expiry"|"deposit_deadline"|"acceptance"|"email_retry"|"photo_purge"]}` chạy ngay một lượt → `{ran, reason?, results: {việc: {...số liệu} | {error}}, started_at, seconds}` (`ran: false` khi một lượt khác đang chạy); `GET /admin/jobs/last` → kết quả lượt gần nhất (hoặc `null`).
 
+## 7l. Admin: tham số, tích hợp, dashboard hệ thống – Phase 5b (UC-49, UC-50, UC-52)
+
+| Việc | API |
+|---|---|
+| Tham số sửa được | `GET /admin/settings` → `[{key, label, value, is_default, updated_by, updated_at}]` (`is_default`: chưa có dòng trong DB, đang dùng mặc định của code) |
+| Sửa một tham số | `PUT /admin/settings/{key} {value, reason?}` → dòng đó. Sai kiểu / ngoài khoảng: `422 INVALID_SETTING` (`message` nói rõ); khoá khác: `404 SETTING_NOT_EDITABLE`. Ghi AuditLog `SETTING_UPDATE` |
+| Tích hợp | `GET /admin/integrations` → `[{name, kind, mode, configured, toggleable, enabled}]` cho `VNPAY`, `MOMO`, `PAYOS`, `GHN`, `SMTP`, `STORAGE`, `GOOGLE_LOGIN`. **Không** có khoá/mật khẩu nào trong kết quả |
+| Bật/tắt tích hợp | `PUT /admin/integrations/{name} {enabled, reason?}`: hiện chỉ `GHN`; còn lại `422 INTEGRATION_NOT_TOGGLEABLE` (khoá và chế độ đặt trên server) |
+| Dashboard hệ thống | `GET /admin/dashboard` → `{database_ms, accounts{by_role{ROLE{STATUS: n}}, new_last_7_days, active_sessions}, robots{total, online, by_status}, integrations[], background_jobs{enabled, interval_seconds, last_run}, notifications{emails_failed_last_24h}}` |
+
+Khoá sửa được và khoảng hợp lệ: `quotation_valid_days` 1–60, `deposit_deadline_days` 1–30, `accept_reminder_days` 1–30 (nhỏ hơn `auto_accept_days`), `auto_accept_days` 2–60, `eta_cancel_threshold_days` 1–60, `max_upload_mb` 1–20, `max_pages_per_order` 1–50, `order_types_enabled` (chỉ `OT1_COPY_RESTORE`, `OT3_TEMPLATE`; OT-2 vẫn khoá), `fallback_shipping_fees` (đủ 3 khoá `FLAT_BOX_A5`, `FLAT_BOX_A4`, `TUBE`, 0–1.000.000đ), `image_retention_days` 30–3650, `photo_purge_enabled` (true = **xoá thật** ảnh khách quá hạn; UI nên hỏi xác nhận).
+
+## 7m. Manager: dashboard sản xuất và báo cáo – Phase 5b (UC-45, UC-46, FR-50)
+
+- `GET /manager/dashboard` → `{date, orders_by_status{STATUS: n}, jobs_today[{job_id, order_id, order_code, robot_id, robot_code, technician_id, status, slot_start, slot_end, is_rewrite}], jobs_next_7_days, late_orders[{order_id, code, status, eta, days_late, assigned_staff_id}], due_in_2_days[...], low_stock[{kind: PAPER|PEN|INK, id, name, stock_qty}], pending{unclaimed_orders, price_adjustments, orders_to_schedule, open_incidents, refunds_to_confirm}}`. Giấy "sắp hết" khi < 10 tờ, bút/mực khi hết hẳn.
+- `GET /manager/reports?from=YYYY-MM-DD&to=YYYY-MM-DD&group=day|week|month` (mặc định 30 ngày gần nhất, theo ngày; tối đa 366 ngày: `422 PERIOD_TOO_LONG`; `from` sau `to`: `422 INVALID_PERIOD`) → `{from, to, group, revenue{series[{bucket, received, refunded, net, payments}], received, refunded, net}, output_by_type[{order_type, orders, quantity, total_amount}], rates{submitted, rejected, reject_rate, jobs_written, rewrites, rewrite_rate}, robots[{robot_id, robot_code, jobs_written, writing_minutes, incidents}], late_completed{count, of_completed, late_rate, orders[...]}}`.
+  - **Doanh thu = tiền thực nhận**: các khoản cọc, thanh toán cuối, phí ship `SUCCESS` theo ngày trả, trừ tiền hoàn `SUCCESS` theo ngày hoàn. Ngày/tuần/tháng theo giờ Việt Nam; `bucket` là ngày đầu kỳ. Tỷ lệ là số thập phân 0–1 (`null` khi chia cho 0).
+- `GET /manager/reports/export?...` (cùng tham số) → file Excel `bao-cao_<from>_<to>.xlsx`, 5 sheet: Tổng quan, Doanh thu, Sản lượng, Robot, Trễ ETA. FE tải bằng `fetch` có header Bearer rồi lưu `blob` (không mở link trần). PDF: chưa có.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -741,6 +760,8 @@ Admin: `POST /admin/jobs/run {confirm: true, only?: ["quotation_expiry"|"deposit
 | `ORDER_CANCEL_UNSUPPORTED` | 409 | Không huỷ online được (kể cả khi cọc vừa được xác nhận đúng lúc khách bấm huỷ: hãy tải lại đơn, nó đang `CONFIRMED`, rồi gọi `cancel-preview` để khách xem số tiền hoàn) | "Liên hệ xưởng" / tải lại |
 | `JOB_RUNNING`, `CANCEL_AFTER_WRITING_STARTED` | 409 | Robot đang viết / đơn đã bắt đầu viết và ETA chưa dời quá ngưỡng (BR-14/16, mục 7h) | ẩn nút huỷ, hiện `message` |
 | `ETA_NOT_EDITABLE`, `ETA_IN_PAST`, `ETA_TOO_FAR`, `ETA_UNCHANGED` | 409/422 | Đổi ETA sai bước / ngày không hợp lệ (mục 7i) | hiện `message` |
+| `INVALID_SETTING`, `SETTING_NOT_EDITABLE`, `INTEGRATION_NOT_TOGGLEABLE` | 422/404 | Admin sửa tham số / tích hợp sai (mục 7l) | hiện `message` |
+| `INVALID_PERIOD`, `PERIOD_TOO_LONG` | 422 | Kỳ báo cáo sai (mục 7m) | sửa bộ lọc ngày |
 | `NOTIFICATION_NOT_FOUND` | 404 | Thông báo không tồn tại hoặc của người khác (mục 7j) | tải lại danh sách |
 | `REFUND_ACCOUNT_REQUIRED` | 422 | Cọc qua payOS: phải nhập tài khoản nhận hoàn tiền | hiện form `refund_account` |
 | `REFUND_EXISTS`, `REFUND_NOT_PENDING`, `NOT_REFUNDABLE`, `INVALID_REFUND_AMOUNT` | 409/422 | Hoàn tiền sai bước / trùng / sai số tiền (mục 7h) | tải lại danh sách, hiện `message` |
@@ -789,7 +810,7 @@ Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thậ
 - Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4), thông báo `NEW_MESSAGE` qua stream (mục 7j); bản thân tin nhắn chưa được đẩy.
 - Khách: **đã có** xem ảnh, nghiệm thu, viết lại 1 lần, tự nghiệm thu sau 7 ngày (mục 7c). Thanh toán cuối + nhận tại xưởng **đã có** (mục 7d). Chọn dịch vụ vận chuyển, vận đơn và giao hàng qua hãng **đã có** (mục 7e). Huỷ sau cọc + hoàn tiền (mục 7h), dời ETA (mục 7i), thông báo in-app + email + stream (mục 7j): **đã có**.
 - Cổng thanh toán thật (VNPay, MoMo) đã có code nhưng **chưa được thử với môi trường thật của họ**. **GHN** (hãng duy nhất) đã được thử trên staging ngày 2026-10-26: báo giá (`preview`), tạo/huỷ vận đơn, link nhãn, danh mục địa chỉ; **chưa** thử callback thật. Mặc định vẫn là MOCK cho tới khi cấu hình (xem `DEPLOY.md`).
-- Admin: tích hợp, tham số hệ thống, dashboard, OTP SMS, showcase, review (Phase 5).
+- Admin: tham số hệ thống, tích hợp, dashboard hệ thống **đã có** (mục 7l); Manager: dashboard sản xuất, báo cáo, xuất Excel **đã có** (mục 7m). Chưa có: xuất PDF báo cáo, OTP SMS, showcase, review.
 - OT-2 (nét đã học) khoá với khách; AI không sinh phác thảo cho OT-2.
 - Độ chính xác dựng nét OT-1 trên chữ viết tay thật **chưa được kiểm chứng**: giao diện nên cho Staff xem/sửa phác thảo trước khi gửi.
 

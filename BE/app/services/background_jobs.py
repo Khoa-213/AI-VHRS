@@ -10,7 +10,7 @@ Jobs:
 * acceptance         FR-28: one reminder after `accept_reminder_days` (3), auto-accept after `auto_accept_days` (7, was lazy).
 * email_retry        notification e-mails that failed (sent_at NULL), from EMAIL_RETRY_MIN_AGE to EMAIL_RETRY_MAX_AGE old.
 * photo_purge        BR-23 / NFR-12: customer uploads (original images, handwriting samples) of orders COMPLETED or CANCELLED
-                     more than PURGE_AFTER_DAYS ago are deleted from storage, unless the sample belongs to a handwriting style
+                     more than `image_retention_days` (90) ago are deleted from storage, unless the sample belongs to a handwriting style
                      the customer agreed to keep. DRY RUN (count only) unless `system_settings.photo_purge_enabled` is true.
 
 `order_ids` limits every job to those orders (tests run against the shared database and must never touch real orders).
@@ -177,7 +177,8 @@ def photo_purge(session: Session, *, order_ids: list[int] | None = None, storage
                 enabled: bool | None = None, **_: Any) -> dict[str, Any]:
     if enabled is None:                                     # only tests pass it: the shared setting stays untouched
         enabled = CatalogRepository(session).setting("photo_purge_enabled", False) is True
-    cutoff = _now() - timedelta(days=PURGE_AFTER_DAYS)
+    days = PURGE_AFTER_DAYS if PURGE_AFTER_DAYS == 0 else _int_setting(session, "image_retention_days", PURGE_AFTER_DAYS)
+    cutoff = _now() - timedelta(days=days)
     finished = or_(and_(Order.order_status == OrderStatus.COMPLETED, func.coalesce(Order.completed_at, Order.updated_at) < cutoff),
                    and_(Order.order_status == OrderStatus.CANCELLED, Order.updated_at < cutoff))
     kept = exists().where(HandwritingStyle.id == OrderInput.handwriting_style_id, HandwritingStyle.keep_consent.is_(True))

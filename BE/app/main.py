@@ -12,7 +12,7 @@ from sqlalchemy import text
 from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
 from app.api.v1 import (quality, robot_link, acceptance, admin, robot_ops, auth, catalog, customer_quotes, delivery, locations, manager,
-                        manager_ops, me, conversations, eta, messages, notifications, orders, payments, pricing, refunds, scheduling, shipments,
+                        manager_ops, me, conversations, eta, messages, notifications, orders, payments, pricing, refunds, reports, scheduling, shipments,
                         technician, workshop)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
@@ -52,7 +52,8 @@ TAGS = [
     {"name": "Acceptance", "description": "UC-18 · FR-28 · BR-13. Khách xem ảnh sản phẩm thật, nghiệm thu hoặc yêu cầu viết lại (1 lần miễn phí); tự nghiệm thu sau 7 ngày."},
     {"name": "Delivery", "description": "FR-18, FR-21, FR-23 · UC-20. Khách chọn giao hàng / nhận tại xưởng, thanh toán cuối (G − D) + phí ship (MOCK), xác nhận đã nhận. Staff bàn giao tại xưởng (`/workshop/orders/{id}/pickup/confirm`)."},
     {"name": "Shipments", "description": "FR-21, FR-22 · UC-29 · MSG15. Vận đơn: Staff tạo vận đơn đúng hãng + dịch vụ khách chọn; hãng GHN báo hành trình qua callback; khách tra cứu. Mặc định hãng MOCK."},
-    {"name": "Admin", "description": "FR-51 · UC-48, UC-51. Chỉ vai trò ADMIN."},
+    {"name": "Reports", "description": "UC-45, UC-46 · FR-50. Manager: dashboard sản xuất, báo cáo doanh thu (tiền thực nhận) / sản lượng / tỷ lệ từ chối, viết lại / robot / trễ ETA, xuất Excel."},
+    {"name": "Admin", "description": "FR-51 · UC-48..52. Chỉ vai trò ADMIN: tài khoản, nhật ký, tham số hệ thống, tích hợp, dashboard hệ thống, tác vụ nền."},
     {"name": "System", "description": "Kiểm tra sức khoẻ dịch vụ."},
 ]
 
@@ -156,6 +157,7 @@ v1.include_router(payments.router)
 v1.include_router(refunds.router)
 v1.include_router(eta.router)
 v1.include_router(notifications.router)
+v1.include_router(reports.router)
 v1.include_router(admin.router)
 
 

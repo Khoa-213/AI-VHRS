@@ -82,6 +82,7 @@ def _cleanup() -> None:
         c.execute(text(f"delete from audit_logs where actor_id in {_TEST_IDS} "
                        f"or (entity_type = 'account' and entity_id in {_TEST_IDS})"))
         c.execute(text(f"update accounts set created_by = null where created_by in {_TEST_IDS}"))
+        c.execute(text(f"update system_settings set updated_by = null where updated_by in {_TEST_IDS}"))   # Admin tests write no-op values
         c.execute(text("delete from accounts where email like 'pytest\\_%@example.com'"))
 
 
