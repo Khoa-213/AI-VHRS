@@ -18,6 +18,7 @@ from functools import lru_cache
 from HersheyFonts import HersheyFonts
 
 from app.core.errors import AppError
+from app.domain.text_layout import Margins, TextLayoutError, check_area
 from app.services.stroke_ai.trajectory import MAX_PAGES, PAPER_MM, Page, Stroke
 
 Poly = list[tuple[float, float]]
@@ -204,15 +205,20 @@ def _break_long(word: _Word, max_width: float) -> list[_Word]:
 
 def compose_text(text: str, *, font_name: str | None = None, paper_size: str, font_size_mm: float = DEFAULT_FONT_SIZE_MM,
                  alignment: str = "LEFT", seed: int = 0, variation: float = 0.015,
-                 margin_mm: float = MARGIN_MM, source=None) -> list[Page]:
-    """S0-S4: lay the text out on one or more pages of `paper_size` and return the pen strokes."""
+                 margin_mm: float = MARGIN_MM, source=None, margins: Margins | None = None,
+                 vertical_align: str = "TOP") -> list[Page]:
+    """S0-S4: lay the text out on one or more pages of `paper_size` and return the pen strokes.
+
+    `margins` (default: `margin_mm` on every side) bound the writing area; `alignment` places each line across it and
+    `vertical_align` places the text of each page up and down it."""
     text = _normalise(text)
     source = source or HersheySource(font_name)
     scale = font_size_mm / CAP_UNITS
     width_mm, height_mm = PAPER_MM[paper_size]
-    avail_units = (width_mm - 2 * margin_mm) / scale
+    m = writing_area(margins or Margins.even(margin_mm), paper_size)
+    avail_units = (width_mm - m.left - m.right) / scale
     pitch_mm = LINE_PITCH_FACTOR * font_size_mm
-    lines_per_page = int((height_mm - 2 * margin_mm) // pitch_mm)
+    lines_per_page = int((height_mm - m.top - m.bottom) // pitch_mm)
     if avail_units < 30 or lines_per_page < 1:
         raise AppError(422, "FONT_TOO_LARGE", "Cỡ chữ quá lớn so với khổ giấy.")
     space = source.space_units
@@ -251,7 +257,7 @@ def compose_text(text: str, *, font_name: str | None = None, paper_size: str, fo
             natural = avail_units
         start = {"LEFT": 0.0, "JUSTIFY": 0.0, "CENTER": (avail_units - natural) / 2,
                  "RIGHT": avail_units - natural}.get(alignment, 0.0)
-        line_top = margin_mm + row * pitch_mm
+        line_top = m.top + row * pitch_mm
         cursor = start
         for w in words:
             bases: list[Poly] = []
@@ -268,10 +274,42 @@ def compose_text(text: str, *, font_name: str | None = None, paper_size: str, fo
             # S4: the word's letters first, its tone marks / modifiers after the word
             for kind, polys in (("base", bases), ("mark", marks)):
                 for poly in polys:
-                    pts = [(margin_mm + ux * scale, line_top + (uy + CAP_UNITS - 9.0 + HEADROOM_UNITS) * scale)
+                    pts = [(m.left + ux * scale, line_top + (uy + CAP_UNITS - 9.0 + HEADROOM_UNITS) * scale)
                            for ux, uy in poly]
                     page.strokes.append(Stroke(pts, kind))
-    return [p for p in pages if p.strokes] or pages[:1]
+    pages = [p for p in pages if p.strokes] or pages[:1]
+    place_vertically(pages, vertical_align, m, height_mm)
+    return pages
+
+
+def writing_area(margins: Margins, paper_size: str) -> Margins:
+    """The margins, refused (422 MARGINS_TOO_LARGE) when they leave too little of the sheet to write on."""
+    width_mm, height_mm = PAPER_MM[paper_size]
+    try:
+        check_area(margins, width_mm, height_mm, paper_size)
+    except TextLayoutError as exc:
+        raise AppError(422, "MARGINS_TOO_LARGE", exc.message, exc.details) from exc
+    return margins
+
+
+def place_vertically(pages: list[Page], vertical_align: str, margins: Margins, height_mm: float) -> None:
+    """Move the text of each page up or down inside the margins. MIDDLE centres the ink between the top and bottom margins,
+    BOTTOM puts the lowest ink on the bottom margin; TOP leaves the lines where the layout put them (from the top margin).
+    The shift never takes ink off the sheet."""
+    if vertical_align == "TOP":
+        return
+    for page in pages:
+        ys = [y for s in page.strokes for _, y in s.points]
+        if not ys:
+            continue
+        top, bottom = min(ys), max(ys)
+        if vertical_align == "MIDDLE":
+            shift = (margins.top + height_mm - margins.bottom) / 2 - (top + bottom) / 2
+        else:
+            shift = height_mm - margins.bottom - bottom
+        shift = max(-top, min(shift, height_mm - bottom))
+        for s in page.strokes:
+            s.points = [(x, y + shift) for x, y in s.points]
 
 
 def canvas_to_strokes(canvas: dict, paper_size: str) -> list[Stroke]:

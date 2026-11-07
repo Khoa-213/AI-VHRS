@@ -80,11 +80,13 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
                  alignment: str | None, paper_size: str, seed: int, v_max_mm_s: float, pen_category: str | None,
                  chars: int, font_loader: Callable[[str], bytes | None] | None = None,
                  layout: dict[str, Any] | None = None) -> Generated:
-    """`layout` (domain/text_layout.py) carries sizes and styles of parts of the text; without it the text is plain."""
+    """`layout` (domain/text_layout.py) carries sizes and styles of parts of the text and the placement on the page (margins,
+    vertical alignment); without it the text is plain, 15 mm margins, from the top."""
     size = float(font_size_mm) if font_size_mm else text_to_stroke.DEFAULT_FONT_SIZE_MM
     pages: list[Page] = []
     plain_pages: list[Page] | None = None        # the same text without styles: the complexity (so the price) is judged on this
     styled = None
+    placement = text_layout.TextLayout()
     if text and text.strip():
         if not font_uri:
             raise AppError(422, "TEMPLATE_REQUIRED", "Đơn chưa chọn mẫu chữ.")
@@ -94,6 +96,7 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
             except text_layout.TextLayoutError as exc:
                 raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
             styled = None if parsed.is_plain else parsed
+            placement = parsed
         outline = font_uri.startswith(outline_font.OUTLINE_PREFIX)
         if outline:
             if font_loader is None:
@@ -102,11 +105,12 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
             name = None
         else:
             source, name = None, text_to_stroke.font_name_from_uri(font_uri)
+        where = {"margins": placement.page_margins, "vertical_align": placement.page_vertical_align}
         plain_pages = text_to_stroke.compose_text(text, font_name=name, source=source, paper_size=paper_size,
-                                                  font_size_mm=size, alignment=alignment or "LEFT", seed=seed)
+                                                  font_size_mm=size, alignment=alignment or "LEFT", seed=seed, **where)
         if styled:
             pages = styled_text.compose_styled(text, styled, font_name=name, source=source, paper_size=paper_size,
-                                               font_size_mm=size, alignment=alignment or "LEFT", seed=seed)
+                                               font_size_mm=size, alignment=alignment or "LEFT", seed=seed, **where)
         else:
             pages = plain_pages
     canvas_strokes = text_to_stroke.canvas_to_strokes(canvas or {}, paper_size)
@@ -123,6 +127,10 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
             else "hershey-vi-compose")
     engine = {"name": kind if text else "canvas-passthrough", "version": ENGINE_VERSION,
               "font_uri": font_uri, "font_size_mm": size, "alignment": alignment or "LEFT", "seed": seed}
+    if text and text.strip():
+        m = placement.page_margins
+        engine["margins_mm"] = {"top": m.top, "bottom": m.bottom, "left": m.left, "right": m.right}
+        engine["vertical_align"] = placement.page_vertical_align
     if styled:                                              # complexity (and so the price) deliberately ignores styles
         engine["layout"] = {"spans": len(styled.spans), "line_spacing": styled.line_spacing}
     if kind == "outline-centerline-compose" and text:
