@@ -1,0 +1,26 @@
+/* Notification bell (FR-27): one component in the public top bar (`nbell-site`) and the workshop header (`nbell-ws`). */
+.nbell{position:relative;display:inline-flex;align-items:center}
+.nbell-btn{position:relative;border:none;background:transparent;cursor:pointer;color:inherit;font:inherit}
+.nbell-ws .nbell-btn{display:inline-flex;align-items:center;justify-content:center;height:54px;min-width:54px;padding:0 14px;border-radius:27px;background:#fff;box-shadow:var(--shadow);color:var(--ink)}
+.nbell-ws .nbell-btn:hover,.nbell-ws .nbell-btn[aria-expanded='true']{background:var(--field)}
+.nbell-btn:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.nbell-count{position:absolute;top:2px;right:2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#d4351c;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.nbell-ws .nbell-count{top:6px;right:8px}
+
+.nbell-pop{position:absolute;right:0;top:calc(100% + 8px);z-index:80;width:min(400px,calc(100vw - 32px));max-height:min(72vh,560px);overflow:auto;padding:12px;border-radius:14px;background:var(--pop);color:var(--t1);border:1px solid var(--header-line);box-shadow:0 20px 40px rgba(32,31,35,.16);display:flex;flex-direction:column;gap:8px;text-align:left;white-space:normal}
+.nbell-h{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:15px}
+.nbell-link{border:none;background:none;color:inherit;font:inherit;font-size:13px;text-decoration:underline;cursor:pointer;padding:4px}
+.nbell-link:disabled{opacity:.45;cursor:default;text-decoration:none}
+.nbell-empty{margin:8px 0;font-size:13px;opacity:.7}
+.nbell-pop ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.nbell-pop li button{width:100%;display:flex;gap:10px;align-items:flex-start;padding:10px;border:none;border-radius:10px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.nbell-pop li button:hover,.nbell-pop li button:focus-visible{background:var(--fx-08,rgba(0,0,0,.06))}
+.nbell-pop li.unread button{background:var(--fx-08,rgba(0,0,0,.05))}
+.nbell-ico{flex:none;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--fx-08,rgba(0,0,0,.08))}
+.nbell-txt{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;font-size:13px;overflow-wrap:anywhere}
+.nbell-txt small{opacity:.65}
+.nbell-dot{flex:none;width:9px;height:9px;margin-top:6px;border-radius:50%;background:#d4351c}
+.nbell-more{border:none;border-radius:10px;padding:10px;background:var(--fx-08,rgba(0,0,0,.06));color:inherit;font:inherit;font-size:13px;cursor:pointer}
+.nbell-more:disabled{opacity:.5;cursor:default}
+.eta-history{margin:6px 0 0;padding-left:18px;font-size:13px;display:flex;flex-direction:column;gap:4px}
+.nbell-ws .nbell-pop{background:#fff;color:var(--ink);border-color:var(--line)}

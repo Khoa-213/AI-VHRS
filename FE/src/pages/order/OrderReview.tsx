@@ -1,5 +1,5 @@
 import { ChatCircleDots, Check } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import Page from '../../components/layout/Page'
 import OrderPreview from '../../components/ui/OrderPreview'
 import ProductViewer from '../../components/ui/ProductViewer'
@@ -17,6 +17,8 @@ import type { Job } from '../../services/async'
 import { fmt } from '../../utils/format'
 import { WORKSHOP_TZ } from '../../utils/pickupSlots'
 import { openChat } from '../../store/chatDock'
+import { useOnNotification } from '../../store/notifications'
+import PaidOrderPanel from './PaidOrderPanel'
 import PrivacyDialog from './PrivacyDialog'
 import FulfillmentStatus from './FulfillmentStatus'
 import './order.css'
@@ -32,6 +34,8 @@ export default function OrderReview({ id }: { id: string | null }) {
   // Statuses that move on their own (the workshop works, the payment lands) are checked every 20 seconds.
   const q = useAsync(() => getOrder(orderId), [orderId], (o) => (o && WAITING.includes(o.status) ? 20000 : undefined))
   const order = q.data
+  // A notification (status moved, quotation sent, refund sent...) means the order may have changed: ask again.
+  useOnNotification(useCallback((n) => { if (n.orderId === orderId) void q.reload() }, [orderId, q.reload]))
   const status = order?.status
 
   const papers = useAsync(getPapers, [])
@@ -427,11 +431,14 @@ export default function OrderReview({ id }: { id: string | null }) {
                 </>
               )}
 
+              {['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING'].includes(status) && <PaidOrderPanel order={order} onChanged={q.reload} />}
+
               {['READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(status) && <FulfillmentStatus order={order} onChanged={q.reload} />}
 
               {status === 'CANCELLED' && (
                 <>
                   <div className="vh-callout vh-callout--red"><b>{t('ov.cancelledTitle')}</b><span>{t('ov.cancelledBody')}</span></div>
+                  <PaidOrderPanel order={order} onChanged={q.reload} />
                   <Link to={ORDER_HREF} className="vh-btn vh-btn--primary">{t('or.newOrder')}</Link>
                 </>
               )}

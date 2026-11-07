@@ -5,6 +5,7 @@ import { Link } from '../../router/router'
 import { useUser } from '../../store/store'
 import LanguageToggle from '../ui/LanguageToggle'
 import ThemeToggle from '../ui/ThemeToggle'
+import NotificationBell from '../ui/NotificationBell'
 import AccountButton from './AccountButton'
 
 export default function SiteHeader() {
@@ -34,6 +35,7 @@ export default function SiteHeader() {
             </button>
             <ThemeToggle className="vh-icon-btn" />
             <LanguageToggle />
+            {user && <NotificationBell variant="site" />}
             <AccountButton buttonClassName="vh-icon-btn" avatarClassName="vh-avatar" />
           </div>
           <Link to={ORDER_HREF} className="vh-btn vh-btn--primary vh-btn--sm vh-start">{t('nav.startWriting')}</Link>

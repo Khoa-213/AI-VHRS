@@ -1,22 +1,24 @@
-import { Truck, CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
+import { Money, Truck, CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
+import { workshopRefunds } from '../../services/refunds'
 
 import { listTechJobs } from '../../services/technician'
 
 import { signOut, useUser } from '../../store/store'
 import ChatDock from '../ui/ChatDock'
 import LanguageToggle from '../ui/LanguageToggle'
+import NotificationBell from '../ui/NotificationBell'
 import SkipLink from '../ui/SkipLink'
 import RobotAlertBell from './RobotAlertBell'
 import './ws.css'
 import './workshop.css'
 
 export type Area = 'staff' | 'manager' | 'tech' | 'admin'
-export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit'
+export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit' | 'refunds'
 
 interface Item {
   key: RailKey
@@ -29,23 +31,34 @@ interface Item {
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'
 
 
+/** Refunds to transfer plus money flagged for a refund; 0 when the list cannot be read. */
+const pendingRefundCount = async () => {
+  try {
+    const r = await workshopRefunds('PENDING')
+    return r.refunds.length + r.orphans.length
+  } catch {
+    return 0
+  }
+}
+
 /** Counts that wait for this person, all from the API: the workshop queues, or a technician's written jobs. */
 function useCounts(area: Area) {
   const api = useAsync(
     async () => (area === 'admin'
       ? null
       : area === 'tech'
-        ? { intake: 0, approvals: 0, schedule: 0, qc: (await listTechJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
+        ? { intake: 0, approvals: 0, schedule: 0, refunds: 0, qc: (await listTechJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
         : {
           intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
           approvals: area === 'manager' ? (await pendingApprovals()).total : 0,
           schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
+          refunds: await pendingRefundCount(),
           qc: 0,
         }),
     [area],
     area === 'admin' ? undefined : 60000,
   )
-  return api.data ?? { intake: 0, approvals: 0, schedule: 0, qc: 0 }
+  return api.data ?? { intake: 0, approvals: 0, schedule: 0, refunds: 0, qc: 0 }
 
 }
 
@@ -89,6 +102,7 @@ export default function Shell({
         { key: 'dashboard', to: '/staff', label: t('rail.dashboard'), icon: icon(SquaresFour) },
         { key: 'review', to: '/staff/review', label: t('rail.review'), icon: icon(ClipboardText), count: c.intake },
         { key: 'fulfillment', to: '/staff/fulfillment', label: t('sp.title'), icon: icon(Truck) },
+        { key: 'refunds', to: '/staff/refunds', label: t('rf.pageTitle'), icon: icon(Money), count: c.refunds },
         ...(area === 'manager'
           ? ([
             'gap',
@@ -143,6 +157,7 @@ export default function Shell({
             <div className="tools">
               {tools}
               {area === 'tech' && <RobotAlertBell />}
+              <NotificationBell variant="ws" />
               <LanguageToggle />
               <div className="me2"><span className="avatar">{initials(name)}</span><div>{name}<small>{role}</small></div></div>
             </div>

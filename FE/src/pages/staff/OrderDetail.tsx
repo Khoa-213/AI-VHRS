@@ -18,6 +18,7 @@ import { fmt } from '../../utils/format'
 import ChangeRequests from './ChangeRequests'
 import { isManagerRole } from './RequireStaff'
 import FulfillmentPanel, { FULFILLMENT_STATES } from './FulfillmentPanel'
+import PaidOrderDesk, { PAID_STATES } from './PaidOrderDesk'
 import QuotationPanel from './QuotationPanel'
 import SketchPanel from './SketchPanel'
 
@@ -110,6 +111,8 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         </label>
         {staff.error != null && <p className="lg-error" role="alert">{errText(t, orderErrorKey(staff.error))}</p>}
       </section>}
+
+      {PAID_STATES.includes(order.status) && <PaidOrderDesk order={order} onChanged={async () => { await q.reload(); onChanged() }} />}
 
       {FULFILLMENT_STATES.includes(order.status) && <FulfillmentPanel order={order} onChanged={async () => { await q.reload(); onChanged() }} />}
 

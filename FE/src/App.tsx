@@ -7,6 +7,7 @@ import { closeAuth, openAuth, useAuthDialog } from './store/authDialog'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import Accounts from './pages/admin/Accounts'
 import AuditLog from './pages/admin/AuditLog'
+import Refunds from './pages/staff/Refunds'
 import Approvals from './pages/staff/Approvals'
 import Catalog from './pages/staff/Catalog'
 import Pricing from './pages/staff/Pricing'
@@ -83,6 +84,7 @@ function Routes() {
   }
   const fulfillment = /^\/staff\/fulfillment(?:\/(\d+))?\/?$/.exec(path)
   if (fulfillment) return <RequireStaff><Workbench key="fulfillment" fulfillment id={fulfillment[1] ? Number(fulfillment[1]) : undefined} /></RequireStaff>
+  if (path === '/staff/refunds') return <RequireStaff><Refunds /></RequireStaff>
   if (path === '/staff/catalog') return <RequireStaff manager><Catalog /></RequireStaff>
   if (path === '/staff/pricing') return <RequireStaff manager><Pricing /></RequireStaff>
   if (path === '/staff/approvals') return <RequireStaff manager><Approvals /></RequireStaff>
