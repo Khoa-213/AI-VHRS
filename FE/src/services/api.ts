@@ -119,7 +119,7 @@ async function toError(res: Response): Promise<ApiError> {
 // One refresh at a time: parallel 401s wait for the same promise.
 let refreshing: Promise<boolean> | null = null
 
-function refreshTokens(): Promise<boolean> {
+export function refreshTokens(): Promise<boolean> {
   refreshing ??= (async () => {
     const t = getTokens()
     if (!t) return false

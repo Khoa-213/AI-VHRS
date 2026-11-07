@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Lock, Scroll, UserCircle, Users } from '@phosphor-icons/react'
 import { Donut } from '../../components/ws/charts'
 import { Kpi, avatarTone, initials } from '../../components/ws/parts'
@@ -5,7 +6,7 @@ import Shell from '../../components/ws/Shell'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
-import { ROLES, allAccounts, listAccounts, listAudit } from '../../services/admin'
+import { BACKGROUND_JOBS, ROLES, allAccounts, lastBackgroundRun, listAccounts, listAudit, runBackgroundJobs, type BackgroundJob } from '../../services/admin'
 import { errText, orderErrorKey } from '../../services/orders'
 import { useUser } from '../../store/store'
 import './admin.css'
@@ -27,6 +28,24 @@ export default function AdminDashboard() {
   }, [], 60000)
   const recent = useAsync(() => listAudit({ pageSize: 8 }), [], 30000)
   const recentAccounts = useAsync(async () => (await allAccounts()).slice(0, 5), [], 60000)
+
+  const lastRun = useAsync(lastBackgroundRun, [], 60000)
+  const [only, setOnly] = useState<BackgroundJob | ''>('')
+  const [running, setRunning] = useState(false)
+  const [runError, setRunError] = useState('')
+  const runNow = async () => {
+    if (running) return
+    setRunning(true); setRunError('')
+    try {
+      await runBackgroundJobs(only ? [only] : undefined)
+      await lastRun.reload()
+    } catch (e) {
+      setRunError(orderErrorKey(e))
+    } finally {
+      setRunning(false)
+    }
+  }
+  const run = lastRun.data
 
   const byRole = stats.data?.byRole ?? ROLES.map(() => 0)
   const total = byRole.reduce((a, b) => a + b, 0)
@@ -83,6 +102,43 @@ export default function AdminDashboard() {
           ))}
           {recent.data && !recent.data.items.length && <p className="sub">{t('ad.au.empty')}</p>}
         </div>
+      </section>
+
+      <section className="panel" aria-labelledby="a4">
+        <div className="ph"><div><h2 id="a4">{t('ad.jobs.title')}</h2><p className="sub">{t('ad.jobs.lede')}</p></div></div>
+        <div className="wk-form">
+          <label className="vh-label">{t('ad.jobs.which')}
+            <select className="vh-select" value={only} disabled={running} onChange={(e) => setOnly(e.target.value as BackgroundJob | '')}>
+              <option value="">{t('ad.jobs.all')}</option>
+              {BACKGROUND_JOBS.map((j) => <option key={j} value={j}>{t(`ad.jobs.${j}`)}</option>)}
+            </select>
+          </label>
+          <button type="button" className="btn acc" disabled={running} onClick={() => void runNow()}>{t(running ? 'ad.jobs.running' : 'ad.jobs.run')}</button>
+        </div>
+        {runError && <p className="lg-error" role="alert">{errText(t, runError)}</p>}
+        {!!lastRun.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(lastRun.error))}</p>}
+        {lastRun.data === null && !lastRun.loading && !lastRun.error && <p className="sub">{t('ad.jobs.never')}</p>}
+        {run && (
+          <>
+            <p className="sub">
+              {t('ad.jobs.last', { when: new Date(run.startedAt).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' }), s: run.seconds.toFixed(1) })}
+              {!run.ran && ` · ${t('ad.jobs.busy')}`}
+            </p>
+            <div className="list">
+              {Object.entries(run.results).map(([name, r]) => {
+                const failed = Object.prototype.hasOwnProperty.call(r, 'error')
+                return (
+                  <div key={name} className="item">
+                    <div className="t"><b>{BACKGROUND_JOBS.includes(name as BackgroundJob) ? t(`ad.jobs.${name}`) : name}</b>
+                      <span className="mono">{failed ? String(r.error) : Object.entries(r).map(([k, v]) => `${k}: ${String(v)}`).join(' · ') || '–'}</span>
+                    </div>
+                    <span className={`chip ${failed ? 'bad' : 'ok'}`}>{t(failed ? 'ad.jobs.failed' : 'ad.jobs.ok')}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
       </section>
     </Shell>
   )

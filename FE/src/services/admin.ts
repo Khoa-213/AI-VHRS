@@ -87,3 +87,31 @@ export async function listAudit(f: { actorId?: number; action?: string; entityTy
     total: r.total, page: r.page, pageSize: r.page_size,
   }
 }
+
+// ---------- background jobs (Phase 5a) ----------
+
+export const BACKGROUND_JOBS = ['quotation_expiry', 'deposit_deadline', 'acceptance', 'email_retry', 'photo_purge'] as const
+export type BackgroundJob = (typeof BACKGROUND_JOBS)[number]
+
+export interface JobsRun {
+  ran: boolean
+  reason: string | null
+  /** Per job: counters, or `{ error }`. */
+  results: Record<string, Record<string, unknown>>
+  startedAt: string
+  seconds: number
+}
+
+interface RawJobsRun { ran: boolean; reason?: string | null; results: Record<string, Record<string, unknown>>; started_at: string; seconds: number }
+
+const toJobsRun = (r: RawJobsRun): JobsRun => ({ ran: r.ran, reason: r.reason ?? null, results: r.results ?? {}, startedAt: r.started_at, seconds: r.seconds })
+
+/** `POST /admin/jobs/run`: runs the background jobs now (all, or only the given ones). */
+export const runBackgroundJobs = async (only?: BackgroundJob[]) =>
+  toJobsRun(await api<RawJobsRun>('/admin/jobs/run', { method: 'POST', body: { confirm: true, ...(only?.length ? { only } : {}) } }))
+
+/** `GET /admin/jobs/last`: the latest run, or null when none ran yet. */
+export const lastBackgroundRun = async () => {
+  const r = await api<RawJobsRun | null>('/admin/jobs/last')
+  return r ? toJobsRun(r) : null
+}

@@ -3,11 +3,14 @@ import { ORDER_HREF, svgProps } from '../../../constants'
 import { useT } from '../../../i18n'
 import ThemeToggle from '../../../components/ui/ThemeToggle'
 import LanguageToggle from '../../../components/ui/LanguageToggle'
+import NotificationBell from '../../../components/ui/NotificationBell'
+import { useUser } from '../../../store/store'
 import AccountButton from '../../../components/layout/AccountButton'
 
 /** Floating pill navbar: logo, a lead pill plus a pill group of links, then tools and the call to action. */
 export default function Header() {
   const t = useT()
+  const user = useUser()
   return (
     <header className="lp-header">
       <div className="lp-header-inner">
@@ -35,6 +38,7 @@ export default function Header() {
             </button>
             <ThemeToggle className="lp-icon-btn" />
             <LanguageToggle />
+            {user && <NotificationBell variant="landing" />}
             <AccountButton buttonClassName="lp-icon-btn" avatarClassName="vh-avatar" />
           </div>
           <a href={ORDER_HREF} className="lp-start-btn">
