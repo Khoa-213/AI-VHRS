@@ -100,7 +100,7 @@ Bản nháp (`DRAFT`) chỉ chủ đơn thấy; xưởng không thấy cho tới
 | `/workshop/*` **ghi** (claim, accept, reject, request-info, phác thảo, báo giá, điều chỉnh, gửi, huỷ báo giá) | ✘ | ✔ | ✘ | ✘ | ✘ |
 | `/manager/*` (phân công, duyệt giá, vật tư, mẫu chữ, robot, bảng giá, lịch sản xuất, **sự cố, nhật ký job**) | ✘ | ✘ | ✔ | ✘ | ✘ |
 | `/technician/*` (job của tôi, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố, ảnh sản phẩm + QC) | ✘ | ✘ | ✘ | ✔ (chỉ job được giao) | ✘ |
-| `/admin/*` (tài khoản, nhật ký hệ thống) | ✘ | ✘ | ✘ | ✘ | ✔ |
+| `/admin/*` (tài khoản, nhật ký hệ thống, tác vụ nền) | ✘ | ✘ | ✘ | ✘ | ✔ |
 | `POST /webhooks/payments/{gateway}` | không dùng token: xác thực bằng chữ ký HMAC | | | | |
 
 **Cách hoạt động:** đăng nhập → nhận `access_token` (JWT) → gắn `Authorization: Bearer <token>` vào MỌI request. BE giải token, **đọc lại tài khoản và phiên từ DB mỗi lần** (khoá tài khoản, đăng xuất, đổi vai trò có hiệu lực ngay) và lấy **vai trò từ DB, không từ nội dung token**. Thiếu/sai/hết hạn token → `401`; đúng token nhưng sai vai trò → `403 FORBIDDEN`. Bảng trên được test tự động cho **từng route** (`tests/test_permission_matrix.py`); thêm endpoint mà quên khai báo quyền sẽ làm test đỏ.
@@ -150,7 +150,7 @@ stateDiagram-v2
   QUOTED --> AWAITING_DEPOSIT: customer approve quotation
   QUOTED --> CANCELLED: customer cancel / hết hạn 7 ngày
   AWAITING_DEPOSIT --> CONFIRMED: webhook cọc SUCCESS
-  AWAITING_DEPOSIT --> CANCELLED: customer cancel
+  AWAITING_DEPOSIT --> CANCELLED: customer cancel / quá hạn cọc 3 ngày (tác vụ nền)
   CONFIRMED --> AWAITING_ACCEPTANCE: technician nộp ảnh (≥ 2 ảnh QC đạt)
   CONFIRMED --> CANCELLED: customer cancel / Staff huỷ (BR-14/16, mở yêu cầu hoàn tiền, mục 7h)
   AWAITING_ACCEPTANCE --> AWAITING_FINAL_PAYMENT: customer accept / tự nghiệm thu sau 7 ngày
@@ -174,7 +174,7 @@ stateDiagram-v2
 | `ACCEPTED` | Xưởng đang làm phác thảo/báo giá | chat |
 | `AWAITING_PRIVACY` | **Phải** đọc & đồng ý chính sách riêng tư mới xem được báo giá | `GET /privacy-policy`, `POST /orders/{id}/privacy` |
 | `QUOTED` | Xem phác thảo + báo giá (hiệu lực `valid_until`) | `approve`, `request-changes`, `cancel` |
-| `AWAITING_DEPOSIT` | Chờ cọc (`deposit_amount`) | `payments/deposit`, mock-checkout, `cancel` |
+| `AWAITING_DEPOSIT` | Chờ cọc (`deposit_amount`). Quá **3 ngày** sau khi duyệt báo giá mà chưa cọc thì BE tự huỷ (`cancel_reason` "Quá hạn đặt cọc…", thông báo in-app), trừ khi khách vừa mở giao dịch cọc trong 60 phút qua | `payments/deposit`, mock-checkout, `cancel` |
 | `CONFIRMED` | Đã cọc, xưởng sắp xếp sản xuất (`production_status` cho biết bước; `REWRITE_REQUIRED` = đang viết lại) | chat; `GET cancel-preview` rồi `cancel` nếu `allowed` (mục 7h) |
 | `AWAITING_ACCEPTANCE` | Sản phẩm đã viết xong, có ảnh thật để nghiệm thu (`awaiting_acceptance_at`) | `GET /orders/{id}/product-photos`, `accept`, `rewrite` (xem mục 7c). **Không huỷ được ở bước này** |
 | `AWAITING_FINAL_PAYMENT` | Đã nghiệm thu (`accepted_product_at`); chờ thanh toán phần còn lại | `GET delivery-quote`, `PUT delivery`, `POST payments/final`, mock-checkout (mục 7d) |
@@ -707,6 +707,21 @@ Mọi vai trò đã đăng nhập (kể cả Staff, Technical Staff, Manager) c�
 - BE tự đóng sau 30 phút; client nối lại (gợi ý chờ 5 giây, `retry: 5000`). Token hết hạn: refresh rồi nối lại; `401` khi mở là token sai.
 
 Stream chỉ là "có cái mới": nguồn đúng vẫn là `GET /me/notifications`. Khi nối lại, tải lại danh sách và badge (sự kiện trong lúc mất kết nối không được phát lại).
+
+## 7k. Tác vụ nền – Phase 5a (BE tự chạy, FE chỉ hiển thị kết quả)
+
+BE tự chạy mỗi 10 phút (khi bật `BACKGROUND_JOBS_ENABLED` trên server). FE không cần poll để kích hoạt, chỉ cần tải lại dữ liệu khi nhận thông báo (mục 7j):
+
+| Việc | Kết quả FE thấy |
+|---|---|
+| Báo giá `SENT` quá hạn (BR-08) | đơn `CANCELLED`, thông báo MSG08 (trước đây chỉ xảy ra khi có người mở đơn) |
+| Chưa cọc 3 ngày sau khi duyệt báo giá | đơn `CANCELLED`, giao dịch cọc đang chờ `CANCELLED`, thông báo "Đơn … đã huỷ do quá hạn cọc" |
+| Chờ nghiệm thu 3 ngày | một thông báo nhắc, kèm giờ sẽ tự nghiệm thu |
+| Chờ nghiệm thu 7 ngày | tự nghiệm thu, đơn `AWAITING_FINAL_PAYMENT` |
+| Email thông báo gửi lỗi | gửi lại trong 24 giờ |
+| Ảnh khách tải lên của đơn đã xong / đã huỷ quá 90 ngày (BR-23) | file bị xoá, `order_inputs` không còn hiện; bộ nét khách đồng ý lưu thì giữ. **Đang tắt** (chỉ đếm) cho tới khi chủ dự án bật `photo_purge_enabled` |
+
+Admin: `POST /admin/jobs/run {confirm: true, only?: ["quotation_expiry"|"deposit_deadline"|"acceptance"|"email_retry"|"photo_purge"]}` chạy ngay một lượt → `{ran, reason?, results: {việc: {...số liệu} | {error}}, started_at, seconds}` (`ran: false` khi một lượt khác đang chạy); `GET /admin/jobs/last` → kết quả lượt gần nhất (hoặc `null`).
 
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 

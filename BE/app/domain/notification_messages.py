@@ -92,6 +92,11 @@ CATALOG: dict[str, _T] = {
                          lambda p: f"Đơn {p['code']} đã được tạo vận đơn {p.get('waybill') or '-'} và chờ hãng tới lấy."),
     "ORDER_COMPLETED": ("ORDER_STATUS_CHANGED", None, False, False, lambda p: f"Đơn {p['code']} đã hoàn tất",
                         lambda p: f"Đơn {p['code']} đã hoàn tất. Cảm ơn bạn đã sử dụng dịch vụ."),
+    "DEPOSIT_OVERDUE": ("ORDER_STATUS_CHANGED", None, False, False, lambda p: f"Đơn {p['code']} đã huỷ do quá hạn cọc",
+                        lambda p: f"Đơn {p['code']} đã được huỷ vì chưa đặt cọc trong {p.get('days')} ngày sau khi duyệt báo giá."),
+    "ACCEPT_REMINDER": ("ORDER_STATUS_CHANGED", None, False, False, lambda p: f"Nhắc nghiệm thu đơn {p['code']}",
+                        lambda p: f"Sản phẩm của đơn {p['code']} đang chờ bạn nghiệm thu. Đơn sẽ tự nghiệm thu lúc "
+                                  f"{moment(p.get('due_at'))} nếu bạn không phản hồi."),
     "MESSAGE": ("NEW_MESSAGE", None, False, True, lambda p: f"Tin nhắn mới về đơn {p['code']}",
                 lambda p: f"Bạn có tin nhắn mới về đơn {p['code']}."),
     # ---- workshop staff (in-app only)

@@ -1,5 +1,7 @@
-"""UC-48, UC-51 (FR-51): Admin-only account management and audit log."""
-from typing import Annotated
+"""UC-48, UC-51 (FR-51): Admin-only account management and audit log; Phase 5a: background jobs (run now, last run)."""
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
@@ -8,6 +10,7 @@ from app.api.schemas import (AccountOut, AdminAccountCreateIn, AdminAccountUpdat
                              account_out)
 from app.models.account import Account, AccountStatus, RoleCode
 from app.repositories.accounts import AccountRepository, AuditRepository
+from app.services import background_jobs
 from app.services.accounts import AccountAdminService
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -50,3 +53,32 @@ def audit_logs(_: AdminDep, session: SessionDep, actor_id: int | None = None, ac
         actor_id=actor_id, action=action, entity_type=entity_type, entity_id=entity_id,
         offset=(page - 1) * page_size, limit=page_size)
     return Page(items=[AuditLogOut.model_validate(r) for r in rows], total=total, page=page, page_size=page_size)
+
+
+JobName = Literal["quotation_expiry", "deposit_deadline", "acceptance", "email_retry", "photo_purge"]
+
+
+class JobsRunIn(BaseModel):
+    confirm: Literal[True]
+    only: list[JobName] | None = None
+
+
+class JobsRunOut(BaseModel):
+    ran: bool
+    reason: str | None = None
+    results: dict[str, Any]
+    started_at: str
+    seconds: float
+
+
+@router.post("/jobs/run", response_model=JobsRunOut, summary="Phase 5a Chạy tác vụ nền ngay",
+             description="Chạy một lượt các tác vụ nền (hoặc chỉ `only`). Cần `confirm: true`. Việc xoá ảnh BR-23 chỉ đếm "
+                         "(dry run) cho tới khi `system_settings.photo_purge_enabled` = true. `ran: false` khi một lượt "
+                         "khác đang chạy.")
+def run_jobs(body: JobsRunIn, admin: AdminDep) -> JobsRunOut:
+    return JobsRunOut(**background_jobs.run_all(only=body.only, actor_id=admin.id))
+
+
+@router.get("/jobs/last", response_model=dict[str, Any] | None, summary="Phase 5a Kết quả lượt chạy tác vụ nền gần nhất")
+def last_jobs_run(_: AdminDep, session: SessionDep) -> dict[str, Any] | None:
+    return background_jobs.last_run(session)
