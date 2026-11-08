@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
-from app.api.v1 import (quality, robot_link, acceptance, admin, robot_ops, auth, catalog, customer_quotes, delivery, locations, manager,
+from app.api.v1 import (reviews, quality, robot_link, acceptance, admin, robot_ops, auth, catalog, customer_quotes, delivery, locations, manager,
                         manager_ops, me, conversations, eta, messages, notifications, orders, payments, pricing, refunds, reports, scheduling, shipments,
                         technician, workshop)
 from app.core.config import get_settings
@@ -53,6 +53,8 @@ TAGS = [
     {"name": "Delivery", "description": "FR-18, FR-21, FR-23 · UC-20. Khách chọn giao hàng / nhận tại xưởng, thanh toán cuối (G − D) + phí ship (MOCK), xác nhận đã nhận. Staff bàn giao tại xưởng (`/workshop/orders/{id}/pickup/confirm`)."},
     {"name": "Shipments", "description": "FR-21, FR-22 · UC-29 · MSG15. Vận đơn: Staff tạo vận đơn đúng hãng + dịch vụ khách chọn; hãng GHN báo hành trình qua callback; khách tra cứu. Mặc định hãng MOCK."},
     {"name": "Reports", "description": "UC-45, UC-46 · FR-50. Manager: dashboard sản xuất, báo cáo doanh thu (tiền thực nhận) / sản lượng / tỷ lệ từ chối, viết lại / robot / trễ ETA, xuất Excel."},
+    {"name": "Reviews", "description": "FR-58 · UC-20, UC-59. Khách đánh giá đơn đã hoàn thành (1–5 sao, nhận xét, ảnh; sửa trong 30 ngày); Manager ẩn / hiện lại đánh giá vi phạm."},
+    {"name": "Showcase", "description": "FR-54 · UC-55. Staff, Manager đăng ảnh sản phẩm mẫu cho trang chủ (công khai ở `GET /catalog/showcase`)."},
     {"name": "Admin", "description": "FR-51 · UC-48..52. Chỉ vai trò ADMIN: tài khoản, nhật ký, tham số hệ thống, tích hợp, dashboard hệ thống, tác vụ nền."},
     {"name": "System", "description": "Kiểm tra sức khoẻ dịch vụ."},
 ]
@@ -158,6 +160,10 @@ v1.include_router(refunds.router)
 v1.include_router(eta.router)
 v1.include_router(notifications.router)
 v1.include_router(reports.router)
+v1.include_router(reviews.customer_router)
+v1.include_router(reviews.manager_router)
+v1.include_router(reviews.showcase_router)
+v1.include_router(reviews.public_router)
 v1.include_router(admin.router)
 
 

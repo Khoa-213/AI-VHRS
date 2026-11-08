@@ -31,7 +31,7 @@ ALL = READ | WRITE
 # (regex on the path without /api/v1, methods, who). First match wins, so specific rules come first.
 RULES: list[tuple[str, set[str], object]] = [
     (r"^/health$", ALL, PUBLIC),
-    (r"^/(catalog/(papers|pens|templates|suggest-materials|text-styles)|privacy-policy)", READ, PUBLIC),
+    (r"^/(catalog/(papers|pens|templates|suggest-materials|text-styles|reviews|showcase)|privacy-policy)", READ, PUBLIC),
     (r"^/catalog/templates/\{template_id\}/preview$", {"POST"}, PUBLIC),    # styled preview of a template (rate limited)
     (r"^/locations/", READ, ANY),                                              # address pickers: any signed-in role
     (r"^/pricing/estimate$", ALL, {CUSTOMER}),
@@ -51,6 +51,7 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/orders/\{order_id\}/messages", ALL, {CUSTOMER, STAFF, MANAGER}),    # the Manager joins chats to resolve complaints
     (r"^/orders", ALL, {CUSTOMER}),
     (r"^/payments/", ALL, {CUSTOMER}),                                       # gateways list, refresh, mock-checkout
+    (r"^/workshop/showcase", ALL, {STAFF, MANAGER}),                        # sample products for the home page (Phase 5c)
     (r"^/workshop/", READ, {STAFF, MANAGER}),
     (r"^/workshop/", WRITE, {STAFF}),                                        # accept, reject, sketch, quote, send: Staff only
     (r"^/technician/", ALL, {TECH}),                                         # only the technician, and only their own jobs (BR-19)

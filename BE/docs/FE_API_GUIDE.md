@@ -13,6 +13,7 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **Trang `/payment/result`** (cổng đưa khách về đây kèm `?order_id=<id>`): poll `GET /orders/{id}` tới ~60 giây, gọi `POST /payments/{id}/refresh` một lần nếu còn `PENDING` (bỏ qua lỗi 502 của VNPay), rồi đưa khách về đơn. Không tin tham số của cổng.
 - [ ] **`pages/order/Deposit.tsx`:** thêm lựa chọn **PAYOS** (đọc `GET /payments/gateways`, chỉ hiện cổng `enabled`); khi `PaymentOut.pay_url` có giá trị thì `window.location.assign(pay_url)` và không chạy luồng mock; nhãn "MOCK" chỉ hiện khi `mode === "MOCK"`; thêm `pay_url`, `pay_url_expires_at`, `qr_code`, `bank`, `needs_refund` vào kiểu `Payment` trong `services/orders.ts`.
 - [ ] **payOS:** hiện hạn của mã (`pay_url_expires_at`) và cho tạo mã mới khi hết hạn; thông báo "đã chuyển sai số tiền" khi `needs_refund`. Khi test, trang `pay.payos.vn/web/<id>` từng không mở được trên trình duyệt của chủ dự án (nghi sao chép sai đường dẫn): hãy thử luồng redirect thật và báo lại BE nếu vẫn lỗi. Tuỳ chọn: tự vẽ QR từ `qr_code`.
+- [ ] **Đánh giá + showcase (2026-11-07, mục 7n, 7o):** khách: nút "Đánh giá" ở đơn `COMPLETED` (sao, nhận xét, tối đa 5 ảnh, sửa trong 30 ngày); trang chủ: khối "Sản phẩm mẫu" (`GET /catalog/showcase`) và "Khách nói gì" (`GET /catalog/reviews`, điểm trung bình + số lượt theo sao); web xưởng: màn quản lý showcase (Staff, Manager), màn đánh giá có nút ẩn / hiện lại (Manager).
 - [ ] **Thông báo (2026-11-04, mục 7j):** chuông + badge (`GET /me/notifications/unread-count`), danh sách có "xem thêm" (`before_id`), đánh dấu đã đọc / đọc hết, mở `GET /me/notifications/stream` bằng fetch-stream (có header Bearer) để cập nhật tức thời và tải lại màn đơn đang xem; áp dụng cho cả web khách, web xưởng và DesktopApp kỹ thuật viên.
 - [ ] **Màn thanh toán cuối** (`POST /orders/{id}/payments/final`, mục 7d).
 
@@ -763,6 +764,35 @@ Khoá sửa được và khoảng hợp lệ: `quotation_valid_days` 1–60, `de
   - **Doanh thu = tiền thực nhận**: các khoản cọc, thanh toán cuối, phí ship `SUCCESS` theo ngày trả, trừ tiền hoàn `SUCCESS` theo ngày hoàn. Ngày/tuần/tháng theo giờ Việt Nam; `bucket` là ngày đầu kỳ. Tỷ lệ là số thập phân 0–1 (`null` khi chia cho 0).
 - `GET /manager/reports/export?...` (cùng tham số) → file Excel `bao-cao_<from>_<to>.xlsx`, 5 sheet: Tổng quan, Doanh thu, Sản lượng, Robot, Trễ ETA. FE tải bằng `fetch` có header Bearer rồi lưu `blob` (không mở link trần). PDF: chưa có.
 
+## 7n. Đánh giá đơn hàng – Phase 5c (FR-58, UC-20, UC-59)
+
+**Khách** (chỉ đơn của mình, đơn phải `COMPLETED`; mỗi đơn **1** đánh giá):
+1. Ảnh (tuỳ chọn, tối đa 5, jpg/png ≤ 5 MB): `POST /orders/{id}/review/photos/upload-url {mime_type, size_bytes}` → `{path, upload_url, method:"PUT", expires_in}`; PUT file vào `upload_url`; giữ `path`.
+2. `POST /orders/{id}/review {rating: 1–5, comment?: ≤ 2000 ký tự, photos?: [path...]}` → `201 ReviewOut`.
+3. Xem lại: `GET /orders/{id}/review` (`404 REVIEW_NOT_FOUND` khi chưa đánh giá: hiện nút "Đánh giá").
+4. Sửa **trong 30 ngày** sau khi đăng: `PUT /orders/{id}/review` cùng dạng, **thay toàn bộ** (gửi lại cả danh sách `photos` muốn giữ; ảnh bị bỏ ra sẽ bị xoá khỏi kho). Quá hạn: `409 REVIEW_EDIT_CLOSED`.
+
+`ReviewOut = {id, order_id, rating, comment, photos:[{id, path, url}], hidden, created_at, updated_at, editable_until}` (`url` có hạn 10 phút). `hidden: true` = Manager đã ẩn khỏi trang công khai: hiện nhãn "Đã ẩn", không cho sửa (`409 REVIEW_HIDDEN`).
+Staff phụ trách đơn nhận thông báo in-app "Khách đánh giá đơn …: n/5 sao".
+
+Lỗi: `409 ORDER_NOT_COMPLETED`, `409 REVIEW_EXISTS` (đã có: dùng PUT), `422 INVALID_PHOTO` (đường dẫn không phải của đơn/khách này, hoặc file không phải jpg/png ≤ 5 MB, file sai bị xoá), `422 PHOTO_NOT_UPLOADED` (chưa PUT file), `422 TOO_MANY_PHOTOS`, `422 UNSUPPORTED_FILE`, `422 FILE_TOO_LARGE`, `422 VALIDATION_ERROR` (sao ngoài 1–5, nhận xét quá dài), `503 STORAGE_NOT_CONFIGURED`.
+
+**Công khai** (không cần đăng nhập, cho trang chủ): `GET /catalog/reviews?limit=10&before_id=&order_type=` → `{average (2 số lẻ, null khi chưa có), count, by_star{"1".."5"}, items:[{id, rating, comment, customer_name, order_type, photos:[url], created_at}], next_before_id}`. Mới nhất trước; "xem thêm" bằng `before_id = next_before_id`. `customer_name` là tên rút gọn ("Nguyễn V. A."), **không có email/SĐT**; đánh giá bị ẩn không có ở đây. Link ảnh có hạn 1 giờ.
+
+**Manager:** `GET /manager/reviews?hidden=true|false&rating=1..5&page=&page_size=` → `{items:[ReviewOut + order_code, order_type, customer_name (tên đầy đủ), hidden_at], total, page, page_size}`; `POST /manager/reviews/{id}/hide {reason (5–300 ký tự)}` và `POST /manager/reviews/{id}/unhide {reason}` → `ReviewOut`. Không xoá đánh giá; ai ẩn và lý do nằm trong nhật ký (`REVIEW_HIDE` / `REVIEW_UNHIDE`).
+
+## 7o. Showcase sản phẩm mẫu – Phase 5c (FR-54, UC-55)
+
+**Staff, Manager** (web xưởng):
+1. `POST /workshop/showcase/upload-url {mime_type, size_bytes}` (jpg/png ≤ 10 MB) → `{path, upload_url, ...}`; PUT file vào `upload_url`.
+2. `POST /workshop/showcase {image_path, title (≤ 200), description? (≤ 2000), order_type?, is_visible? (mặc định true), sort_order? (0–100000, nhỏ hiện trước)}` → `201`.
+3. `GET /workshop/showcase` → mọi bài kể cả đang ẩn: `[{id, image_url, image_path, title, description, order_type, is_visible, sort_order, posted_by, created_at, updated_at}]`.
+4. `PATCH /workshop/showcase/{id}` chỉ các trường gửi lên (ẩn/hiện, thứ tự, tiêu đề, ảnh mới: ảnh cũ bị xoá khỏi kho); `DELETE /workshop/showcase/{id}` → `204` (xoá luôn ảnh).
+
+Ảnh phải do **chính người đăng** tải lên (`image_path` nằm trong thư mục của họ); BE không cho lấy ảnh sản phẩm của đơn khách vì chưa có sự đồng ý của khách. Mọi thao tác ghi nhật ký `SHOWCASE_CREATE/UPDATE/DELETE`. Lỗi: `404 SHOWCASE_NOT_FOUND`, `422 INVALID_PHOTO`, `422 PHOTO_NOT_UPLOADED`, `422 UNSUPPORTED_FILE`, `422 FILE_TOO_LARGE`.
+
+**Công khai:** `GET /catalog/showcase?order_type=&limit=20` → `[{id, image_url (hạn 1 giờ), title, description, order_type, sort_order, created_at}]`, chỉ bài đang hiện, theo `sort_order` rồi mới nhất; không lộ người đăng.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -782,6 +812,8 @@ Khoá sửa được và khoảng hợp lệ: `quotation_valid_days` 1–60, `de
 | `JOB_RUNNING`, `CANCEL_AFTER_WRITING_STARTED` | 409 | Robot đang viết / đơn đã bắt đầu viết và ETA chưa dời quá ngưỡng (BR-14/16, mục 7h) | ẩn nút huỷ, hiện `message` |
 | `ETA_NOT_EDITABLE`, `ETA_IN_PAST`, `ETA_TOO_FAR`, `ETA_UNCHANGED` | 409/422 | Đổi ETA sai bước / ngày không hợp lệ (mục 7i) | hiện `message` |
 | `INVALID_SETTING`, `SETTING_NOT_EDITABLE`, `INTEGRATION_NOT_TOGGLEABLE` | 422/404 | Admin sửa tham số / tích hợp sai (mục 7l) | hiện `message` |
+| `ORDER_NOT_COMPLETED`, `REVIEW_EXISTS`, `REVIEW_EDIT_CLOSED`, `REVIEW_HIDDEN` | 409 | Đánh giá: đơn chưa xong / đã đánh giá / quá 30 ngày / bị ẩn (mục 7n) | hiện `message`, ẩn nút sửa |
+| `INVALID_PHOTO`, `PHOTO_NOT_UPLOADED`, `TOO_MANY_PHOTOS` | 422 | Ảnh đánh giá / showcase sai hoặc chưa tải lên (mục 7n, 7o) | tải lại ảnh |
 | `INVALID_PERIOD`, `PERIOD_TOO_LONG` | 422 | Kỳ báo cáo sai (mục 7m) | sửa bộ lọc ngày |
 | `NOTIFICATION_NOT_FOUND` | 404 | Thông báo không tồn tại hoặc của người khác (mục 7j) | tải lại danh sách |
 | `REFUND_ACCOUNT_REQUIRED` | 422 | Cọc qua payOS: phải nhập tài khoản nhận hoàn tiền | hiện form `refund_account` |

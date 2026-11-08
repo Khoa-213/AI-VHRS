@@ -25,6 +25,7 @@ class ObjectStorage(Protocol):
     def read(self, path: str) -> bytes | None: ...
     def delete(self, path: str) -> None: ...
     def create_download_url(self, path: str, ttl_seconds: int = 600) -> str: ...
+    def create_download_urls(self, paths: list[str], ttl_seconds: int = 600) -> dict[str, str]: ...
 
 
 class SupabaseStorage:
@@ -76,6 +77,20 @@ class SupabaseStorage:
             raise AppError(503, "STORAGE_UNAVAILABLE", "Không tạo được liên kết xem file.")
         return f"{self.base}{r.json()['signedURL']}"
 
+    def create_download_urls(self, paths: list[str], ttl_seconds: int = 600) -> dict[str, str]:
+        """Sign many objects in one request (public lists). Paths that cannot be signed are left out."""
+        if not paths:
+            return {}
+        r = httpx.post(f"{self.base}/object/sign/{self.bucket}", headers=self._headers, timeout=15,
+                       json={"expiresIn": ttl_seconds, "paths": paths})
+        if r.status_code >= 400:
+            raise AppError(503, "STORAGE_UNAVAILABLE", "Không tạo được liên kết xem file.")
+        out = {}
+        for item in r.json():
+            if item.get("signedURL") and not item.get("error"):
+                out[item["path"]] = f"{self.base}{item['signedURL']}"
+        return out
+
 
 class InMemoryStorage:
     """Test double. Never used in production wiring."""
@@ -100,6 +115,9 @@ class InMemoryStorage:
 
     def create_download_url(self, path: str, ttl_seconds: int = 600) -> str:
         return f"memory://{path}"
+
+    def create_download_urls(self, paths: list[str], ttl_seconds: int = 600) -> dict[str, str]:
+        return {p: f"memory://{p}" for p in paths if p in self.objects}
 
 
 _instance: ObjectStorage | None = None

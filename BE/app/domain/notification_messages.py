@@ -123,6 +123,8 @@ CATALOG: dict[str, _T] = {
                       lambda p: f"Đơn {p['code']} đã huỷ, job sản xuất của bạn cho đơn này cũng được huỷ."),
     "JOB_SAFETY_STOP": ("SYSTEM", None, False, False, lambda p: f"Robot dừng an toàn: đơn {p['code']}",
                         lambda p: f"Job của đơn {p['code']} dừng vì {_EVENT.get(str(p.get('event')), str(p.get('event')))}."),
+    "REVIEW_POSTED": ("SYSTEM", None, False, False, lambda p: f"Khách đánh giá đơn {p['code']}",
+                      lambda p: f"Khách đã đánh giá đơn {p['code']}: {p.get('rating')}/5 sao."),
     "INCIDENT_REPORTED": ("SYSTEM", None, False, False, lambda p: f"Sự cố: đơn {p['code']}",
                           lambda p: f"Kỹ thuật viên báo sự cố khi viết đơn {p['code']}."),
 }
