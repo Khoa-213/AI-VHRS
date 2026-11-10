@@ -78,8 +78,12 @@ class StaffOrderService:
 
     def staff_directory(self) -> list[dict[str, Any]]:
         role = AccountRepository(self.session).role_by_code(RoleCode.STAFF.value)
-        rows, _ = AccountRepository(self.session).search(role_id=role.id, status=AccountStatus.ACTIVE, q=None,
-                                                         offset=0, limit=200)
+        repo, rows, total = AccountRepository(self.session), [], None
+        while total is None or len(rows) < total:            # every active Staff: the assignment picker must never miss one
+            page, total = repo.search(role_id=role.id, status=AccountStatus.ACTIVE, q=None, offset=len(rows), limit=200)
+            if not page:
+                break
+            rows.extend(page)
         counts = self.orders.open_counts_by_staff()
         return [{"id": a.id, "full_name": a.full_name, "email": a.email, "open_orders": counts.get(a.id, 0)}
                 for a in rows]

@@ -20,7 +20,7 @@ from app.models.order import Order, OrderStatus
 from app.models.sketch import Message
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import ConversationRepository, MessageRepository
-from app.services import notifications
+from app.services import notification_stream, notifications
 from app.services.handwriting_image import sniff_mime
 from app.services.workshop_access import WorkshopAccess
 
@@ -137,10 +137,34 @@ class MessageService:
         return list(self.session.scalars(select(Account.id).join(Account.role).where(
             Account.status == AccountStatus.ACTIVE, Account.role.has(code=RoleCode.MANAGER.value))))
 
+    # ---- live push (Phase 5d): the other participants' open SSE streams get `event: message` after the commit ----
+    def recipients(self, order: Order) -> set[int]:
+        """Who sees this chat live: the customer, the assigned Staff, the Managers who have written in it, and every active
+        Manager while nobody has claimed the order (the same people told by MESSAGE_UNCLAIMED). Never the sender."""
+        ids = {order.customer_id, order.assigned_staff_id} | self.repo.manager_senders(order.id)
+        if order.assigned_staff_id is None:
+            ids |= set(self._managers())
+        ids.discard(None)
+        ids.discard(self.actor.id)
+        return ids
+
+    def push(self, order: Order, message: dict[str, Any]) -> None:
+        """`message` is the JSON form of the API's MessageOut as the other side sees it (`mine: false`)."""
+        notification_stream.publish_after_commit(self.session, self.recipients(order), "message",
+                                                 {"order_id": order.id, "order_code": order.code, "message": message})
+
     def list(self, order_id: int, page: int, page_size: int) -> tuple[list[Message], int, int, Order]:
         order = self._order(order_id, write=False)
         rows, total = self.repo.list(order.id, offset=(page - 1) * page_size, limit=page_size)
         return rows, total, self.repo.unread_count(order.id, self.actor.id), order
+
+    def latest(self, order_id: int, before_id: int | None, limit: int) -> tuple[list[Message], int, int, Order, int | None]:
+        """Newest first by page (for a chat that opens at the bottom and loads older messages on scroll up); the rows of a page
+        are still old → new. Returns (rows, total, unread, order, next_before_id)."""
+        order = self._order(order_id, write=False)
+        rows, more = self.repo.before(order.id, before_id, limit)
+        return (rows, self.repo.count(order.id), self.repo.unread_count(order.id, self.actor.id), order,
+                rows[0].id if more and rows else None)
 
     def mark_read(self, order_id: int) -> int:
         order = self._order(order_id, write=False)

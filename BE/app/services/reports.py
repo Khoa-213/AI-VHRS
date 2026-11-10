@@ -202,3 +202,8 @@ class ReportService:
         buf = io.BytesIO()
         wb.save(buf)
         return buf.getvalue(), f"bao-cao_{rep['from']}_{rep['to']}.xlsx"
+
+    def export_pdf(self, start: date | None = None, end: date | None = None, group: str = "day") -> tuple[bytes, str]:
+        from app.services import report_pdf
+        rep = self.report(start, end, group)
+        return report_pdf.render(rep, datetime.now(VN)), f"bao-cao_{rep['from']}_{rep['to']}.pdf"

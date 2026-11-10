@@ -45,8 +45,16 @@ def _out(svc: MessageService, row: Message, order: Order) -> MessageOut:
                       read_at=row.read_at, created_at=row.created_at)
 
 
-@router.get("", response_model=MessagePage, summary="Tin nhắn của đơn (cũ → mới) + số tin chưa đọc")
-def list_messages(order_id: int, svc: Svc, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=100)) -> MessagePage:
+@router.get("", response_model=MessagePage, summary="Tin nhắn của đơn + số tin chưa đọc",
+            description="Mặc định phân trang cũ → mới (`page`, `page_size`). Màn chat nên dùng **`latest=true`**: trang đầu là "
+                        "`page_size` tin **mới nhất**, cuộn lên thì gọi lại với `before_id = next_before_id` để lấy tin cũ hơn "
+                        "(`next_before_id: null` = hết). Trong mỗi trang tin vẫn xếp cũ → mới. Gửi `before_id` cũng tự bật chế độ này.")
+def list_messages(order_id: int, svc: Svc, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=100),
+                  latest: bool = False, before_id: Annotated[int | None, Query(ge=1)] = None) -> MessagePage:
+    if latest or before_id is not None:
+        rows, total, unread, order, nxt = svc.latest(order_id, before_id, page_size)
+        return MessagePage(items=[_out(svc, r, order) for r in rows], total=total, page=1, page_size=page_size, unread=unread,
+                           next_before_id=nxt)
     rows, total, unread, order = svc.list(order_id, page, page_size)
     return MessagePage(items=[_out(svc, r, order) for r in rows], total=total, page=page, page_size=page_size, unread=unread)
 
@@ -58,9 +66,12 @@ def list_messages(order_id: int, svc: Svc, page: int = Query(1, ge=1), page_size
              responses={403: {"description": "CARD_CUSTOMER_ONLY"}, 422: {"description": "INVALID_CARD"}})
 def post_message(order_id: int, body: MessageIn, svc: WriteSvc, response: Response) -> MessageOut:
     row, order, created = svc.post(order_id, body.body, [a.model_dump() for a in body.attachments], body.kind)
+    out = _out(svc, row, order)
     if not created:
         response.status_code = status.HTTP_200_OK
-    return _out(svc, row, order)
+    else:                                                         # live to the other side's open streams, after the commit
+        svc.push(order, out.model_copy(update={"mine": False}).model_dump(mode="json"))
+    return out
 
 
 @router.post("/upload-url", response_model=MessageUploadOut, status_code=status.HTTP_201_CREATED,

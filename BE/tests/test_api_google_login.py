@@ -30,7 +30,8 @@ def _verifier(payload=None, status=200, client_ids=(CLIENT,), error=None):
 
 
 def _good(**over):
-    return {"aud": CLIENT, "iss": "https://accounts.google.com", "exp": str(int(time.time()) + 600), "sub": "1001",
+    # parametrize builds these at collection time; a full Supabase run takes hours, so the expiry must outlive it
+    return {"aud": CLIENT, "iss": "https://accounts.google.com", "exp": str(int(time.time()) + 7 * 86400), "sub": "1001",
             "email": "a@example.org", "email_verified": "true", "name": "An Nguyen", **over}
 
 

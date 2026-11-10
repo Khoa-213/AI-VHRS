@@ -6,6 +6,9 @@ truth either way, the stream only says "something new arrived".
 
 Publishers run in worker threads (sync endpoints, webhooks); subscribers are asyncio queues, so publishing goes through
 `loop.call_soon_threadsafe`.
+
+Besides notifications (SSE `event: notification`) the same stream carries other live events, e.g. a new chat message
+(`event: message`, Phase 5d). Those are queued with `publish_after_commit`, so a rolled-back action pushes nothing.
 """
 from __future__ import annotations
 
@@ -14,9 +17,15 @@ import logging
 import threading
 from typing import Any
 
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
 log = logging.getLogger("app.notify")
 
 QUEUE_SIZE = 100
+EVENT_KEY = "_event"                                    # which SSE event a payload is sent as; absent = "notification"
+_PENDING = "stream_pending"
+_HOOKED = "stream_hooked"
 
 
 class Broker:
@@ -60,3 +69,36 @@ def _put(q: asyncio.Queue, payload: dict[str, Any]) -> None:
 
 
 broker = Broker()
+
+
+def split_event(item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """(SSE event name, data without the routing key). The queued dict is shared by every connection of the account, so
+    it is never modified."""
+    if EVENT_KEY not in item:
+        return "notification", item
+    return item[EVENT_KEY], {k: v for k, v in item.items() if k != EVENT_KEY}
+
+
+def publish_after_commit(session: Session, account_ids: set[int], event_name: str, data: dict[str, Any]) -> None:
+    """Push `data` as `event: <event_name>` to every open stream of these accounts once the caller's transaction commits."""
+    if not account_ids:
+        return
+    if not session.info.get(_HOOKED):
+        event.listen(session, "after_commit", _after_commit)
+        event.listen(session, "after_soft_rollback", _after_soft_rollback)
+        session.info[_HOOKED] = True
+    session.info.setdefault(_PENDING, []).append((set(account_ids), {**data, EVENT_KEY: event_name}))
+
+
+def _after_soft_rollback(session: Session, previous_transaction) -> None:
+    if previous_transaction.parent is None:              # the whole transaction, not a SAVEPOINT
+        session.info.pop(_PENDING, None)
+
+
+def _after_commit(session: Session) -> None:
+    for account_ids, item in session.info.pop(_PENDING, None) or ():
+        for account_id in account_ids:
+            try:
+                broker.publish(account_id, item)
+            except Exception:                            # noqa: BLE001 - a live push must never break the request
+                log.exception("live event not pushed to account %s", account_id)
