@@ -224,6 +224,8 @@ class MessagePage(BaseModel):
     page: int
     page_size: int
     unread: int
+    next_before_id: int | None = Field(default=None, description="Only with `latest=true` / `before_id`: pass it as `before_id` "
+                                       "to load older messages; null = no older ones")
 
 
 # ---- conversation list (one row per order that has messages) --------------------------------------------

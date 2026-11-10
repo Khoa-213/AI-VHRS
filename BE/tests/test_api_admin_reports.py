@@ -7,6 +7,7 @@ Report figures include real data, so they are checked as differences before / af
 """
 import io
 import json
+import re
 from datetime import date, timedelta
 
 from openpyxl import load_workbook
@@ -121,3 +122,34 @@ def test_reports_export_to_excel(client):
     wb = load_workbook(io.BytesIO(r.content))
     assert wb.sheetnames == ["Tổng quan", "Doanh thu", "Sản lượng", "Robot", "Trễ ETA"]
     assert wb["Tổng quan"]["A5"].value == "Tiền nhận (đ)"
+
+
+def test_reports_export_to_pdf(client):
+    mgr, _ = _user(client, "MANAGER")
+    r = client.get(f"{M}/reports/export", headers=mgr, params={"group": "month", "format": "pdf"})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert 'filename="bao-cao_' in r.headers["content-disposition"] and r.headers["content-disposition"].endswith('.pdf"')
+    assert r.content[:5] == b"%PDF-"
+    assert client.get(f"{M}/reports/export", headers=mgr, params={"format": "docx"}).status_code == 422
+    r = client.get(f"{M}/reports/export", headers=mgr, params={"from": "2024-01-01", "format": "pdf"})
+    assert r.status_code == 422 and _err(r) == "PERIOD_TOO_LONG"
+
+
+def test_report_pdf_long_tables_go_over_several_pages():
+    """Unit test (no DB): 120 late orders do not fit on one page; the table carries on and every page is numbered."""
+    from datetime import datetime
+    from app.services import report_pdf
+    day = date(2026, 11, 1)
+    rep = {"from": day, "to": day, "group": "day",
+           "revenue": {"series": [{"bucket": day, "received": 1500000, "refunded": 0, "net": 1500000, "payments": 2}],
+                       "received": 1500000, "refunded": 0, "net": 1500000},
+           "output_by_type": [{"order_type": "OT3_TEMPLATE", "orders": 3, "quantity": 30, "total_amount": 900000}],
+           "rates": {"submitted": 5, "rejected": 1, "reject_rate": 0.2, "jobs_written": 3, "rewrites": 0, "rewrite_rate": 0.0},
+           "robots": [],
+           "late_completed": {"count": 120, "of_completed": 130, "late_rate": 0.9231,
+                              "orders": [{"code": f"ORD-{i:05d}", "eta": day, "completed_on": day, "days_late": 2,
+                                          "eta_postponed_days": None} for i in range(120)]}}
+    pdf = report_pdf.render(rep, datetime(2026, 11, 10, 9, 30))
+    assert pdf[:5] == b"%PDF-"
+    assert len(re.findall(rb"/Type\s*/Page\b(?!s)", pdf)) >= 3
+    assert report_pdf._pct(0.2) == "20,0%" and report_pdf._pct(None) == "–" and report_pdf._money(1500000) == "1.500.000"

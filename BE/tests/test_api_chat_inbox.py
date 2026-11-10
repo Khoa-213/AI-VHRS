@@ -262,3 +262,104 @@ def test_staff_still_cannot_post_on_an_unclaimed_order(client, cust, staff, wcat
     pool = _ot3(client, cust, wcat)
     r = client.post(_msgs(pool), headers=staff[0], json={"body": "Xin chào"})
     assert r.status_code == 409 and _err(r) == "ORDER_NOT_CLAIMED"             # rule unchanged: the Manager answers (option a)
+
+
+# ---- Phase 5d: live chat over the notification stream, newest-first paging ----------------------------------------------
+@pytest.fixture
+def pushed(monkeypatch):
+    """Every live event handed to the broker, as (account_id, item)."""
+    from app.services.notification_stream import broker
+    got = []
+    monkeypatch.setattr(broker, "publish", lambda account_id, item: got.append((account_id, item)))
+    return got
+
+
+def _chat_events(pushed, oid):
+    return [(a, i) for a, i in pushed if i.get("_event") == "message" and i["order_id"] == oid]
+
+
+def test_a_new_message_is_pushed_live_to_the_other_side_only(client, cust, staff, manager, wcat, pushed):
+    sh, sid = staff
+    mh, mid = manager
+    cid = client.get(f"{API}/me", headers=cust).json()["id"]
+    oid = _accepted(client, cust, sh, wcat)
+
+    sent = _say(client, cust, oid, "Cho tôi hỏi tiến độ")
+    ev = _chat_events(pushed, oid)
+    assert {a for a, _ in ev} == {sid}                                          # the assigned Staff, never the sender
+    item = ev[0][1]
+    assert item["order_code"] and item["message"]["id"] == sent["id"] and item["message"]["mine"] is False
+    assert item["message"]["body"] == "Cho tôi hỏi tiến độ" and isinstance(item["message"]["created_at"], str)
+
+    pushed.clear()
+    _say(client, mh, oid, "Quản lý xin trả lời")                                # a Manager joins: customer + Staff see it
+    assert {a for a, _ in _chat_events(pushed, oid)} == {cid, sid}
+    pushed.clear()
+    _say(client, cust, oid, "Cảm ơn")                                          # from now on the Manager is in the conversation
+    assert {a for a, _ in _chat_events(pushed, oid)} == {sid, mid}
+
+    pushed.clear()
+    _card(client, cust, oid)
+    assert [i["message"]["kind"] for _, i in _chat_events(pushed, oid)] == ["ORDER_CARD", "ORDER_CARD"]
+    pushed.clear()
+    _card(client, cust, oid, expect=200)                                        # the same card handed back: nothing new to push
+    r = client.post(_msgs(oid), headers=cust, json={"body": "   "})              # refused: nothing is pushed
+    assert r.status_code == 422 and _err(r) == "EMPTY_MESSAGE"
+    assert _chat_events(pushed, oid) == []
+
+
+def test_a_message_on_an_unclaimed_order_is_pushed_to_the_managers(client, cust, staff, manager, wcat, pushed):
+    _, mid = manager
+    pool = _ot3(client, cust, wcat)
+    _say(client, cust, pool, "Có ai không?")
+    assert mid in {a for a, _ in _chat_events(pushed, pool)}
+
+
+def test_the_stream_sends_chat_messages_as_their_own_event(client, monkeypatch):
+    import threading
+    from app.api.v1 import notifications as notification_api
+    from app.db.session import _factory
+    from app.services.notification_stream import broker, publish_after_commit
+    from sqlalchemy import text
+    monkeypatch.setattr(notification_api, "MAX_STREAM_S", 4.0)
+    h, uid = _user(client, "CUSTOMER")
+
+    def later():
+        for _ in range(200):
+            if broker.listeners(uid):
+                break
+            threading.Event().wait(0.05)
+        with _factory()() as s:
+            s.execute(text("select 1"))                                         # a real transaction, as in a request
+            publish_after_commit(s, {uid}, "message", {"order_id": 1, "order_code": "SSE-CHAT", "message": {"id": 7}})
+            s.rollback()                                                        # rolled back: dropped
+            s.execute(text("select 1"))
+            publish_after_commit(s, {uid}, "message", {"order_id": 1, "order_code": "SSE-CHAT-2", "message": {"id": 8}})
+            s.commit()
+    t = threading.Thread(target=later)
+    t.start()
+    r = client.get(f"{API}/me/notifications/stream", headers=h)
+    t.join()
+    assert r.status_code == 200
+    assert "event: message\ndata: " in r.text and "SSE-CHAT-2" in r.text and '"SSE-CHAT"' not in r.text
+    assert "_event" not in r.text
+
+
+def test_newest_first_paging_loads_older_messages_on_scroll_up(client, cust, staff, wcat):
+    sh, _ = staff
+    oid = _accepted(client, cust, sh, wcat)
+    ids = [_say(client, cust if i % 2 else sh, oid, f"tin {i}")["id"] for i in range(5)]
+
+    def page(**params):
+        r = client.get(_msgs(oid), headers=cust, params=params)
+        assert r.status_code == 200, r.text
+        return r.json()
+    first = page(latest="true", page_size=2)
+    assert [m["id"] for m in first["items"]] == ids[3:] and first["total"] == 5 and first["next_before_id"] == ids[3]
+    second = page(before_id=first["next_before_id"], page_size=2)
+    assert [m["id"] for m in second["items"]] == ids[1:3] and second["next_before_id"] == ids[1]
+    last = page(before_id=second["next_before_id"], page_size=2)
+    assert [m["id"] for m in last["items"]] == ids[:1] and last["next_before_id"] is None
+    old = page(page=1, page_size=2)                                             # the old paging is unchanged
+    assert [m["id"] for m in old["items"]] == ids[:2] and old["next_before_id"] is None
+    assert client.get(_msgs(oid), headers=cust, params={"before_id": 0}).status_code == 422

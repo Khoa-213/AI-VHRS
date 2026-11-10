@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
+from app.models.account import Account
 from app.models.sketch import AdjustmentStatus, Message, Quotation, QuotationStatus, Sketch
 
 LIVE_QUOTATION = (QuotationStatus.DRAFT, QuotationStatus.PENDING_APPROVAL, QuotationStatus.SENT)
@@ -100,6 +101,21 @@ class MessageRepository:
         stmt = select(Message).where(Message.order_id == order_id)
         total = self.s.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         return list(self.s.scalars(stmt.order_by(Message.created_at, Message.id).offset(offset).limit(limit))), total
+
+    def before(self, order_id: int, before_id: int | None, limit: int) -> tuple[list[Message], bool]:
+        """The `limit` newest messages with id < before_id (all when None), returned old → new, and whether older ones exist."""
+        stmt = select(Message).where(Message.order_id == order_id)
+        if before_id is not None:
+            stmt = stmt.where(Message.id < before_id)
+        rows = list(self.s.scalars(stmt.order_by(Message.id.desc()).limit(limit + 1)))
+        return rows[:limit][::-1], len(rows) > limit
+
+    def count(self, order_id: int) -> int:
+        return self.s.scalar(select(func.count()).where(Message.order_id == order_id)) or 0
+
+    def manager_senders(self, order_id: int) -> set[int]:
+        return set(self.s.scalars(select(Message.sender_id).distinct().join(Account, Account.id == Message.sender_id)
+                                  .where(Message.order_id == order_id, Account.role.has(code="MANAGER"))))
 
     def unread_count(self, order_id: int, reader_id: int) -> int:
         return self.s.scalar(select(func.count()).where(Message.order_id == order_id, Message.sender_id != reader_id,

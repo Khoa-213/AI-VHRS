@@ -13,6 +13,7 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **Trang `/payment/result`** (cổng đưa khách về đây kèm `?order_id=<id>`): poll `GET /orders/{id}` tới ~60 giây, gọi `POST /payments/{id}/refresh` một lần nếu còn `PENDING` (bỏ qua lỗi 502 của VNPay), rồi đưa khách về đơn. Không tin tham số của cổng.
 - [ ] **`pages/order/Deposit.tsx`:** thêm lựa chọn **PAYOS** (đọc `GET /payments/gateways`, chỉ hiện cổng `enabled`); khi `PaymentOut.pay_url` có giá trị thì `window.location.assign(pay_url)` và không chạy luồng mock; nhãn "MOCK" chỉ hiện khi `mode === "MOCK"`; thêm `pay_url`, `pay_url_expires_at`, `qr_code`, `bank`, `needs_refund` vào kiểu `Payment` trong `services/orders.ts`.
 - [ ] **payOS:** hiện hạn của mã (`pay_url_expires_at`) và cho tạo mã mới khi hết hạn; thông báo "đã chuyển sai số tiền" khi `needs_refund`. Khi test, trang `pay.payos.vn/web/<id>` từng không mở được trên trình duyệt của chủ dự án (nghi sao chép sai đường dẫn): hãy thử luồng redirect thật và báo lại BE nếu vẫn lỗi. Tuỳ chọn: tự vẽ QR từ `qr_code`.
+- [ ] **Chat tức thời + PDF báo cáo (2026-11-10, Phase 5d, mục 5.4, 7j, 7m):** màn chat mở bằng `latest=true`, cuộn lên tải `before_id`; nghe `event: message` trên stream thông báo để nối tin mới (bỏ poll tin nhắn); màn báo cáo Manager thêm nút "Xuất PDF" (`format=pdf`).
 - [ ] **Đánh giá + showcase (2026-11-07, mục 7n, 7o):** khách: nút "Đánh giá" ở đơn `COMPLETED` (sao, nhận xét, tối đa 5 ảnh, sửa trong 30 ngày); trang chủ: khối "Sản phẩm mẫu" (`GET /catalog/showcase`) và "Khách nói gì" (`GET /catalog/reviews`, điểm trung bình + số lượt theo sao); web xưởng: màn quản lý showcase (Staff, Manager), màn đánh giá có nút ẩn / hiện lại (Manager).
 - [ ] **Thông báo (2026-11-04, mục 7j):** chuông + badge (`GET /me/notifications/unread-count`), danh sách có "xem thêm" (`before_id`), đánh dấu đã đọc / đọc hết, mở `GET /me/notifications/stream` bằng fetch-stream (có header Bearer) để cập nhật tức thời và tải lại màn đơn đang xem; áp dụng cho cả web khách, web xưởng và DesktopApp kỹ thuật viên.
 - [ ] **Màn thanh toán cuối** (`POST /orders/{id}/payments/final`, mục 7d).
@@ -326,7 +327,10 @@ Các tình huống cần UI xử lý:
 
 ### 5.4 Chat trong đơn
 ```
-GET  /orders/{id}/messages?page=&page_size=     → {items[{id,mine,kind,order_card,body,attachments[{url,mime}],read_at,created_at}], total, unread}
+GET  /orders/{id}/messages?latest=true&page_size=50   → 50 tin MỚI NHẤT (xếp cũ → mới) + next_before_id   ← màn chat dùng cái này
+GET  /orders/{id}/messages?before_id=<next_before_id>&page_size=50 → các tin cũ hơn (khi cuộn lên); next_before_id null = hết
+GET  /orders/{id}/messages?page=&page_size=     → phân trang cũ → mới như trước (giữ để không vỡ FE cũ)
+     mọi dạng trả → {items[{id,mine,kind,order_card,body,attachments[{url,mime}],read_at,created_at}], total, page, page_size, unread, next_before_id}
 POST /orders/{id}/messages {body?, attachments?:[{path}]}        → 201 MessageOut (tin chữ / ảnh)
 POST /orders/{id}/messages {kind:"ORDER_CARD"}                   → 201 thẻ mới | 200 thẻ cũ (chỉ khách; xem dưới)
 POST /orders/{id}/messages/read                  (đánh dấu đã đọc tin của bên kia)
@@ -355,7 +359,7 @@ GET /workshop/conversations/unread-count                 (Staff, Manager)  → {
 
 **Khách nhắn khi đơn chưa có Staff nhận:** tin vẫn được lưu; BE báo cho **mọi Manager đang hoạt động** (thông báo in-app `MESSAGE_UNCLAIMED`, mục 7j). Staff đọc được nhưng **chưa nhắn được** cho tới khi nhận đơn (`409 ORDER_NOT_CLAIMED`); Manager trả lời được. FE khách có thể hiện dòng "Đơn chưa có nhân viên nhận, xưởng sẽ trả lời sớm".
 
-**Tin nhắn mới:** có thông báo in-app `NEW_MESSAGE` (không chồng: chỉ một thông báo chưa đọc mỗi đơn) và đẩy qua stream (mục 7j); bản thân tin nhắn chưa đẩy, FE tải lại `GET /orders/{id}/messages` khi nhận sự kiện của đơn đó.
+**Tin nhắn mới đến tức thời (Phase 5d):** cùng stream `GET /me/notifications/stream` (mục 7j) có thêm `event: message`, `data: {order_id, order_code, message: MessageOut}` (`message.mine` luôn `false`; đúng dạng một phần tử của `GET /orders/{id}/messages`). Nếu đang mở đơn `order_id` thì **nối thẳng `message` vào cuối khung chat** (bỏ qua nếu đã có `id` đó) rồi gọi `POST .../read` nếu khung chat đang hiện; nếu không thì tăng badge của cuộc chat. Ai nhận: khách, Staff phụ trách, các Manager đã nhắn trong đơn, và mọi Manager khi đơn chưa có Staff nhận; **không gửi cho người gửi** (người gửi đã có tin trong response của `POST`) và không gửi cho Staff đang xem đơn trong pool. Gửi **sau khi** tin đã lưu; thẻ đơn bị trả lại (HTTP 200) không đẩy lại. Thông báo in-app `NEW_MESSAGE` vẫn có như trước (không chồng). Mất kết nối thì sự kiện không phát lại: khi nối lại, tải lại `latest=true`.
 
 ## 6. Luồng Staff (`/workshop/*`; Manager chỉ đọc ở nhóm này)
 
@@ -725,6 +729,7 @@ Mọi vai trò đã đăng nhập (kể cả Staff, Technical Staff, Manager) c�
 **Stream (SSE):** gửi `Authorization: Bearer <access token>` như mọi API (BE **không** nhận token trên URL), nên trên web dùng thư viện fetch-stream (ví dụ `@microsoft/fetch-event-source`), không dùng `EventSource` thuần. Luồng sự kiện:
 - `event: ready`, `data: {"unread_count": n}` ngay khi mở;
 - `event: notification`, `id: <id>`, `data: <NotificationOut>` mỗi khi có thông báo mới (gửi **sau khi** giao dịch của sự kiện đã lưu);
+- `event: message`, `data: {order_id, order_code, message: MessageOut}` khi có tin chat mới của một đơn mình tham gia (Phase 5d, mục 5.4), không có `id:`; FE nhận sự kiện theo tên, sự kiện lạ thì bỏ qua;
 - dòng `: ping` mỗi 20 giây giữ kết nối;
 - BE tự đóng sau 30 phút; client nối lại (gợi ý chờ 5 giây, `retry: 5000`). Token hết hạn: refresh rồi nối lại; `401` khi mở là token sai.
 
@@ -762,7 +767,8 @@ Khoá sửa được và khoảng hợp lệ: `quotation_valid_days` 1–60, `de
 - `GET /manager/dashboard` → `{date, orders_by_status{STATUS: n}, jobs_today[{job_id, order_id, order_code, robot_id, robot_code, technician_id, status, slot_start, slot_end, is_rewrite}], jobs_next_7_days, late_orders[{order_id, code, status, eta, days_late, assigned_staff_id}], due_in_2_days[...], low_stock[{kind: PAPER|PEN|INK, id, name, stock_qty}], pending{unclaimed_orders, price_adjustments, orders_to_schedule, open_incidents, refunds_to_confirm}}`. Giấy "sắp hết" khi < 10 tờ, bút/mực khi hết hẳn.
 - `GET /manager/reports?from=YYYY-MM-DD&to=YYYY-MM-DD&group=day|week|month` (mặc định 30 ngày gần nhất, theo ngày; tối đa 366 ngày: `422 PERIOD_TOO_LONG`; `from` sau `to`: `422 INVALID_PERIOD`) → `{from, to, group, revenue{series[{bucket, received, refunded, net, payments}], received, refunded, net}, output_by_type[{order_type, orders, quantity, total_amount}], rates{submitted, rejected, reject_rate, jobs_written, rewrites, rewrite_rate}, robots[{robot_id, robot_code, jobs_written, writing_minutes, incidents}], late_completed{count, of_completed, late_rate, orders[...]}}`.
   - **Doanh thu = tiền thực nhận**: các khoản cọc, thanh toán cuối, phí ship `SUCCESS` theo ngày trả, trừ tiền hoàn `SUCCESS` theo ngày hoàn. Ngày/tuần/tháng theo giờ Việt Nam; `bucket` là ngày đầu kỳ. Tỷ lệ là số thập phân 0–1 (`null` khi chia cho 0).
-- `GET /manager/reports/export?...` (cùng tham số) → file Excel `bao-cao_<from>_<to>.xlsx`, 5 sheet: Tổng quan, Doanh thu, Sản lượng, Robot, Trễ ETA. FE tải bằng `fetch` có header Bearer rồi lưu `blob` (không mở link trần). PDF: chưa có.
+- `GET /manager/reports/export?...` (cùng tham số) → file Excel `bao-cao_<from>_<to>.xlsx`, 5 sheet: Tổng quan, Doanh thu, Sản lượng, Robot, Trễ ETA. FE tải bằng `fetch` có header Bearer rồi lưu `blob` (không mở link trần).
+- `GET /manager/reports/export?...&format=pdf` (Phase 5d) → `application/pdf`, `bao-cao_<from>_<to>.pdf`: cùng số liệu, khổ A4, các bảng Tổng quan, Doanh thu, Sản lượng, Robot, Đơn hoàn tất trễ ETA (bảng dài sang trang thì lặp lại tiêu đề cột), chân trang có giờ xuất và số trang. Không có biểu đồ. `format` mặc định `xlsx`; giá trị khác `xlsx`/`pdf` → `422 VALIDATION_ERROR`. Tải như file Excel.
 
 ## 7n. Đánh giá đơn hàng – Phase 5c (FR-58, UC-20, UC-59)
 

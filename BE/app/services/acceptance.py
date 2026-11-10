@@ -19,7 +19,7 @@ from app.core.errors import AppError
 from app.domain import photo_rules as pr
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account
-from app.models.ops import JobStatus, ProductionJob, ProductPhoto, QcResult
+from app.models.ops import JobStatus, ProductionJob, QcResult
 from app.models.order import Order, OrderStatus
 from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import JobRepository, PhotoRepository

@@ -125,7 +125,8 @@ async def stream(request: Request) -> StreamingResponse:
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
                     continue
-                yield _sse("notification", item, id_=item.get("id"))
+                name, data = notification_stream.split_event(item)
+                yield _sse(name, data, id_=data.get("id") if name == "notification" else None)
         finally:
             notification_stream.broker.unsubscribe(account_id, queue)
 
