@@ -35,7 +35,7 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/catalog/templates/\{template_id\}/preview$", {"POST"}, PUBLIC),    # styled preview of a template (rate limited)
     (r"^/locations/", READ, ANY),                                              # address pickers: any signed-in role
     (r"^/pricing/estimate$", ALL, {CUSTOMER}),
-    (r"^/auth/(register|login|google|refresh|token|password-reset/(request|confirm))$", ALL, PUBLIC),
+    (r"^/auth/(register|login|google|refresh|token|password-reset/(request|confirm)|phone-reset/(request|verify))$", ALL, PUBLIC),
     (r"^/webhooks/shipments/\{carrier\}$", ALL, SIGNED),                      # authenticated by the carrier's secret / signature
     (r"^/webhooks/payments/vnpay/ipn$", ALL, VNPAY_IPN),
     (r"^/webhooks/payments/momo/ipn$", ALL, SIGNED),

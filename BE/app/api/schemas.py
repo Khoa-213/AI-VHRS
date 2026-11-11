@@ -87,6 +87,31 @@ class PasswordResetConfirmIn(BaseModel):
     new_password: str = Field(min_length=8, max_length=72)
 
 
+class PhoneOtpVerifyIn(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$", examples=["123456"])
+
+
+class PhoneResetRequestIn(BaseModel):
+    phone: str = Field(pattern=_PHONE, examples=["0901234567"])
+
+
+class PhoneResetVerifyIn(BaseModel):
+    phone: str = Field(pattern=_PHONE, examples=["0901234567"])
+    code: str = Field(pattern=r"^\d{6}$", examples=["123456"])
+
+
+class OtpSentOut(BaseModel):
+    phone_masked: str = Field(examples=["090****567"])
+    expires_in: int = Field(description="Giây tới khi mã hết hạn")
+    resend_after: int = Field(description="Giây phải chờ trước khi xin mã mới")
+    mode: str = Field(description="MOCK: không gửi SMS thật (chưa chọn nhà cung cấp)")
+
+
+class PhoneResetTokenOut(BaseModel):
+    reset_token: str = Field(description="Gửi kèm mật khẩu mới tới POST /auth/password-reset/confirm (trường `token`)")
+    expires_in: int
+
+
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=72)
