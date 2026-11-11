@@ -1,5 +1,8 @@
 @property --entry-border-angle{syntax:'<angle>';initial-value:0deg;inherits:false}
 .entry-login{--entry-input-bg:color-mix(in srgb,var(--t1) 3%,var(--surface,var(--bg)));position:fixed;inset:0;margin:auto;width:min(480px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:0;border:2px solid transparent;border-radius:28px;background:linear-gradient(var(--surface,var(--bg)),var(--surface,var(--bg))) padding-box,conic-gradient(from var(--entry-border-angle),transparent 0deg 245deg,#729dff55 275deg,#ad83f5 308deg,#f291ae 330deg,#fff3fb 346deg,#fff 352deg,transparent 357deg 360deg) border-box,linear-gradient(135deg,#729dff66,#ad83f566,#f291ae66) border-box;color:var(--t1);box-shadow:0 0 18px #ad83f526,0 32px 100px #0005;overflow:auto;animation:entry-border-orbit 3s linear infinite,entry-border-glow 3s ease-in-out infinite}
+/* Keep login and registration scrollable without visible scrollbar chrome. */
+.entry-login{scrollbar-width:none;-ms-overflow-style:none}
+.entry-login::-webkit-scrollbar{display:none;width:0;height:0}
 @keyframes entry-border-orbit{to{--entry-border-angle:360deg}}
 @keyframes entry-border-glow{0%,100%{box-shadow:0 0 14px #729dff33,0 0 30px #ad83f51a,0 32px 100px #0005}50%{box-shadow:0 0 22px #ad83f54d,0 0 42px #f291ae26,0 32px 100px #0005}}
 @media(prefers-reduced-motion:reduce){.entry-login{animation:none}}

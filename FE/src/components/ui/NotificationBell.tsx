@@ -39,7 +39,7 @@ function target(n: AppNotification, role?: string): { to?: string; chat?: number
  * Notification center bell (FR-27): the badge, the list with "load more", read one / read all, and the live stream.
  * `variant="site"` sits in the public top bar, `"ws"` in the workshop header.
  */
-export default function NotificationBell({ variant }: { variant: 'site' | 'landing' | 'ws' }) {
+export default function NotificationBell({ variant }: { variant: 'site' | 'landing' | 'adm' | 'ws' }) {
   const t = useT()
   const locale = useLocale()
   const user = useUser()

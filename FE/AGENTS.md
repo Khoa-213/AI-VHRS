@@ -118,3 +118,15 @@ Everything that belongs to the signed-in user lives under `/account` (`src/pages
 (theme, language), order history, drafts, payment methods. The top bar and the landing page are for browsing only:
 no order history, drafts or cart there. A new user-owned feature gets a section in `Account.tsx`, not a new top bar item.
 The avatar in the top bar opens `/account`; sign out lives in the account navigation.
+
+## Admin area
+
+Admin screens (`src/pages/admin/`) do not use the workshop `Shell`. They use `components/admin/AdminFrame.tsx`, in the homepage and order-flow look: the page frame with one rounded surface, dark and light from the theme toggle (`--frame` and `--surface` like `.lp-root`), a muted blue accent, a sidebar on the frame (four areas with short names, a count for locked accounts, a drawer on small screens) and a top bar (theme, notifications, language, the signed-in person). Colours come from the theme tokens; `components/admin/admin-shell.css` holds the frame and the motion, `admin-ui.css` the blocks (all under `.adm`), `AdminViz.tsx` the tiles and charts (`Kpi`, `Card`, `DayColumns`, `Donut`, `Ring`, `Attention`).
+Admin uses a calm workspace: static navigation and charts, solid headings, neutral text and avatars, and a muted blue accent scoped to `.adm-app`. Do not add glowing borders, looping motion, marquee numbers or blurred entrances. Keep brief hover/focus feedback and the mobile drawer transition; respect `prefers-reduced-motion`. Status colours are reserved for state icons and indicators.
+The list screens stay simple: accounts (one search box, two filters, one Manage button per person), activity log (kind and record number), settings (label and effect on the left, value on the right, Save appears once the value changed, no reason field). Each block says what it shows; state is never colour alone (icon and word, texture on stacked segments); every chart has a table view and a hover or focus readout; chart colours are the first five slots of the validated palette (`--series-1` to `--series-5`, stepped for dark and light). New admin text goes under `adm.`, `st.`, `ig.`, `sy.`, `au.`.
+
+Admin copy stays concise: no navigation descriptions, greeting, page introductions or explanatory card subtitles. Keep metric units/time windows, chart legends, setting effects, error details and consequences of sensitive actions.
+
+Admin subpages show the shared back-to-overview link in `AdminFrame`. Use `AdminSelect` for dropdowns: translated option labels, keyboard navigation, a viewport-bounded popup and disabled states. Verify navigation and dropdown interactions with `node scripts/check-admin-browser.mjs` after building.
+
+Admin dropdowns, including the audit record-kind filter, remain scrollable with wheel, touch and keyboard. Hide the scrollbar chrome on `.adm-select-menu`; do not replace these dropdowns with wrapping pills.

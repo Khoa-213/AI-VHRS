@@ -7,6 +7,7 @@ import { closeAuth, openAuth, useAuthDialog } from './store/authDialog'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import Accounts from './pages/admin/Accounts'
 import AuditLog from './pages/admin/AuditLog'
+import Settings from './pages/admin/Settings'
 import Refunds from './pages/staff/Refunds'
 import Approvals from './pages/staff/Approvals'
 import Catalog from './pages/staff/Catalog'
@@ -100,6 +101,7 @@ function Routes() {
   if (path === '/admin') return <RequireStaff role="admin"><AdminDashboard /></RequireStaff>
   if (path === '/admin/accounts') return <RequireStaff role="admin"><Accounts /></RequireStaff>
   if (path === '/admin/audit') return <RequireStaff role="admin"><AuditLog /></RequireStaff>
+  if (path === '/admin/settings') return <RequireStaff role="admin"><Settings /></RequireStaff>
 
   if (path === '/tech') return <RequireStaff role="technician"><TechDashboard /></RequireStaff>
   // /tech/preview/:id and /tech/qc/:id are aliases of the job screen.
