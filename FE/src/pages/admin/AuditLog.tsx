@@ -1,121 +1,121 @@
-import { useState } from 'react'
-import Shell from '../../components/ws/Shell'
+import AdminSelect from '../../components/admin/AdminSelect'
+import {
+  CreditCard, FileText, Gear, Package, Robot, Scroll, Users, Wrench,
+} from '@phosphor-icons/react'
+import { useState, type ReactNode } from 'react'
+import AdminFrame from '../../components/admin/AdminFrame'
+import { Card } from '../../components/admin/AdminViz'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { listAudit, type AuditEntry } from '../../services/admin'
 import { errText, orderErrorKey } from '../../services/orders'
-import './admin.css'
+import { AUDIT_KINDS, auditKind, auditLabel } from '../../utils/audit'
 
 const PAGE_SIZE = 20
-const intOnly = (v: string) => v.replace(/\D/g, '').slice(0, 10)
 
-/** Admin only: the system activity log (UC-51). Entries are read only; filter by who did it, what, and on which record. */
+const KIND_ICON: Record<string, ReactNode> = {
+  account: <Users size={18} aria-hidden />,
+  order: <Package size={18} aria-hidden />,
+  payment: <CreditCard size={18} aria-hidden />,
+  quotation: <FileText size={18} aria-hidden />,
+  production_job: <Wrench size={18} aria-hidden />,
+  robot: <Robot size={18} aria-hidden />,
+  system_setting: <Gear size={18} aria-hidden />,
+}
+
+/** "5 minutes ago" in the language of the page; older than a week falls back to the date. */
+function ago(iso: string, locale: string): string {
+  const diff = (new Date(iso).getTime() - Date.now()) / 1000
+  const abs = Math.abs(diff)
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+  if (abs < 60) return rtf.format(Math.round(diff), 'second')
+  if (abs < 3600) return rtf.format(Math.round(diff / 60), 'minute')
+  if (abs < 86400) return rtf.format(Math.round(diff / 3600), 'hour')
+  if (abs < 7 * 86400) return rtf.format(Math.round(diff / 86400), 'day')
+  return new Date(iso).toLocaleDateString(locale, { dateStyle: 'medium' })
+}
+
+/**
+ * Admin only: the activity log (UC-51) as one list. Narrow it by kind of record, or by the number of a record (an order, a
+ * payment). Each line says what happened, to what and who did it, and opens to the reason and the before and after values.
+ */
 export default function AuditLog() {
   const t = useT()
   const locale = useLocale()
-  const blank = { actor: '', action: '', entityType: '', entityId: '' }
-  const [draft, setDraft] = useState(blank)
-  const [applied, setApplied] = useState(blank)
+  const [kind, setKind] = useState('')
+  const [entityId, setEntityId] = useState('')
   const [page, setPage] = useState(1)
   const [open, setOpen] = useState<number | null>(null)
 
   const list = useAsync(
-    () => listAudit({
-      actorId: applied.actor ? Number(applied.actor) : undefined,
-      action: applied.action,
-      entityType: applied.entityType,
-      entityId: applied.entityId ? Number(applied.entityId) : undefined,
-      page,
-      pageSize: PAGE_SIZE,
-    }),
-    [applied, page],
+    () => listAudit({ entityType: kind, entityId: entityId ? Number(entityId) : undefined, page, pageSize: PAGE_SIZE }),
+    [kind, entityId, page],
   )
   const pages = Math.max(1, Math.ceil((list.data?.total ?? 0) / PAGE_SIZE))
-  const apply = () => {
-    setPage(1)
-    setApplied(draft)
-  }
-  const clear = () => {
-    setDraft(blank)
-    setApplied(blank)
-    setPage(1)
-  }
 
   return (
-    <Shell area="admin" active="audit" title={t('ad.au.title')} lede={t('ad.au.lede')}>
-      <div className="wk-page">
-        <section className="wk-block" aria-label={t('ad.au.title')}>
-          <form className="ad-bar" onSubmit={(e) => { e.preventDefault(); apply() }}>
-            <label className="vh-label wk-grow">{t('ad.au.action')}<input className="vh-input" value={draft.action} onChange={(e) => setDraft({ ...draft, action: e.target.value })} /></label>
-            <label className="vh-label">{t('ad.au.entityType')}<input className="vh-input" value={draft.entityType} onChange={(e) => setDraft({ ...draft, entityType: e.target.value })} /></label>
-            <label className="vh-label">{t('ad.au.entityId')}<input className="vh-input" inputMode="numeric" value={draft.entityId} onChange={(e) => setDraft({ ...draft, entityId: intOnly(e.target.value) })} /></label>
-            <label className="vh-label">{t('ad.au.actor')}<input className="vh-input" inputMode="numeric" value={draft.actor} onChange={(e) => setDraft({ ...draft, actor: intOnly(e.target.value) })} /></label>
-            <button className="vh-btn vh-btn--primary vh-btn--md" type="submit">{t('ad.au.apply')}</button>
-            <button className="vh-btn vh-btn--ghost vh-btn--md" type="button" onClick={clear}>{t('ad.au.clear')}</button>
-          </form>
+    <AdminFrame active="audit" title={t('ad.au.title')}>
+      <Card title={t('adm.au.feed')} sub={t('ad.au.count', { n: list.data?.total ?? 0 })}>
+        <div className="adm-toolbar">
+          <AdminSelect label={t('adm.au.kind')} value={kind} onChange={(value) => { setKind(value); setPage(1); setOpen(null) }} options={[{ value: '', label: t('adm.au.allKinds') }, ...AUDIT_KINDS.map((k) => ({ value: k, label: auditKind(t, k) }))]} />
+          <input
+            className="adm-input"
+            inputMode="numeric"
+            aria-label={t('ad.au.entityId')}
+            placeholder={t('adm.au.idPh')}
+            value={entityId}
+            onChange={(e) => { setEntityId(e.target.value.replace(/\D/g, '').slice(0, 10)); setPage(1); setOpen(null) }}
+          />
+        </div>
 
-          {!!list.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(list.error))}</p>}
-          {list.loading && !list.data && <p className="sub" role="status">{t('co.loading')}</p>}
-
-          {list.data && (
-            <div className="ad-scroll">
-              <table className="ad-table">
-                <thead>
-                  <tr>
-                    <th scope="col">{t('ad.au.when')}</th>
-                    <th scope="col">{t('ad.au.action')}</th>
-                    <th scope="col">{t('ad.au.record')}</th>
-                    <th scope="col">{t('ad.au.actor')}</th>
-                    <th scope="col"><span className="ad-sr">{t('ad.au.details')}</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.data.items.map((e) => <Row key={e.id} e={e} locale={locale} open={open === e.id} onToggle={() => setOpen(open === e.id ? null : e.id)} />)}
-                </tbody>
-              </table>
-              {!list.data.items.length && <p className="sub">{t('ad.au.empty')}</p>}
+        {!!list.error && <p className="adm-error" role="alert">{errText(t, orderErrorKey(list.error))}</p>}
+        {list.loading && !list.data && <p className="adm-fine" role="status">{t('co.loading')}</p>}
+        <div className="adm-feed">
+          {(list.data?.items ?? []).map((e) => <Event key={e.id} e={e} locale={locale} open={open === e.id} onToggle={() => setOpen(open === e.id ? null : e.id)} />)}
+        </div>
+        {list.data && !list.data.items.length && <p className="adm-fine">{t(kind || entityId ? 'adm.au.emptyFiltered' : 'ad.au.empty')}</p>}
+        {list.data && list.data.total > PAGE_SIZE && (
+          <div className="adm-pager">
+            <span />
+            <div>
+              <button type="button" className="adm-btn adm-btn--line adm-btn--sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t('ad.prev')}</button>
+              <span>{t('ad.page', { page, pages })}</span>
+              <button type="button" className="adm-btn adm-btn--line adm-btn--sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>{t('ad.next')}</button>
             </div>
-          )}
-
-          {list.data && (
-            <div className="ad-pager">
-              <span className="sub">{t('ad.au.count', { n: list.data.total })}</span>
-              <div>
-                <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t('ad.prev')}</button>
-                <span className="sub">{t('ad.page', { page, pages })}</span>
-                <button className="vh-btn vh-btn--ghost vh-btn--sm" disabled={page >= pages} onClick={() => setPage(page + 1)}>{t('ad.next')}</button>
-              </div>
-            </div>
-          )}
-        </section>
-      </div>
-    </Shell>
+          </div>
+        )}
+      </Card>
+    </AdminFrame>
   )
 }
 
-function Row({ e, locale, open, onToggle }: { e: AuditEntry; locale: string; open: boolean; onToggle: () => void }) {
+function Event({ e, locale, open, onToggle }: { e: AuditEntry; locale: string; open: boolean; onToggle: () => void }) {
   const t = useT()
   const has = e.oldValue || e.newValue || e.reason
   return (
-    <>
-      <tr>
-        <td className="sub" style={{ whiteSpace: 'nowrap' }}>{new Date(e.createdAt).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'medium' })}</td>
-        <td><b className="mono">{e.action}</b></td>
-        <td>{[e.entityType, e.entityId !== null ? `#${e.entityId}` : null].filter(Boolean).join(' ') || '–'}</td>
-        <td>{e.actorId !== null ? `#${e.actorId}` : t('ad.au.system')}</td>
-        <td>{has && <button className="vh-btn vh-btn--ghost vh-btn--sm" aria-expanded={open} onClick={onToggle}>{open ? t('ov.back') : t('ad.au.details')}</button>}</td>
-      </tr>
+    <div className="adm-event">
+      <div className="adm-event-main">
+        <span className="adm-event-ico">{KIND_ICON[e.entityType ?? ''] ?? <Scroll size={18} aria-hidden />}</span>
+        <div className="adm-event-text">
+          <b>{auditLabel(t, e.action)}</b>
+          <span>
+            {auditKind(t, e.entityType)}{e.entityId !== null ? ` #${e.entityId}` : ''} · {e.actorId !== null ? t('adm.au.byUser', { id: e.actorId }) : t('ad.au.system')}
+          </span>
+        </div>
+        <div className="adm-event-side">
+          <time className="adm-event-when" dateTime={e.createdAt} title={new Date(e.createdAt).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'medium' })}>{ago(e.createdAt, locale)}</time>
+          {has && <button type="button" className="adm-link" aria-expanded={open} onClick={onToggle}>{open ? t('ov.back') : t('ad.au.details')}</button>}
+        </div>
+      </div>
       {open && (
-        <tr className="ad-edit">
-          <td colSpan={5}>
-            {e.reason && <p><b>{t('ad.au.reason')}:</b> {e.reason}</p>}
-            <div className="ad-diff">
-              {e.oldValue && <div><h4>{t('ad.au.before')}</h4><pre className="ad-json">{JSON.stringify(e.oldValue, null, 2)}</pre></div>}
-              {e.newValue && <div><h4>{t('ad.au.after')}</h4><pre className="ad-json">{JSON.stringify(e.newValue, null, 2)}</pre></div>}
-            </div>
-          </td>
-        </tr>
+        <>
+          {e.reason && <p className="adm-reason"><b>{t('ad.au.reason')}:</b> {e.reason}</p>}
+          <div className="adm-diff">
+            {e.oldValue && <div><h4>{t('ad.au.before')}</h4><pre className="adm-json">{JSON.stringify(e.oldValue, null, 2)}</pre></div>}
+            {e.newValue && <div><h4>{t('ad.au.after')}</h4><pre className="adm-json">{JSON.stringify(e.newValue, null, 2)}</pre></div>}
+          </div>
+        </>
       )}
-    </>
+    </div>
   )
 }

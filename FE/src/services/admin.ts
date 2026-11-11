@@ -115,3 +115,119 @@ export const lastBackgroundRun = async () => {
   const r = await api<RawJobsRun | null>('/admin/jobs/last')
   return r ? toJobsRun(r) : null
 }
+
+// ---------- system settings, integrations, system dashboard (Phase 5b: UC-49, UC-50, UC-52) ----------
+
+export type SettingValue = number | boolean | string[] | Record<string, number>
+
+export interface SystemSetting {
+  key: string
+  /** Vietnamese label from the backend; screens show their own translation of `key` and keep this as a fallback. */
+  label: string
+  value: SettingValue
+  /** True while no row exists yet and the code default applies. */
+  isDefault: boolean
+  updatedBy: number | null
+  updatedAt: string | null
+}
+
+interface RawSetting { key: string; label: string; value: SettingValue; is_default: boolean; updated_by: number | null; updated_at: string | null }
+
+const toSetting = (s: RawSetting): SystemSetting => ({
+  key: s.key, label: s.label, value: s.value, isDefault: s.is_default, updatedBy: s.updated_by, updatedAt: s.updated_at,
+})
+
+export const listSettings = async () => (await api<RawSetting[]>('/admin/settings')).map(toSetting)
+
+/** `PUT /admin/settings/{key}`. A wrong type or range comes back as `422 INVALID_SETTING` with the reason in the message. */
+export const saveSetting = async (key: string, value: SettingValue, reason?: string) =>
+  toSetting(await api<RawSetting>(`/admin/settings/${encodeURIComponent(key)}`, { method: 'PUT', body: { value, ...(reason?.trim() ? { reason: reason.trim() } : {}) } }))
+
+export interface Integration {
+  name: string
+  kind: string
+  mode: string
+  configured: boolean
+  /** Only GHN can be switched here; the others are set by the server environment. */
+  toggleable: boolean
+  enabled: boolean
+}
+
+export const listIntegrations = () => api<Integration[]>('/admin/integrations')
+
+export const toggleIntegration = (name: string, enabled: boolean, reason?: string) =>
+  api<Integration>(`/admin/integrations/${encodeURIComponent(name)}`, { method: 'PUT', body: { enabled, ...(reason?.trim() ? { reason: reason.trim() } : {}) } })
+
+export interface SystemDashboard {
+  generatedAt: string
+  databaseMs: number
+  accounts: { byRole: Record<string, Record<string, number>>; newLast7Days: number; activeSessions: number }
+  robots: { total: number; online: number; byStatus: Record<string, number> }
+  integrations: Integration[]
+  backgroundJobs: { enabled: boolean; intervalSeconds: number; lastRun: JobsRun | null }
+  emailsFailedLast24h: number
+}
+
+interface RawDashboard {
+  generated_at: string
+  database_ms: number
+  accounts: { by_role: Record<string, Record<string, number>>; new_last_7_days: number; active_sessions: number }
+  robots: { total: number; online: number; by_status: Record<string, number> }
+  integrations: Integration[]
+  background_jobs: { enabled: boolean; interval_seconds: number; last_run: RawJobsRun | null }
+  notifications: { emails_failed_last_24h: number }
+}
+
+export async function systemDashboard(): Promise<SystemDashboard> {
+  const d = await api<RawDashboard>('/admin/dashboard')
+  return {
+    generatedAt: d.generated_at,
+    databaseMs: d.database_ms,
+    accounts: { byRole: d.accounts.by_role, newLast7Days: d.accounts.new_last_7_days, activeSessions: d.accounts.active_sessions },
+    robots: { total: d.robots.total, online: d.robots.online, byStatus: d.robots.by_status },
+    integrations: d.integrations,
+    backgroundJobs: {
+      enabled: d.background_jobs.enabled,
+      intervalSeconds: d.background_jobs.interval_seconds,
+      lastRun: d.background_jobs.last_run ? toJobsRun(d.background_jobs.last_run) : null,
+    },
+    emailsFailedLast24h: d.notifications.emails_failed_last_24h,
+  }
+}
+
+// ---------- activity per day, from the audit log ----------
+
+export interface DayCount { date: string; count: number }
+
+const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/**
+ * Audit entries per local day for the last `days` days (today last), counted from `GET /admin/audit-logs`, which lists the
+ * newest first: pages are read until one reaches back past the first day, up to `maxPages` of 100 entries. `truncated` is
+ * true when the page limit stopped the count before the first day was reached.
+ */
+export async function auditActivity(days = 14, maxPages = 8): Promise<{ days: DayCount[]; truncated: boolean }> {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - (days - 1))
+  const buckets = new Map<string, number>()
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    buckets.set(dayKey(d), 0)
+  }
+  let truncated = false
+  for (let page = 1; page <= maxPages; page++) {
+    const r = await listAudit({ page, pageSize: 100 })
+    let reached = false
+    for (const e of r.items) {
+      const t = new Date(e.createdAt)
+      if (t < start) { reached = true; continue }
+      const k = dayKey(t)
+      if (buckets.has(k)) buckets.set(k, (buckets.get(k) ?? 0) + 1)
+    }
+    if (reached || page * 100 >= r.total) break
+    if (page === maxPages) truncated = true
+  }
+  return { days: [...buckets].map(([date, count]) => ({ date, count })), truncated }
+}
