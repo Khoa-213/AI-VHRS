@@ -5,11 +5,14 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import PrincipalDep, SessionDep, client_ip
 from app.api.schemas import (AccountOut, GoogleLoginIn, LoginIn, MessageOut, OAuthTokenOut, PasswordResetConfirmIn,
-                             PasswordResetRequestIn, RefreshIn, RegisterIn, TokenOut, account_out)
+                             PasswordResetRequestIn, PhoneResetRequestIn, PhoneResetTokenOut, PhoneResetVerifyIn, RefreshIn,
+                             RegisterIn, TokenOut, account_out)
 from app.core.ratelimit import rate_limit
 from app.integrations.google_auth import GoogleVerifier, get_google_verifier
 from app.integrations.mailer import Mailer, get_mailer
+from app.integrations.sms import get_sms_sender
 from app.services.auth import AuthService
+from app.services.phone_otp import PhoneOtpService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -93,3 +96,25 @@ def password_reset_request(body: PasswordResetRequestIn, svc: Svc) -> MessageOut
 def password_reset_confirm(body: PasswordResetConfirmIn, svc: Svc) -> Response:
     svc.confirm_password_reset(body.token, body.new_password)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---- FR-53 / UC-54 (Phase 5e): recover the account with the verified phone number ----------------------------------------
+@router.post("/phone-reset/request", response_model=MessageOut, status_code=status.HTTP_202_ACCEPTED,
+             dependencies=[Depends(rate_limit("phone_reset_request", 5, 900))],
+             summary="UC-54 Quên mật khẩu: gửi OTP tới số điện thoại đã xác minh",
+             description="Luôn trả 202 (chống dò số). Chỉ gửi khi số đã được xác minh cho một tài khoản đang hoạt động; "
+                         "chờ 60 giây giữa hai mã, tối đa 5 mã mỗi số trong 24 giờ.")
+def phone_reset_request(body: PhoneResetRequestIn, session: SessionDep, request: Request) -> MessageOut:
+    PhoneOtpService(session, get_sms_sender(), client_ip(request)).request_reset(body.phone)
+    return MessageOut(message="Nếu số điện thoại đã được xác minh, mã OTP đã được gửi qua SMS.")
+
+
+@router.post("/phone-reset/verify", response_model=PhoneResetTokenOut,
+             dependencies=[Depends(rate_limit("phone_reset_verify", 10, 900))],
+             summary="UC-54 Đổi mã OTP lấy reset token",
+             description="Đúng mã thì trả `reset_token`; đặt mật khẩu mới bằng `POST /auth/password-reset/confirm` "
+                         "(`token` = `reset_token`), mọi thiết bị bị đăng xuất.",
+             responses={400: {"description": "OTP_INVALID (details.attempts_left) / OTP_EXPIRED / OTP_TOO_MANY_ATTEMPTS"}})
+def phone_reset_verify(body: PhoneResetVerifyIn, session: SessionDep, request: Request) -> PhoneResetTokenOut:
+    token, ttl = PhoneOtpService(session, get_sms_sender(), client_ip(request)).verify_reset(body.phone, body.code)
+    return PhoneResetTokenOut(reset_token=token, expires_in=ttl)

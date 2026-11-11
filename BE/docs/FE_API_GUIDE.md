@@ -13,6 +13,7 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **Trang `/payment/result`** (cổng đưa khách về đây kèm `?order_id=<id>`): poll `GET /orders/{id}` tới ~60 giây, gọi `POST /payments/{id}/refresh` một lần nếu còn `PENDING` (bỏ qua lỗi 502 của VNPay), rồi đưa khách về đơn. Không tin tham số của cổng.
 - [ ] **`pages/order/Deposit.tsx`:** thêm lựa chọn **PAYOS** (đọc `GET /payments/gateways`, chỉ hiện cổng `enabled`); khi `PaymentOut.pay_url` có giá trị thì `window.location.assign(pay_url)` và không chạy luồng mock; nhãn "MOCK" chỉ hiện khi `mode === "MOCK"`; thêm `pay_url`, `pay_url_expires_at`, `qr_code`, `bank`, `needs_refund` vào kiểu `Payment` trong `services/orders.ts`.
 - [ ] **payOS:** hiện hạn của mã (`pay_url_expires_at`) và cho tạo mã mới khi hết hạn; thông báo "đã chuyển sai số tiền" khi `needs_refund`. Khi test, trang `pay.payos.vn/web/<id>` từng không mở được trên trình duyệt của chủ dự án (nghi sao chép sai đường dẫn): hãy thử luồng redirect thật và báo lại BE nếu vẫn lỗi. Tuỳ chọn: tự vẽ QR từ `qr_code`.
+- [ ] **Xác minh số điện thoại + quên mật khẩu bằng SMS (2026-11-11, Phase 5e, mục 3.2):** ở hồ sơ, khi `phone_verified=false` hiện nút "Xác minh" (`POST /me/phone/otp` → ô nhập 6 số → `POST /me/phone/verify`), đếm ngược `resend_after` cho nút "Gửi lại"; màn đăng nhập thêm "Quên mật khẩu bằng số điện thoại" (`/auth/phone-reset/request` → `/auth/phone-reset/verify` → `/auth/password-reset/confirm`). SMS hiện ở chế độ MOCK (chưa gửi thật).
 - [ ] **Chat tức thời + PDF báo cáo (2026-11-10, Phase 5d, mục 5.4, 7j, 7m):** màn chat mở bằng `latest=true`, cuộn lên tải `before_id`; nghe `event: message` trên stream thông báo để nối tin mới (bỏ poll tin nhắn); màn báo cáo Manager thêm nút "Xuất PDF" (`format=pdf`).
 - [ ] **Đánh giá + showcase (2026-11-07, mục 7n, 7o):** khách: nút "Đánh giá" ở đơn `COMPLETED` (sao, nhận xét, tối đa 5 ảnh, sửa trong 30 ngày); trang chủ: khối "Sản phẩm mẫu" (`GET /catalog/showcase`) và "Khách nói gì" (`GET /catalog/reviews`, điểm trung bình + số lượt theo sao); web xưởng: màn quản lý showcase (Staff, Manager), màn đánh giá có nút ẩn / hiện lại (Manager).
 - [ ] **Thông báo (2026-11-04, mục 7j):** chuông + badge (`GET /me/notifications/unread-count`), danh sách có "xem thêm" (`before_id`), đánh dấu đã đọc / đọc hết, mở `GET /me/notifications/stream` bằng fetch-stream (có header Bearer) để cập nhật tức thời và tải lại màn đơn đang xem; áp dụng cho cả web khách, web xưởng và DesktopApp kỹ thuật viên.
@@ -117,6 +118,7 @@ POST /auth/refresh      {refresh_token}    → cặp token mới
 POST /auth/logout       (Bearer)           → thu hồi phiên hiện tại
 GET  /me                → AccountOut        PATCH /me {full_name?, phone?, addresses?}
 POST /me/change-password, POST /auth/password-reset/request|confirm
+POST /me/phone/otp, POST /me/phone/verify, POST /auth/phone-reset/request|verify   (OTP SMS, mục 3.2)
 ```
 ### 3.1 Đăng nhập bằng Google (khách hàng)
 1. FE dùng **Google Identity Services** (web) hoặc Google Sign-In SDK (Flutter) với **Web Client ID** của dự án, nhận `credential` (= Google **ID token**).
@@ -124,6 +126,31 @@ POST /me/change-password, POST /auth/password-reset/request|confirm
 3. Lần đầu: BE tự tạo tài khoản `CUSTOMER` theo email Google (họ tên lấy từ Google). Đã có tài khoản cùng email: đăng nhập vào tài khoản đó (khớp theo email, không phân biệt hoa/thường). Khách có thể đặt mật khẩu sau bằng "Quên mật khẩu".
 4. Lỗi: `401 GOOGLE_TOKEN_INVALID` (token sai/hết hạn/không phải của app này), `401 GOOGLE_EMAIL_NOT_VERIFIED`, `403 GOOGLE_NOT_ALLOWED` (email thuộc Staff/Manager/Admin/Technical: dùng email + mật khẩu), `403 ACCOUNT_DISABLED`, `503 GOOGLE_NOT_CONFIGURED` (BE chưa có env `GOOGLE_CLIENT`), `503 GOOGLE_UNAVAILABLE`.
 5. FE **không** gửi email/họ tên tự khai: chỉ gửi `id_token`; BE xác minh với Google.
+
+### 3.2 Xác minh số điện thoại và quên mật khẩu bằng SMS (Phase 5e, FR-53, UC-54)
+
+**SMS đang ở chế độ MOCK** (`mode: "MOCK"`): BE không gửi tin thật vì chủ dự án chưa chọn nhà cung cấp. Luồng và API sẽ giữ nguyên khi có nhà cung cấp thật. Khi thử trên môi trường MOCK, mã chỉ nằm trong bộ nhớ của server (test đọc được), **không hiện ra cho FE**.
+
+**Xác minh số trong hồ sơ** (đã đăng nhập; mọi vai trò):
+1. Hồ sơ có `phone` và `phone_verified=false` → nút "Xác minh". `POST /me/phone/otp` (không body) → `202 {phone_masked, expires_in: 300, resend_after: 60, mode}`.
+2. Ô nhập 6 chữ số → `POST /me/phone/verify {code}` → `AccountOut` với `phone_verified=true` (số được lưu dạng `0xxxxxxxxx` dù khách nhập `+84...`).
+3. Đổi số bằng `PATCH /me` thì `phone_verified` về `false`, phải xác minh lại.
+
+**Quên mật khẩu bằng số điện thoại** (chưa đăng nhập; chỉ dùng được với số **đã xác minh**):
+1. `POST /auth/phone-reset/request {phone}` → **luôn `202`** (kể cả số không tồn tại, chưa xác minh, đang phải chờ, hết lượt), nên FE luôn chuyển sang ô nhập mã với câu "Nếu số đã được xác minh, mã đã được gửi".
+2. `POST /auth/phone-reset/verify {phone, code}` → `{reset_token, expires_in: 1800}`.
+3. `POST /auth/password-reset/confirm {token: reset_token, new_password}` (cùng endpoint của luồng email) → `204`; mọi thiết bị bị đăng xuất, email báo "mật khẩu đã được đổi" được gửi tới email của tài khoản. Sau đó về màn đăng nhập.
+
+**Quy tắc mã:** 6 chữ số, hiệu lực **5 phút**; sai **5 lần** thì mã bị huỷ; xin mã mới thì mã cũ hết hiệu lực; phải chờ **60 giây** giữa hai lần gửi và tối đa **5 mã mỗi số trong 24 giờ** (tính chung cả hai luồng).
+
+| Lỗi | Khi nào | UI |
+|---|---|---|
+| `400 OTP_INVALID` | Sai mã (`details.attempts_left`), hoặc không có mã nào đang mở | "Mã không đúng, còn n lần thử" |
+| `400 OTP_EXPIRED` | Quá 5 phút | Nút "Gửi lại mã" |
+| `400 OTP_TOO_MANY_ATTEMPTS` | Sai lần thứ 5 | Bắt buộc gửi lại mã |
+| `409 PHONE_ALREADY_VERIFIED` / `409 PHONE_TAKEN` | Số đã xác minh / số đã được xác minh cho tài khoản khác | Báo lỗi, gợi ý dùng số khác |
+| `422 PHONE_MISSING` | Hồ sơ chưa có số | Đưa về form sửa hồ sơ |
+| `429 OTP_RESEND_TOO_SOON` (`details.retry_after`) / `429 OTP_DAILY_LIMIT` | Gửi lại quá sớm / quá 5 mã trong 24 giờ | Đếm ngược / "thử lại sau" |
 
 - Access token sống **30 phút**, refresh token **7 ngày**. Lưu refresh token an toàn (Flutter: secure storage; web: ưu tiên bộ nhớ/`httpOnly` nếu có BFF).
 - Khi nhận `401` với `code` = `TOKEN_EXPIRED` hoặc `NOT_AUTHENTICATED` → gọi `/auth/refresh` **một lần**, thử lại request; refresh cũng lỗi → về màn đăng nhập.
@@ -756,7 +783,7 @@ Admin: `POST /admin/jobs/run {confirm: true, only?: ["quotation_expiry"|"deposit
 |---|---|
 | Tham số sửa được | `GET /admin/settings` → `[{key, label, value, is_default, updated_by, updated_at}]` (`is_default`: chưa có dòng trong DB, đang dùng mặc định của code) |
 | Sửa một tham số | `PUT /admin/settings/{key} {value, reason?}` → dòng đó. Sai kiểu / ngoài khoảng: `422 INVALID_SETTING` (`message` nói rõ); khoá khác: `404 SETTING_NOT_EDITABLE`. Ghi AuditLog `SETTING_UPDATE` |
-| Tích hợp | `GET /admin/integrations` → `[{name, kind, mode, configured, toggleable, enabled}]` cho `VNPAY`, `MOMO`, `PAYOS`, `GHN`, `SMTP`, `STORAGE`, `GOOGLE_LOGIN`. **Không** có khoá/mật khẩu nào trong kết quả |
+| Tích hợp | `GET /admin/integrations` → `[{name, kind, mode, configured, toggleable, enabled}]` cho `VNPAY`, `MOMO`, `PAYOS`, `GHN`, `SMTP`, `STORAGE`, `SMS` (Phase 5e, hiện `mode: "MOCK"`), `GOOGLE_LOGIN`. **Không** có khoá/mật khẩu nào trong kết quả |
 | Bật/tắt tích hợp | `PUT /admin/integrations/{name} {enabled, reason?}`: hiện chỉ `GHN`; còn lại `422 INTEGRATION_NOT_TOGGLEABLE` (khoá và chế độ đặt trên server) |
 | Dashboard hệ thống | `GET /admin/dashboard` → `{database_ms, accounts{by_role{ROLE{STATUS: n}}, new_last_7_days, active_sessions}, robots{total, online, by_status}, integrations[], background_jobs{enabled, interval_seconds, last_run}, notifications{emails_failed_last_24h}}` |
 
@@ -866,10 +893,10 @@ Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thậ
 
 - Huỷ sau cọc + hoàn tiền: **đã có** (mục 7h). ETA tự tính và dời ETA có lý do (MSG11): **đã có** (mục 7i).
 - Technical Staff: **đã có** xem job, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố (mục 7b), ảnh sản phẩm + QC và nộp ảnh (mục 7c). Ảnh chồng phác thảo do client tự làm.
-- Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4), thông báo `NEW_MESSAGE` qua stream (mục 7j); bản thân tin nhắn chưa được đẩy.
+- Chat: **đã có** thẻ đơn hàng, danh sách cuộc chat, badge chưa đọc (mục 5.4), thông báo `NEW_MESSAGE` qua stream (mục 7j); từ Phase 5d bản thân tin nhắn cũng được đẩy (`event: message`).
 - Khách: **đã có** xem ảnh, nghiệm thu, viết lại 1 lần, tự nghiệm thu sau 7 ngày (mục 7c). Thanh toán cuối + nhận tại xưởng **đã có** (mục 7d). Chọn dịch vụ vận chuyển, vận đơn và giao hàng qua hãng **đã có** (mục 7e). Huỷ sau cọc + hoàn tiền (mục 7h), dời ETA (mục 7i), thông báo in-app + email + stream (mục 7j): **đã có**.
 - Cổng thanh toán thật (VNPay, MoMo) đã có code nhưng **chưa được thử với môi trường thật của họ**. **GHN** (hãng duy nhất) đã được thử trên staging ngày 2026-10-26: báo giá (`preview`), tạo/huỷ vận đơn, link nhãn, danh mục địa chỉ; **chưa** thử callback thật. Mặc định vẫn là MOCK cho tới khi cấu hình (xem `DEPLOY.md`).
-- Admin: tham số hệ thống, tích hợp, dashboard hệ thống **đã có** (mục 7l); Manager: dashboard sản xuất, báo cáo, xuất Excel **đã có** (mục 7m). Chưa có: xuất PDF báo cáo, OTP SMS, showcase, review.
+- Admin: tham số hệ thống, tích hợp, dashboard hệ thống **đã có** (mục 7l); Manager: dashboard sản xuất, báo cáo, xuất Excel **đã có** (mục 7m). Xuất PDF báo cáo, đánh giá, showcase: **đã có** (mục 7m, 7n, 7o). OTP SMS **đã có** ở chế độ MOCK (mục 3.2); gửi SMS thật chờ chủ dự án chọn nhà cung cấp.
 - OT-2 (nét đã học) khoá với khách; AI không sinh phác thảo cho OT-2.
 - Độ chính xác dựng nét OT-1 trên chữ viết tay thật **chưa được kiểm chứng**: giao diện nên cho Staff xem/sửa phác thảo trước khi gửi.
 

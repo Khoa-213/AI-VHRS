@@ -154,6 +154,8 @@ class AdminSystemService:
         out.append({"name": "STORAGE", "kind": "STORAGE", "mode": "SUPABASE",
                     "configured": bool(s.supabase_url and s.supabase_service_key), "toggleable": False,
                     "enabled": bool(s.supabase_url and s.supabase_service_key)})
+        out.append({"name": "SMS", "kind": "SMS", "mode": s.sms_mode.upper(), "configured": s.sms_mode == "mock",
+                    "toggleable": False, "enabled": True})                 # FR-53 OTP; real provider not chosen yet
         out.append({"name": "GOOGLE_LOGIN", "kind": "AUTH", "mode": "LIVE", "configured": bool(s.google_client_id),
                     "toggleable": False, "enabled": bool(s.google_client_id)})
         return out

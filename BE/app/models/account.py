@@ -54,6 +54,21 @@ class Account(Base):
     role: Mapped[Role] = relationship(lazy="joined")
 
 
+class PhoneOtp(Base):
+    """FR-53 (Phase 5e): one SMS code. Only its HMAC is stored. `used_at` closes it: verified, burned by too many wrong
+    guesses, or replaced by a newer code."""
+    __tablename__ = "phone_otps"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
+    phone: Mapped[str] = mapped_column(String(20))
+    otp_hash: Mapped[str] = mapped_column(String(255))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(SmallInteger, default=0)
+    max_attempts: Mapped[int] = mapped_column(SmallInteger, default=5)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

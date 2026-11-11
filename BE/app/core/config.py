@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     smtp_from: str | None = None
     smtp_starttls: bool = True
     smtp_timeout_seconds: float = 10.0
+    # ---- SMS (Phase 5e, FR-53 OTP). mock = nothing leaves the server (default; the only mode until the project owner picks
+    # a provider, then its adapter and keys are added here). OTP rules are assumptions approved with the 5e plan (2026-11-11).
+    sms_mode: Literal["mock"] = "mock"
+    otp_ttl_seconds: int = 300           # a code lives 5 minutes
+    otp_max_attempts: int = 5            # wrong guesses per code, then it is burned
+    otp_resend_seconds: int = 60         # wait between two codes to the same number
+    otp_daily_limit: int = 5             # codes per number in any 24 hours
     # ---- background jobs (Phase 5a): quotation expiry, deposit deadline, acceptance reminder / auto-accept, e-mail retry,
     # BR-23 purge. Off by default (local runs, tests); set BACKGROUND_JOBS_ENABLED=true on the one deployed instance.
     background_jobs_enabled: bool = False

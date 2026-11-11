@@ -128,6 +128,9 @@ class AuthService:
         acc.password_hash = security.hash_password(new_password)
         acc.failed_login_count, acc.locked_until = 0, None
         self.sessions.revoke_all(acc.id)  # a reset must sign out every device
+        self.mailer.send(acc.email, "Mật khẩu AI-VHRS đã được đổi",
+                         "Mật khẩu tài khoản của bạn vừa được đặt lại và mọi thiết bị đã bị đăng xuất. "
+                         "Nếu không phải bạn thực hiện, hãy liên hệ xưởng ngay.")
 
     def logout(self, session_id: uuid.UUID) -> None:
         self.sessions.revoke(session_id)
