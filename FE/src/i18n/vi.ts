@@ -2603,5 +2603,9 @@ export const vi: Record<Key, string> = {
   "ig.confirmOn": "Bật {name}?",
   "ig.confirmOff": "Tắt {name}?",
   "adm.view": "Xem",
+  "wk.ol.clearSearch": "Xóa tìm kiếm",
+  "staff.ui.period": "Khoảng thời gian biểu đồ",
+  "staff.ui.days": "{n} ngày",
+  "staff.ui.received": "{n} đơn đã nhận trong {days} ngày qua",
   "adm.backOverview": "Về tổng quan",
 }

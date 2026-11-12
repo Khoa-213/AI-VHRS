@@ -2603,5 +2603,9 @@ export const ja: Record<Key, string> = {
   "ig.confirmOn": "{name}をオンにしますか?",
   "ig.confirmOff": "{name}をオフにしますか?",
   "adm.view": "表示",
+  "wk.ol.clearSearch": "検索をクリア",
+  "staff.ui.period": "グラフの期間",
+  "staff.ui.days": "{n}日間",
+  "staff.ui.received": "過去{days}日間の受付件数: {n}件",
   "adm.backOverview": "概要に戻る",
 }

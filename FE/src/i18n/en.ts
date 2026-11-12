@@ -2619,6 +2619,10 @@ export const en = {
   "ig.confirmOn": "Switch {name} on?",
   "ig.confirmOff": "Switch {name} off?",
   "adm.view": "View",
+  "wk.ol.clearSearch": "Clear search",
+  "staff.ui.period": "Chart period",
+  "staff.ui.days": "{n} days",
+  "staff.ui.received": "{n} orders received in the last {days} days",
   "adm.backOverview": "Back to overview",
 } as const
 

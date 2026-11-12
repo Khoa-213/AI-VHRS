@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
-import { CaretRight, MagnifyingGlass } from '@phosphor-icons/react'
+import { CaretRight, ClipboardText, MagnifyingGlass, X } from '@phosphor-icons/react'
+import AdminSelect from '../../components/admin/AdminSelect'
 import Shell from '../../components/ws/Shell'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
@@ -198,21 +199,25 @@ export default function Workbench({ id, fulfillment = false }: { id?: number; fu
         </div>
       }
     >
-      <div className="wk-layout">
+      <div className={`wk-layout${!manager && !id && !fulfillment ? ` staff-board${needle || stage !== 'open' ? ' staff-board-single' : ''}` : ''}`}>
         <aside className="ol" aria-label={t('wk.queue')}>
           <div className="ol-top">
             {!fulfillment && <div className="ol-scope" role="group" aria-label={t('wk.ol.scope')}>
               {scopes.map((s) => (
                 <button key={s} aria-pressed={scope === s} className={scope === s ? 'on' : ''} onClick={() => { setScope(s); setLimit(PAGE) }}>
-                  {t(`wk.ol.${s}`)} {list.data && <span>{openIn(s)}</span>}
+                  {t(`wk.ol.${s}`)} {list.data && <span className="ol-scope-count">{openIn(s)}</span>}
                 </button>
               ))}
             </div>}
             <label className="ol-search">
               <MagnifyingGlass size={16} aria-hidden="true" />
               <input type="search" value={q} placeholder={t('wk.search')} aria-label={t('wk.search')} onChange={(e) => { setQ(e.target.value); setLimit(PAGE) }} />
+              {!manager && q && <button type="button" className="ol-clear" aria-label={t('wk.ol.clearSearch')} onClick={() => { setQ(''); setLimit(PAGE) }}><X size={15} aria-hidden /></button>}
             </label>
-            {!fulfillment && <div className="ol-stages" role="group" aria-label={t('wk.ol.stages')}>
+            {!fulfillment && !manager && <div className="ol-filter">
+              <AdminSelect label={t('wk.ol.stages')} value={stage} onChange={(value) => pickStage(value as Stage)} options={stages.map((s) => ({ value: s.id, label: list.data ? `${t(`wk.ol.g.${s.id}`)} (${s.n})` : t(`wk.ol.g.${s.id}`) }))} />
+            </div>}
+            {!fulfillment && manager && <div className="ol-stages" role="group" aria-label={t('wk.ol.stages')}>
               {stages.map((s) => {
                 const on = !needle && stage === s.id
                 return (
@@ -232,7 +237,9 @@ export default function Workbench({ id, fulfillment = false }: { id?: number; fu
         </aside>
 
         <section className="wk-detail">
-          {id ? <OrderDetail key={id} id={id} onChanged={() => void list.reload()} /> : <p className="sub">{t('wk.pick')}</p>}
+          {id && <OrderDetail key={id} id={id} onChanged={() => void list.reload()} />}
+          {!id && manager && <p className="sub">{t('wk.pick')}</p>}
+          {!id && !manager && <div className="wk-choose"><ClipboardText size={32} aria-hidden /><p>{t('wk.pick')}</p></div>}
         </section>
       </div>
     </Shell>
