@@ -54,10 +54,28 @@ def _flatten(gray: np.ndarray) -> np.ndarray:
     return cv2.GaussianBlur(flat, (3, 3), 0)
 
 
+FAINT_ALPHA = 0.5       # second threshold half-way between Otsu and the paper level (U3 benchmark 2026-11-12)
+FAINT_FILL_MAX = 0.5    # a faint piece must look like a pen line (thin), not a blotch / shadow
+
+
 def _binarise(gray: np.ndarray) -> np.ndarray:
+    """Otsu on the flattened image, plus FAINT ink: pieces darker than a second, lighter threshold that do not touch the
+    strong ink, are big enough and thin like a pen line. Without them washed-out words vanished silently (U3: 91% of the
+    regions in a faded box were lost); kept, they come out of recovery with low `contrast` and so are labelled RESTORED."""
     flat = _flatten(gray)
-    _, ink = cv2.threshold(flat, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    return ink
+    t, strong = cv2.threshold(flat, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    if not strong.any() or strong.all():
+        return strong
+    paper = float(np.median(flat[strong == 0]))
+    weak = ((flat < t + (paper - t) * FAINT_ALPHA) & (cv2.dilate(strong, np.ones((5, 5), np.uint8)) == 0)).astype(np.uint8)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(weak, connectivity=8)
+    h, w = gray.shape
+    min_area = max(12, int(0.00003 * h * w))
+    keep = np.zeros(n, bool)
+    for i in range(1, n):
+        a, bw, bh = stats[i, cv2.CC_STAT_AREA], stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+        keep[i] = a >= min_area and a / (bw * bh) <= FAINT_FILL_MAX and max(bw, bh) >= 8
+    return np.where(keep[lab], 255, strong).astype(np.uint8)
 
 
 def _deskew(ink: np.ndarray) -> tuple[np.ndarray, float]:
@@ -502,8 +520,8 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
     for pos, (_, _, wi) in enumerate(order):
         runs.setdefault(wi, []).append(pos)
     page_dark = float(np.median(255 - flat[ink > 0])) if ink.any() else 1.0
-    regions = []
-    for n, wi in enumerate(sorted(runs, key=lambda w: runs[w][0]), start=1):
+    measured = []
+    for wi in sorted(runs, key=lambda w: runs[w][0]):
         pos = runs[wi]
         allp = np.concatenate([strokes_px[order[k][0]] for k in pos])
         x0, y0 = np.floor(allp.min(axis=0)).astype(int) - thick
@@ -514,16 +532,23 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
         fit = round(float(np.logical_and(c, k).sum()) / u, 3) if u else 0.0
         dark = float(np.median(255 - flat[y0:y1, x0:x1][k])) if k.any() else 0.0
         contrast = round(min(dark / max(page_dark, 1.0), 1.0), 3)       # faded ink compared with the rest of the page
-        conf = min(fit, contrast)
+        measured.append((pos, fit, contrast))
+    # Both cues are relative to the same page (U3 benchmark, 2026-11-12): on real pen ink the absolute IoU of a
+    # uniform-width redraw sits around 0.65 even when the tracing is right, so an absolute threshold flagged clean words.
+    page_fit = float(np.median([m[1] for m in measured])) if measured else 1.0
+    regions = []
+    for n, (pos, fit, contrast) in enumerate(measured, start=1):
+        fit_rel = round(min(fit / max(page_fit, 1e-6), 1.0), 3)
+        conf = min(fit_rel, contrast)
         mm = [page.strokes[k2] for k2 in range(pos[0], pos[-1] + 1)]
         bx = (min(p[0] for st in mm for p in st.points), min(p[1] for st in mm for p in st.points),
               max(p[0] for st in mm for p in st.points), max(p[1] for st in mm for p in st.points))
         regions.append(RegionDraft(1, n, pos[0], pos[-1] + 1, tuple(round(v, 2) for v in bx), label_for(conf), conf,
-                                   metrics={"fit": fit, "contrast": contrast}))
+                                   metrics={"fit": fit, "fit_rel": fit_rel, "contrast": contrast}))
 
-    warnings = []
-    if similarity < 80.0:
-        warnings.append("SIMILARITY_BELOW_80")      # NFR-02 target; Staff should edit or reject the image
+    # SIMILARITY_BELOW_80 switched off (owner, 2026-11-12): on real pen ink this uniform-width IoU sits at 62-69 even when
+    # the tracing is right (U3 benchmark), so the warning fired on every real image. Back once a better measure exists.
+    warnings: list[str] = []
     return page, RecoveryStats(similarity=similarity, n_strokes=len(page.strokes), mm_per_px=round(s, 5),
                                stroke_width_mm=round(width_px * s, 3), deskew_deg=angle, warnings=warnings,
                                regions=regions)

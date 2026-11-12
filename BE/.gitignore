@@ -135,3 +135,6 @@ Thumbs.db
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# U3 benchmark images (dataset licence unclear: never commit)
+benchmarks/data/

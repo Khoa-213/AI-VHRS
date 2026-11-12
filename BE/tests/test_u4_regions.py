@@ -66,6 +66,17 @@ def test_recovery_splits_the_page_into_word_regions_and_flags_faded_ink():
     assert faded.regions[2].metrics["contrast"] < rg.UNCERTAIN_BELOW
 
 
+def test_washed_out_ink_is_kept_and_flagged_instead_of_vanishing():
+    """U3 finding: Otsu alone dropped washed-out words silently (no strokes, so no region, so no warning). The faint-ink
+    pass keeps them, and their low contrast makes them RESTORED."""
+    for gray in (165, 180):
+        page, st = recovery.recover_page(_scan(faded_gray=gray), paper_size="A4")
+        nam = [r for r in st.regions if r.bbox[0] > 90 and r.bbox[1] < 105]      # first line, right of "Viet"
+        assert nam and all(r.label == "RESTORED" for r in nam), (gray, [(r.bbox, r.label) for r in st.regions])
+    page, st = recovery.recover_page(_scan(), paper_size="A4")
+    assert [r.label for r in st.regions].count("RESTORED") == 0                    # clean page: nothing added
+
+
 def test_text_is_written_inside_the_region_box():
     box = (20.0, 30.0, 80.0, 45.0)
     strokes = rg.text_in_box("Nam", box, "A4")
