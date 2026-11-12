@@ -39,6 +39,7 @@ from app.repositories.ops import JobRepository, PaymentRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository
 from app.services import audit, gateway_checkout as checkout, notifications
+from app.services.production_snapshot import SnapshotService
 from app.services.workshop_access import WorkshopAccess, not_found
 
 log = logging.getLogger("app")
@@ -159,6 +160,7 @@ class CancellationService:
         order.order_status, order.production_status = OrderStatus.CANCELLED, ProductionStatus.NOT_STARTED
         order.cancel_reason = reason
         self.session.flush()
+        SnapshotService(self.session).revoke_for_order(order.id, f"Đơn bị huỷ: {reason}", actor_id=self.actor.id)   # U1
 
         refund = None
         if decision.refund_amount > 0 and source is not None:

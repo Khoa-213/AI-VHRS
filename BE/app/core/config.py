@@ -97,6 +97,21 @@ class Settings(BaseSettings):
     # Google sign-in: OAuth *Web* client id(s) from Google Cloud Console, comma separated. Empty = the endpoint answers 503.
     # Env name GOOGLE_CLIENT (what Render uses); GOOGLE_CLIENT_ID is still accepted.
     google_client_id: str | None = Field(default=None, validation_alias=AliasChoices("GOOGLE_CLIENT", "GOOGLE_CLIENT_ID"))
+    # ---- signed production packages (upgrade U1, core/production_signing.py) --------------------------------------
+    # PRODUCTION_SIGNING_KEY: base64 Ed25519 private key (scripts/production_key.py new). Without it no production
+    # snapshot can be issued and scheduling answers 503. PRODUCTION_VERIFY_KEYS: JSON {key_id: public key} of OLDER keys
+    # still accepted while their jobs finish (the current key's public half is always in the ring).
+    production_signing_key: str | None = None
+    production_signing_key_id: str = "k1"
+    production_verify_keys: str | None = None
+
+    @property
+    def production_key_ring(self) -> dict[str, str]:
+        from app.core import production_signing as ps
+        ring = ps.parse_key_ring(self.production_verify_keys)
+        if self.production_signing_key:
+            ring[self.production_signing_key_id] = ps.public_key_of(self.production_signing_key)
+        return ring
 
     @property
     def google_client_ids(self) -> list[str]:

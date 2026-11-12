@@ -1,12 +1,19 @@
 """Tests run against the real (Supabase) database. Only rows whose email starts with
 'pytest_' are created and they are removed afterwards."""
+import os
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.core.security import hash_password
+# U1: a throw-away signing key for this test session, unless the environment already has one (never a real key in tests)
+if not os.environ.get("PRODUCTION_SIGNING_KEY"):
+    from app.core.production_signing import generate_private_key
+    os.environ["PRODUCTION_SIGNING_KEY"] = generate_private_key()
+    os.environ["PRODUCTION_SIGNING_KEY_ID"] = "pytest"
+
+from app.core.security import hash_password  # noqa: E402
 from app.db.session import get_engine
 from app.integrations.mailer import ConsoleMailer
 from app.main import app
@@ -28,6 +35,7 @@ def _cleanup() -> None:
             or (entity_type = 'order' and entity_id in {_TEST_ORDERS})
             or (entity_type = 'quotation' and entity_id in (select id from quotations where order_id in {_TEST_ORDERS}))
             or (entity_type = 'sketch' and entity_id in (select id from sketches where order_id in {_TEST_ORDERS}))
+            or (entity_type = 'production_snapshot' and entity_id in (select id from production_snapshots where order_id in {_TEST_ORDERS}))
             or (entity_type = 'shipment' and entity_id in (select id from shipments where order_id in {_TEST_ORDERS}))
             or (entity_type = 'incident' and entity_id in (select id from incidents where reported_by in {_TEST_IDS}
                  or robot_id in (select id from robots where code like 'pytest\\_%')))"""))
@@ -35,6 +43,9 @@ def _cleanup() -> None:
         # test catalog rows after the orders
         # payments / production jobs do not cascade from orders; jobs must go before the test robots
         c.execute(text(f"delete from shipments where order_id in {_TEST_ORDERS}"))   # no cascade from orders
+        # U1 snapshots reference payments, quotations and sketches without cascade; jobs reference them: unlink, then delete
+        c.execute(text(f"update production_jobs set snapshot_id = null where order_id in {_TEST_ORDERS} and snapshot_id is not null"))
+        c.execute(text(f"delete from production_snapshots where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from payments where order_id in {_TEST_ORDERS}"))
         # product_photos.job_id does not cascade, so photos go before their jobs
         c.execute(text(f"delete from quality_evaluations where created_by in {_TEST_IDS} or order_id in {_TEST_ORDERS}"))   # before the photos

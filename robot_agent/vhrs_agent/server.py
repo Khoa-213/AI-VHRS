@@ -82,6 +82,8 @@ class ServerConfig:
     unsensed_gripper: bool = False                        # the owner accepts REAL writing with a plain spring gripper (no force sensor); never a default
     robot_id: int | None = None                           # which robot this workstation drives (session login; needed when the technician has several)
     lan_server: bool = True                               # false: only the outbound link, no local web console / LAN API
+    production_public_keys: dict[str, str] | None = None  # U1: {key_id: base64 Ed25519 public key} of the backend (scripts/production_key.py public)
+    require_signed_packages: bool = False                 # U1: refuse packages without a signed snapshot (after the legacy jobs are done)
 
     @classmethod
     def from_file(cls, path: str | Path) -> "ServerConfig":
@@ -166,7 +168,8 @@ class AgentService:
 
     # ---- backend
     def bridge(self, token: "str | Callable[[], str]") -> BackendBridge:
-        return BackendBridge(self.cfg.backend_url, token, transport=self.transport, downloader=self.downloader)
+        return BackendBridge(self.cfg.backend_url, token, transport=self.transport, downloader=self.downloader,
+                             public_keys=self.cfg.production_public_keys, require_signed=self.cfg.require_signed_packages)
 
     def identify(self, token: str) -> dict[str, Any]:
         key = hashlib.sha256(token.encode()).hexdigest()

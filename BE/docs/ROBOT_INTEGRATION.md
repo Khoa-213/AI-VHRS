@@ -181,6 +181,22 @@ Chi tiết API ở `FE_API_GUIDE.md` mục 7f; thiết kế và lý do ở `ROBO
 - **Tuân thủ quy trình** của job: `GET /manager/jobs/{id}/compliance`. Quan trọng nhất: job được ghi nhận "đã viết" mà không có lần chạy robot thật hoàn tất bị đánh dấu.
 - **Lưu DB**: bảng `robot_runs` (mỗi lần chạy, ai xác nhận REAL, kết quả, số nét, tóm tắt lực), `robot_alerts`, `alert_catalog`, và cột phiên bản/kết nối/lần cuối thấy trên `robots`. Log chi tiết tần số cao vẫn ở file `runs/*.jsonl` trên máy trạm.
 
+## 10e. Gói sản xuất có chữ ký (nâng cấp U1, 2026-11-12)
+
+Khi cổng thanh toán xác nhận cọc (và bắt buộc khi Quản lý xếp lịch), BE khoá một **production snapshot**: văn bản JSON chuẩn
+hoá gồm phiên bản phác thảo + SHA-256 file quỹ đạo, **giá trị** giấy / bút / mực, báo giá đã duyệt, khoản cọc; ký **Ed25519**
+bằng khoá chỉ nằm trên máy chủ (`PRODUCTION_SIGNING_KEY`). Bảng `production_snapshots` (migration 0016) có trigger chặn
+sửa mọi cột đã ký; chỉ được thu hồi một lần (huỷ đơn, đổi phiên bản).
+
+- BE kiểm khi tải gói và ngay trước khi bắt đầu viết; sai → `409 PRODUCTION_PACKAGE_INVALID`, đồng thời ghi sự kiện
+  `HASH_MISMATCH`, audit `JOB_SIGNATURE_INVALID`, sự cố (incident) cho job. Không có cờ bỏ qua.
+- Agent kiểm lại bằng **khoá công khai của chính máy trạm** (`agent.json` → `"production_public_keys": {"k1": "..."}`,
+  hoặc biến môi trường `VHRS_PRODUCTION_PUBLIC_KEYS`), không lấy khoá từ BE: chữ ký, hash nội dung, file quỹ đạo tải về,
+  và thông số bút BE gửi phải trùng thông số đã ký. Thiếu khoá → `PRODUCTION_KEY_MISSING`, không chạy.
+- Job xếp lịch trước U1 không có snapshot (`snapshot: null`) và chạy bằng kiểm hash cũ. Khi không còn job cũ, đặt
+  `"require_signed_packages": true` trong `agent.json` để từ chối mọi gói không ký.
+- Vì sao chữ ký số mà không HMAC: máy trạm chỉ giữ khoá công khai, nên dù máy trạm bị lộ cũng không ai tự ký được gói giả.
+
 ## 11. Việc nhóm cần làm / quyết định
 
 1. Đồng ý tải FAIRINO SimMachine (Docker/VMware, kích thước chưa biết) để chạy adapter thật trên controller ảo; và quyết định có nâng controller hay không (bản đang đăng V4.0.0.1-QX).

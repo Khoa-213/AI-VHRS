@@ -175,6 +175,7 @@ class ProductionJob(Base):
     estimated_duration_min: Mapped[int] = mapped_column(Integer)
     package_uri: Mapped[str | None] = mapped_column(Text)               # storage path of the approved trajectory JSON
     package_hash: Mapped[str | None] = mapped_column(String(64))        # SHA-256 of that file (FR-38)
+    snapshot_id: Mapped[int | None] = mapped_column(ForeignKey("production_snapshots.id"))   # U1; NULL = legacy job
     packaged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     simulation_passed: Mapped[bool | None] = mapped_column(Boolean)    # FR-45; DB refuses WRITING unless TRUE
@@ -185,6 +186,26 @@ class ProductionJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue(),
                                                  server_onupdate=FetchedValue())
+
+
+class ProductionSnapshot(Base):
+    """Signed, immutable production package (upgrade U1, migration 0016). Only revoked_at / revoked_reason may change, once."""
+    __tablename__ = "production_snapshots"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    package_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    sketch_id: Mapped[int] = mapped_column(ForeignKey("sketches.id"))
+    quotation_id: Mapped[int | None] = mapped_column(ForeignKey("quotations.id"))
+    payment_id: Mapped[int | None] = mapped_column(ForeignKey("payments.id"))
+    schema_version: Mapped[str] = mapped_column(String(40))
+    payload: Mapped[str] = mapped_column(Text)              # the exact canonical text that was signed
+    payload_sha256: Mapped[str] = mapped_column(String(64))
+    signature: Mapped[str] = mapped_column(Text)
+    key_id: Mapped[str] = mapped_column(String(40))
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class Calibration(Base):
