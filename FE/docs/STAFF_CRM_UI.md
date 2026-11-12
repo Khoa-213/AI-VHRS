@@ -12,7 +12,7 @@ Run `npm.cmd run dev` in `FE`, sign in as Staff, then open:
 
 ## Source
 
-- `src/components/ws/Shell.tsx`: Staff sticky utility header (logo, notifications, appearance, language and profile link; sign out is at the bottom of the sidebar), workflow sidebar and mobile drawer; Manager and Technician retain the original shell.
+- `src/components/ws/Shell.tsx`: Staff sticky utility header (logo, notifications, appearance, language and profile link; sign out is at the bottom of the sidebar), workflow sidebar and mobile drawer; Manager uses the same frame with its own sidebar items (see `FE/AGENTS.md`, "Manager area"); Technician retains the original shell.
 - `src/components/ws/staff-ui.css`: scoped visual tokens, cards, filters, pipeline and responsive layout.
 - `src/pages/staff/StaffDashboard.tsx`: KPIs and chart from the existing workshop API data.
 - `src/pages/staff/Workbench.tsx`: presentation classes for pipeline versus selected-order detail.

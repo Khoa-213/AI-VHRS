@@ -675,6 +675,13 @@ export const chooseDelivery = async (id: number, choice: DeliveryChoice): Promis
 /** Backend error codes that have their own translated text (keys live under `err.`). */
 const ERROR_KEYS: Record<string, string> = {
   TIMEOUT: 'auth.err.timeout',
+  INVALID_PERIOD: 'err.invalidPeriod',
+  PERIOD_TOO_LONG: 'err.periodTooLong',
+  INVALID_GROUP: 'err.invalidGroup',
+  ALERT_NOT_FOUND: 'err.alertNotFound',
+  RED_ALERT_PROTECTED: 'err.redAlertProtected',
+  ALERT_CODE_NOT_FOUND: 'err.alertCodeNotFound',
+  REVIEW_NOT_FOUND: 'err.reviewNotFound',
   NETWORK: 'auth.err.network',
   RATE_LIMITED: 'auth.err.rate',
   VALIDATION_ERROR: 'auth.err.validation',
