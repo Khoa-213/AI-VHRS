@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0015 (alembic head), generated 2026-11-07 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0016 (alembic head), generated 2026-11-12 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0015);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0015;
+--      baseline schema and every migration up to 0016);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0016;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -604,6 +604,29 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$;
+
+--
+-- Name: fn_production_snapshot_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_production_snapshot_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+        IF NEW.package_id IS DISTINCT FROM OLD.package_id OR NEW.order_id IS DISTINCT FROM OLD.order_id
+           OR NEW.sketch_id IS DISTINCT FROM OLD.sketch_id OR NEW.quotation_id IS DISTINCT FROM OLD.quotation_id
+           OR NEW.payment_id IS DISTINCT FROM OLD.payment_id OR NEW.schema_version IS DISTINCT FROM OLD.schema_version
+           OR NEW.payload IS DISTINCT FROM OLD.payload OR NEW.payload_sha256 IS DISTINCT FROM OLD.payload_sha256
+           OR NEW.signature IS DISTINCT FROM OLD.signature OR NEW.key_id IS DISTINCT FROM OLD.key_id
+           OR NEW.created_by IS DISTINCT FROM OLD.created_by OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+            RAISE EXCEPTION 'production snapshot % is immutable', OLD.id USING ERRCODE = 'check_violation';
+        END IF;
+        IF OLD.revoked_at IS NOT NULL AND (NEW.revoked_at IS DISTINCT FROM OLD.revoked_at
+                                           OR NEW.revoked_reason IS DISTINCT FROM OLD.revoked_reason) THEN
+            RAISE EXCEPTION 'production snapshot % is already revoked', OLD.id USING ERRCODE = 'check_violation';
+        END IF;
+        RETURN NEW;
+    END $$;
 
 --
 -- Name: fn_review_guard(); Type: FUNCTION; Schema: public; Owner: -
@@ -1376,6 +1399,7 @@ CREATE TABLE public.production_jobs (
     finished_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    snapshot_id bigint,
     CONSTRAINT chk_job_run_requires_sim CHECK (((status <> ALL (ARRAY['WRITING'::public.job_status, 'PAUSED'::public.job_status, 'WRITTEN'::public.job_status, 'PHOTO_UPLOADED'::public.job_status, 'DONE'::public.job_status])) OR (simulation_passed IS TRUE))),
     CONSTRAINT chk_job_slot CHECK ((slot_end > slot_start)),
     CONSTRAINT production_jobs_estimated_duration_min_check CHECK ((estimated_duration_min > 0)),
@@ -1394,6 +1418,47 @@ ALTER TABLE public.production_jobs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
     NO MAXVALUE
     CACHE 1
 );
+
+--
+-- Name: production_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.production_snapshots (
+    id bigint NOT NULL,
+    package_id uuid NOT NULL,
+    order_id bigint NOT NULL,
+    sketch_id bigint NOT NULL,
+    quotation_id bigint,
+    payment_id bigint,
+    schema_version character varying(40) NOT NULL,
+    payload text NOT NULL,
+    payload_sha256 character(64) NOT NULL,
+    signature text NOT NULL,
+    key_id character varying(40) NOT NULL,
+    created_by bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone,
+    revoked_reason text,
+    CONSTRAINT chk_snapshot_revoke CHECK (((revoked_at IS NULL) = (revoked_reason IS NULL))),
+    CONSTRAINT chk_snapshot_sha256 CHECK ((payload_sha256 ~ '^[0-9a-f]{64}$'::text))
+);
+
+--
+-- Name: production_snapshots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.production_snapshots_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: production_snapshots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.production_snapshots_id_seq OWNED BY public.production_snapshots.id;
 
 --
 -- Name: quality_evaluations; Type: TABLE; Schema: public; Owner: -
@@ -1964,6 +2029,12 @@ CREATE VIEW public.v_order_eta_postponement AS
   GROUP BY order_id;
 
 --
+-- Name: production_snapshots id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_snapshots ALTER COLUMN id SET DEFAULT nextval('public.production_snapshots_id_seq'::regclass);
+
+--
 -- Name: quality_evaluations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2184,6 +2255,20 @@ ALTER TABLE ONLY public.product_photos
 
 ALTER TABLE ONLY public.production_jobs
     ADD CONSTRAINT production_jobs_pkey PRIMARY KEY (id);
+
+--
+-- Name: production_snapshots production_snapshots_package_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_snapshots
+    ADD CONSTRAINT production_snapshots_package_id_key UNIQUE (package_id);
+
+--
+-- Name: production_snapshots production_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_snapshots
+    ADD CONSTRAINT production_snapshots_pkey PRIMARY KEY (id);
 
 --
 -- Name: quality_evaluations quality_evaluations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2509,6 +2594,18 @@ CREATE INDEX ix_product_photos_job ON public.product_photos USING btree (job_id)
 CREATE INDEX ix_product_photos_order ON public.product_photos USING btree (order_id);
 
 --
+-- Name: ix_production_jobs_snapshot; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_production_jobs_snapshot ON public.production_jobs USING btree (snapshot_id) WHERE (snapshot_id IS NOT NULL);
+
+--
+-- Name: ix_production_snapshots_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_production_snapshots_order ON public.production_snapshots USING btree (order_id, created_at DESC);
+
+--
 -- Name: ix_quality_evaluations_job; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2659,6 +2756,12 @@ CREATE UNIQUE INDEX ux_payments_one_success_per_type ON public.payments USING bt
 CREATE UNIQUE INDEX ux_pricing_configs_one_active ON public.pricing_configs USING btree (is_active) WHERE is_active;
 
 --
+-- Name: ux_production_snapshot_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_production_snapshot_active ON public.production_snapshots USING btree (order_id) WHERE (revoked_at IS NULL);
+
+--
 -- Name: ux_quotations_one_live; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2797,6 +2900,12 @@ CREATE TRIGGER trg_pen_types_updated_at BEFORE UPDATE ON public.pen_types FOR EA
 --
 
 CREATE TRIGGER trg_production_jobs_updated_at BEFORE UPDATE ON public.production_jobs FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+--
+-- Name: production_snapshots trg_production_snapshot_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_production_snapshot_immutable BEFORE UPDATE ON public.production_snapshots FOR EACH ROW EXECUTE FUNCTION public.fn_production_snapshot_immutable();
 
 --
 -- Name: reviews trg_reviews_guard; Type: TRIGGER; Schema: public; Owner: -
@@ -3185,11 +3294,53 @@ ALTER TABLE ONLY public.production_jobs
     ADD CONSTRAINT production_jobs_sketch_id_fkey FOREIGN KEY (sketch_id) REFERENCES public.sketches(id);
 
 --
+-- Name: production_jobs production_jobs_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_jobs
+    ADD CONSTRAINT production_jobs_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES public.production_snapshots(id);
+
+--
 -- Name: production_jobs production_jobs_technician_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.production_jobs
     ADD CONSTRAINT production_jobs_technician_id_fkey FOREIGN KEY (technician_id) REFERENCES public.accounts(id);
+
+--
+-- Name: production_snapshots production_snapshots_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_snapshots
+    ADD CONSTRAINT production_snapshots_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.accounts(id);
+
+--
+-- Name: production_snapshots production_snapshots_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_snapshots
+    ADD CONSTRAINT production_snapshots_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id);
+
+--
+-- Name: production_snapshots production_snapshots_payment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_snapshots
+    ADD CONSTRAINT production_snapshots_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES public.payments(id);
+
+--
+-- Name: production_snapshots production_snapshots_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_snapshots
+    ADD CONSTRAINT production_snapshots_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotations(id);
+
+--
+-- Name: production_snapshots production_snapshots_sketch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.production_snapshots
+    ADD CONSTRAINT production_snapshots_sketch_id_fkey FOREIGN KEY (sketch_id) REFERENCES public.sketches(id);
 
 --
 -- Name: quality_evaluations quality_evaluations_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -3696,7 +3847,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0015');
+INSERT INTO alembic_version (version_num) VALUES ('0016');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

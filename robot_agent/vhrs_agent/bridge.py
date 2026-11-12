@@ -7,10 +7,12 @@ the server.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Callable
 
 import httpx
 
+from app.core import production_signing as ps
 from app.services.stroke_ai import trajectory as tj
 from app.services.stroke_ai.trajectory import Page
 
@@ -33,8 +35,13 @@ class BackendBridge:
     """`token` is the access token string, or a callable returning the current one (so a long run can refresh it)."""
 
     def __init__(self, base_url: str, token: "str | Callable[[], str]", transport: httpx.BaseTransport | None = None,
-                 timeout: float = 15.0, downloader: Callable[[str], bytes] | None = None):
+                 timeout: float = 15.0, downloader: Callable[[str], bytes] | None = None,
+                 public_keys: dict[str, str] | None = None, require_signed: bool = False):
         self._token: Callable[[], str] = token if callable(token) else (lambda: token)
+        # U1: public keys of the backend's production signing key(s), {key_id: base64}. They come from the station's own
+        # configuration (agent.json or VHRS_PRODUCTION_PUBLIC_KEYS), never from the backend that serves the package.
+        self.public_keys = dict(public_keys) if public_keys else ps.parse_key_ring(os.environ.get("VHRS_PRODUCTION_PUBLIC_KEYS"))
+        self.require_signed = require_signed
         self.http = httpx.Client(base_url=base_url.rstrip("/") + "/api/v1/technician", transport=transport, timeout=timeout)
         self.root = httpx.Client(base_url=base_url.rstrip("/") + "/api/v1", transport=transport, timeout=timeout)
         self._download = downloader or self._download_trajectory
@@ -84,8 +91,34 @@ class BackendBridge:
         actual = tj.content_hash(raw)
         if actual != pkg["package_hash"]:
             raise BridgeError(409, "JOB_HASH_MISMATCH", "File quỹ đạo tải về không khớp hash của gói job; không chạy.")
+        signed = self.verify_snapshot(job_id, pkg, actual)
         pages: list[Page] = tj.parse(json.loads(raw))
-        return {"package": pkg, "pages": pages, "hash": actual}
+        return {"package": pkg, "pages": pages, "hash": actual, "signed": signed}
+
+    def verify_snapshot(self, job_id: int, pkg: dict[str, Any], trajectory_sha256: str) -> dict[str, Any] | None:
+        """U1: check the signed production snapshot with the station's PUBLIC keys. No switch turns this off.
+
+        A legacy package (no snapshot, job scheduled before the upgrade) passes on the hash alone unless the station is
+        configured with require_signed_packages=true (set it once no legacy job is left)."""
+        snap = pkg.get("snapshot")
+        if snap is None:
+            if self.require_signed:
+                raise BridgeError(409, "PACKAGE_NOT_SIGNED", "Gói job không có chữ ký sản xuất mà máy trạm này bắt buộc; không chạy.")
+            return None
+        if not self.public_keys:
+            raise BridgeError(409, "PRODUCTION_KEY_MISSING", "Máy trạm chưa có khoá công khai để kiểm chữ ký gói sản xuất "
+                              "(production_public_keys trong agent.json); không chạy.")
+        try:
+            payload = ps.verify_package(snap, self.public_keys, trajectory_sha256=trajectory_sha256)
+        except ps.SignatureError as exc:
+            raise BridgeError(409, "PRODUCTION_PACKAGE_INVALID", f"Gói sản xuất không qua kiểm tra chữ ký ({exc.code}): {exc}. "
+                              "Không chạy; báo Quản lý.") from None
+        pen = payload.get("materials", {}).get("pen")
+        if pen and pkg.get("pen"):
+            for key in ("f_target_n", "f_min_n", "f_max_n", "f_hard_n", "v_max_mm_s"):
+                if pen.get(key) is not None and abs(float(pen[key]) - float(pkg["pen"][key])) > 1e-9:
+                    raise BridgeError(409, "PRODUCTION_PACKAGE_INVALID", f"Thông số bút '{key}' của gói khác bản đã ký; không chạy.")
+        return payload
 
     def calibration(self, job_id: int, body: dict[str, Any]) -> dict[str, Any]:
         return self._req("POST", f"/jobs/{job_id}/calibration", json=body)

@@ -31,6 +31,7 @@ from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository
 from app.services import audit, gateway_checkout as checkout, notifications, quotations
 from app.services.eta import EtaService
+from app.services.production_snapshot import SnapshotService
 
 log = logging.getLogger("app")
 
@@ -250,6 +251,7 @@ class PaymentService:
             self.session.flush()
             approved = QuotationRepository(self.session).latest(order.id, (QuotationStatus.APPROVED,))
             EtaService(self.session).set_initial(order, approved.eta if approved else None)        # BR-15
+            SnapshotService(self.session).try_issue(order)          # U1: lock what was paid for (scheduling insists)
             audit.record(self.session, actor_id=None, action="PAYMENT_SUCCESS", entity_type="payment",
                          entity_id=payment.id, new={"order_id": order.id, "amount": str(payment.amount)})
             notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="DEPOSIT_PAID",

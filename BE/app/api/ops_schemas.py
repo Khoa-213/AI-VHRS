@@ -597,6 +597,25 @@ class JobPackageOut(BaseModel):
     ink_hex: str | None
     approach_note: str | None
     preview_url: str | None
+    snapshot: "ProductionSnapshotBlock | None" = None    # U1: signed package; None = legacy job (hash check only)
+    material_drift: list[str] = []                       # U1: catalog edits since the lock (the job uses the locked values)
+
+
+class ProductionSnapshotBlock(BaseModel):
+    """U1. Verify offline: Ed25519 signature of the UTF-8 bytes of `payload` with the public key `key_id`, then
+    SHA-256(payload) == payload_sha256, then payload.sketch.trajectory_sha256 == SHA-256 of the downloaded trajectory."""
+    snapshot_id: int
+    package_id: str
+    schema_: str = Field(alias="schema")
+    payload: str
+    payload_sha256: str
+    signature: str
+    key_id: str
+    signature_algorithm: Literal["Ed25519"] = "Ed25519"
+    model_config = {"populate_by_name": True}
+
+
+JobPackageOut.model_rebuild()
 
 
 class TechJobDetail(JobOut):

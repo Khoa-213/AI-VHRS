@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core import production_signing as ps
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.db.session import set_actor
@@ -34,12 +35,14 @@ from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit, notifications
 from app.services.motion import plan as motion_plan
+from app.services.production_snapshot import SnapshotService, material_drift, materials_of
 from app.services.motion import validate as motion_validate
 from app.services.stroke_ai import trajectory as tj
 
 PACKAGE_URL_TTL = 1800                      # seconds a signed trajectory link stays valid
 RUNNABLE_ROBOT = (RobotStatus.AVAILABLE, RobotStatus.BUSY)
 _RULE_STATUS = {"JOB_STATE_CONFLICT": 409}  # every other JobRuleError is a 422
+_PEN_NUMBERS = ("stroke_width_mm", "f_target_n", "f_min_n", "f_max_n", "f_hard_n", "v_max_mm_s")
 
 
 def _now() -> datetime:
@@ -130,6 +133,39 @@ class TechnicianJobService:
         self.session.commit()
         return AppError(409, "JOB_HASH_MISMATCH", "Gói job không khớp phác thảo đã duyệt. Không thể chạy.")
 
+    def _signed(self, job: ProductionJob, trajectory_sha256: str | None) -> dict[str, Any] | None:
+        """U1: verify the job's signed production snapshot. None = legacy job (created before U1, hash check only).
+
+        Any failure is evidence: job event + audit row + incident are COMMITTED before the 409, and nothing bypasses it."""
+        if job.snapshot_id is None:
+            return None
+        snaps = SnapshotService(self.session)
+        snap = snaps.get(job.snapshot_id)
+        try:
+            return snaps.check(snap, order_id=job.order_id, sketch_id=job.sketch_id, trajectory_sha256=trajectory_sha256)
+        except ps.SignatureError as exc:
+            incident = self.incidents.add(Incident(
+                job_id=job.id, robot_id=job.robot_id, reported_by=self.tech.id, type=IncidentType.OTHER,
+                description=f"Gói sản xuất không qua kiểm tra chữ ký ({exc.code}): {exc}. Không được chạy; cần Quản lý xử lý."))
+            self._event(job, JobEventType.HASH_MISMATCH, payload={"reason": exc.code, "snapshot_id": job.snapshot_id,
+                                                                 "incident_id": incident.id})
+            audit.record(self.session, actor_id=self.tech.id, action="JOB_SIGNATURE_INVALID", entity_type="production_job",
+                         entity_id=job.id, new={"reason": exc.code, "snapshot_id": job.snapshot_id}, ip=self.ip)
+            self.session.commit()
+            raise AppError(409, "PRODUCTION_PACKAGE_INVALID", "Gói sản xuất không khớp bản đã khoá và ký. Không thể chạy.",
+                           {"reason": exc.code}) from exc
+
+    def _locked_pen(self, job: ProductionJob, order: Order) -> dict[str, Any] | None:
+        """Pen values of the job: the ones locked in the snapshot, or the catalog's for a legacy job."""
+        if job.snapshot_id is not None:
+            snap = SnapshotService(self.session).get(job.snapshot_id)
+            pen = json.loads(snap.payload)["materials"]["pen"] if snap else None
+            return {k: (float(v) if k in _PEN_NUMBERS and v is not None else v) for k, v in pen.items()} if pen else None
+        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        return ({"name": pen.name, "category": pen.category, "stroke_width_mm": float(pen.stroke_width_mm),
+                 "f_target_n": float(pen.f_target_n), "f_min_n": float(pen.f_min_n), "f_max_n": float(pen.f_max_n),
+                 "f_hard_n": float(pen.f_hard_n), "v_max_mm_s": float(pen.v_max_mm_s)} if pen else None)
+
     # ------------------------------------------------------------------ reads
     def search(self, *, statuses: list[JobStatus] | None, start: datetime | None, end: datetime | None,
                page: int, page_size: int):
@@ -174,6 +210,7 @@ class TechnicianJobService:
         actual = tj.content_hash(raw)
         if job.package_hash is None or actual != job.package_hash or sketch.content_hash != job.package_hash:
             raise self._hash_mismatch(job, job.package_hash, actual)
+        signed = self._signed(job, actual)
         try:
             pages = tj.parse(json.loads(raw))
         except (ValueError, AppError) as exc:
@@ -184,8 +221,12 @@ class TechnicianJobService:
         self._event(job, JobEventType.DOWNLOADED, payload={"hash": actual, "pages": len(pages)})
         self.session.flush()
         paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
-        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
         ink = self.catalog.ink(order.ink_color_id) if order.ink_color_id else None
+        pen = self._locked_pen(job, order)
+        snapshot, drift = None, []
+        if signed is not None:
+            snapshot = SnapshotService.block(SnapshotService(self.session).get(job.snapshot_id))
+            drift = material_drift(signed["materials"], materials_of(self.catalog, order))
         preview = None
         if sketch.preview_url:
             try:
@@ -199,12 +240,10 @@ class TechnicianJobService:
                 "trajectory_url_expires_in": PACKAGE_URL_TTL, "trajectory_format": tj.FORMAT, "pages": len(pages),
                 "paper": ({"name": paper.name, "gsm": paper.gsm, "surface": paper.surface, "size": paper.size.value}
                           if paper else None),
-                "pen": ({"name": pen.name, "category": pen.category, "stroke_width_mm": float(pen.stroke_width_mm),
-                         "f_target_n": float(pen.f_target_n), "f_min_n": float(pen.f_min_n),
-                         "f_max_n": float(pen.f_max_n), "f_hard_n": float(pen.f_hard_n),
-                         "v_max_mm_s": float(pen.v_max_mm_s)} if pen else None),
+                "pen": ({k: pen.get(k) for k in ("name", "category", *_PEN_NUMBERS)} if pen else None),
                 "ink_name": ink.name if ink else None, "ink_hex": ink.hex_code if ink else None,
-                "approach_note": sketch.approach_note, "preview_url": preview}
+                "approach_note": sketch.approach_note, "preview_url": preview,
+                "snapshot": snapshot, "material_drift": drift}
 
     # ------------------------------------------------------------------ UC-33: prepare and calibrate
     def prepare(self, job_id: int) -> ProductionJob:
@@ -292,10 +331,10 @@ class TechnicianJobService:
                 return None
             return {"status": "FAIL", "passed": False, "error_texts": ["MOTION_BLOCK_MISSING: hiệu chuẩn chưa có khối "
                     "thông số chuyển động (frame_transform.schema = vhrs-motion/1)"], "errors": []}
-        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        pen = self._locked_pen(job, order)
         raw_cfg = dict(block.get("motion") or {})
-        if pen is not None:                                    # the pen profile in the database is authoritative
-            raw_cfg["f_target_n"], raw_cfg["v_max_mm_s"] = float(pen.f_target_n), float(pen.v_max_mm_s)
+        if pen is not None:                                    # the locked pen profile is authoritative (U1)
+            raw_cfg["f_target_n"], raw_cfg["v_max_mm_s"] = pen["f_target_n"], pen["v_max_mm_s"]
         try:
             cfg = motion_plan.MotionConfig.from_dict(raw_cfg)
             ws = motion_validate.Workspace.from_dict(block.get("workspace"))
@@ -327,6 +366,7 @@ class TechnicianJobService:
             raise self._hash_mismatch(job, job.package_hash, sketch.content_hash if sketch else None)   # MSG14
         if job.downloaded_at is None:
             raise AppError(409, "JOB_NOT_DOWNLOADED", "Hãy tải gói job và kiểm tra hash trước khi chạy (UC-32).")
+        self._signed(job, sketch.content_hash)                      # U1: the signed snapshot, checked again right before writing
         if self.calibrations.valid(job.id) is None:
             raise AppError(409, "CALIBRATION_REQUIRED", "Cần hiệu chuẩn mặt giấy và lực trước khi chạy (BR-19).")
         if job.simulation_passed is not True:

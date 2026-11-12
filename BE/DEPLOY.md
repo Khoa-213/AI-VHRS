@@ -83,6 +83,18 @@ only the owner switches it on. An Admin can run the jobs at once with `POST /api
 the last run with `GET /api/v1/admin/jobs/last`. The live notification stream (`/me/notifications/stream`) assumes ONE uvicorn
 worker (the Dockerfile's `--workers 1`).
 
+## 1d. Signed production packages (upgrade U1, required before scheduling)
+
+| Variable | Value |
+|---|---|
+| `PRODUCTION_SIGNING_KEY` | Ed25519 private key from `python scripts/production_key.py new` (run on your own machine; paste into Render only). Without it `POST /manager/orders/{id}/schedule` answers `503 PRODUCTION_SIGNING_NOT_CONFIGURED` |
+| `PRODUCTION_SIGNING_KEY_ID` | short name of that key, e.g. `k2026a` (default `k1`) |
+| `PRODUCTION_VERIFY_KEYS` | only while rotating: JSON `{key_id: public key}` of the OLD keys whose jobs are not finished yet |
+
+Then give every Robot Agent station the PUBLIC half: `python scripts/production_key.py public` (with the same environment)
+prints `{key_id: public key}`; put it in the station's `agent.json` as `"production_public_keys"`. The private key never
+leaves the server. Migration `0016` must be applied first (`alembic upgrade head`).
+
 ## 2. Verify
 
 ```bash

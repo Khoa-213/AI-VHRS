@@ -26,6 +26,7 @@ from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit, notifications
 from app.services.eta import EtaService
+from app.services.production_snapshot import SnapshotService
 
 SCHEDULABLE = (ProductionStatus.PENDING_SCHEDULE, ProductionStatus.FAILED, ProductionStatus.REWRITE_REQUIRED)
 DEFAULT_LEAD_MIN = 60            # earliest start = now + lead (time to prepare paper/pen)
@@ -210,13 +211,15 @@ class SchedulingService:
             set_actor(self.session, self.manager.id, "Xếp lại lịch sản xuất")
             order.production_status = ProductionStatus.PENDING_SCHEDULE
             self.session.flush()
+        # U1: the job runs the signed snapshot of what the customer approved and paid for, never the live rows
+        snapshot = SnapshotService(self.session).issue(order, actor_id=self.manager.id)
         tech_name, robot_code = tech.full_name, robot.code       # read now: after a failed flush the session cannot load anything
         try:
             job = self.jobs.add(ProductionJob(
                 order_id=order.id, sketch_id=sketch.id, robot_id=robot.id, technician_id=tech.id,
                 scheduled_by=self.manager.id, status=JobStatus.SCHEDULED, is_rewrite=rewrite, slot_start=slot_start,
                 slot_end=slot_end, estimated_duration_min=minutes, package_uri=sketch.trajectory_uri,
-                package_hash=sketch.content_hash, packaged_at=_now()))                   # FR-38: the job's package
+                package_hash=sketch.content_hash, packaged_at=_now(), snapshot_id=snapshot.id))   # FR-38: the job's package
         except IntegrityError as exc:
             # The checks above read the schedule without a lock on the technician, so a concurrent request can still slip a
             # booking in between; the database's exclusion constraints are the authority and decide here.
