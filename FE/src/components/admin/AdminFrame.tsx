@@ -5,11 +5,11 @@ import { useT } from '../../i18n'
 import { Link, navigate } from '../../router/router'
 import { listAccounts } from '../../services/admin'
 import { signOut, useUser } from '../../store/store'
+import AppearanceSwitch from '../ui/AppearanceSwitch'
 import BrandLogo from '../ui/BrandLogo'
 import LanguageToggle from '../ui/LanguageToggle'
 import NotificationBell from '../ui/NotificationBell'
 import SkipLink from '../ui/SkipLink'
-import ThemeToggle from '../ui/ThemeToggle'
 import '../ui/language.css'
 import './admin-shell.css'
 import './admin-ui.css'
@@ -89,7 +89,7 @@ export default function AdminFrame({
             {open ? <X size={22} aria-hidden /> : <List size={22} aria-hidden />}
           </button>
           <div className="adm-tools">
-            <ThemeToggle className="adm-tool" />
+            <AppearanceSwitch className="adm-theme" />
             <NotificationBell variant="adm" />
             <LanguageToggle />
             <div className="adm-me">

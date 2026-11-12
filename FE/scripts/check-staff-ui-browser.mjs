@@ -89,8 +89,8 @@ try {
 
   const goto = async(path) => {await command('Page.navigate',{url:`http://127.0.0.1:${port}${path}`});await wait(`!!document.querySelector('.ws')`,'shell');await sleep(300)}
   await goto('/staff')
-  for(const lang of ['en','vi','ja']) {
-    await evaluate(`localStorage.setItem('aivhrs-lang','${lang}')`)
+  for(const theme of ['light','dark']) for(const lang of ['en','vi','ja']) {
+    await evaluate(`localStorage.setItem('aivhrs-lang','${lang}');localStorage.setItem('aivhrs-theme','${theme}')`)
     for(const width of [1440,1024,768,390]) {
       await command('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<500})
       for(const route of ['/staff','/staff/review','/staff/review/42','/staff/fulfillment/42','/staff/refunds']) {
@@ -99,15 +99,35 @@ try {
         await wait(`!!document.querySelector('.ws-staff')`,'staff styling')
         assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),`Overflow: ${route} ${width} ${lang}`)
         assert.equal(await evaluate(`document.querySelectorAll('.staff-nav-label').length`),4)
-        assert.equal(await evaluate(`document.querySelectorAll('.staff-nav a').length`),4,'All navigation remains labelled and visible')
-        assert.ok(await evaluate(`(()=>{const e=document.querySelector('.staff-nav').getBoundingClientRect();return e.left>=0&&e.right<=innerWidth})()`),'Navigation fits viewport')
+        assert.equal(await evaluate(`document.querySelectorAll('.staff-nav a').length`),4)
+        assert.equal(await evaluate(`document.documentElement.dataset.theme`),theme,'Saved theme applied')
+        assert.equal(await evaluate(`document.querySelectorAll('.staff-sidebar .staff-nav a').length`),4)
+        assert.equal(await evaluate(`document.querySelectorAll('.staff-sidebar .appearance-switch, .staff-sidebar .nbell, .staff-sidebar .staff-user').length`),0)
+        await evaluate(`document.querySelector('.staff-user-button').click()`)
+        assert.ok(await evaluate(`document.querySelector('.staff-account-panel button')!==null`),'Sign out in account dropdown')
+        await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`)
+        assert.equal(await evaluate(`document.querySelector('.staff-account-panel')===null`),true)
+        await evaluate(`document.querySelector('.staff-header .nbell-btn').click()`)
+        await wait(`!!document.querySelector('.staff-header .nbell-pop')`,'Notifications open')
+        assert.ok(await evaluate(`(()=>{const r=document.querySelector('.nbell-pop').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth})()`),'Notification popup fits viewport: '+JSON.stringify(await evaluate(`({width:innerWidth,rect:document.querySelector('.nbell-pop').getBoundingClientRect().toJSON()})`)))
+        await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`)
+        if(width<=980) {
+          await evaluate(`document.querySelector('.staff-sidebar-menu').click()`)
+          assert.ok(await evaluate(`document.querySelector('.ws-staff').classList.contains('staff-sidebar-open')`))
+          await wait(`document.querySelector('.staff-nav').getBoundingClientRect().left>=0`,'sidebar entrance')
+        }
+        assert.ok(await evaluate(`(()=>{const e=document.querySelector('.staff-nav').getBoundingClientRect();return e.left>=0&&e.right<=innerWidth})()`),'Sidebar navigation fits viewport')
+        if(width<=980) {
+          await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`)
+          await wait(`!document.querySelector('.ws-staff').classList.contains('staff-sidebar-open')`,'Escape closes sidebar')
+          assert.equal(await evaluate(`document.activeElement===document.querySelector('.staff-sidebar-menu')`),true,'Focus returns to menu')
+        }
         if(route==='/staff') {
-          if(width===1440) assert.ok(await evaluate(`(()=>{const n=document.querySelector('.staff-nav').getBoundingClientRect();const h=document.querySelector('.staff-topbar').getBoundingClientRect();return Math.abs((n.left+n.right-h.left-h.right)/2)<2})()`),'Navigation is centred in header')
-          await evaluate(`window.scrollTo(0,500)`)
+          await evaluate(`document.querySelector('.ws-staff>.app2').scrollTo({top:500,behavior:'instant'})`)
           await sleep(100)
-          assert.ok(await evaluate(`(()=>{const r=document.querySelector('.staff-topbar').getBoundingClientRect();return r.top>=0&&r.top<=13&&r.bottom<=innerHeight})()`),'Header stays pinned while scrolling')
-          await evaluate(`window.scrollTo(0,0)`)
-
+          assert.ok(await evaluate(`(()=>{const h=document.querySelector('.staff-header').getBoundingClientRect(),a=document.querySelector('.ws-staff>.app2').getBoundingClientRect();return a.top>=h.bottom&&h.top===0&&document.documentElement.scrollHeight<=innerHeight+1})()`),'Content scrolls below header inside viewport frame')
+          assert.ok(await evaluate(`(()=>{const r=document.querySelector('.staff-header').getBoundingClientRect();return r.top>=0&&r.top<=21})()`),'Navigation remains available while scrolling: '+JSON.stringify(await evaluate(`({width:innerWidth,scroll:scrollY,top:document.querySelector('.staff-header').getBoundingClientRect().top,root:document.querySelector('.ws-staff').getBoundingClientRect().height,position:getComputedStyle(document.querySelector('.staff-sidebar')).position})`)))
+          await evaluate(`document.querySelector('.ws-staff>.app2').scrollTo({top:0,behavior:'instant'})`)
           const before=await evaluate(`Number(document.querySelector('.staff-chart-total b').textContent)`)
           await evaluate(`document.querySelector('.staff-period button:last-child').click()`)
           await wait(`document.querySelector('.staff-period button:last-child').getAttribute('aria-pressed')==='true'`,'30 day chart')
@@ -129,6 +149,8 @@ try {
         }
         if(route!=='/staff') assert.equal(await evaluate(`document.querySelector('.staff-back').getAttribute('href')`),'/staff')
         if(route==='/staff/review/42') {
+          assert.equal(await evaluate(`getComputedStyle(document.querySelector('.wk-order-head')).backgroundColor`),await evaluate(`getComputedStyle(document.querySelector('.ol')).backgroundColor`),'Order surfaces follow the selected theme')
+          assert.equal(await evaluate(`getComputedStyle(document.querySelector('.wk-block')).backgroundColor`),await evaluate(`getComputedStyle(document.querySelector('.ol')).backgroundColor`),'Detail cards follow the selected theme')
           assert.ok(await evaluate(`document.querySelector('.wk-content .opv-svg').getBoundingClientRect().height<=281`),'Preview must stay compact')
           if(width===1440) {
             assert.ok(await evaluate(`Math.abs(document.querySelector('.wk-content').getBoundingClientRect().top-document.querySelector('.wk-specs').getBoundingClientRect().top)<2`),'Preview and specs share a row')
@@ -157,13 +179,13 @@ try {
         }
         if(lang==='vi'&&[1440,390].includes(width)&&['/staff','/staff/review','/staff/review/42','/staff/fulfillment/42'].includes(route)) {
           const shot=await command('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})
-          await writeFile(join(scratch,`${route.replaceAll('/','-')}-${width}.png`),Buffer.from(shot.data,'base64'))
+          await writeFile(join(scratch,`${route.replaceAll('/','-')}-${width}-${theme}.png`),Buffer.from(shot.data,'base64'))
         }
       }
     }
   }
   assert.equal(mutations,0,'Visual navigation must not mutate orders')
   assert.deepEqual(errors,[])
-  console.log('PASS: Staff dashboard, review/request-info, fulfillment, refunds; 3 languages at 4 widths, horizontal navigation/pipeline/chart filters/back, no overflow or data mutations. Screenshots: '+scratch)
+  console.log('PASS: Staff dashboard, review/request-info, fulfillment, refunds; 3 languages at 4 widths, sidebar and mobile drawer/light-dark/pipeline/chart filters/back, no overflow or data mutations. Screenshots: '+scratch)
 
 } finally { ws?.close(); browser?.kill(); server.closeAllConnections(); server.close() }

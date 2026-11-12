@@ -2133,7 +2133,10 @@ export const en = {
   "sp.note": "Note for the courier (optional, up to 300 characters)",
   "sp.packed": "I checked the recipient, address and product, and packed the order for handover.",
   "sp.created": "Waybill created. Prepare the label and wait for the carrier to collect the parcel.",
-  "sp.shipments": "Waybill history, newest first",
+  "sp.expand": "Expand",
+  "sp.collapse": "Collapse",
+  "sp.newestFirst": "Newest first",
+  "sp.shipments": "Waybill history",
   "sp.latest": "Latest waybill",
   "sp.mode": "Carrier mode",
   "sp.mock": "Simulated carrier",
@@ -2624,6 +2627,9 @@ export const en = {
   "staff.ui.days": "{n} days",
   "staff.ui.received": "{n} orders received in the last {days} days",
   "adm.backOverview": "Back to overview",
+  "adm.theme.label": "Appearance",
+  "adm.theme.light": "Light",
+  "adm.theme.dark": "Dark",
 } as const
 
 export type Key = keyof typeof en

@@ -1,5 +1,5 @@
-import { ArrowLeft, Money, Truck, CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
-import type { ReactNode } from 'react'
+import { ArrowLeft, CaretDown, List, X, Money, Truck, CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
 import { Link } from '../../router/router'
@@ -15,9 +15,11 @@ import NotificationBell from '../ui/NotificationBell'
 import SkipLink from '../ui/SkipLink'
 import RobotAlertBell from './RobotAlertBell'
 import BrandLogo from '../ui/BrandLogo'
+import AppearanceSwitch from '../ui/AppearanceSwitch'
 import './ws.css'
 import './workshop.css'
 import './staff-ui.css'
+import './staff-theme.css'
 
 export type Area = 'staff' | 'manager' | 'tech' | 'admin'
 export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit' | 'refunds'
@@ -83,6 +85,43 @@ export default function Shell({
   const t = useT()
   const user = useUser()
 
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const sidebar = useRef<HTMLElement>(null)
+  const menuButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!sidebarOpen || area !== 'staff') return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    sidebar.current?.querySelector<HTMLElement>('a, button')?.focus()
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSidebarOpen(false)
+      if (event.key === 'Tab') {
+        const nodes = [...(sidebar.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled)') ?? [])].filter((node) => node.getClientRects().length)
+        const first = nodes[0], last = nodes[nodes.length - 1]
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+      }
+    }
+    document.addEventListener('keydown', key)
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener('keydown', key); menuButton.current?.focus() }
+  }, [sidebarOpen, area])
+
+  const [accountOpen, setAccountOpen] = useState(false)
+  const account = useRef<HTMLDivElement>(null)
+  const accountButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!accountOpen) return
+    const outside = (event: PointerEvent) => {
+      if (!account.current?.contains(event.target as Node)) setAccountOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setAccountOpen(false); accountButton.current?.focus() }
+    }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape)
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape) }
+  }, [accountOpen])
+
   const c = useCounts(area)
 
   const icon = (I: typeof SquaresFour) => <I size={22} weight="regular" aria-hidden />
@@ -120,28 +159,41 @@ export default function Shell({
   const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
 
   if (area === 'staff') return (
-    <div className={`ws ws-staff${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
+    <div className={`ws ws-staff${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
       <SkipLink />
-      <header className="staff-topbar">
-        <div className="staff-topline">
-          <Link to="/staff" className="staff-brand" aria-label={t('rail.staffMark')}><BrandLogo theme="light" /></Link>
-          <div className="staff-account">
-            <NotificationBell variant="ws" />
-            <LanguageToggle />
-            <div className="me2"><span className="avatar">{initials(name)}</span><div>{name}<small>{role}</small></div></div>
-            <button type="button" className="staff-signout" title={t('rail.signOut')} aria-label={t('rail.signOut')} onClick={() => signOut()}><SignOut size={19} aria-hidden /></button>
+      <header className="staff-header">
+        <div className="staff-header-brand">
+          <button ref={menuButton} type="button" className="staff-sidebar-menu" aria-label={t('adm.menuOpen')} aria-expanded={sidebarOpen} aria-controls="staff-sidebar" onClick={() => { setAccountOpen(false); setSidebarOpen(true) }}><List size={22} aria-hidden /></button>
+          <Link to="/staff" className="staff-brand" aria-label={t('rail.staffMark')}><BrandLogo /></Link>
+        </div>
+        <div className="staff-header-tools">
+          <NotificationBell variant="ws" />
+          <AppearanceSwitch className="staff-theme" />
+          <LanguageToggle />
+          <div ref={account} className="staff-user" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setAccountOpen(false) }}>
+            <button ref={accountButton} type="button" className="staff-user-button" aria-label={name || role} aria-expanded={accountOpen} aria-controls="staff-account-panel" onClick={() => setAccountOpen(!accountOpen)}>
+              <span className="avatar">{initials(name)}</span><span className="staff-user-name">{name}<small>{role}</small></span><CaretDown size={14} aria-hidden />
+            </button>
+            {accountOpen && <div className="staff-account-panel" id="staff-account-panel">
+              <div className="staff-account-identity">{name}<small>{role}</small></div>
+              <button type="button" onClick={() => signOut()}><SignOut size={18} aria-hidden />{t('rail.signOut')}</button>
+            </div>}
           </div>
         </div>
-        <div className="staff-navline">
-          <nav className="staff-nav" aria-label={t('rail.staff')}>
-            {items.filter((it): it is Item => it !== 'gap').map((it) => (
-              <Link key={it.key} to={it.to} className={active === it.key ? 'on' : undefined} aria-current={active === it.key ? 'page' : undefined}>
-                {it.icon}<span className="staff-nav-label">{it.label}</span>{!!it.count && <span className="staff-nav-count">{it.count}</span>}
-              </Link>
-            ))}
-          </nav>
-        </div>
       </header>
+      <aside ref={sidebar} className="staff-sidebar" id="staff-sidebar" aria-label={t('rail.staff')}>
+        <div className="staff-sidebar-head">
+          <button type="button" className="staff-sidebar-close" aria-label={t('adm.menuClose')} onClick={() => setSidebarOpen(false)}><X size={20} aria-hidden /></button>
+        </div>
+        <nav className="staff-nav" aria-label={t('rail.staff')}>
+          {items.filter((it): it is Item => it !== 'gap').map((it) => (
+            <Link key={it.key} to={it.to} className={active === it.key ? 'on' : undefined} aria-current={active === it.key ? 'page' : undefined} onClick={() => setSidebarOpen(false)}>
+              {it.icon}<span className="staff-nav-label">{it.label}</span>{!!it.count && <span className="staff-nav-count">{it.count}</span>}
+            </Link>
+          ))}
+        </nav>
+      </aside>
+      <button type="button" className="staff-sidebar-scrim" aria-label={t('adm.menuClose')} onClick={() => setSidebarOpen(false)} />
       <div className="app2">
         <main className="main2" id="main">
           <header className="hd">

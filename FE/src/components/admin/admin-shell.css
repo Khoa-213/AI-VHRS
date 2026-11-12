@@ -52,6 +52,11 @@
 .adm-search-top input:focus{outline:none}
 .adm-search-top:focus-within{outline:2px solid var(--accent);outline-offset:2px}
 .adm-tools{margin-left:auto;display:flex;align-items:center;gap:8px}
+.adm-theme{display:inline-flex;flex:none;align-items:center;gap:3px;padding:4px;border:1px solid var(--fx-08);border-radius:999px;background:var(--tray)}
+.adm-theme button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 11px;border:0;border-radius:999px;background:transparent;color:var(--t4);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.adm-theme button[aria-pressed='true']{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.adm-theme button:hover:not([aria-pressed='true']){background:var(--tray-hover);color:var(--t1)}
+.adm-theme button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .adm-tools .adm-tool,.adm-tools .nbell-btn{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:44px;padding:0;border:1px solid var(--fx-08);border-radius:999px;background:var(--tray);color:var(--t1);cursor:pointer}
 .adm-tools .adm-tool:hover,.adm-tools .nbell-btn:hover{background:var(--tray-hover)}
 .adm-tools .lang{height:44px;padding:0 4px;border:1px solid var(--fx-08);border-radius:999px;background:var(--tray)}
@@ -83,7 +88,7 @@
 }
 @media (max-width:560px){
   .adm-top{flex-wrap:wrap}
-  .adm-tools{gap:6px}
+  .adm-tools{gap:6px;flex:1 1 100%;flex-wrap:wrap;justify-content:flex-end}
 }
 @media (prefers-reduced-motion:reduce){
   .adm-side{transition:none}

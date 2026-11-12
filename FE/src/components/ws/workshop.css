@@ -14,6 +14,35 @@
 .ws .fulfillment .wk-rows>div{flex-wrap:wrap}
 .ws .fulfillment .wk-rows dd{max-width:100%}
 .ws .sp-demo{background:var(--beige1)}
+/* Disclosure controls only affect presentation; the existing shipping forms stay mounted. */
+.ws details.sp-disclosure{display:block;min-width:0}
+.ws details>summary{padding:10px 12px;border:1px solid var(--line-strong);border-radius:10px;background:var(--field);color:var(--ink);cursor:pointer;font-weight:600;line-height:1.5}
+.ws details>summary:hover{background:color-mix(in srgb,var(--field) 85%,var(--line))}
+.ws details>summary:focus-visible{outline:2px solid var(--accent-text);outline-offset:3px}
+.ws .sp-fold-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:54px;padding:10px 12px;border:1px solid var(--line-strong);border-inline-start:3px solid var(--accent-text);list-style:none;cursor:pointer;border-radius:10px;background:var(--field)}
+.ws .sp-fold-summary::-webkit-details-marker{display:none}
+.ws .sp-fold-summary::marker{content:''}
+.ws .sp-fold-summary h3,.ws .sp-fold-summary h4{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0;font-size:16px;line-height:1.5;font-weight:650;color:var(--ink)}
+.ws .sp-fold-toggle{display:flex;align-items:center;gap:7px;flex:none;min-height:32px;padding:5px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:12px;font-weight:600;color:var(--ink2)}
+.ws .sp-fold-toggle svg{flex:none;transition:transform .15s}
+.ws .sp-fold-summary:focus-visible{outline:2px solid var(--accent-text);outline-offset:4px}
+.ws .sp-disclosure>.sp-fold-summary .sp-fold-open{display:none}
+.ws .sp-disclosure[open]>.sp-fold-summary .sp-fold-open{display:inline}
+.ws .sp-disclosure[open]>.sp-fold-summary .sp-fold-closed{display:none}
+.ws .sp-disclosure[open]>.sp-fold-summary svg{transform:rotate(180deg)}
+.ws .sp-disclosure[open]>.sp-fold-summary{background:var(--acc-soft);border-color:var(--line-strong);border-inline-start-color:var(--accent-text)}
+.ws .sp-fold-body,.ws .sp-history-body{display:flex;flex-direction:column;gap:14px;min-width:0;padding-top:14px}
+.ws .sp-history{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.ws .sp-history>.sp-fold-summary h4{font-size:14px}
+.ws .sp-fold-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;padding:1px 6px;border-radius:6px;background:var(--field);color:var(--ink3);font-size:11px;font-weight:600}
+.ws .sp-form.sp-demo{min-inline-size:0;max-width:100%;padding:18px;border:1px solid #e6dcc1;border-radius:16px;background:#fcf9ef}
+.ws .sp-demo legend{float:left;width:100%;max-width:100%;margin:0 0 14px;padding:0;color:#56482a;font-size:14px;line-height:1.5;font-weight:650;white-space:normal;overflow-wrap:anywhere}
+.ws .sp-demo legend+*{clear:both}
+.ws .sp-demo .wk-warn{margin:0;padding:0;background:transparent;border:0;color:#66583d;line-height:1.65;white-space:normal;overflow-wrap:anywhere}
+.ws .sp-demo .vh-label,.ws .sp-demo .wk-check{min-width:0;max-width:100%;color:var(--ink2);font-size:13px;line-height:1.6}
+.ws .sp-demo .vh-input,.ws .sp-demo .vh-select,.ws .sp-demo .vh-textarea{width:100%;max-width:100%;box-sizing:border-box}
+@media(max-width:480px){.ws .sp-fold-summary{gap:8px}.ws .sp-fold-toggle{font-size:11px;gap:4px}.ws .sp-form.sp-demo{padding:14px}}
+@media(prefers-reduced-motion:reduce){.ws .sp-fold-toggle svg{transition:none}}
 .ws .wk-filters [hidden]{display:none}
 @media(max-width:760px){
   .ws.ws-fulfillment .app2{align-content:flex-start}

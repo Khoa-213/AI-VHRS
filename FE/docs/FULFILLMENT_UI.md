@@ -12,6 +12,10 @@ Frontend integration only. No backend implementation or business rules were chan
 
 ## Delivery
 
+The **Shipping and collection** section can be expanded or collapsed (initially open). Its **Waybill history** starts collapsed and shows the number of waybills; expand it to see records, newest first. Collapsing either section keeps the forms mounted and preserves unsent input. Both disclosures work in order details and the fulfillment desk, including Manager read-only views.
+
+The mock carrier test form keeps its original permissions, confirmation checkbox and validation. Its legend sits inside the warning card, and the warning text and fields wrap on small screens.
+
 1. Customer chooses a service and pays the final balance plus shipping. Backend moves the order to `READY_TO_DELIVER`.
 2. Assigned Staff verify recipient/contact/address, paid amounts, the saved carrier/service and packing.
 3. Staff create a waybill with an optional note, at most 300 characters. Package dimensions/weight and carrier selection are calculated by the backend, not invented by the UI.

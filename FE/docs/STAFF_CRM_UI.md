@@ -12,7 +12,7 @@ Run `npm.cmd run dev` in `FE`, sign in as Staff, then open:
 
 ## Source
 
-- `src/components/ws/Shell.tsx`: Staff horizontal navigation; Manager and Technician retain the original shell.
+- `src/components/ws/Shell.tsx`: Staff sticky utility header (logo, notifications, appearance, language and account dropdown with sign out), workflow sidebar and mobile drawer; Manager and Technician retain the original shell.
 - `src/components/ws/staff-ui.css`: scoped visual tokens, cards, filters, pipeline and responsive layout.
 - `src/pages/staff/StaffDashboard.tsx`: KPIs and chart from the existing workshop API data.
 - `src/pages/staff/Workbench.tsx`: presentation classes for pipeline versus selected-order detail.
@@ -30,4 +30,8 @@ node scripts/check-fulfillment-browser.mjs
 node scripts/check-admin-browser.mjs
 ```
 
-Browser checks intercept API calls with local fixtures: no credentials, real orders or production writes. Staff checks cover English/Vietnamese/Japanese, desktop/tablet/mobile, horizontal navigation, pipeline-to-detail links, existing scope/stage/search behavior, chart periods and input guards. Fulfillment checks cover existing shipment/pickup behavior and Manager read-only controls. These checks do not verify a live deployment or real carrier callbacks.
+Browser checks intercept API calls with local fixtures: no credentials, real orders or production writes. Staff checks cover English/Vietnamese/Japanese, desktop/tablet/mobile, sidebar/drawer, saved light/dark mode, pipeline-to-detail links, existing scope/stage/search behavior, chart periods and input guards. Fulfillment checks cover existing shipment/pickup behavior and Manager read-only controls. These checks do not verify a live deployment or real carrier callbacks.
+
+The Staff sidebar stays visible on desktop and opens from the menu button on tablet/mobile. Escape, clicking outside or choosing a route closes the drawer, with focus returned to its trigger. Content components, filters and operations retain their existing layout and handlers.
+
+The Staff frame fills the viewport: a 72px top header, a 224px workflow sidebar (200px on smaller desktops), and an independently scrolling content pane. The header and sidebar have straight shared edges instead of floating cards. Mobile keeps a two-row 124px utility header and a navigation drawer. Content never scrolls behind the header.
