@@ -1,4 +1,4 @@
-import { ArrowLeft, CaretDown, List, X, Money, Truck, CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
+import { ArrowLeft, List, X, Money, Truck, CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
@@ -20,6 +20,7 @@ import './ws.css'
 import './workshop.css'
 import './staff-ui.css'
 import './staff-theme.css'
+import './staff-depth.css'
 
 export type Area = 'staff' | 'manager' | 'tech' | 'admin'
 export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit' | 'refunds'
@@ -106,22 +107,6 @@ export default function Shell({
     return () => { document.body.style.overflow = previousOverflow; document.removeEventListener('keydown', key); menuButton.current?.focus() }
   }, [sidebarOpen, area])
 
-  const [accountOpen, setAccountOpen] = useState(false)
-  const account = useRef<HTMLDivElement>(null)
-  const accountButton = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (!accountOpen) return
-    const outside = (event: PointerEvent) => {
-      if (!account.current?.contains(event.target as Node)) setAccountOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setAccountOpen(false); accountButton.current?.focus() }
-    }
-    document.addEventListener('pointerdown', outside)
-    document.addEventListener('keydown', escape)
-    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape) }
-  }, [accountOpen])
-
   const c = useCounts(area)
 
   const icon = (I: typeof SquaresFour) => <I size={22} weight="regular" aria-hidden />
@@ -163,21 +148,17 @@ export default function Shell({
       <SkipLink />
       <header className="staff-header">
         <div className="staff-header-brand">
-          <button ref={menuButton} type="button" className="staff-sidebar-menu" aria-label={t('adm.menuOpen')} aria-expanded={sidebarOpen} aria-controls="staff-sidebar" onClick={() => { setAccountOpen(false); setSidebarOpen(true) }}><List size={22} aria-hidden /></button>
+          <button ref={menuButton} type="button" className="staff-sidebar-menu" aria-label={t('adm.menuOpen')} aria-expanded={sidebarOpen} aria-controls="staff-sidebar" onClick={() => setSidebarOpen(true)}><List size={22} aria-hidden /></button>
           <Link to="/staff" className="staff-brand" aria-label={t('rail.staffMark')}><BrandLogo /></Link>
         </div>
         <div className="staff-header-tools">
           <NotificationBell variant="ws" />
           <AppearanceSwitch className="staff-theme" />
           <LanguageToggle />
-          <div ref={account} className="staff-user" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setAccountOpen(false) }}>
-            <button ref={accountButton} type="button" className="staff-user-button" aria-label={name || role} aria-expanded={accountOpen} aria-controls="staff-account-panel" onClick={() => setAccountOpen(!accountOpen)}>
-              <span className="avatar">{initials(name)}</span><span className="staff-user-name">{name}<small>{role}</small></span><CaretDown size={14} aria-hidden />
-            </button>
-            {accountOpen && <div className="staff-account-panel" id="staff-account-panel">
-              <div className="staff-account-identity">{name}<small>{role}</small></div>
-              <button type="button" onClick={() => signOut()}><SignOut size={18} aria-hidden />{t('rail.signOut')}</button>
-            </div>}
+          <div className="staff-user">
+            <Link to="/account/profile" className="staff-user-button" aria-label={t('acct.nav.profile')} title={t('acct.nav.profile')}>
+              <span className="avatar">{initials(name)}</span><span className="staff-user-name">{name}<small>{role}</small></span>
+            </Link>
           </div>
         </div>
       </header>
@@ -192,6 +173,9 @@ export default function Shell({
             </Link>
           ))}
         </nav>
+        <div className="staff-sidebar-footer">
+          <button type="button" className="staff-sidebar-signout" onClick={() => signOut()}><SignOut size={18} aria-hidden />{t('rail.signOut')}</button>
+        </div>
       </aside>
       <button type="button" className="staff-sidebar-scrim" aria-label={t('adm.menuClose')} onClick={() => setSidebarOpen(false)} />
       <div className="app2">

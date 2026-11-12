@@ -177,3 +177,7 @@
 /* Saved: stays until the next edit, so it cannot be missed below a long form */
 .co-root .ac-saved{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--good-1);color:var(--good);font-size:13px;font-weight:600}
 .co-root .ac-actions .co-btn:disabled{opacity:.55}
+
+.ac-workspace-back{display:inline-flex;align-items:center;gap:8px;width:fit-content;margin-bottom:20px;padding:8px 0;color:var(--t3);font-size:14px;font-weight:600}
+.ac-workspace-back:hover{color:var(--t1)}
+.ac-workspace-back:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:4px}

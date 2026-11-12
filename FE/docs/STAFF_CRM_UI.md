@@ -12,7 +12,7 @@ Run `npm.cmd run dev` in `FE`, sign in as Staff, then open:
 
 ## Source
 
-- `src/components/ws/Shell.tsx`: Staff sticky utility header (logo, notifications, appearance, language and account dropdown with sign out), workflow sidebar and mobile drawer; Manager and Technician retain the original shell.
+- `src/components/ws/Shell.tsx`: Staff sticky utility header (logo, notifications, appearance, language and profile link; sign out is at the bottom of the sidebar), workflow sidebar and mobile drawer; Manager and Technician retain the original shell.
 - `src/components/ws/staff-ui.css`: scoped visual tokens, cards, filters, pipeline and responsive layout.
 - `src/pages/staff/StaffDashboard.tsx`: KPIs and chart from the existing workshop API data.
 - `src/pages/staff/Workbench.tsx`: presentation classes for pipeline versus selected-order detail.
@@ -35,3 +35,9 @@ Browser checks intercept API calls with local fixtures: no credentials, real ord
 The Staff sidebar stays visible on desktop and opens from the menu button on tablet/mobile. Escape, clicking outside or choosing a route closes the drawer, with focus returned to its trigger. Content components, filters and operations retain their existing layout and handlers.
 
 The Staff frame fills the viewport: a 72px top header, a 224px workflow sidebar (200px on smaller desktops), and an independently scrolling content pane. The header and sidebar have straight shared edges instead of floating cards. Mobile keeps a two-row 124px utility header and a navigation drawer. Content never scrolls behind the header.
+
+The Staff account control opens the shared `/account/profile` page directly, with a link back to `/staff`. The existing `/me` API supports all signed-in roles: GET reads the account and PATCH saves name/phone (the backend also accepts structured addresses). The shared profile UI still stores its free-text address, bio and avatar on the device. Sign out remains a separate button at the bottom of the Staff sidebar.
+
+Pipeline stage headings use a white surface in light mode and the matching card surface in dark mode, with simple hover/focus feedback and no orbit animation. The outer tinted column panel is removed. This affects presentation only.
+
+The Staff depth layer (`staff-depth.css`) adds navy atmospheric gradients (no abstract 3D shapes), glass-like frame surfaces and layered card shadows. They do not alter artwork, data, workflows or other roles.
