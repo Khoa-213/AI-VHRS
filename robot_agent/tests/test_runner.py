@@ -333,3 +333,13 @@ def test_rejected_robot_command_ends_in_fault_and_never_approves_dry_run(tmp_pat
         assert not progress.exists()  # failed rehearsal must not certify any mode
     else:
         assert json.loads(progress.read_text())["state"] == "FAULT"
+
+
+def test_the_plan_digest_is_unchanged_while_the_optional_jerk_limit_is_off():
+    """U7: adding the opt-in j_max field must not change any digest (so no AUTHORIZE code) of a station without it."""
+    import hashlib
+    legacy = {k: v for k, v in CFG.__dict__.items() if k != "j_max_mm_s3"}
+    blob = json.dumps({"hash": HASH, "probes": PROBES, "cfg": legacy, "ws": WS.__dict__}, sort_keys=True, default=str)
+    assert plan_digest(HASH, PROBES, CFG, WS) == hashlib.sha256(blob.encode()).hexdigest()
+    jerk = MotionConfig(**{**CFG.__dict__, "j_max_mm_s3": 50000.0})
+    assert plan_digest(HASH, PROBES, jerk, WS) != plan_digest(HASH, PROBES, CFG, WS)     # on: a different plan

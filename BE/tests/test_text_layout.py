@@ -357,7 +357,8 @@ def test_the_engine_places_the_text_and_keeps_the_complexity():
     assert abs(centre(placed.pages[0].strokes)[1] - (30 + 210 - 15) / 2) < 0.01
     canvas = {"strokes": [{"points": [{"x": 10, "y": 10}, {"x": 20, "y": 12}]}]}
     drawn = engine.generate_ot3(SHORT, canvas, alignment="CENTER", **kw, layout=lay)
-    assert drawn.pages[0].strokes[-1].points[0] == (10.0, 10.0)                      # the drawing stays where it was drawn
+    # the drawing stays where it was drawn (U7 may move it in the writing order and draw it the other way)
+    assert [sorted([s.points[0], s.points[-1]]) for s in drawn.pages[0].strokes if s.kind == "canvas"] == [[(10.0, 10.0), (20.0, 12.0)]]
     with pytest.raises(AppError) as exc:
         engine.generate_ot3(SHORT, None, alignment="LEFT", **kw, layout={"margins_mm": {"left": 80, "right": 80}})
     assert exc.value.code == "MARGINS_TOO_LARGE"

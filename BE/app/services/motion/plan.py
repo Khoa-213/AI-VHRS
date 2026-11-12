@@ -20,6 +20,7 @@ from dataclasses import dataclass, field, fields
 from typing import Any
 
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 
 from app.services.motion.frame import PaperFrame
 from app.services.stroke_ai.trajectory import Page
@@ -27,6 +28,10 @@ from app.services.stroke_ai.trajectory import Page
 DEFAULT_DS_MM = 0.2          # SRS S5 resampling step
 DEFAULT_CORNER_DEG = 60.0    # SRS S5: corners sharper than this are kept as vertices
 V_FLOOR_MM_S = 5.0           # SRS S6: speed at the start / end of a stroke and at corners
+
+
+OPTIONAL = frozenset({"j_max_mm_s3"})    # MotionConfig fields that may stay None (feature off)
+JERK_MAX_ITER = 400
 
 
 class PlanError(ValueError):
@@ -47,15 +52,19 @@ class MotionConfig:
     max_spring_travel_mm: float | None = None   # mechanical stop of the gripper slide
     f_target_n: float | None = None             # from the pen profile (pen_types.f_target_n)
     v_max_mm_s: float | None = None             # from the pen profile (pen_types.v_max_mm_s)
+    # U7, OPT-IN: jerk limit of the writing speed profile. None = off (the profile is exactly as before U7); a station
+    # turns it on by measuring / choosing a value and putting it in its motion block. Never defaulted.
+    j_max_mm_s3: float | None = None
 
     def missing(self) -> list[str]:
-        return [f.name for f in fields(self) if getattr(self, f.name) is None]
+        return [f.name for f in fields(self) if getattr(self, f.name) is None and f.name not in OPTIONAL]
 
     def require(self) -> None:
         miss = self.missing()
         if miss:
             raise PlanError("UNCONFIGURED", "Thiếu thông số đã đo; không lập quỹ đạo robot: " + ", ".join(miss), {"missing": miss})
-        bad = [f.name for f in fields(self) if not (math.isfinite(getattr(self, f.name)) and getattr(self, f.name) > 0)]
+        bad = [f.name for f in fields(self) if getattr(self, f.name) is not None
+               and not (math.isfinite(getattr(self, f.name)) and getattr(self, f.name) > 0)]
         if bad:
             raise PlanError("INVALID_CONFIG", "Thông số phải là số dương hữu hạn: " + ", ".join(bad), {"invalid": bad})
 
@@ -148,9 +157,10 @@ def curvature(points: np.ndarray, ds: float = DEFAULT_DS_MM, window_mm: float = 
 
 
 def speed_profile(points: np.ndarray, *, v_max: float, a_lat: float, a_tan: float, ds: float = DEFAULT_DS_MM,
-                  corner_deg: float = DEFAULT_CORNER_DEG) -> np.ndarray:
+                  corner_deg: float = DEFAULT_CORNER_DEG, j_max: float | None = None) -> np.ndarray:
     """mm/s at each point: min(v_max, sqrt(a_lat / kappa)), corners and both ends at 5 mm/s, then the
-    forward / backward passes limit the tangential acceleration."""
+    forward / backward passes limit the tangential acceleration. With `j_max` (U7, opt-in) the result is further
+    lowered by limit_jerk; without it the result is exactly the pre-U7 profile."""
     n = len(points)
     floor = min(V_FLOOR_MM_S, v_max)
     kappa = curvature(points, ds)
@@ -165,7 +175,80 @@ def speed_profile(points: np.ndarray, *, v_max: float, a_lat: float, a_tan: floa
         v[i + 1] = min(v[i + 1], math.sqrt(v[i] ** 2 + 2.0 * a_tan * seg[i]))
     for i in range(n - 2, -1, -1):
         v[i] = min(v[i], math.sqrt(v[i + 1] ** 2 + 2.0 * a_tan * seg[i]))
+    if j_max is not None and n >= 3:
+        v = jerk_limited(points, v, j_max=j_max, a_tan=a_tan, floor=floor)
     return v
+
+
+def jerk_limited(points: np.ndarray, v: np.ndarray, *, j_max: float, a_tan: float, floor: float) -> np.ndarray:
+    """U7: two ways to meet the jerk limit, keep the faster one that meets it (U7 benchmark, 2026-11-12: the iterative
+    one is faster on short curved handwriting strokes, the S-curve filter on long straight ones)."""
+    cands = [limit_jerk(points, v, j_max=j_max, a_tan=a_tan, floor=floor),
+             limit_jerk(points, _scurve_filter(points, v, j_max=j_max, a_tan=a_tan, floor=floor),
+                        j_max=j_max, a_tan=a_tan, floor=floor)]
+    ok = [c for c, residual in cands if residual == 0.0] or [min(cands, key=lambda c: c[1])[0]]
+    return min(ok, key=lambda c: duration_s(points, c))
+
+
+def _scurve_filter(points: np.ndarray, v: np.ndarray, *, j_max: float, a_tan: float, floor: float,
+                   dt: float = 0.0005) -> np.ndarray:
+    """Classic S-curve by filtering in time: sliding minimum then moving average over T = a_tan / j_max. The minimum
+    first makes the average never exceed the input profile (so every speed cap still holds)."""
+    seg = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    s = np.concatenate([[0.0], np.cumsum(seg)])
+    t = np.concatenate([[0.0], np.cumsum(2.0 * seg / np.maximum(v[:-1] + v[1:], 1e-9))])
+    tg = np.arange(0.0, t[-1] + dt, dt)
+    vg = np.interp(tg, t, v)
+    h = max(1, int(round(a_tan / j_max / dt / 2)))
+    pad = np.full(h, floor)
+    eroded = sliding_window_view(np.concatenate([pad, vg, pad]), 2 * h + 1).min(axis=1)
+    smooth = sliding_window_view(np.concatenate([pad, eroded, pad]), 2 * h + 1).mean(axis=1)
+    sg = np.concatenate([[0.0], np.cumsum((smooth[:-1] + smooth[1:]) / 2.0 * dt)])
+    return np.maximum(floor, np.minimum(v, np.interp(s, sg, smooth, right=floor)))
+
+
+def _accel_passes(v: np.ndarray, seg: np.ndarray, a_tan: float) -> np.ndarray:
+    """Forward / backward tangential-acceleration passes in closed form (only lower speeds).
+    In u = v^2 the forward rule u[i+1] <= u[i] + 2 a s[i] is u[i] = min_j<=i (u[j] + 2 a (S[i] - S[j]))."""
+    s = np.concatenate([[0.0], np.cumsum(seg)])
+    u = v * v
+    u = np.minimum(u, 2 * a_tan * s + np.minimum.accumulate(u - 2 * a_tan * s))
+    r = s[-1] - s                                                    # distance to the end, for the backward pass
+    u = np.minimum(u, (2 * a_tan * r + np.minimum.accumulate((u - 2 * a_tan * r)[::-1])[::-1]))
+    return np.sqrt(u)
+
+
+def jerk_of(points: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """Tangential jerk (mm/s^3) at the interior vertices: change of the per-segment acceleration over the mean time."""
+    seg = np.maximum(np.linalg.norm(np.diff(points, axis=0), axis=1), 1e-12)
+    a = (v[1:] ** 2 - v[:-1] ** 2) / (2.0 * seg)
+    dt = 2.0 * seg / np.maximum(v[:-1] + v[1:], 1e-9)
+    return (a[1:] - a[:-1]) / np.maximum((dt[:-1] + dt[1:]) / 2.0, 1e-12)
+
+
+def limit_jerk(points: np.ndarray, v: np.ndarray, *, j_max: float, a_tan: float, floor: float) -> tuple[np.ndarray, float]:
+    """U7 (opt-in): lower speeds until |jerk| <= j_max at every vertex, keeping the speed and acceleration caps.
+
+    Speeds are only ever lowered (never raised), and never below `floor`, so every other limit still holds. A rise of
+    the acceleration at vertex k is reduced by lowering the faster of its two neighbours, a drop by lowering vertex k;
+    after each round the acceleration passes run again. Returns the profile and the largest |jerk| left (0 when met;
+    above j_max only if the floor speed or JERK_MAX_ITER stopped it: the caller sees it, nothing is hidden)."""
+    seg = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    v = _accel_passes(v.astype(float), seg, a_tan)          # the input may come from the S-curve filter
+    for _ in range(JERK_MAX_ITER):
+        j = jerk_of(points, v)
+        bad = np.flatnonzero(np.abs(j) > j_max * (1 + 1e-9)) + 1           # vertex indices 1..n-2
+        if bad.size == 0:
+            return v, 0.0
+        rise = j[bad - 1] > 0
+        target = np.where(rise, np.where(v[bad - 1] >= v[bad + 1], bad - 1, bad + 1), bad)
+        target = target[v[target] > floor + 1e-9]
+        if target.size == 0:
+            break
+        v[target] = floor + (v[target] - floor) * 0.85
+        v = _accel_passes(v, seg, a_tan)
+    j = jerk_of(points, v)
+    return v, float(np.abs(j).max()) if j.size else 0.0
 
 
 def duration_s(points: np.ndarray, speeds: np.ndarray) -> float:
@@ -214,7 +297,8 @@ def plan_page(page: Page, frame: PaperFrame, cfg: MotionConfig, *, ds: float = D
         if len(xy) < 2:
             continue
         plan.resample_dev_mm = max(plan.resample_dev_mm, max_deviation_mm(np.asarray(stroke.points), xy))
-        speeds = speed_profile(xy, v_max=cfg.v_max_mm_s, a_lat=cfg.a_lat_mm_s2, a_tan=cfg.a_tan_mm_s2, ds=ds)
+        speeds = speed_profile(xy, v_max=cfg.v_max_mm_s, a_lat=cfg.a_lat_mm_s2, a_tan=cfg.a_tan_mm_s2, ds=ds,
+                               j_max=cfg.j_max_mm_s3)
         down = frame.to_base(xy, lift_mm=-press)                 # tip pressed into the spring
         above_start = frame.to_base(xy[:1], lift_mm=clearance)[0]
         above_end = frame.to_base(xy[-1:], lift_mm=clearance)[0]

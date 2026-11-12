@@ -20,6 +20,7 @@
       "spring_k_n_per_mm": "<ĐO: độ cứng lò xo = lực / độ nén>",
       "max_spring_travel_mm": "<ĐO: hành trình nén tối đa của gripper>"
     },
+    "_j_max_note": "Tuỳ chọn (U7): thêm \"j_max_mm_s3\": <số dương, mm/s³> vào motion để bật giới hạn jerk; bỏ trống = tắt, quỹ đạo như cũ. Bật làm chậm nét viết (mô phỏng: 100000 → +21%, 20000 → +93% thời gian viết).",
     "workspace": {
       "box_min_mm": ["<x min>", "<y min>", "<z min>"],
       "box_max_mm": ["<x max>", "<y max>", "<z max>"],
