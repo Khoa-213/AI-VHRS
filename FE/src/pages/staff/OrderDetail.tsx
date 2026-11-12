@@ -116,7 +116,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
 
       {FULFILLMENT_STATES.includes(order.status) && <FulfillmentPanel order={order} onChanged={async () => { await q.reload(); onChanged() }} />}
 
-      <section className="wk-block" aria-label={t('wk.content')}>
+      <section className="wk-block wk-content" aria-label={t('wk.content')}>
         <h3>{t('wk.content')}</h3>
         <OrderPreview order={order} inkColor={mats.ink?.hex} />
         {text?.text && <p className="wk-text">{text.text}</p>}
@@ -125,7 +125,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         {canvas?.canvas && <p className="sd-sub">{t('co.strokes', { n: canvas.canvas.strokes.length })}</p>}
       </section>
 
-      <section className="wk-block" aria-label={t('or.details')}>
+      <section className="wk-block wk-specs" aria-label={t('or.details')}>
         <h3>{t('or.details')}</h3>
         <dl className="wk-rows">
           {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}

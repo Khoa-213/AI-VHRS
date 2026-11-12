@@ -1,6 +1,7 @@
 import { CaretDown, Check } from '@phosphor-icons/react'
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
+import './admin-ui.css'
 
 interface Option { value: string; label: string }
 
@@ -89,7 +90,7 @@ export default function AdminSelect({ value, onChange, options, label, disabled 
               <span>{item.label}</span>{value === item.value && <Check size={16} weight="bold" aria-hidden />}
             </div>
           ))}
-        </div>, trigger.current?.closest('.adm-app') ?? document.body,
+        </div>, trigger.current?.closest('.adm-app, .ws-staff') ?? document.body,
       )}
     </div>
   )

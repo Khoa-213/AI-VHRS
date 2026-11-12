@@ -130,3 +130,11 @@ Admin copy stays concise: no navigation descriptions, greeting, page introductio
 Admin subpages show the shared back-to-overview link in `AdminFrame`. Use `AdminSelect` for dropdowns: translated option labels, keyboard navigation, a viewport-bounded popup and disabled states. Verify navigation and dropdown interactions with `node scripts/check-admin-browser.mjs` after building.
 
 Admin dropdowns, including the audit record-kind filter, remain scrollable with wheel, touch and keyboard. Hide the scrollbar chrome on `.adm-select-menu`; do not replace these dropdowns with wrapping pills.
+
+## Staff presentation
+
+Staff retains the workshop `Shell` and existing workflow components. `components/ws/staff-ui.css` is scoped to `.ws.ws-staff` (only `area="staff"`). Its CRM reference lives in `crm_video_reference/`: centred horizontal labelled navigation with a sticky header, off-white page, white cards, restrained lime highlights and one dark KPI. Use dark text and a dark green keyboard focus ring; never use lime as body text. The workshop stays light (`BrandLogo theme="light"`). Manager and Technician keep their current presentation.
+
+`/staff/review` shows the existing open-order groups as responsive pipeline columns. Cards open the existing `/staff/review/:id` list/detail route. Stage/scope/search/collapse/pagination rules and action handlers stay unchanged; no drag-and-drop status mutations. Manager retains its existing layout. Staff filters use `AdminSelect`, portalled into `.ws-staff` for light tokens, with hidden scrollbar chrome. The dashboard's 7/30-day selector affects the received-orders chart only; KPIs keep current totals. No sample data or unsupported CRM actions in production.
+
+Check `node scripts/check-staff-ui-browser.mjs` and existing fulfillment/Admin browser checks after building. See `docs/STAFF_CRM_UI.md` for routes, source files and verification scope.
