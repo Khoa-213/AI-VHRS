@@ -14,6 +14,7 @@ import unicodedata
 from app.domain import text_layout
 from app.models.order import OrderType
 from app.services.stroke_ai import outline_font, recovery, styled_text, text_to_stroke
+from app.services.stroke_ai import regions as regions_mod
 from app.services.stroke_ai.trajectory import Metrics, Page, compute_metrics
 
 ENGINE_VERSION = "1"
@@ -29,6 +30,7 @@ class Generated:
     similarity: float | None
     complexity: str
     warnings: list[str] = field(default_factory=list)
+    regions: list = field(default_factory=list)          # U4: regions.RegionDraft per word (OT-1 only)
 
 
 @dataclass(frozen=True)
@@ -59,12 +61,15 @@ def generate_ot1(images: list[ImageSource], *, paper_size: str, v_max_mm_s: floa
     if len(images) > MAX_AI_PAGES:
         raise AppError(422, "AI_TOO_MANY_PAGES",
                        f"Phục dựng tự động tối đa {MAX_AI_PAGES} ảnh mỗi lần; hãy tải phác thảo thủ công.")
-    pages, stats = [], []
-    for src in images:
+    pages, stats, regions = [], [], []
+    for page_no, src in enumerate(images, start=1):
         page, st = recovery.recover_page(src.data, paper_size=paper_size, rotation_deg=src.rotation_deg,
                                          crop_box=src.crop_box)
         pages.append(page)
         stats.append(st)
+        for r in st.regions:
+            r.page_no = page_no
+            regions.append(r)
     similarity = round(sum(s.similarity for s in stats) / len(stats), 2)
     metrics = compute_metrics(pages, v_max_mm_s)
     warnings = sorted({w for s in stats for w in s.warnings})
@@ -73,7 +78,10 @@ def generate_ot1(images: list[ImageSource], *, paper_size: str, v_max_mm_s: floa
                          "deskew_deg": s.deskew_deg} for s in stats]}
     complexity = suggest_complexity(order_type=OrderType.OT1_COPY_RESTORE, pen_category=pen_category, metrics=metrics,
                                     chars=chars, has_canvas=False, similarity=similarity, font_size_mm=None)
-    return Generated(pages, engine, metrics, similarity, complexity, warnings)
+    if any(r.label != "ORIGINAL" for r in regions):
+        warnings.append("UNCERTAIN_REGIONS")                 # U4: Staff should review the RESTORED regions
+    engine["regions"] = {"method": "word-local-ink-iou-v1", "uncertain_below": regions_mod.UNCERTAIN_BELOW}
+    return Generated(pages, engine, metrics, similarity, complexity, warnings, regions)
 
 
 def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None, font_size_mm: float | None,

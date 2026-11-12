@@ -19,7 +19,8 @@ from app.api.photo_schemas import WorkshopPhotoOut
 from app.api.schemas import ErrorOut, Page
 from app.api.staff_schemas import (AcceptIn, AdjustIn, FileLinkOut, OptionSummary, QuotationCreateIn, QuotationOut, RejectIn,
                                    RequestInfoIn, SketchDetailOut, SketchGenerateIn, SketchManualIn, SketchOut,
-                                   SketchPatchIn, WorkshopInputOut, WorkshopOrderDetail, WorkshopOrderRow)
+                                   SketchPatchIn, WorkshopInputOut, WorkshopOrderDetail, WorkshopOrderRow,
+                                   RegionEditIn, SketchRegionOut)
 from app.api.v1.orders import optional_storage
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
@@ -73,7 +74,15 @@ def sketch_out(row: Sketch, previews: list[str] | None = None, warnings: list[st
     out.preview_urls, out.warnings = previews or [], warnings or []
     if svc is not None:
         out.image_urls, out.trajectory_url = svc.image_urls(row), svc.trajectory_url(row)
+        out.region_counts = region_counts(svc.regions_of(row))
     return out
+
+
+def region_counts(regions) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for r in regions:
+        counts[r.label] = counts.get(r.label, 0) + 1
+    return counts
 
 
 def quotation_out(q: Quotation) -> QuotationOut:
@@ -163,7 +172,26 @@ def list_sketches(order_id: int, svc: Sketches) -> list[SketchOut]:
 def get_sketch(order_id: int, version: int, svc: Sketches) -> SketchDetailOut:
     row, data, previews = svc.detail(order_id, version)
     out = SketchDetailOut.model_validate({**sketch_out(row, previews, None, svc).model_dump(), "trajectory": data})
+    out.regions = [SketchRegionOut.model_validate(r) for r in svc.regions_of(row)]
     return out
+
+
+@router.get("/orders/{order_id}/sketches/{version}/regions", response_model=list[SketchRegionOut],
+            summary="U4 Các vùng phục dựng của một phiên bản (OT-1): nhãn ORIGINAL / RESTORED / INFERRED, độ tin cậy")
+def list_regions(order_id: int, version: int, svc: Sketches) -> list[SketchRegionOut]:
+    return [SketchRegionOut.model_validate(r) for r in svc.regions(order_id, version)]
+
+
+@router.post("/orders/{order_id}/sketches/{version}/regions/{region_id}/edit", dependencies=STAFF_ONLY,
+             response_model=SketchOut, status_code=status.HTTP_201_CREATED,
+             summary="U4 Sửa đúng một vùng (vẽ lại / viết chữ / xoá) → phiên bản mới, các vùng khác giữ nguyên nét",
+             responses={409: {"description": "SKETCH_VERSION_CONFLICT / INFERRED_NOT_ALLOWED / ORDER_NOT_ACCEPTED"},
+                        404: {"description": "REGION_NOT_FOUND"},
+                        422: {"description": "INVALID_REGION_STROKES / INVALID_REGION_TEXT / NO_CONTENT"}})
+def edit_region(order_id: int, version: int, region_id: int, body: RegionEditIn, svc: Sketches) -> SketchOut:
+    row = svc.edit_region(order_id, version, region_id, action=body.action, note=body.note.strip(),
+                          strokes=body.strokes, label=body.label, text=body.text, font=body.font)
+    return sketch_out(row, svc.preview_urls(row), None, svc)
 
 
 @router.patch("/orders/{order_id}/sketches/{version}", dependencies=STAFF_ONLY, response_model=SketchOut,

@@ -205,10 +205,10 @@ Mỗi phase: code + test + chạy toàn suite trên Supabase + cập nhật `PRO
 
 | Phase | Nội dung | Phụ thuộc | Tiêu chí nghiệm thu |
 |---|---|---|---|
-| **U1** ✅ code + test (2026-11-12, chưa commit) | Production snapshot + chữ ký Ed25519; job trỏ snapshot; kiểm tra khi tải gói / bắt đầu viết; agent xác minh; sự cố khi lệch; job cũ chạy luồng legacy | Không | Test: sửa 1 byte quỹ đạo / đổi thông số bút / chữ ký khoá lạ / replay snapshot đơn khác → đều bị từ chối và ghi sự cố; job cũ vẫn chạy |
-| **U2** ✅ code + test (2026-11-12, chưa commit; so sánh phiên bản chưa làm) | Watermark preview + file xuất; bản ghi duyệt phiên bản (`sketch_approvals`); so sánh phiên bản; lý do báo giá lại (Q4 thay cho giới hạn vòng sửa) | Q4 (số vòng) cho phần giới hạn | Ảnh khách xem luôn có dấu; duyệt báo giá ghi đúng phiên bản + hash ảnh |
+| **U1** ✅ code + test (2026-11-12, commit `9c29ee1`) | Production snapshot + chữ ký Ed25519; job trỏ snapshot; kiểm tra khi tải gói / bắt đầu viết; agent xác minh; sự cố khi lệch; job cũ chạy luồng legacy | Không | Test: sửa 1 byte quỹ đạo / đổi thông số bút / chữ ký khoá lạ / replay snapshot đơn khác → đều bị từ chối và ghi sự cố; job cũ vẫn chạy |
+| **U2** ✅ code + test (2026-11-12, commit `b200e4b`; so sánh phiên bản chưa làm) | Watermark preview + file xuất; bản ghi duyệt phiên bản (`sketch_approvals`); so sánh phiên bản; lý do báo giá lại (Q4 thay cho giới hạn vòng sửa) | Q4 (số vòng) cho phần giới hạn | Ảnh khách xem luôn có dấu; duyệt báo giá ghi đúng phiên bản + hash ảnh |
 | **U3** | Bộ đánh giá: công cụ đo (SSIM, endpoint, topology, CER) + cấu trúc bộ dữ liệu + báo cáo; chạy trên ảnh **thật** do chủ dự án cung cấp | Q5 (dữ liệu) | Báo cáo số đo thật, không số giả |
-| **U4** | Vùng phục dựng: `sketch_regions`, nhãn ORIGINAL / RESTORED / INFERRED, chế độ Faithful / Assisted, Staff sửa theo vùng, sửa chữ không đụng vùng khác | Không (HTR thêm sau) | Sửa vùng 3 không đổi byte nét của vùng khác |
+| **U4** ✅ code + test (2026-11-12, chưa commit; HTR chưa có) | Vùng phục dựng: `sketch_regions`, nhãn ORIGINAL / RESTORED / INFERRED, chế độ Faithful / Assisted, Staff sửa theo vùng, sửa chữ không đụng vùng khác | Không (HTR thêm sau) | Sửa vùng 3 không đổi byte nét của vùng khác |
 | **U5** | Studio + AI Assistant: bản nháp trước khi gửi xưởng, revision + undo/redo, hội thoại, tool calling, ghi chi phí | **Q1** (LLM, khoá), **Q2** (nghiệp vụ studio) | Kịch bản hội thoại mẫu chạy với công cụ thật; LLM không bịa vật tư (test bằng catalog) |
 | **U6** | Vật tư mở rộng + profile tổ hợp + nhãn cấp preview | Không (đo thật là HW) | Manager nhập được, trường đo được ghi nguồn |
 | **U7** | Robot engine: tối ưu thứ tự nét + pen-up, jerk limit, benchmark mô phỏng | Không (đo thật là HW) | Quãng pen-up / thời gian giảm, đo bằng mô phỏng trên bộ phác thảo mẫu |
@@ -274,8 +274,8 @@ Mỗi phase: code + test + chạy toàn suite trên Supabase + cập nhật `PRO
 | Replay gói của đơn khác | Payload chứa `order_id`, `job` chỉ nhận snapshot của chính nó | U1 |
 | Đơn huỷ / hoàn tiền sau khi có snapshot | Snapshot bị thu hồi (`revoked_at`), agent từ chối | U1 |
 | Khách đòi sửa sau cọc | Theo BR hiện có: huỷ sau cọc (4d-1) hoặc Staff tạo phiên bản mới + báo giá mới + snapshot mới; snapshot cũ thu hồi | U2 |
-| Hai Staff sửa cùng phác thảo | Khoá dòng đơn (có sẵn) + kiểm phiên bản lạc quan khi lưu | U2/U4 |
-| AI nhận sai chữ / vùng mất chữ | Vùng có độ tin cậy thấp → nhãn, không tự sáng tác ở chế độ Faithful | U4 |
+| Hai Staff sửa cùng phác thảo | Khoá dòng đơn (có sẵn) + chỉ sửa vùng trên phiên bản mới nhất (`409 SKETCH_VERSION_CONFLICT`) | U4 ✅ |
+| AI nhận sai chữ / vùng mất chữ | Vùng có độ tin cậy thấp → nhãn RESTORED; FAITHFUL chặn INFERRED cả khi sửa lẫn khi chốt. Giới hạn: mực mất hẳn không sinh nét nên không có vùng, Staff phải tự đối chiếu ảnh | U4 ✅ |
 | Font không có dấu tiếng Việt | `capabilities` + kiểm glyph trước khi sinh (có một phần) | U6 |
 | Vật tư hết / không tương thích | Kiểm tồn + tương thích khi khách chọn và khi khoá | U1/U6 |
 | Robot mất kết nối / E-Stop / lỗi giữa chừng | Có sẵn (lost-link, PAUSED, sự cố → FAILED → xếp lại) | Có |

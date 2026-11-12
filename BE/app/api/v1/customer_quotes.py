@@ -61,7 +61,8 @@ def view_quotation(order_id: int, svc: Svc) -> QuotationCustomerOut:
         sketch=SketchForCustomer(id=sketch.id, version=sketch.version, preview_urls=svc.sketch_image_urls(sketch) or previews,
                                  image_urls=svc.sketch_image_urls(sketch), approach_note=sketch.approach_note,
                                  estimated_writing_sec=sketch.estimated_writing_sec,
-                                 similarity_score=sketch.similarity_score) if sketch else None)
+                                 similarity_score=sketch.similarity_score, **svc.region_view(sketch, data["order"]))
+        if sketch else None)
 
 
 @router.post("/orders/{order_id}/quotation/request-changes", response_model=OrderOut,

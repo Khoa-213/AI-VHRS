@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
@@ -17,8 +18,8 @@ from app.db.session import set_actor
 from app.domain import quotation_rules as rules
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account
-from app.models.order import ComplexityLevel, Order, OrderStatus
-from app.models.sketch import AdjustmentStatus, Quotation, QuotationStatus
+from app.models.order import ComplexityLevel, Order, OrderStatus, OrderType
+from app.models.sketch import AdjustmentStatus, Quotation, QuotationStatus, SketchRegion
 from app.repositories.accounts import AccountRepository
 from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
@@ -521,6 +522,20 @@ class CustomerQuoteService:
             raise AppError(404, "QUOTATION_NOT_FOUND", "Đơn chưa có báo giá.")
         sketch = self.sketches.get_by_id(q.sketch_id)
         return {"order": order, "quotation": q, "sketch": sketch}
+
+    def region_view(self, sketch, order: Order) -> dict[str, Any]:
+        """U4: what the customer is told about the uncertain / guessed parts of an OT-1 sketch."""
+        if order.order_type != OrderType.OT1_COPY_RESTORE:
+            return {}
+        rows = list(self.session.scalars(select(SketchRegion).where(SketchRegion.sketch_id == sketch.id)
+                                         .order_by(SketchRegion.page_no, SketchRegion.region_no)))
+        counts: dict[str, int] = {}
+        for r in rows:
+            counts[r.label] = counts.get(r.label, 0) + 1
+        return {"restoration_mode": order.restoration_mode or "FAITHFUL", "region_counts": counts,
+                "regions": [{"page_no": r.page_no, "region_no": r.region_no, "bbox_mm": [r.x0, r.y0, r.x1, r.y1],
+                             "label": r.label, "confidence": r.confidence, "text": r.text}
+                            for r in rows if r.label != "ORIGINAL"]}
 
     def sketch_image_urls(self, sketch) -> list[str]:
         """Customer-facing JPEGs of the sketch (what the customer judges before paying the deposit)."""
