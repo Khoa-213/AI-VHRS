@@ -43,13 +43,18 @@ try {
   await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject })
   let nextId = 0
   const pending = new Map()
-  const command = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; const timer = setTimeout(() => { pending.delete(id); reject(new Error('CDP timeout: ' + method)) }, 15000); pending.set(id, { resolve: (value) => { clearTimeout(timer); resolve(value) }, reject: (error) => { clearTimeout(timer); reject(error) } }); ws.send(JSON.stringify({ id, method, params })) })
+  const command = (method, params = {}) => new Promise((resolve, reject) => { const id = ++nextId; const timer = setTimeout(() => { pending.delete(id); reject(new Error('CDP timeout: ' + method)) }, 15000); pending.set(id, { method, resolve: (value) => { clearTimeout(timer); resolve(value) }, reject: (error) => { clearTimeout(timer); reject(error) } }); ws.send(JSON.stringify({ id, method, params })) })
   const fulfill = (id, data, code = 200, mime = 'application/json') => command('Fetch.fulfillRequest', { requestId: id, responseCode: code, responseHeaders: [{ name: 'Content-Type', value: mime }, { name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: '*' }, { name: 'Access-Control-Allow-Methods', value: 'GET,POST,PATCH,PUT,DELETE,OPTIONS' }], body: (Buffer.isBuffer(data) ? data : Buffer.from(JSON.stringify(data))).toString('base64') })
 
 
   ws.onmessage = async (message) => {
     const msg = JSON.parse(message.data)
-    if (msg.id) { const p = pending.get(msg.id); pending.delete(msg.id); if (p) msg.error ? p.reject(new Error(JSON.stringify(msg.error))) : p.resolve(msg.result); return }
+    if (msg.id) { const p = pending.get(msg.id); pending.delete(msg.id); if (p) {
+      // Navigation can cancel an intercepted request before its fixture response arrives.
+      if (p.method.startsWith('Fetch.') && msg.error?.message === 'Invalid InterceptionId.') p.resolve({})
+      else if (msg.error) p.reject(new Error(JSON.stringify(msg.error)))
+      else p.resolve(msg.result)
+    } return }
     if (msg.method === 'Runtime.exceptionThrown') errors.push(msg.params.exceptionDetails.text)
     if (msg.method !== 'Fetch.requestPaused') return
     const { requestId, request } = msg.params
@@ -103,10 +108,17 @@ try {
         assert.equal(await evaluate(`document.documentElement.dataset.theme`),theme,'Saved theme applied')
         assert.equal(await evaluate(`document.querySelectorAll('.staff-sidebar .staff-nav a').length`),4)
         assert.equal(await evaluate(`document.querySelectorAll('.staff-sidebar .appearance-switch, .staff-sidebar .nbell, .staff-sidebar .staff-user').length`),0)
-        await evaluate(`document.querySelector('.staff-user-button').click()`)
-        assert.ok(await evaluate(`document.querySelector('.staff-account-panel button')!==null`),'Sign out in account dropdown')
-        await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`)
-        assert.equal(await evaluate(`document.querySelector('.staff-account-panel')===null`),true)
+        assert.equal(await evaluate(`document.querySelector('.staff-user-button').getAttribute('href')`),'/account/profile')
+        assert.equal(await evaluate(`document.querySelectorAll('.staff-sidebar-signout').length`),1,'Sign out stays in sidebar')
+        assert.equal(await evaluate(`document.querySelectorAll('.staff-header .staff-account-panel').length`),0)
+        if(route==='/staff' && [1440,390].includes(width)) {
+          await evaluate(`document.querySelector('.staff-user-button').click()`)
+          await wait(`location.pathname==='/account/profile' && !!document.querySelector('.ac-form')`,'Staff account profile opens')
+          assert.equal(await evaluate(`document.querySelector('.ac-form input[autocomplete="name"]').value`),'Browser Test')
+          assert.equal(await evaluate(`document.querySelectorAll('.ac-nav a[href="/account/orders"]').length`),0,'Staff has no customer orders navigation')
+          await evaluate(`document.querySelector('.ac-workspace-back').click()`)
+          await wait(`location.pathname==='/staff' && !!document.querySelector('.ws-staff')`,'Return to Staff')
+        }
         await evaluate(`document.querySelector('.staff-header .nbell-btn').click()`)
         await wait(`!!document.querySelector('.staff-header .nbell-pop')`,'Notifications open')
         assert.ok(await evaluate(`(()=>{const r=document.querySelector('.nbell-pop').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth})()`),'Notification popup fits viewport: '+JSON.stringify(await evaluate(`({width:innerWidth,rect:document.querySelector('.nbell-pop').getBoundingClientRect().toJSON()})`)))

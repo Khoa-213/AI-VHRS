@@ -1,4 +1,4 @@
-import { ArrowLeft, Gear, House, List, Scroll, SignOut, SquaresFour, Users, X } from '@phosphor-icons/react'
+import { ArrowLeft, Gear, List, Scroll, SignOut, SquaresFour, Users, X } from '@phosphor-icons/react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
@@ -10,6 +10,11 @@ import BrandLogo from '../ui/BrandLogo'
 import LanguageToggle from '../ui/LanguageToggle'
 import NotificationBell from '../ui/NotificationBell'
 import SkipLink from '../ui/SkipLink'
+import '../ws/ws.css'
+import '../ws/workshop.css'
+import '../ws/staff-ui.css'
+import '../ws/staff-theme.css'
+import '../ws/staff-depth.css'
 import '../ui/language.css'
 import './admin-shell.css'
 import './admin-ui.css'
@@ -41,71 +46,59 @@ export default function AdminFrame({
     return () => document.removeEventListener('keydown', onKey)
   }, [open])
 
-  const items: { key: AdminKey; group: string; to: string; icon: ReactNode; count?: number }[] = [
-    { key: 'overview', group: 'adm.group.overview', to: '/admin', icon: <SquaresFour size={22} aria-hidden /> },
-    { key: 'accounts', group: 'adm.group.manage', to: '/admin/accounts', icon: <Users size={22} aria-hidden />, count: locked.data ?? 0 },
-    { key: 'audit', group: 'adm.group.manage', to: '/admin/audit', icon: <Scroll size={22} aria-hidden /> },
-    { key: 'settings', group: 'adm.group.system', to: '/admin/settings', icon: <Gear size={22} aria-hidden /> },
+  const items: { key: AdminKey; to: string; icon: ReactNode; count?: number }[] = [
+    { key: 'overview', to: '/admin', icon: <SquaresFour size={22} aria-hidden /> },
+    { key: 'accounts', to: '/admin/accounts', icon: <Users size={22} aria-hidden />, count: locked.data ?? 0 },
+    { key: 'audit', to: '/admin/audit', icon: <Scroll size={22} aria-hidden /> },
+    { key: 'settings', to: '/admin/settings', icon: <Gear size={22} aria-hidden /> },
   ]
 
   const name = user?.name ?? t('role.admin')
-  let lastGroup = ''
+  const close = () => setOpen(false)
   return (
-    <div className={`adm adm-app${open ? ' open' : ''}`}>
+    <div className={`ws ws-staff adm adm-app${open ? ' staff-sidebar-open' : ''}`}>
       <SkipLink />
-      <aside className="adm-side" id="adm-side" aria-label={t('adm.navAria')}>
-        <Link to="/admin" className="adm-brand" onClick={() => setOpen(false)}>
-          <BrandLogo />
-          <span>{t('adm.eyebrow')}</span>
-        </Link>
-        <nav aria-label={t('adm.navAria')}>
-          {items.map((it) => {
-            const head = it.group !== lastGroup ? <span key={`g-${it.group}`} className="adm-group">{t(it.group)}</span> : null
-            lastGroup = it.group
-            return (
-              <div key={it.key}>
-                {head}
-                <Link to={it.to} className={`adm-link-item${active === it.key ? ' on' : ''}`} aria-current={active === it.key ? 'page' : undefined} onClick={() => setOpen(false)}>
-                  {it.icon}
-                  <span className="adm-link-text">{t(`adm.nav.${it.key}`)}</span>
-                  {!!it.count && <span className="adm-count" aria-label={t('adm.nav.lockedCount', { n: it.count })}>{it.count}</span>}
-                </Link>
-              </div>
-            )
-          })}
-        </nav>
-        <div className="adm-side-foot">
-          <div className="adm-side-btns">
-            <Link to="/" className="adm-side-btn"><House size={16} aria-hidden />{t('rail.site')}</Link>
-            <button type="button" className="adm-side-btn" onClick={() => { signOut(); navigate('/') }}><SignOut size={16} aria-hidden />{t('rail.signOut')}</button>
+      <header className="staff-header">
+        <div className="staff-header-brand">
+          <button type="button" className="staff-sidebar-menu" aria-label={t('adm.menuOpen')} aria-expanded={open} aria-controls="staff-sidebar" onClick={() => setOpen(true)}><List size={22} aria-hidden /></button>
+          <Link to="/admin" className="staff-brand" aria-label={t('rail.adminMark')}><BrandLogo /></Link>
+        </div>
+        <div className="staff-header-tools">
+          <NotificationBell variant="ws" />
+          <AppearanceSwitch className="staff-theme adm-theme" />
+          <LanguageToggle />
+          <div className="staff-user">
+            <Link to="/account/profile" className="staff-user-button" aria-label={t('acct.nav.profile')} title={t('acct.nav.profile')}>
+              <span className="avatar">{initials(name)}</span><span className="staff-user-name">{name}<small>{t('role.admin')}</small></span>
+            </Link>
           </div>
+        </div>
+      </header>
+      <aside className="staff-sidebar" id="staff-sidebar" aria-label={t('adm.navAria')}>
+        <div className="staff-sidebar-head">
+          <button type="button" className="staff-sidebar-close" aria-label={t('adm.menuClose')} onClick={close}><X size={20} aria-hidden /></button>
+        </div>
+        <nav className="staff-nav" aria-label={t('adm.navAria')}>
+          {items.map((it) => (
+            <Link key={it.key} to={it.to} className={active === it.key ? 'on' : undefined} aria-current={active === it.key ? 'page' : undefined} onClick={close}>
+              {it.icon}<span className="staff-nav-label">{t(`adm.nav.${it.key}`)}</span>
+              {!!it.count && <span className="staff-nav-count" aria-label={t('adm.nav.lockedCount', { n: it.count })}>{it.count}</span>}
+            </Link>
+          ))}
+        </nav>
+        <div className="staff-sidebar-footer">
+          <button type="button" className="staff-sidebar-signout" onClick={() => { signOut(); navigate('/') }}><SignOut size={18} aria-hidden />{t('rail.signOut')}</button>
         </div>
       </aside>
-      <button type="button" className="adm-scrim" aria-label={t('adm.menuClose')} onClick={() => setOpen(false)} />
-
-      <div className="adm-main">
-        <div className="adm-top">
-          <button type="button" className="adm-menu-btn" aria-label={t(open ? 'adm.menuClose' : 'adm.menuOpen')} aria-expanded={open} aria-controls="adm-side" onClick={() => setOpen(!open)}>
-            {open ? <X size={22} aria-hidden /> : <List size={22} aria-hidden />}
-          </button>
-          <div className="adm-tools">
-            <AppearanceSwitch className="adm-theme" />
-            <NotificationBell variant="adm" />
-            <LanguageToggle />
-            <div className="adm-me">
-              <span className="adm-me-av" aria-hidden>{initials(name)}</span>
-              <span className="adm-me-text"><b>{name}</b><span>{t('role.admin')}</span></span>
-            </div>
-          </div>
-        </div>
-
-        <main className="adm-page" id="main" data-screen-label="Admin">
-          <header className="adm-head">
-            <div className="adm-head-text">
-              {active !== 'overview' && <Link to="/admin" className="adm-back"><ArrowLeft size={16} aria-hidden />{t('adm.backOverview')}</Link>}
+      <button type="button" className="staff-sidebar-scrim" aria-label={t('adm.menuClose')} onClick={close} />
+      <div className="app2">
+        <main className="main2" id="main" data-screen-label="Admin">
+          <header className="hd">
+            <div className="t">
+              {active !== 'overview' && <Link to="/admin" className="staff-back adm-back"><ArrowLeft size={15} aria-hidden />{t('adm.backOverview')}</Link>}
               <h1 className="adm-h1">{title}</h1>
             </div>
-            {actions && <div className="adm-head-actions">{actions}</div>}
+            {actions && <div className="staff-page-actions">{actions}</div>}
           </header>
           {children}
         </main>

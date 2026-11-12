@@ -23,7 +23,7 @@
 .ws .sp-fold-summary::-webkit-details-marker{display:none}
 .ws .sp-fold-summary::marker{content:''}
 .ws .sp-fold-summary h3,.ws .sp-fold-summary h4{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0;font-size:16px;line-height:1.5;font-weight:650;color:var(--ink)}
-.ws .sp-fold-toggle{display:flex;align-items:center;gap:7px;flex:none;min-height:32px;padding:5px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:12px;font-weight:600;color:var(--ink2)}
+.ws .sp-fold-toggle{display:flex;align-items:center;gap:7px;flex:none;min-height:32px;padding:5px 2px;border:0;background:transparent;font-size:12px;font-weight:600;color:var(--ink2)}
 .ws .sp-fold-toggle svg{flex:none;transition:transform .15s}
 .ws .sp-fold-summary:focus-visible{outline:2px solid var(--accent-text);outline-offset:4px}
 .ws .sp-disclosure>.sp-fold-summary .sp-fold-open{display:none}

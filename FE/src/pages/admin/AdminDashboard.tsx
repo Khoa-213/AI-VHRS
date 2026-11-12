@@ -5,7 +5,7 @@ import {
 import { useState } from 'react'
 import AdminFrame from '../../components/admin/AdminFrame'
 import {
-  Attention, Card, Chip, DayColumns, Donut, Kpi, Ring, StateMark, type Delta, type Slice,
+  Attention, Card, Chip, DayColumns, Donut, Kpi, Ring, StateMark, type Delta, type Slice, type Tone,
 } from '../../components/admin/AdminViz'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
@@ -19,6 +19,9 @@ import { auditKind, auditLabel } from '../../utils/audit'
 const STATUSES = ['ACTIVE', 'LOCKED', 'DISABLED'] as const
 // The first five slots of the validated eight-hue palette, in their fixed order (blue, orange, aqua, yellow, magenta), stepped for
 // dark and light in admin-shell.css. Every slice is also named with its number in the legend and in the table view.
+const ROBOT_STATUS = ['AVAILABLE', 'BUSY', 'MAINTENANCE', 'BROKEN']
+const ROBOT_TONE: Record<string, Tone> = { AVAILABLE: 'good', BUSY: 'accent', MAINTENANCE: 'warn', BROKEN: 'bad' }
+const ROBOT_COLOR: Record<string, string> = { AVAILABLE: 'var(--good)', BUSY: 'var(--series-1)', MAINTENANCE: 'var(--warn)', BROKEN: 'var(--danger)' }
 const ROLE_COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)']
 const RANGES = [7, 14, 30] as const
 
@@ -101,12 +104,7 @@ export default function AdminDashboard() {
     <AdminFrame
       active="overview"
       title={t('adm.nav.overview')}
-      actions={(
-        <>
-          <Link to="/admin/audit" className="adm-btn adm-btn--line">{t('adm.short.audit')}</Link>
-          <Link to="/admin/accounts?new=1" className="adm-btn adm-btn--solid"><Plus size={18} weight="bold" aria-hidden />{t('adm.short.create')}</Link>
-        </>
-      )}
+      actions={<Link to="/admin/accounts?new=1" className="adm-btn adm-btn--solid"><Plus size={18} weight="bold" aria-hidden />{t('adm.short.create')}</Link>}
     >
       {!!err && <p className="adm-error" role="alert">{errText(t, orderErrorKey(err))}</p>}
       {sys.loading && !d && <p className="adm-fine" role="status">{t('co.loading')}</p>}
@@ -178,14 +176,16 @@ export default function AdminDashboard() {
           {d && (
             <div className="adm-split">
               <Ring value={d.robots.online} total={d.robots.total} label={t('sy.robotsOnline')} tone={ringTone} />
-              <div className="adm-split-text">
-                {Object.keys(d.robots.byStatus).length === 0 && <span className="adm-fine">{t('adm.robots.none')}</span>}
+              <ul className="adm-robot-rows">
+                {Object.keys(d.robots.byStatus).length === 0 && <li className="adm-fine">{t('adm.robots.none')}</li>}
                 {Object.entries(d.robots.byStatus).map(([s, n]) => (
-                  <div key={s} className="adm-item" style={{ padding: '6px 0' }}>
-                    <span className="adm-mono">{s}</span><b>{n}</b>
-                  </div>
+                  <li key={s}>
+                    <Chip tone={ROBOT_TONE[s] ?? 'mute'}>{ROBOT_STATUS.includes(s) ? t(`rs.${s}`) : s}</Chip>
+                    <b>{n}</b>
+                    <span className="adm-donut-share" aria-hidden><span style={{ width: `${d.robots.total ? (n / d.robots.total) * 100 : 0}%`, background: ROBOT_COLOR[s] ?? 'var(--ink3)' }} /></span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           )}
         </Card>
