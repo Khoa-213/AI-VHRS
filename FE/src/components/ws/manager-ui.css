@@ -118,3 +118,9 @@
 .ws.ws-manager .mgr-pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--ink3)}
 .ws.ws-manager .mgr-pager div{display:flex;gap:8px}
 .ws.ws-manager .mgr-h3{margin:8px 0 0;font-size:14px;font-weight:650;color:var(--ink)}
+
+/* Order queue: scope, search and one stage selector, matching the Staff controls. */
+.ws.ws-manager .ol-top{display:flex;flex-direction:column;align-items:stretch;gap:12px;padding:16px}
+.ws.ws-manager .ol-scope button{flex:1;min-width:0}
+.ws.ws-manager .ol-filter{width:100%}
+.ws.ws-manager .ol-filter .adm-select-trigger{min-height:42px}

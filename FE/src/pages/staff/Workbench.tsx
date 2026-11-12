@@ -214,19 +214,10 @@ export default function Workbench({ id, fulfillment = false }: { id?: number; fu
               <input type="search" value={q} placeholder={t('wk.search')} aria-label={t('wk.search')} onChange={(e) => { setQ(e.target.value); setLimit(PAGE) }} />
               {!manager && q && <button type="button" className="ol-clear" aria-label={t('wk.ol.clearSearch')} onClick={() => { setQ(''); setLimit(PAGE) }}><X size={15} aria-hidden /></button>}
             </label>
-            {!fulfillment && !manager && <div className="ol-filter">
+            {!fulfillment && <div className="ol-filter">
               <AdminSelect label={t('wk.ol.stages')} value={stage} onChange={(value) => pickStage(value as Stage)} options={stages.map((s) => ({ value: s.id, label: list.data ? `${t(`wk.ol.g.${s.id}`)} (${s.n})` : t(`wk.ol.g.${s.id}`) }))} />
             </div>}
-            {!fulfillment && manager && <div className="ol-stages" role="group" aria-label={t('wk.ol.stages')}>
-              {stages.map((s) => {
-                const on = !needle && stage === s.id
-                return (
-                  <button key={s.id} aria-pressed={on} className={on ? 'on' : ''} onClick={() => pickStage(s.id)}>
-                    {t(`wk.ol.g.${s.id}`)} {list.data && <span>{s.n}</span>}
-                  </button>
-                )
-              })}
-            </div>}
+
           </div>
           <div className="ol-scroll">
             {!!list.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(list.error))}</p>}

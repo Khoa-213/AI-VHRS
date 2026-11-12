@@ -118,13 +118,18 @@ try {
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j })
   let nextId = 0
   const pending = new Map()
-  const command = (method, params = {}) => new Promise((r, j) => { const id = ++nextId; const timer = setTimeout(() => { pending.delete(id); j(new Error('CDP timeout: ' + method)) }, 20000); pending.set(id, { resolve: (v) => { clearTimeout(timer); r(v) }, reject: (e) => { clearTimeout(timer); j(e) } }); ws.send(JSON.stringify({ id, method, params })) })
+  const command = (method, params = {}) => new Promise((r, j) => { const id = ++nextId; const timer = setTimeout(() => { pending.delete(id); j(new Error('CDP timeout: ' + method)) }, 20000); pending.set(id, { method, resolve: (v) => { clearTimeout(timer); r(v) }, reject: (e) => { clearTimeout(timer); j(e) } }); ws.send(JSON.stringify({ id, method, params })) })
   const headers = (mime, extra = []) => [{ name: 'Content-Type', value: mime }, { name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: '*' }, { name: 'Access-Control-Allow-Methods', value: 'GET,POST,PATCH,PUT,DELETE,OPTIONS' }, { name: 'Access-Control-Expose-Headers', value: 'Content-Disposition' }, ...extra]
   const fulfill = (id, data, code = 200, mime = 'application/json', extra = []) => command('Fetch.fulfillRequest', { requestId: id, responseCode: code, responseHeaders: headers(mime, extra), body: (Buffer.isBuffer(data) ? data : Buffer.from(JSON.stringify(data))).toString('base64') })
 
   ws.onmessage = async (message) => {
     const msg = JSON.parse(message.data)
-    if (msg.id) { const p = pending.get(msg.id); pending.delete(msg.id); if (p && msg.error) p.reject(new Error(JSON.stringify(msg.error))); else if (p) p.resolve(msg.result); return }
+    if (msg.id) { const p = pending.get(msg.id); pending.delete(msg.id); if (p) {
+      // Route changes can cancel a paused request before its fixture response arrives.
+      if (p.method.startsWith('Fetch.') && msg.error?.message === 'Invalid InterceptionId.') p.resolve({})
+      else if (msg.error) p.reject(new Error(JSON.stringify(msg.error)))
+      else p.resolve(msg.result)
+    } return }
     if (msg.method === 'Runtime.exceptionThrown') errors.push(msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text)
     if (msg.method !== 'Fetch.requestPaused') return
     const { requestId, request } = msg.params
@@ -182,6 +187,21 @@ try {
       if (route !== '/staff') assert.equal(await evaluate(`document.querySelector('.staff-back')?.getAttribute('href')`), '/staff', `Back link on ${route}`)
       assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'), `No horizontal overflow: ${route} ${theme} ${lang} ${width}`)
       assert.equal(await evaluate(`/\\b(mgr|adm|err|os|js|rb|td)\\.[a-zA-Z]+\\.?[A-Za-z0-9_]*\\b/.test(document.querySelector('.ws-manager .main2').innerText.replace(/[\\w.-]+@[\\w.-]+/g,''))`), false, `No raw translation keys: ${route} ${lang}`)
+      if (route === '/staff/review') {
+        await wait(`!!document.querySelector('.ol-filter .adm-select-trigger')`, 'Manager stage selector')
+        assert.equal(await evaluate(`document.querySelectorAll('.ol-stages button').length`),0,'No wrapping stage pills')
+        await evaluate(`document.querySelector('.ol-filter .adm-select-trigger').click()`)
+        await wait(`!!document.querySelector('[role=listbox]')`, 'Manager filter menu')
+        assert.equal(await evaluate(`document.querySelectorAll('[role=option]').length`),6,'All stage filters retained')
+        assert.ok(await evaluate(`(()=>{const r=document.querySelector('[role=listbox]').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})()`),'Stage menu stays inside viewport')
+        await evaluate(`document.querySelector('[role=option]:last-child').click()`)
+        await wait(`!document.querySelector('[role=listbox]')`, 'Stage selection closes menu')
+        assert.ok(await evaluate(`document.querySelector('.ol-filter .adm-select-trigger').textContent.includes('(0)')`),'Closed stage count shown')
+        await evaluate(`document.querySelector('.ol-filter .adm-select-trigger').click()`)
+        await wait(`!!document.querySelector('[role=listbox]')`, 'Reopen stage menu')
+        await evaluate(`document.querySelector('[role=option]').click()`)
+        await wait(`document.querySelectorAll('.ol-row').length===3`, 'Open stage restores orders')
+      }
       if (lang !== 'en' && width !== 768) await shot(`${theme}-${lang}-${width}${route.replaceAll('/', '_')}`)
     }
     if (width === 360) {
