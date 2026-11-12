@@ -1,0 +1,120 @@
+/* Manager screens in the Staff frame (staff-ui.css, staff-theme.css, staff-depth.css). Only theme tokens are used here, so the
+   blocks follow the shared light/dark preference. Scoped to .ws.ws-staff.ws-manager (Shell area="manager"). */
+
+.ws.ws-manager .ph{flex-wrap:wrap;gap:10px 16px}
+.ws.ws-manager .mgr-ph-text{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ws.ws-manager .mgr-ph-text .sub{max-width:68ch;font-size:13px;line-height:1.5}
+.ws.ws-manager .mgr-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:18px;align-items:start}
+.ws.ws-manager .staff-kpis .k .num{flex-wrap:wrap;gap:6px 10px}
+.ws.ws-manager .staff-kpis .k .num span{font-size:12px;color:var(--ink3)}
+.ws.ws-manager .staff-kpis .k:first-child .num span{color:#c9cede}
+.ws.ws-manager .badge{white-space:nowrap}
+
+/* status banner and things to do */
+.ws.ws-manager .mgr-banner{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:16px 20px;border:1px solid var(--line);border-radius:18px;background:var(--card)}
+.ws.ws-manager .mgr-banner>svg{flex:none}
+.ws.ws-manager .mgr-banner.good>svg{color:var(--good)}
+.ws.ws-manager .mgr-banner.warn>svg{color:var(--warn)}
+.ws.ws-manager .mgr-banner.bad{border-color:color-mix(in srgb,var(--danger) 40%,var(--line));background:var(--red1)}
+.ws.ws-manager .mgr-banner.bad>svg{color:var(--red3)}
+.ws.ws-manager .mgr-banner b{display:block;font-size:16px;font-weight:650;color:var(--ink)}
+.ws.ws-manager .mgr-banner span{font-size:13px;line-height:1.5;color:var(--ink2)}
+.ws.ws-manager .mgr-todo{display:flex;flex-direction:column}
+.ws.ws-manager .mgr-todo a{display:flex;align-items:center;gap:12px;padding:12px 6px;border-top:1px solid var(--line);border-radius:8px;color:var(--ink)}
+.ws.ws-manager .mgr-todo a:first-child{border-top:0}
+.ws.ws-manager .mgr-todo a:hover{background:var(--field)}
+.ws.ws-manager .mgr-todo .t{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.ws.ws-manager .mgr-todo .t b{font-size:14px;font-weight:600}
+.ws.ws-manager .mgr-todo .t span{font-size:12px;color:var(--ink3);overflow-wrap:anywhere}
+.ws.ws-manager .mgr-todo>a>svg:last-child{flex:none;color:var(--ink3)}
+.ws.ws-manager .mgr-dot{flex:none;width:10px;height:10px;border-radius:50%}
+.ws.ws-manager .mgr-dot.bad{background:var(--danger)}.ws.ws-manager .mgr-dot.warn{background:var(--warn)}
+
+/* chips: with an icon the icon replaces the dot, so state is never colour alone */
+.ws.ws-manager .chip.mgr-chip{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.ws.ws-manager .chip.mgr-chip.ico::before{display:none}
+.ws.ws-manager .chip.mgr-chip svg{flex:none}
+.ws.ws-manager .chip.navy{background:var(--acc-soft);color:var(--accent-text)}
+
+/* forms */
+.ws.ws-manager .vh-label{display:flex;flex-direction:column;gap:6px}
+.ws.ws-manager .mgr-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px}
+.ws.ws-manager .mgr-filters>.vh-label{flex:0 1 200px}
+.ws.ws-manager .mgr-field-group{display:flex;flex-direction:column;gap:6px}
+.ws.ws-manager .mgr-field-group>span{font-size:12px;font-weight:600;color:var(--ink3)}
+.ws.ws-manager .mgr-actions{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.ws.ws-manager .mgr-actions .vh-label{flex:1 1 240px}
+.ws.ws-manager .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+.ws.ws-manager .btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line-strong)}
+.ws.ws-manager .btn.danger{background:var(--card);color:var(--red3);border:1px solid color-mix(in srgb,var(--danger) 45%,var(--line))}
+.ws.ws-manager .btn.danger:hover:not(:disabled){background:var(--red1)}
+.ws.ws-manager .btn:disabled{opacity:.45}
+.ws.ws-manager .btn.sm{min-height:36px;padding:7px 14px}
+.ws.ws-manager button.staff-primary-link{font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+.ws.ws-manager button.staff-primary-link:disabled{opacity:.5;cursor:not-allowed}
+.ws.ws-manager .vh-link{font-size:13px;text-decoration:underline;text-underline-offset:3px;color:var(--accent-text)}
+.ws.ws-manager .note-ok{margin:0;font-size:13px;font-weight:600;color:var(--good)}
+.ws.ws-manager .cmp .c2 b{font-size:24px}
+
+/* tables */
+.ws.ws-manager .mgr-table-wrap{overflow-x:auto;margin:0 -2px;padding:0 2px}
+.ws.ws-manager .mgr-table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.ws.ws-manager .mgr-table th,.ws.ws-manager .mgr-table td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;color:var(--ink2)}
+.ws.ws-manager .mgr-table thead th{font-size:12px;font-weight:600;color:var(--ink3);white-space:nowrap}
+.ws.ws-manager .mgr-table tbody th{font-weight:600;color:var(--ink);white-space:nowrap}
+.ws.ws-manager .mgr-table .num{text-align:right;white-space:nowrap}
+.ws.ws-manager .mgr-table .vh-link{white-space:nowrap}
+.ws.ws-manager .mgr-table tr:last-child>*{border-bottom:0}
+.ws.ws-manager .mgr-table tr.on>*{background:var(--acc-soft)}
+
+/* line chart (the Staff dashboard drawing) */
+.ws.ws-manager .mgr-chart{display:flex;flex-direction:column;gap:12px}
+.ws.ws-manager .mgr-chart svg{display:block;width:100%;height:auto;min-height:150px}
+.ws.ws-manager .mgr-chart .readout{min-height:20px;margin:0;font-size:13px;font-weight:600;color:var(--ink2)}
+.ws.ws-manager .mgr-chart circle.on{stroke:var(--card);stroke-width:2}
+
+/* robots */
+.ws.ws-manager .mgr-robots{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:12px}
+.ws.ws-manager .mgr-robot{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);text-align:left;font:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.ws.ws-manager .mgr-robot:hover{border-color:var(--line-strong)}
+.ws.ws-manager .mgr-robot.on{border-color:var(--acc-mid);background:var(--acc-soft)}
+.ws.ws-manager .mgr-robot-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.ws.ws-manager .mgr-robot-top b{font-size:16px;font-weight:650}
+.ws.ws-manager .mgr-robot dl{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;margin:0;font-size:12px}
+.ws.ws-manager .mgr-robot dt{color:var(--ink3)}
+.ws.ws-manager .mgr-robot dd{margin:0;text-align:right;color:var(--ink2);overflow-wrap:anywhere}
+.ws.ws-manager .mgr-health{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,130px),1fr));gap:10px}
+.ws.ws-manager .mgr-health>div{display:flex;flex-direction:column;gap:4px;padding:14px;border-radius:12px;background:var(--field)}
+.ws.ws-manager .mgr-health b{font-size:22px;font-weight:650;letter-spacing:-.02em;color:var(--ink)}
+.ws.ws-manager .mgr-health span{font-size:12px;color:var(--ink3)}
+@media(max-width:480px){.ws.ws-manager .mgr-health{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* alerts, incidents, steps, reviews */
+.ws.ws-manager .mgr-alerts{display:flex;flex-direction:column;gap:10px}
+.ws.ws-manager .mgr-alert{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.ws.ws-manager .mgr-alert.red{border-color:color-mix(in srgb,var(--danger) 45%,var(--line));background:var(--red1)}
+.ws.ws-manager .mgr-alert.off{opacity:.75}
+.ws.ws-manager .mgr-alert-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.ws.ws-manager .mgr-alert-head b{font-size:15px;font-weight:650;color:var(--ink)}
+.ws.ws-manager .mgr-alert p{margin:0;font-size:13px;line-height:1.5;color:var(--ink2)}
+.ws.ws-manager .mgr-alert p.title{font-weight:650;color:var(--ink)}
+.ws.ws-manager .mgr-estop{display:flex;align-items:center;gap:10px;margin:0;padding:12px 14px;border-radius:12px;background:var(--red1);color:var(--red3);font-size:14px;font-weight:650;line-height:1.45}
+.ws.ws-manager .mgr-estop svg{flex:none}
+.ws.ws-manager .mgr-steps{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
+.ws.ws-manager .mgr-steps li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink2)}
+.ws.ws-manager .mgr-steps li:last-child{border-bottom:0}
+.ws.ws-manager .mgr-steps li>span:first-child{display:flex;align-items:center;gap:8px;min-width:0}
+.ws.ws-manager .mgr-callout{margin:0;padding:12px 14px;border-radius:12px;background:var(--beige1);font-size:13px;line-height:1.5;color:var(--ink2)}
+.ws.ws-manager .mgr-check{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2);white-space:nowrap}
+.ws.ws-manager .mgr-check input{width:17px;height:17px;accent-color:var(--staff-focus)}
+.ws.ws-manager .mgr-checks{display:flex;flex-wrap:wrap;gap:6px 14px}
+.ws.ws-manager details.mgr-more>summary{width:fit-content;cursor:pointer;font-size:14px;font-weight:650;color:var(--ink)}
+.ws.ws-manager .mgr-empty{display:flex;flex-direction:column;gap:6px;padding:20px;border:1px dashed var(--line-strong);border-radius:14px;background:var(--field);color:var(--ink2);font-size:14px}
+.ws.ws-manager .mgr-stars{display:inline-flex;gap:2px;color:var(--warn)}
+.ws.ws-manager .mgr-photos{display:flex;flex-wrap:wrap;gap:8px}
+.ws.ws-manager .mgr-photos img{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.ws.ws-manager .mono{font-family:'JetBrains Mono',monospace}
+.ws.ws-manager .item>.avatar{flex:none;width:40px;height:40px}
+.ws.ws-manager .mgr-pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--ink3)}
+.ws.ws-manager .mgr-pager div{display:flex;gap:8px}
+.ws.ws-manager .mgr-h3{margin:8px 0 0;font-size:14px;font-weight:650;color:var(--ink)}
