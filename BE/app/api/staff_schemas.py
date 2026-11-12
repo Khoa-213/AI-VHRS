@@ -114,6 +114,9 @@ class QuotationCreateIn(BaseModel):
     options: list[MaterialOptionIn] | None = Field(default=None, max_length=3,
                                                    description="1-3 material options when the customer chose 'workshop suggests'.")
     eta: date | None = None
+    revision_reason: str | None = Field(
+        default=None, max_length=1000,
+        description="Required (422 REVISION_REASON_REQUIRED) when the customer asked for changes: why the price changed or stayed.")
 
 
 class AdjustIn(BaseModel):
@@ -158,6 +161,7 @@ class QuotationOut(_ORM):
     approved_by: int | None
     approved_at: datetime | None
     customer_note: str | None
+    revision_reason: str | None = None
     created_at: datetime
     options: list[OptionSummary] = []
     has_pdf: bool = False
@@ -274,12 +278,19 @@ class ChangeRequestIn(BaseModel):
 
 
 class SketchForCustomer(BaseModel):
+    id: int | None = None          # send back as `sketch_id` when approving (U2)
     version: int
     preview_urls: list[str]
     image_urls: list[str] = []
     approach_note: str | None
     estimated_writing_sec: int | None
     similarity_score: Decimal | None
+
+
+class QuoteRevisionOut(BaseModel):
+    reason: str
+    previous_version: int | None
+    previous_total: Decimal | None
 
 
 class QuotationCustomerOut(BaseModel):
@@ -298,3 +309,6 @@ class QuotationCustomerOut(BaseModel):
     pdf_url: str | None
     note: str = "Giá chưa bao gồm phí giao hàng."
     sketch: SketchForCustomer | None
+    revision: QuoteRevisionOut | None = None
+    ai_notice: str = "Phác thảo là bản tái tạo nét chữ bằng AI-VHRS, không phải văn bản gốc."
+

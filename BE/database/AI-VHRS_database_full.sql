@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0016 (alembic head), generated 2026-11-12 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0017 (alembic head), generated 2026-11-12 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0016);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0016;
+--      baseline schema and every migration up to 0017);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0017;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -655,6 +655,17 @@ BEGIN
   NEW.updated_at := now();
   RETURN NEW;
 END $$;
+
+--
+-- Name: fn_sketch_approval_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_sketch_approval_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+        RAISE EXCEPTION 'sketch_approvals % is append-only', OLD.id USING ERRCODE = 'check_violation';
+    END $$;
 
 SET default_tablespace = '';
 
@@ -1536,6 +1547,7 @@ END) STORED,
     customer_responded_at timestamp with time zone,
     customer_note text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revision_reason text,
     CONSTRAINT chk_quote_adjust_reason CHECK (((adjusted_total IS NULL) OR (adjustment_reason IS NOT NULL))),
     CONSTRAINT chk_quote_sent_validity CHECK (((sent_at IS NULL) OR (valid_until > sent_at))),
     CONSTRAINT quotations_adjusted_total_check CHECK ((adjusted_total >= (0)::numeric)),
@@ -1885,6 +1897,42 @@ ALTER TABLE public.showcase_posts ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTI
 );
 
 --
+-- Name: sketch_approvals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sketch_approvals (
+    id bigint NOT NULL,
+    order_id bigint NOT NULL,
+    quotation_id bigint NOT NULL,
+    sketch_id bigint NOT NULL,
+    sketch_version integer NOT NULL,
+    sketch_content_hash character(64),
+    image_paths text[] DEFAULT '{}'::text[] NOT NULL,
+    customer_id bigint NOT NULL,
+    chosen_option integer NOT NULL,
+    total numeric(14,0) NOT NULL,
+    ip character varying(64),
+    approved_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: sketch_approvals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sketch_approvals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: sketch_approvals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sketch_approvals_id_seq OWNED BY public.sketch_approvals.id;
+
+--
 -- Name: sketches; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2045,6 +2093,12 @@ ALTER TABLE ONLY public.quality_evaluations ALTER COLUMN id SET DEFAULT nextval(
 --
 
 ALTER TABLE ONLY public.robot_agents ALTER COLUMN id SET DEFAULT nextval('public.robot_agents_id_seq'::regclass);
+
+--
+-- Name: sketch_approvals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_approvals ALTER COLUMN id SET DEFAULT nextval('public.sketch_approvals_id_seq'::regclass);
 
 --
 -- Name: accounts accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2390,6 +2444,20 @@ ALTER TABLE ONLY public.showcase_posts
     ADD CONSTRAINT showcase_posts_pkey PRIMARY KEY (id);
 
 --
+-- Name: sketch_approvals sketch_approvals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_approvals
+    ADD CONSTRAINT sketch_approvals_pkey PRIMARY KEY (id);
+
+--
+-- Name: sketch_approvals sketch_approvals_quotation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_approvals
+    ADD CONSTRAINT sketch_approvals_quotation_id_key UNIQUE (quotation_id);
+
+--
 -- Name: sketches sketches_order_id_version_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2702,6 +2770,12 @@ CREATE INDEX ix_shipments_order ON public.shipments USING btree (order_id);
 CREATE INDEX ix_showcase_visible ON public.showcase_posts USING btree (sort_order, created_at DESC) WHERE is_visible;
 
 --
+-- Name: ix_sketch_approvals_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sketch_approvals_order ON public.sketch_approvals USING btree (order_id);
+
+--
 -- Name: ix_status_histories_order; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2936,6 +3010,12 @@ CREATE TRIGGER trg_shipments_updated_at BEFORE UPDATE ON public.shipments FOR EA
 --
 
 CREATE TRIGGER trg_showcase_posts_updated_at BEFORE UPDATE ON public.showcase_posts FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+--
+-- Name: sketch_approvals trg_sketch_approval_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sketch_approval_immutable BEFORE UPDATE ON public.sketch_approvals FOR EACH ROW EXECUTE FUNCTION public.fn_sketch_approval_immutable();
 
 --
 -- Name: templates trg_templates_updated_at; Type: TRIGGER; Schema: public; Owner: -
@@ -3567,6 +3647,34 @@ ALTER TABLE ONLY public.showcase_posts
     ADD CONSTRAINT showcase_posts_posted_by_fkey FOREIGN KEY (posted_by) REFERENCES public.accounts(id);
 
 --
+-- Name: sketch_approvals sketch_approvals_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_approvals
+    ADD CONSTRAINT sketch_approvals_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id);
+
+--
+-- Name: sketch_approvals sketch_approvals_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_approvals
+    ADD CONSTRAINT sketch_approvals_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
+
+--
+-- Name: sketch_approvals sketch_approvals_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_approvals
+    ADD CONSTRAINT sketch_approvals_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotations(id) ON DELETE CASCADE;
+
+--
+-- Name: sketch_approvals sketch_approvals_sketch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_approvals
+    ADD CONSTRAINT sketch_approvals_sketch_id_fkey FOREIGN KEY (sketch_id) REFERENCES public.sketches(id) ON DELETE CASCADE;
+
+--
 -- Name: sketches sketches_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3847,7 +3955,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0016');
+INSERT INTO alembic_version (version_num) VALUES ('0017');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

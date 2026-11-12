@@ -29,6 +29,8 @@ class ApproveQuotationIn(BaseModel):
     option: int | None = Field(default=None, ge=1, le=3, description="Required when the quote has several material options.")
     deposit_pct: Decimal | None = Field(default=None, gt=0, le=100, decimal_places=2,
                                         description="Share of the total paid now; from the quote's minimum up to 100. Default: the minimum.")
+    sketch_id: int | None = Field(default=None, description=(
+        "U2: `sketch.id` of the quotation view the customer is looking at; 409 SKETCH_VERSION_STALE if the sketch changed meanwhile."))
 
 
 class StartDepositIn(BaseModel):

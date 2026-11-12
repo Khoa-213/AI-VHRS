@@ -26,7 +26,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 from app.models.order import Order
 from app.models.ops import PaymentStatus, PaymentType, ProductionSnapshot
-from app.models.sketch import QuotationStatus
+from app.models.sketch import QuotationStatus, SketchApproval
 from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import PaymentRepository
 from app.repositories.workshop import QuotationRepository, SketchRepository
@@ -119,6 +119,7 @@ class SnapshotService:
         deposit = PaymentRepository(self.session).success(order.id, PaymentType.DEPOSIT)
         if deposit is None or deposit.status != PaymentStatus.SUCCESS:
             raise AppError(409, "DEPOSIT_REQUIRED", "Chưa có khoản cọc được cổng thanh toán xác nhận.")
+        approval = self.session.scalar(select(SketchApproval).where(SketchApproval.quotation_id == quotation.id))
         package_id = str(uuid.uuid4())
         payload = {
             "schema": ps.SCHEMA, "package_id": package_id, "issued_at": _iso(_now()),
@@ -129,6 +130,10 @@ class SnapshotService:
             "materials": materials_of(self.catalog, order),
             "quotation": {"id": quotation.id, "version": quotation.version, "final_total": _num(quotation.final_total),
                           "approved_at": _iso(quotation.customer_responded_at)},
+            # U2: the customer's approval record (None for quotations approved before migration 0017)
+            "approval": {"id": approval.id, "sketch_version": approval.sketch_version,
+                         "sketch_content_hash": approval.sketch_content_hash, "image_paths": list(approval.image_paths),
+                         "ip": approval.ip, "approved_at": _iso(approval.approved_at)} if approval else None,
             "deposit": {"payment_id": deposit.id, "amount": _num(deposit.amount), "gateway": deposit.gateway.value,
                         "paid_at": _iso(deposit.paid_at)},
             "watermark": None,                                # physical watermark: upgrade U8

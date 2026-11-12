@@ -206,7 +206,7 @@ Mỗi phase: code + test + chạy toàn suite trên Supabase + cập nhật `PRO
 | Phase | Nội dung | Phụ thuộc | Tiêu chí nghiệm thu |
 |---|---|---|---|
 | **U1** ✅ code + test (2026-11-12, chưa commit) | Production snapshot + chữ ký Ed25519; job trỏ snapshot; kiểm tra khi tải gói / bắt đầu viết; agent xác minh; sự cố khi lệch; job cũ chạy luồng legacy | Không | Test: sửa 1 byte quỹ đạo / đổi thông số bút / chữ ký khoá lạ / replay snapshot đơn khác → đều bị từ chối và ghi sự cố; job cũ vẫn chạy |
-| **U2** | Watermark preview + file xuất; bản ghi duyệt phiên bản (`sketch_approvals`); so sánh phiên bản; giới hạn vòng sửa | Q4 (số vòng) cho phần giới hạn | Ảnh khách xem luôn có dấu; duyệt báo giá ghi đúng phiên bản + hash ảnh |
+| **U2** ✅ code + test (2026-11-12, chưa commit; so sánh phiên bản chưa làm) | Watermark preview + file xuất; bản ghi duyệt phiên bản (`sketch_approvals`); so sánh phiên bản; lý do báo giá lại (Q4 thay cho giới hạn vòng sửa) | Q4 (số vòng) cho phần giới hạn | Ảnh khách xem luôn có dấu; duyệt báo giá ghi đúng phiên bản + hash ảnh |
 | **U3** | Bộ đánh giá: công cụ đo (SSIM, endpoint, topology, CER) + cấu trúc bộ dữ liệu + báo cáo; chạy trên ảnh **thật** do chủ dự án cung cấp | Q5 (dữ liệu) | Báo cáo số đo thật, không số giả |
 | **U4** | Vùng phục dựng: `sketch_regions`, nhãn ORIGINAL / RESTORED / INFERRED, chế độ Faithful / Assisted, Staff sửa theo vùng, sửa chữ không đụng vùng khác | Không (HTR thêm sau) | Sửa vùng 3 không đổi byte nét của vùng khác |
 | **U5** | Studio + AI Assistant: bản nháp trước khi gửi xưởng, revision + undo/redo, hội thoại, tool calling, ghi chi phí | **Q1** (LLM, khoá), **Q2** (nghiệp vụ studio) | Kịch bản hội thoại mẫu chạy với công cụ thật; LLM không bịa vật tư (test bằng catalog) |
@@ -267,7 +267,7 @@ Mỗi phase: code + test + chạy toàn suite trên Supabase + cập nhật `PRO
 
 | Tình huống | Xử lý | Phase |
 |---|---|---|
-| Khách duyệt phiên bản cũ (tab cũ) | Duyệt gửi kèm `sketch_id` + hash; khác phiên bản `final` hiện tại → 409 | U2 (báo giá đã gắn sketch, kiểm thêm hash) |
+| Khách duyệt phiên bản cũ (tab cũ) | Duyệt gửi kèm `sketch_id`; khác phác thảo của báo giá đang mở → `409 SKETCH_VERSION_STALE`; bản ghi duyệt lưu hash | U2 ✅ (`sketch_id` tuỳ chọn để app cũ không gãy) |
 | Webhook cọc gửi nhiều lần | Đã idempotent; snapshot tạo trong cùng giao dịch, ràng buộc duy nhất theo đơn + sketch | U1 |
 | Manager sửa thông số bút sau khi khoá | Job dùng giá trị trong snapshot; cảnh báo kỹ thuật viên có khác biệt | U1 |
 | Gói job bị sửa / tải nhầm phiên bản | Chữ ký + hash + `snapshot_id` của job; lệch → từ chối + sự cố | U1 |

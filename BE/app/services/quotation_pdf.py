@@ -35,6 +35,13 @@ class QuotationDoc:
     min_deposit_pct: Decimal
     adjusted: bool            # the reason stays internal (audit log), the customer only sees that a discount/adjustment applied
     multi_option: bool
+    revision_reason: str | None = None       # U2: shown to the customer on a re-quote
+    previous_version: int | None = None
+    previous_total: Decimal | None = None
+
+
+AI_NOTICE = ("Phác thảo và thành phẩm là bản tái tạo nét chữ bằng AI-VHRS, không phải văn bản gốc; "
+             "ảnh xem trước có dấu nhận diện AI-VHRS.")
 
 
 def render(doc: QuotationDoc) -> bytes:
@@ -96,4 +103,11 @@ def render(doc: QuotationDoc) -> bytes:
         pdf.multi_cell(0, 5, "Giá đã được xưởng điều chỉnh so với bảng giá tiêu chuẩn.", new_x="LMARGIN", new_y="NEXT")
     pdf.multi_cell(0, 5, "Phí giao hàng được tính riêng theo địa chỉ nhận. Báo giá có hiệu lực đến ngày nêu trên.",
                    new_x="LMARGIN", new_y="NEXT")
+    if doc.revision_reason:
+        pdf.ln(2)
+        head = f"Báo giá lại so với v{doc.previous_version}" if doc.previous_version else "Báo giá lại"
+        if doc.previous_total is not None:
+            head += f" (tổng trước đây {fmt_vnd(doc.previous_total)} đ)"
+        pdf.multi_cell(0, 5, f"{head}. Lý do: {doc.revision_reason}", new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(0, 5, AI_NOTICE, new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output())

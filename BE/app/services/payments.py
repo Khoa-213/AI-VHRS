@@ -24,7 +24,7 @@ from app.integrations import payment_gateway as gw
 from app.models.account import Account
 from app.models.ops import Payment, PaymentGateway, PaymentStatus, PaymentType
 from app.models.order import Order, OrderStatus, ProductionStatus
-from app.models.sketch import QuotationStatus
+from app.models.sketch import QuotationStatus, Sketch, SketchApproval
 from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import PaymentRepository
 from app.repositories.orders import OrderRepository
@@ -50,7 +50,8 @@ class QuotationApprovalService:
         self.quotes = QuotationRepository(session)
         self.catalog = CatalogRepository(session)
 
-    def approve(self, order_id: int, *, option: int | None, deposit_pct: Decimal | None) -> Order:
+    def approve(self, order_id: int, *, option: int | None, deposit_pct: Decimal | None,
+                sketch_id: int | None = None) -> Order:
         order = self.orders.get_owned(order_id, self.customer.id)
         if order is None:
             raise AppError(404, "ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.")
@@ -62,6 +63,10 @@ class QuotationApprovalService:
             raise AppError(409, "QUOTATION_NOT_OPEN", "Không có báo giá nào đang chờ bạn xác nhận.")
         if q.valid_until and q.valid_until < _now():
             raise AppError(409, "QUOTATION_EXPIRED", "Báo giá đã hết hạn.")
+        if sketch_id is not None and sketch_id != q.sketch_id:                       # U2: approve what was on screen
+            raise AppError(409, "SKETCH_VERSION_STALE",
+                           "Phác thảo đã được cập nhật; vui lòng tải lại báo giá và xem phác thảo mới trước khi duyệt.",
+                           {"sketch_id": q.sketch_id})
         options = q.price_snapshot.get("options", [])
         if len(options) > 1 and option is None:
             raise AppError(422, "OPTION_REQUIRED", "Báo giá có nhiều phương án vật tư; hãy chọn một phương án.")
@@ -84,6 +89,11 @@ class QuotationApprovalService:
         q.status, q.chosen_option, q.customer_responded_at = QuotationStatus.APPROVED, chosen["option"], _now()
         set_actor(self.session, self.customer.id, f"Khách duyệt báo giá v{q.version}")
         order.order_status = OrderStatus.AWAITING_DEPOSIT
+        sketch = self.session.get(Sketch, q.sketch_id)
+        self.session.add(SketchApproval(                                           # U2: append-only proof of consent
+            order_id=order.id, quotation_id=q.id, sketch_id=q.sketch_id, sketch_version=sketch.version,
+            sketch_content_hash=sketch.content_hash, image_paths=list(sketch.image_urls or []),
+            customer_id=self.customer.id, chosen_option=chosen["option"], total=total, ip=self.ip))
         self.session.flush()
         audit.record(self.session, actor_id=self.customer.id, action="QUOTATION_APPROVE", entity_type="quotation",
                      entity_id=q.id, new={"order_id": order.id, "option": chosen["option"], "total": str(total),

@@ -17,7 +17,7 @@ from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit
-from app.services.stroke_ai import engine, render_image, trajectory as tj
+from app.services.stroke_ai import engine, render_image, trajectory as tj, watermark
 from app.services.workshop_access import WorkshopAccess
 
 DEFAULT_V_MAX = 30.0   # mm/s, used when the order has no pen yet ("để xưởng đề xuất")
@@ -64,13 +64,14 @@ class SketchService:
         image_paths: list[str] = []
         for i, page in enumerate(pages, start=1):
             page.preview_path = f"{base}/preview_p{i}.png"
-            store.write(page.preview_path, tj.render_preview(page), "image/png")
+            store.write(page.preview_path,                         # U2: visible AI mark, never in the strokes
+                        watermark.apply_bytes(tj.render_preview(page), order.code, fmt="png"), "image/png")
             img = render_image.render_jpeg(
                 page, ink_hex=ink.hex_code if ink else None,
                 stroke_width_mm=float(pen.stroke_width_mm) if pen and pen.stroke_width_mm else None,
                 paper_surface=paper.surface if paper else None)
             image_paths.append(f"{base}/sketch_p{i}.jpg")
-            store.write(image_paths[-1], img, "image/jpeg")
+            store.write(image_paths[-1], watermark.apply_bytes(img, order.code, fmt="jpg"), "image/jpeg")
         raw = tj.dumps(tj.to_dict(pages, eng))
         path = f"{base}/trajectory.json"
         store.write(path, raw, "application/json")

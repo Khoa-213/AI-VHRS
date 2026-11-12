@@ -184,7 +184,8 @@ def finalize_sketch(order_id: int, version: int, svc: Sketches) -> SketchOut:
 def create_quotation(order_id: int, body: QuotationCreateIn, svc: Quotes) -> QuotationOut:
     return quotation_out(svc.create(
         order_id, complexity=body.complexity.value if body.complexity else None, char_count=body.char_count,
-        options=[o.model_dump() for o in body.options] if body.options else None, eta=body.eta))
+        options=[o.model_dump() for o in body.options] if body.options else None, eta=body.eta,
+        revision_reason=body.revision_reason))
 
 
 @router.get("/orders/{order_id}/quotations", response_model=list[QuotationOut], summary="Các phiên bản báo giá của đơn")
