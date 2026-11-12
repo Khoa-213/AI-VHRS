@@ -105,7 +105,11 @@ try {
   const evaluate = async (expression) => { const r = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.text); return r.result.value }
   const wait = async (expression, label) => { for (let i = 0; i < 120; i++) { if (await evaluate(expression)) return; await sleep(100) } throw new Error(`Timed out: ${label}`) }
   const button = (text) => `[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(text)})`
-  const click = async (text) => { await wait(`!!(${button(text)}) && !(${button(text)}).disabled && !(${button(text)}).closest('fieldset:disabled')`, text); await evaluate(`(${button(text)}).click()`); await sleep(100) }
+  const click = async (text) => {
+    await wait(`!!(${button(text)}) && !(${button(text)}).disabled && !(${button(text)}).closest('fieldset:disabled')`, text)
+    await evaluate(`(()=>{const el=(${button(text)});const parents=[];for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS'&&!p.open)parents.push(p);parents.reverse().forEach(p=>p.querySelector(':scope > summary').click());})()`)
+    await evaluate(`(${button(text)}).click()`); await sleep(100)
+  }
 
 
   const field = (selector,value) => evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});const p=e.tagName==='SELECT'?HTMLSelectElement.prototype:e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(p,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));})()`)
@@ -116,11 +120,39 @@ try {
   await goto()
   await wait(`!!(${button('Create waybill')})`,'shipping panel')
   assert.equal(mutations,0)
+  assert.equal(await evaluate(`document.querySelector('.fulfillment').open`),true)
+  await field('.fulfillment .sp-form textarea','Keep this packing note')
+  await evaluate(`document.querySelector('.fulfillment > summary').click()`)
+  assert.equal(await evaluate(`document.querySelector('.fulfillment').open`),false,'Fulfillment collapses')
+  await evaluate(`document.querySelector('.fulfillment > summary').click()`)
+  assert.equal(await evaluate(`document.querySelector('.fulfillment .sp-form textarea').value`),'Keep this packing note','Collapse keeps unsent form input')
+
   assert.ok(await evaluate(`(${button('Create waybill')}).disabled`))
   await check('I checked the recipient, address and product')
   await click('Create waybill')
   await wait(`document.querySelector('.sp-shipment')!==null`,'waybill created')
   assert.equal(order.order_status,'READY_TO_DELIVER','Creating a waybill must not mark the order delivering')
+  assert.equal(await evaluate(`document.querySelector('.sp-history').open`),false,'History starts collapsed')
+  await evaluate(`document.querySelector('.sp-history > summary').click()`)
+  assert.equal(await evaluate(`document.querySelector('.sp-history').open`),true)
+  await evaluate(`document.querySelector('.sp-history > summary').click()`)
+  assert.equal(await evaluate(`document.querySelector('.sp-history').open`),false)
+  for(const lang of ['vi','ja']) {
+    await evaluate(`localStorage.setItem('aivhrs-lang',${JSON.stringify(lang)})`)
+    await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+    await goto(); await wait(`!!document.querySelector('.sp-demo')`,'translated mock form')
+    assert.ok(await evaluate(`(()=>{const f=document.querySelector('.sp-demo').getBoundingClientRect();const l=document.querySelector('.sp-demo legend').getBoundingClientRect();return f.width>0&&f.height>0&&l.top>=f.top&&l.left>=f.left&&l.right<=f.right+1})()`),'Legend stays inside the test card')
+    assert.ok(await evaluate(`document.querySelector('.sp-demo .wk-warn').scrollWidth<=document.querySelector('.sp-demo .wk-warn').clientWidth+1`),'Warning copy wraps')
+    assert.ok(await evaluate('document.documentElement.scrollWidth<=391'),'No mobile overflow')
+    await evaluate(`document.querySelector('.sp-demo').scrollIntoView({block:'center',behavior:'instant'})`)
+    await sleep(150)
+    const shot=await command('Page.captureScreenshot',{format:'png',captureBeyondViewport:false})
+    await writeFile(join(scratch,`mock-form-${lang}-mobile.png`),Buffer.from(shot.data,'base64'))
+  }
+  await evaluate(`localStorage.setItem('aivhrs-lang','en')`)
+  await command('Emulation.setDeviceMetricsOverride',{width:1365,height:1000,deviceScaleFactor:1,mobile:false})
+  await goto(); await wait(`!!document.querySelector('.sp-shipment')`,'restored shipment')
+
   await wait(`document.querySelector('.sp-shipment a[target="_blank"]')!==null`,'label')
   assert.equal(await evaluate(`document.querySelector('.sp-shipment a').getAttribute('href')`),'https://storage.test/label.pdf')
   await click('Cancel waybill')

@@ -1,0 +1,45 @@
+/* The shared appearance preference changes Staff colours, never the document/paper artwork. */
+:root[data-theme='dark'] .ws.ws-staff{
+  color-scheme:dark;
+  --shell:#111710;--bg:#1a2119;--bg-2:#20291e;--stage:#222b20;--card:#1a2119;--surface:#1a2119;--field:#242d21;--pop:#20291e;
+  --ink:#edf1e7;--ink2:#cfd7c7;--ink3:#a4b099;--line:#333e2d;--line-strong:#4c5a42;
+  --t1:#edf1e7;--t2:#dbe3d2;--t3:#c7d0bf;--t4:#acb8a2;--t5:#99a88f;--t6:#829178;
+  --acc:#c4ed62;--acc-soft:#2c391f;--acc-mid:#4a602e;--accent-text:#cee992;--accent-text-hover:#e0f5b1;--on-accent:#172010;--staff-focus:#cee992;
+  --tray:#242e20;--tray-hover:#303d29;--tray-on:#2c391f;--header-line:#394632;
+  --btn-inv-bg:#e6eedb;--btn-inv-fg:#172010;--btn-inv-hover:#d5e4c3;
+  --staff-series-2:#a0b28e;--staff-series-3:#6a8156;--staff-series-4:#415735;
+  --good:#8ed29e;--good-solid:#8ed29e;--good-08:rgba(142,210,158,.1);--good-1:rgba(142,210,158,.12);--good-3:rgba(142,210,158,.3);
+  --warn:#e9c77a;--warn-08:rgba(233,199,122,.1);--danger:#fa9c91;--teal:#86d4ba;
+  --st-sketch:#c7aff5;--st-pending:#e9c77a;--st-accepted:#86d4ba;--st-queued:#a3c3f1;--st-written:#8ed29e;--st-rewriting:#edb19c;
+  --green1:#243b29;--green2:#36563b;--green3:#a8d6ae;--beige1:#39331f;--beige2:#514a30;--beige3:#e1cc92;
+  --purple1:#302c3b;--purple2:#484156;--purple3:#d3c3ed;--red1:#3a2924;--red3:#f0b0a4;--tosca1:#233831;--tosca2:#345146;
+  --fx-04:rgba(240,247,225,.04);--fx-06:rgba(240,247,225,.06);--fx-08:rgba(240,247,225,.08);--fx-16:rgba(240,247,225,.16);
+}
+:root[data-theme='dark'] .ws.ws-staff .staff-kpis .k:first-child{background:#10170e;border-color:#39472e;color:#fff}
+:root[data-theme='dark'] .ws.ws-staff :is(.wk-order-head,.wk-block,.wk-list){background:var(--card)}
+:root[data-theme='dark'] .ws.ws-staff .staff-kpis .k:last-child{background:#2d3b20;border-color:#41542d}
+:root[data-theme='dark'] .ws.ws-staff .staff-kpis .k:first-child .ico{background:#2b3921;color:var(--acc)}
+:root[data-theme='dark'] .ws.ws-staff .staff-period button.on{background:var(--acc);color:var(--on-accent)}
+:root[data-theme='dark'] .ws.ws-staff .staff-distribution svg text{fill:var(--ink)}
+:root[data-theme='dark'] .ws.ws-staff .staff-distribution svg>circle:first-child{stroke:var(--line)}
+:root[data-theme='dark'] .ws.ws-staff :is(.avatar,.ol-scope-count){background:var(--field);color:var(--ink2)}
+:root[data-theme='dark'] .ws.ws-staff .ol-scope button.on .ol-scope-count{background:var(--acc-soft);color:var(--ink)}
+:root[data-theme='dark'] .ws.ws-staff :is(.ol-count,.ol-count.zero){background:var(--field);color:var(--ink2)}
+:root[data-theme='dark'] .ws.ws-staff .ol-sec h3{background:var(--card)}
+:root[data-theme='dark'] .ws.ws-staff .staff-board .ol-sec{background:#20291c;border-color:var(--line)}
+:root[data-theme='dark'] .ws.ws-staff .staff-board .ol-sec h3{background:transparent}
+:root[data-theme='dark'] .ws.ws-staff .staff-board .ol-row{border-color:var(--line)}
+:root[data-theme='dark'] .ws.ws-staff .staff-board .ol-row:hover{border-color:#7c965c}
+:root[data-theme='dark'] .ws.ws-staff .ol-row.on{border-color:var(--acc-mid)}
+:root[data-theme='dark'] .ws.ws-staff .ol-sec-head[aria-expanded='true']{background:var(--acc-soft);border-color:var(--acc-mid)}
+:root[data-theme='dark'] .ws.ws-staff .ol-sec-head[aria-expanded]:hover{background:var(--tray-hover)}
+:root[data-theme='dark'] .ws.ws-staff :is(.sp-history,.sp-fold-toggle,.lang,.lang-menu,.nbell-btn,.ol-stages button){background:var(--card);border-color:var(--line)}
+:root[data-theme='dark'] .ws.ws-staff .sp-form.sp-demo{background:#302b1d;border-color:#5c5030}
+:root[data-theme='dark'] .ws.ws-staff .sp-demo legend{color:#f0d99c}
+:root[data-theme='dark'] .ws.ws-staff .sp-demo .wk-warn{color:#dacaa3}
+:root[data-theme='dark'] .ws.ws-staff .vh-select option{background:var(--card);color:var(--ink)}
+:root[data-theme='dark'] .ws.ws-staff :is(.vh-btn--primary,.btn.acc){background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+:root[data-theme='dark'] .ws.ws-staff :is(.vh-btn--primary,.btn.acc):hover:not(:disabled){background:var(--btn-inv-hover)}
+:root[data-theme='dark'] .ws.ws-staff :is(.vh-btn--ghost,.vh-btn--white,.btn.ghost){background:var(--card);color:var(--ink);border-color:var(--line-strong)}
+:root[data-theme='dark'] .ws.ws-staff .wk-changes-list li.is-live{background:var(--acc-soft)}
+:root[data-theme='dark'] .ws.ws-staff .vh-chip{background:var(--field)}

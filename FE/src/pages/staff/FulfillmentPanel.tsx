@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CaretDown } from '@phosphor-icons/react'
 import type { Job } from '../../services/async'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
@@ -57,8 +58,13 @@ export default function FulfillmentPanel({ order, onChanged }: { order: WorkOrde
   }
   const paidRows = (payments.data ?? []).filter((p) => p.status === 'SUCCESS')
   const needsRefund = payments.data?.some((p) => p.needsRefund)
-  return <section className="wk-block fulfillment" aria-label={t('sp.title')}>
-    <div className="sp-heading"><h3>{t('sp.title')}</h3><button type="button" className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => void refresh()}>{t('sp.refresh')}</button></div>
+  return <details className="wk-block fulfillment sp-disclosure" open aria-label={t('sp.title')}>
+    <summary className="sp-fold-summary">
+      <h3>{t('sp.title')}</h3>
+      <span className="sp-fold-toggle"><span className="sp-fold-closed">{t('sp.expand')}</span><span className="sp-fold-open">{t('sp.collapse')}</span><CaretDown size={18} aria-hidden /></span>
+    </summary>
+    <div className="sp-fold-body">
+    <div className="sp-heading"><button type="button" className="vh-btn vh-btn--ghost vh-btn--sm" disabled={busy} onClick={() => void refresh()}>{t('sp.refresh')}</button></div>
     <p className={paid ? 'sp-notice' : 'wk-warn'}>{t(paid ? order.status === 'COMPLETED' ? 'sp.completed' : 'sp.paid' : 'sp.awaitingPayment')}</p>
     {!canWrite && <p className="sd-sub">{t('sp.readOnly')}</p>}
     <dl className="wk-rows">
@@ -114,7 +120,13 @@ export default function FulfillmentPanel({ order, onChanged }: { order: WorkOrde
         <label className="wk-check"><input type="checkbox" checked={packed} onChange={(e) => setPacked(e.target.checked)} />{t('sp.packed')}</label>
         <button type="button" className="vh-btn vh-btn--primary vh-btn--md" disabled={!packed} onClick={() => void run(() => createShipment(order.id, note), t('sp.created'))}>{t(latest ? 'sp.recreate' : 'sp.create')}</button>
       </fieldset>}
-      <h4>{t('sp.shipments')}</h4>
+      <details className="sp-history sp-disclosure">
+        <summary className="sp-fold-summary">
+          <h4>{t('sp.shipments')}<span className="sp-fold-count">{rows.length}</span></h4>
+          <span className="sp-fold-toggle"><span className="sp-fold-closed">{t('sp.expand')}</span><span className="sp-fold-open">{t('sp.collapse')}</span><CaretDown size={18} aria-hidden /></span>
+        </summary>
+        <div className="sp-history-body">
+        <p className="sd-sub">{t('sp.newestFirst')}</p>
       {rows.map((s, index) => <article key={s.id} className="sp-shipment">
         <div className="sp-heading"><h4>{s.waybill_code || `#${s.id}`}</h4><span className="chip mute">{t(`sp.status.${s.status}`)}</span></div>
         {index === 0 && <span className="sd-sub">{t('sp.latest')}</span>}
@@ -148,6 +160,8 @@ export default function FulfillmentPanel({ order, onChanged }: { order: WorkOrde
           <div className="wk-actions"><button type="button" className="vh-btn vh-btn--ghost vh-btn--md" onClick={() => setCancelId(null)}>{t('ov.back')}</button><button type="button" className="vh-btn vh-btn--primary vh-btn--md" disabled={!reason.trim()} onClick={() => void run(() => cancelShipment(s.id, reason), t('sp.cancelled'))}>{t('sp.cancelConfirm')}</button></div>
         </fieldset>}
       </article>)}
+        </div>
+      </details>
       {canWrite && latest?.mode === 'MOCK' && moves.length !== 0 && nextEvent && order.status !== 'COMPLETED' && <fieldset className="sp-form sp-demo" disabled={busy}>
         <legend>{t('sp.mockTitle')}</legend>
         <p className="wk-warn">{t('sp.mockHelp')}</p>
@@ -157,5 +171,6 @@ export default function FulfillmentPanel({ order, onChanged }: { order: WorkOrde
         <button type="button" className="vh-btn vh-btn--primary vh-btn--md" disabled={!demoConfirmed || (['FAILED', 'RETURNED'].includes(nextEvent) && !eventReason.trim())} onClick={() => void run(() => mockShipmentEvent(latest.id, nextEvent, eventReason), t('sp.eventSent'))}>{t('sp.sendEvent')}</button>
       </fieldset>}
     </>}
-  </section>
+    </div>
+  </details>
 }
