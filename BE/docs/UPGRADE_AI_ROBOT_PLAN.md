@@ -207,8 +207,8 @@ Mỗi phase: code + test + chạy toàn suite trên Supabase + cập nhật `PRO
 |---|---|---|---|
 | **U1** ✅ code + test (2026-11-12, commit `9c29ee1`) | Production snapshot + chữ ký Ed25519; job trỏ snapshot; kiểm tra khi tải gói / bắt đầu viết; agent xác minh; sự cố khi lệch; job cũ chạy luồng legacy | Không | Test: sửa 1 byte quỹ đạo / đổi thông số bút / chữ ký khoá lạ / replay snapshot đơn khác → đều bị từ chối và ghi sự cố; job cũ vẫn chạy |
 | **U2** ✅ code + test (2026-11-12, commit `b200e4b`; so sánh phiên bản chưa làm) | Watermark preview + file xuất; bản ghi duyệt phiên bản (`sketch_approvals`); so sánh phiên bản; lý do báo giá lại (Q4 thay cho giới hạn vòng sửa) | Q4 (số vòng) cho phần giới hạn | Ảnh khách xem luôn có dấu; duyệt báo giá ghi đúng phiên bản + hash ảnh |
-| **U3** | Bộ đánh giá: công cụ đo (SSIM, endpoint, topology, CER) + cấu trúc bộ dữ liệu + báo cáo; chạy trên ảnh **thật** do chủ dự án cung cấp | Q5 (dữ liệu) | Báo cáo số đo thật, không số giả |
-| **U4** ✅ code + test (2026-11-12, chưa commit; HTR chưa có) | Vùng phục dựng: `sketch_regions`, nhãn ORIGINAL / RESTORED / INFERRED, chế độ Faithful / Assisted, Staff sửa theo vùng, sửa chữ không đụng vùng khác | Không (HTR thêm sau) | Sửa vùng 3 không đổi byte nét của vùng khác |
+| **U3** ✅ đợt 1 (2026-11-12, chưa commit; báo cáo `docs/benchmarks/U3_recovery_viet_hw_2026-11-12.md`) | Bộ đánh giá: công cụ đo (topology, endpoint, vùng / từ, dấu, độ nhạy mực mờ; SSIM bỏ vì cần căn ảnh, CER chờ nhận dạng chữ) + cấu trúc bộ dữ liệu + báo cáo; chạy trên 50 ảnh **thật** | Q5 (dữ liệu) | Báo cáo số đo thật, không số giả |
+| **U4** ✅ code + test (2026-11-12, commit `766b89a`; HTR chưa có) | Vùng phục dựng: `sketch_regions`, nhãn ORIGINAL / RESTORED / INFERRED, chế độ Faithful / Assisted, Staff sửa theo vùng, sửa chữ không đụng vùng khác | Không (HTR thêm sau) | Sửa vùng 3 không đổi byte nét của vùng khác |
 | **U5** | Studio + AI Assistant: bản nháp trước khi gửi xưởng, revision + undo/redo, hội thoại, tool calling, ghi chi phí | **Q1** (LLM, khoá), **Q2** (nghiệp vụ studio) | Kịch bản hội thoại mẫu chạy với công cụ thật; LLM không bịa vật tư (test bằng catalog) |
 | **U6** | Vật tư mở rộng + profile tổ hợp + nhãn cấp preview | Không (đo thật là HW) | Manager nhập được, trường đo được ghi nguồn |
 | **U7** | Robot engine: tối ưu thứ tự nét + pen-up, jerk limit, benchmark mô phỏng | Không (đo thật là HW) | Quãng pen-up / thời gian giảm, đo bằng mô phỏng trên bộ phác thảo mẫu |
@@ -224,7 +224,7 @@ Mỗi phase: code + test + chạy toàn suite trên Supabase + cập nhật `PRO
 - Q2: phương án A (studio là lớp mới trước đơn).
 - Q3: phương án A (dòng ở lề dưới + thẻ chứng nhận có QR; bắt buộc OT-1, tuỳ chọn OT-3).
 - Q4: **không giới hạn vòng miễn phí**; mỗi lần khách yêu cầu sửa, Staff lập báo giá mới kèm **lý do giá thay đổi** (giá có thể giữ nguyên). U2 thêm trường lý do thay cho bộ đếm vòng.
-- Q5: chưa trả lời.
+- Q5 (một phần, 2026-11-12): chủ dự án đưa bộ `5CD-AI/Viet-Handwriting-gemini-VQA` (Hugging Face, ảnh UIT-HWDB + Cinnamon, có văn bản chuẩn, không có quỹ đạo bút, giấy phép chưa ghi). Dùng 50 ảnh để đo nội bộ, ảnh không vào repo. Vẫn thiếu: ảnh hư hại thật (giấy cũ, mực phai) và dữ liệu có quỹ đạo bút để đo thứ tự / chiều nét.
 
 
 **Q1. Nhà cung cấp LLM cho AI Assistant**
