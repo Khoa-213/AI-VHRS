@@ -30,7 +30,7 @@ from app.models.sketch import QuotationStatus, SketchApproval
 from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import PaymentRepository
 from app.repositories.workshop import QuotationRepository, SketchRepository
-from app.services import audit
+from app.services import audit, material_profiles
 from app.services.stroke_ai import trajectory as tj
 
 log = logging.getLogger("app.snapshot")
@@ -62,13 +62,17 @@ def materials_of(catalog: CatalogRepository, order: Order) -> dict[str, Any]:
                  "f_min_n": _num(pen.f_min_n), "f_max_n": _num(pen.f_max_n), "f_hard_n": _num(pen.f_hard_n),
                  "v_max_mm_s": _num(pen.v_max_mm_s)} if pen else None),
         "ink": ({"id": ink.id, "name": ink.name, "hex_code": ink.hex_code} if ink else None),
+        # U6: the measured profile of this combination (None = not calibrated yet)
+        "profile": material_profiles.profile_block(material_profiles.profile_for(
+            catalog.s, order.paper_type_id, order.pen_type_id, order.ink_color_id)),
     }
 
 
 def material_drift(locked: dict[str, Any], live: dict[str, Any]) -> list[str]:
     """Human-readable differences between the values locked in the snapshot and the catalog today."""
     out = []
-    for kind in ("paper", "pen", "ink"):
+    # U6: packages locked before migration 0019 carry no "profile" key; they are compared on paper / pen / ink only
+    for kind in ("paper", "pen", "ink") + (("profile",) if "profile" in locked else ()):
         a, b = locked.get(kind) or {}, live.get(kind) or {}
         for key in sorted(set(a) | set(b)):
             if a.get(key) != b.get(key):

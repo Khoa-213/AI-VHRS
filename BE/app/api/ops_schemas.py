@@ -134,6 +134,7 @@ class PaperOut(_ORM):
     unit_price: Decimal
     stock_qty: int
     is_active: bool
+    specs: dict[str, Any] = {}      # U6: {key: {value, source, unit?, note?}}
 
 
 class PenIn(BaseModel):
@@ -184,6 +185,7 @@ class PenOut(_ORM):
     surcharge: Decimal
     stock_qty: int
     is_active: bool
+    specs: dict[str, Any] = {}
 
 
 class InkIn(BaseModel):
@@ -209,6 +211,62 @@ class InkOut(_ORM):
     unit_price: Decimal
     stock_qty: int
     is_active: bool
+    specs: dict[str, Any] = {}
+
+
+class SpecsIn(BaseModel):
+    """U6: replaces the whole `specs` object. Every value needs `source` SUPPLIER | MEASURED | ASSUMED."""
+    specs: dict[str, Any]
+
+
+class ProfileIn(BaseModel):
+    paper_type_id: int
+    pen_type_id: int
+    ink_color_id: int
+    robot_id: int | None = None
+    line_width_mm: Decimal | None = Field(default=None, gt=0, lt=100)
+    darkness: Decimal | None = Field(default=None, ge=0, le=1)
+    bleed_mm: Decimal | None = Field(default=None, ge=0, lt=100)
+    v_max_mm_s: Decimal | None = Field(default=None, gt=0, lt=10000)
+    method: str | None = Field(default=None, max_length=500)
+    evidence_uri: str | None = Field(default=None, max_length=1000)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class ProfilePatch(BaseModel):
+    line_width_mm: Decimal | None = Field(default=None, gt=0, lt=100)
+    darkness: Decimal | None = Field(default=None, ge=0, le=1)
+    bleed_mm: Decimal | None = Field(default=None, ge=0, lt=100)
+    v_max_mm_s: Decimal | None = Field(default=None, gt=0, lt=10000)
+    method: str | None = Field(default=None, max_length=500)
+    evidence_uri: str | None = Field(default=None, max_length=1000)
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class ProfileVerifyIn(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class ProfileOut(_ORM):
+    id: int
+    paper_type_id: int
+    pen_type_id: int
+    ink_color_id: int
+    robot_id: int | None
+    line_width_mm: Decimal | None
+    darkness: Decimal | None
+    bleed_mm: Decimal | None
+    v_max_mm_s: Decimal | None
+    status: str
+    method: str | None
+    evidence_uri: str | None
+    note: str | None
+    measured_by: int | None
+    measured_at: datetime | None
+    verified_by: int | None
+    verified_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class StockIn(BaseModel):

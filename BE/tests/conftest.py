@@ -71,6 +71,13 @@ def _cleanup() -> None:
         # incidents reference robots and accounts without cascade (job_events/calibrations went with their jobs)
         c.execute(text(f"delete from incidents where reported_by in {_TEST_IDS} "
                        "or robot_id in (select id from robots where code like 'pytest\\_%')"))
+        # U6 material profiles: of test materials / robots, or measured / verified by a test account
+        _test_profiles = ("(select id from material_profiles where robot_id in (select id from robots where code like 'pytest\\_%') "
+                          "or paper_type_id in (select id from paper_types where code like 'pytest\\_%') "
+                          "or pen_type_id in (select id from pen_types where code like 'pytest\\_%') "
+                          f"or measured_by in {_TEST_IDS} or verified_by in {_TEST_IDS})")
+        c.execute(text(f"update sketches set render_profile_id = null where render_profile_id in {_test_profiles}"))
+        c.execute(text(f"delete from material_profiles where id in {_test_profiles}"))
         c.execute(text("delete from robots where code like 'pytest\\_%'"))
         c.execute(text(f"delete from handwriting_styles where owner_id in {_TEST_IDS}"))
         # a test may have saved a new PricingConfig version: drop those and re-activate the last real one

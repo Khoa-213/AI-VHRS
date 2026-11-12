@@ -95,6 +95,8 @@ class SketchOut(_ORM):
     trajectory_url: str | None = None   # signed link of the robot trajectory JSON
     warnings: list[str] = []
     region_counts: dict[str, int] = {}  # U4: {"ORIGINAL": n, "RESTORED": n, "INFERRED": n}; {} = no regions (OT-3, manual)
+    render_profile_id: int | None = None
+    preview_tier: str = "VISUAL"       # U6: VISUAL | CALIBRATED | PRODUCTION_READY
 
 
 class SketchRegionOut(_ORM):
@@ -331,6 +333,8 @@ class SketchForCustomer(BaseModel):
     restoration_mode: str | None = None        # U4 (OT-1): FAITHFUL | ASSISTED (null on an OT-1 order = FAITHFUL)
     region_counts: dict[str, int] = {}
     regions: list[RegionForCustomer] = []      # only the RESTORED / INFERRED ones, to highlight on the image
+    preview_tier: str = "VISUAL"               # U6: VISUAL | CALIBRATED | PRODUCTION_READY
+    preview_note: str | None = None            # U6: Vietnamese sentence to show next to the image
 
 
 class QuoteRevisionOut(BaseModel):

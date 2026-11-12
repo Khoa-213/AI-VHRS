@@ -26,6 +26,7 @@ from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
 from app.models.order import Order, OrderStatus
 from app.models.sketch import Quotation, Sketch
+from app.services import material_profiles
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.repositories.ops import JobRepository
 from app.services.acceptance import workshop_photos
@@ -75,6 +76,7 @@ def sketch_out(row: Sketch, previews: list[str] | None = None, warnings: list[st
     if svc is not None:
         out.image_urls, out.trajectory_url = svc.image_urls(row), svc.trajectory_url(row)
         out.region_counts = region_counts(svc.regions_of(row))
+        out.preview_tier = material_profiles.preview_tier(svc.session, row)
     return out
 
 

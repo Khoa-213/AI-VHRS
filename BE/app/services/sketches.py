@@ -19,7 +19,7 @@ from app.models.sketch import Sketch, SketchRegion
 from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
-from app.services import audit
+from app.services import audit, material_profiles
 from app.services.stroke_ai import engine, regions as rg, render_image, trajectory as tj, watermark
 from app.services.workshop_access import WorkshopAccess
 
@@ -69,6 +69,8 @@ class SketchService:
         paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
         ink = self.catalog.ink(order.ink_color_id) if order.ink_color_id else None
         pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        profile = material_profiles.render_profile(self.session, order)          # U6: measured width when known
+        width = profile.line_width_mm if profile else (pen.stroke_width_mm if pen else None)
         image_paths: list[str] = []
         for i, page in enumerate(pages, start=1):
             page.preview_path = f"{base}/preview_p{i}.png"
@@ -76,7 +78,7 @@ class SketchService:
                         watermark.apply_bytes(tj.render_preview(page), order.code, fmt="png"), "image/png")
             img = render_image.render_jpeg(
                 page, ink_hex=ink.hex_code if ink else None,
-                stroke_width_mm=float(pen.stroke_width_mm) if pen and pen.stroke_width_mm else None,
+                stroke_width_mm=float(width) if width else None,
                 paper_surface=paper.surface if paper else None)
             image_paths.append(f"{base}/sketch_p{i}.jpg")
             store.write(image_paths[-1], watermark.apply_bytes(img, order.code, fmt="jpg"), "image/jpeg")
@@ -88,7 +90,8 @@ class SketchService:
             preview_url=pages[0].preview_path, image_urls=image_paths, similarity_score=similarity,
             suggested_complexity=ComplexityLevel(complexity) if complexity else None,
             estimated_writing_sec=metrics.estimated_writing_sec, total_stroke_mm=metrics.total_stroke_mm,
-            pen_lift_count=metrics.pen_lift_count, approach_note=(note or None), content_hash=tj.content_hash(raw)))
+            pen_lift_count=metrics.pen_lift_count, approach_note=(note or None), content_hash=tj.content_hash(raw),
+            render_profile_id=profile.id if profile else None))
         for r in regions or []:                                       # U4
             self.session.add(SketchRegion(
                 sketch_id=row.id, page_no=r.page_no, region_no=r.region_no, x0=r.bbox[0], y0=r.bbox[1], x1=r.bbox[2],

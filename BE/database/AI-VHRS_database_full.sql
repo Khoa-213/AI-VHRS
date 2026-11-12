@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0018 (alembic head), generated 2026-11-12 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0019 (alembic head), generated 2026-11-12 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0018);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0018;
+--      baseline schema and every migration up to 0019);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0019;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -897,6 +897,7 @@ CREATE TABLE public.ink_colors (
     unit_price numeric(14,0) DEFAULT 0 NOT NULL,
     stock_qty integer DEFAULT 0 NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
+    specs jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT ink_colors_hex_code_check CHECK ((hex_code ~ '^#[0-9A-Fa-f]{6}$'::text)),
     CONSTRAINT ink_colors_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT ink_colors_unit_price_check CHECK ((unit_price >= (0)::numeric))
@@ -943,6 +944,56 @@ ALTER TABLE public.job_events ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     NO MAXVALUE
     CACHE 1
 );
+
+--
+-- Name: material_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.material_profiles (
+    id bigint NOT NULL,
+    paper_type_id bigint NOT NULL,
+    pen_type_id bigint NOT NULL,
+    ink_color_id bigint NOT NULL,
+    robot_id bigint,
+    line_width_mm numeric(4,2),
+    darkness numeric(4,3),
+    bleed_mm numeric(4,2),
+    v_max_mm_s numeric(5,1),
+    status character varying(12) DEFAULT 'UNCALIBRATED'::character varying NOT NULL,
+    method text,
+    evidence_uri text,
+    note text,
+    measured_by bigint,
+    measured_at timestamp with time zone,
+    verified_by bigint,
+    verified_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_profile_measured CHECK ((((status)::text = 'UNCALIBRATED'::text) OR ((line_width_mm IS NOT NULL) AND (measured_at IS NOT NULL)))),
+    CONSTRAINT chk_profile_verified CHECK ((((status)::text <> 'VERIFIED'::text) OR (verified_at IS NOT NULL))),
+    CONSTRAINT material_profiles_bleed_mm_check CHECK ((bleed_mm >= (0)::numeric)),
+    CONSTRAINT material_profiles_darkness_check CHECK (((darkness >= (0)::numeric) AND (darkness <= (1)::numeric))),
+    CONSTRAINT material_profiles_line_width_mm_check CHECK ((line_width_mm > (0)::numeric)),
+    CONSTRAINT material_profiles_status_check CHECK (((status)::text = ANY ((ARRAY['UNCALIBRATED'::character varying, 'MEASURED'::character varying, 'VERIFIED'::character varying])::text[]))),
+    CONSTRAINT material_profiles_v_max_mm_s_check CHECK ((v_max_mm_s > (0)::numeric))
+);
+
+--
+-- Name: material_profiles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.material_profiles_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: material_profiles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.material_profiles_id_seq OWNED BY public.material_profiles.id;
 
 --
 -- Name: messages; Type: TABLE; Schema: public; Owner: -
@@ -1172,6 +1223,7 @@ CREATE TABLE public.paper_types (
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    specs jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT paper_types_gsm_check CHECK ((gsm > 0)),
     CONSTRAINT paper_types_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT paper_types_unit_price_check CHECK ((unit_price >= (0)::numeric))
@@ -1251,6 +1303,7 @@ CREATE TABLE public.pen_types (
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    specs jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT chk_pen_force_band CHECK (((f_min_n > (0)::numeric) AND (f_min_n < f_target_n) AND (f_target_n < f_max_n) AND (f_max_n < f_hard_n))),
     CONSTRAINT pen_types_f_target_n_check CHECK (((f_target_n >= 0.3) AND (f_target_n <= 2.0))),
     CONSTRAINT pen_types_stock_qty_check CHECK ((stock_qty >= 0)),
@@ -2004,6 +2057,7 @@ CREATE TABLE public.sketches (
     is_final boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     image_urls text[] DEFAULT '{}'::text[] NOT NULL,
+    render_profile_id bigint,
     CONSTRAINT sketches_estimated_writing_sec_check CHECK ((estimated_writing_sec >= 0)),
     CONSTRAINT sketches_pen_lift_count_check CHECK ((pen_lift_count >= 0)),
     CONSTRAINT sketches_similarity_score_check CHECK (((similarity_score >= (0)::numeric) AND (similarity_score <= (100)::numeric))),
@@ -2126,6 +2180,12 @@ CREATE VIEW public.v_order_eta_postponement AS
    FROM public.status_histories
   WHERE ((state_type = 'ETA'::public.state_type) AND (old_eta IS NOT NULL))
   GROUP BY order_id;
+
+--
+-- Name: material_profiles id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_profiles ALTER COLUMN id SET DEFAULT nextval('public.material_profiles_id_seq'::regclass);
 
 --
 -- Name: production_snapshots id; Type: DEFAULT; Schema: public; Owner: -
@@ -2254,6 +2314,13 @@ ALTER TABLE ONLY public.ink_colors
 
 ALTER TABLE ONLY public.job_events
     ADD CONSTRAINT job_events_pkey PRIMARY KEY (id);
+
+--
+-- Name: material_profiles material_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_profiles
+    ADD CONSTRAINT material_profiles_pkey PRIMARY KEY (id);
 
 --
 -- Name: messages messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2877,6 +2944,12 @@ CREATE UNIQUE INDEX ux_accounts_verified_phone ON public.accounts USING btree (p
 CREATE UNIQUE INDEX ux_jobs_one_active_per_order ON public.production_jobs USING btree (order_id) WHERE (status = ANY (ARRAY['SCHEDULED'::public.job_status, 'PREPARING'::public.job_status, 'WRITING'::public.job_status, 'PAUSED'::public.job_status, 'WRITTEN'::public.job_status]));
 
 --
+-- Name: ux_material_profile_combo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_material_profile_combo ON public.material_profiles USING btree (paper_type_id, pen_type_id, ink_color_id, COALESCE(robot_id, (0)::bigint));
+
+--
 -- Name: ux_payments_active_refund; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3254,6 +3327,48 @@ ALTER TABLE ONLY public.job_events
 
 ALTER TABLE ONLY public.job_events
     ADD CONSTRAINT job_events_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.production_jobs(id) ON DELETE CASCADE;
+
+--
+-- Name: material_profiles material_profiles_ink_color_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_profiles
+    ADD CONSTRAINT material_profiles_ink_color_id_fkey FOREIGN KEY (ink_color_id) REFERENCES public.ink_colors(id);
+
+--
+-- Name: material_profiles material_profiles_measured_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_profiles
+    ADD CONSTRAINT material_profiles_measured_by_fkey FOREIGN KEY (measured_by) REFERENCES public.accounts(id);
+
+--
+-- Name: material_profiles material_profiles_paper_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_profiles
+    ADD CONSTRAINT material_profiles_paper_type_id_fkey FOREIGN KEY (paper_type_id) REFERENCES public.paper_types(id);
+
+--
+-- Name: material_profiles material_profiles_pen_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_profiles
+    ADD CONSTRAINT material_profiles_pen_type_id_fkey FOREIGN KEY (pen_type_id) REFERENCES public.pen_types(id);
+
+--
+-- Name: material_profiles material_profiles_robot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_profiles
+    ADD CONSTRAINT material_profiles_robot_id_fkey FOREIGN KEY (robot_id) REFERENCES public.robots(id);
+
+--
+-- Name: material_profiles material_profiles_verified_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_profiles
+    ADD CONSTRAINT material_profiles_verified_by_fkey FOREIGN KEY (verified_by) REFERENCES public.accounts(id);
 
 --
 -- Name: messages messages_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -3774,6 +3889,13 @@ ALTER TABLE ONLY public.sketches
     ADD CONSTRAINT sketches_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
 
 --
+-- Name: sketches sketches_render_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketches
+    ADD CONSTRAINT sketches_render_profile_id_fkey FOREIGN KEY (render_profile_id) REFERENCES public.material_profiles(id);
+
+--
 -- Name: status_histories status_histories_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4040,7 +4162,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0018');
+INSERT INTO alembic_version (version_num) VALUES ('0019');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

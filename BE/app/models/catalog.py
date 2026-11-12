@@ -35,6 +35,7 @@ class PaperType(Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 0))
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
 
 
 class PenType(Base):
@@ -53,6 +54,7 @@ class PenType(Base):
     surcharge: Mapped[Decimal] = mapped_column(Numeric(14, 0))
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
 
 
 class InkColor(Base):
@@ -64,6 +66,31 @@ class InkColor(Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 0))
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
+
+
+class MaterialProfile(Base):
+    """U6: what a paper + pen + ink combination really does on a test sheet (migration 0019)."""
+    __tablename__ = "material_profiles"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    paper_type_id: Mapped[int] = mapped_column(ForeignKey("paper_types.id"))
+    pen_type_id: Mapped[int] = mapped_column(ForeignKey("pen_types.id"))
+    ink_color_id: Mapped[int] = mapped_column(ForeignKey("ink_colors.id"))
+    robot_id: Mapped[int | None] = mapped_column(ForeignKey("robots.id"))
+    line_width_mm: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
+    darkness: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    bleed_mm: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
+    v_max_mm_s: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    status: Mapped[str] = mapped_column(String(12), default="UNCALIBRATED")
+    method: Mapped[str | None] = mapped_column(Text)
+    evidence_uri: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    measured_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    measured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
 
 
 class PaperPenCompat(Base):

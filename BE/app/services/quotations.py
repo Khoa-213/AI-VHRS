@@ -24,7 +24,7 @@ from app.repositories.accounts import AccountRepository
 from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository, SketchRepository
-from app.services import audit, notifications, quotation_pdf
+from app.services import audit, material_profiles, notifications, quotation_pdf
 from app.services.eta import EtaService
 from app.services.orders import DEFAULT_COMPLEXITY, PricingService
 from app.services.pricing import MaterialPrices, compute_price
@@ -536,6 +536,11 @@ class CustomerQuoteService:
                 "regions": [{"page_no": r.page_no, "region_no": r.region_no, "bbox_mm": [r.x0, r.y0, r.x1, r.y1],
                              "label": r.label, "confidence": r.confidence, "text": r.text}
                             for r in rows if r.label != "ORIGINAL"]}
+
+    def tier_view(self, sketch) -> dict[str, Any]:
+        """U6: how close the customer image is to the real ink, with the sentence to show next to it."""
+        tier = material_profiles.preview_tier(self.session, sketch)
+        return {"preview_tier": tier, "preview_note": material_profiles.TIER_NOTES[tier]}
 
     def sketch_image_urls(self, sketch) -> list[str]:
         """Customer-facing JPEGs of the sketch (what the customer judges before paying the deposit)."""
