@@ -1,121 +1,108 @@
 # Bảng task FE, hạn Chủ Nhật 15/11/2026
 
-Lập ngày 12/11/2026 từ code hiện tại (nhánh `fe`, đã merge `main`). Mỗi thành viên dùng Claude/Codex làm task của mình và cập nhật cột trạng thái trong file này.
+Cập nhật 12/11/2026 theo phân công mới. Danh sách API backend đã có mà FE chưa nối lấy từ [docs/UI_API_AUDIT_2026-11-12.md](docs/UI_API_AUDIT_2026-11-12.md) (mã `M-API`, `T-API`, `S-API`, `C-API`, `A-API`, `X-DATA`, `X-CHAT`). Bảng này giao việc theo người; người nhận và hạn trong bảng này là bản đang dùng.
+
+Mỗi thành viên dùng Claude/Codex làm task của mình và cập nhật cột trạng thái trong file này. Cả ba dùng chung một Claude Code, nên mỗi phiên làm việc phải nói rõ tên người và mã task.
 
 ## 1. Mục tiêu, deadline, phân công
 
-**Mục tiêu:** đến hết Chủ Nhật 15/11/2026 hoàn tất các UI còn lại của ba nhóm vai trò nội bộ, nối các API BE đã có mà FE chưa gọi, và qua được tiêu chí tích hợp ở mục 6. Không có kế hoạch nhiều tuần: việc không kịp thì chuyển backlog (P1), không làm dở.
+**Mục tiêu:** đến hết Chủ Nhật 15/11/2026 hoàn tất UI và API của vai trò mình phụ trách, và qua tiêu chí tích hợp ở mục 6. Không lập kế hoạch nhiều tuần: việc không kịp thì chuyển backlog (P1), không làm dở.
 
-| Người | Phụ trách | Ghi chú |
-|---|---|---|
-| Ân | Technical / Technician; đồng thời hoàn thiện UI Admin | Xong UI Admin thì báo Nhã để bàn giao (task ADM-HANDOFF) |
-| Quang | Manager | Dashboard/báo cáo, giám sát robot và cảnh báo |
-| Nhã | UI Staff; sau handoff từ Ân thì đối chiếu và nối API Admin | Task Admin API chỉ bắt đầu khi nhận bàn giao |
+| Người | Phụ trách (UI và API) |
+|---|---|
+| Ân | Technical (Technician) và Customer (khách hàng, kể cả tài khoản và chat dùng chung) |
+| Nhã | Staff và Admin (Admin chỉ cần đối chiếu và nối API) |
+| Quang | Manager |
 
-Mốc đề xuất (có thể chỉnh trong nhóm): giữa tuần xong đối chiếu API, Thứ Bảy 14/11 xong task P0, Chủ Nhật 15/11 chạy kiểm tra tích hợp và sửa lỗi.
+**Yêu cầu quan trọng nhất: mọi UI mới hoặc sửa phải đồng bộ với UI của Admin và Staff** (xem mục 2.9).
 
-Trạng thái dùng: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Mức ưu tiên: P0 bắt buộc trước Chủ Nhật, P1 chuyển backlog nếu không kịp an toàn.
+Mốc đề xuất (nhóm có thể chỉnh): xong đối chiếu API trong ngày đầu, Thứ Bảy 14/11 xong task P0, Chủ Nhật 15/11 chạy kiểm tra tích hợp và sửa lỗi.
+
+Trạng thái dùng: `TODO`, `IN PROGRESS`, `BLOCKED`, `DONE`. Ưu tiên: P0 bắt buộc trước Chủ Nhật, P1 chuyển backlog nếu không kịp an toàn.
 
 ## 2. Quy tắc cho agent
 
-1. Chỉ làm task có `owner` là người đang giao việc cho bạn. Không tự nhận task của người khác; thấy việc thuộc người khác thì ghi chú vào task đó, không sửa.
-2. Đọc `FE/AGENTS.md` trước khi sửa: mọi chữ hiển thị phải có đủ en, ja, vi; không dùng gạch ngang dài trong nội dung; icon từ `@phosphor-icons/react`; màu từ `src/styles/theme.css`.
-3. Dữ liệu lấy từ API. Không đưa dữ liệu mẫu vào production, không dựng nút cho API chưa có.
-4. Mỗi lần bắt đầu: đổi trạng thái task sang `IN PROGRESS`. Gặp vướng (chờ người khác, thiếu API, BE trả khác tài liệu): đổi `BLOCKED` và ghi lý do, không đoán.
-5. Chỉ đổi `DONE` khi đạt toàn bộ "Tiêu chí hoàn thành" của task và bốn lệnh ở mục 7 đều qua. Ghi ngày và người xác nhận ở cuối dòng trạng thái.
-6. Điều gì không xác minh được từ source thì ghi `VERIFY WITH BE`, không bịa endpoint hay trường dữ liệu. `BE/docs/FE_API_GUIDE.md` có thể chưa cập nhật; code trong `BE/app/api/v1/` là nguồn đúng.
-7. Không sửa file của task khác đang `IN PROGRESS` (đặc biệt `src/i18n/*.ts`, `src/App.tsx`, `src/components/ws/Shell.tsx`: cả ba dùng chung, merge nhỏ và thường xuyên).
+1. Chỉ làm task có `owner` là người đang giao việc cho bạn. Hỏi tên người nếu chưa rõ. Không tự nhận task của người khác; thấy việc thuộc người khác thì ghi chú vào task đó, không sửa.
+2. Đọc `FE/AGENTS.md` trước khi sửa: mọi chữ hiển thị phải có đủ en, ja, vi; không dùng gạch ngang dài trong nội dung; icon từ `@phosphor-icons/react`; màu từ token trong `src/styles/theme.css`.
+3. Dữ liệu lấy từ API. Không đưa dữ liệu mẫu vào production, không dựng nút cho API chưa có, không mock thành công.
+4. Bắt đầu task: đổi trạng thái sang `IN PROGRESS`. Gặp vướng (chờ người khác, thiếu API, BE trả khác tài liệu): đổi `BLOCKED` và ghi lý do, không đoán.
+5. Chỉ đổi `DONE` khi đạt toàn bộ "Tiêu chí hoàn thành" của task và các lệnh ở mục 7 đều qua. Ghi ngày và người xác nhận ở cuối dòng trạng thái.
+6. Điều không xác minh được từ source thì ghi `VERIFY WITH BE`, không bịa endpoint hay trường dữ liệu. Code trong `BE/app/api/v1/` là nguồn đúng; `BE/docs/FE_API_GUIDE.md` có thể chưa cập nhật.
+7. Không đổi quyền role, điều kiện bật nút, trạng thái đơn/job hoặc luồng xử lý chỉ để làm UI đẹp hơn.
 8. Không commit/push khi chưa được người phụ trách task đồng ý.
+9. **Đồng bộ UI.** Dùng Admin và Staff làm chuẩn: [AdminFrame.tsx](src/components/admin/AdminFrame.tsx), `admin-shell.css`, `admin-ui.css`, [Shell.tsx](src/components/ws/Shell.tsx), `staff-ui.css`, `staff-theme.css`, `staff-depth.css`, cùng [docs/STAFF_CRM_UI.md](docs/STAFF_CRM_UI.md). Cần khớp: header (logo, thông báo, sáng/tối, ngôn ngữ, tài khoản), sidebar theo role và drawer trên mobile, màu đen/deep navy/trắng, chữ, khoảng cách, bo góc, thẻ, KPI, input, button, dropdown (`AdminSelect`), tab, chế độ sáng/tối dùng chung một preference. Chữ đủ tương phản ở cả hai chế độ; trạng thái không chỉ dựa vào màu. Dùng lại component và token có sẵn, không viết kiểu riêng. Trang khách không có sidebar: áp dụng token, thành phần và cách dùng màu của Admin/Staff, giữ khung trang khách hiện có.
+10. **Sổ API.** Sau khi nối một API (và sau khi BE thêm route), chạy `npm run api:audit` rồi commit `docs/api-ledger.json` và `docs/UI_API_AUDIT_2026-11-12.md`. Khối "Sổ theo dõi API" ở cuối file audit tự ghi ngày BE thêm route, tự chuyển route sang "Đã nối" kèm ngày FE nối. Không sửa tay khối đó; chỉ coi task API là `DONE` khi route của nó đã sang "Đã nối" (hoặc có ghi chú vì sao không nối).
+11. Dùng chung một Claude Code: dùng nhánh riêng (`fe-an`, `fe-quang`, `fe-nha`), pull `fe` trước khi làm. Các file dùng chung (`src/i18n/*.ts`, `src/App.tsx`, `src/components/ws/Shell.tsx`): chỉ thêm nhỏ, dùng tiền tố khóa riêng của mình, không sắp xếp lại. Component chat (`components/ui/Chat.tsx`) thuộc Ân, không sửa nếu không phải việc của mình.
 
-## 3. Kết quả đối chiếu BE và FE (12/11/2026)
+## 3. Phần việc của Ân: Technical và Customer
 
-Cách kiểm: so các route trong `BE/app/api/v1/*.py` (prefix `/api/v1` ở `BE/app/main.py`) với các lời gọi `api()` trong `FE/src/services/*.ts`.
+### 3.1. Technical
 
-**Admin (`/admin/*`):** FE `services/admin.ts` đã gọi đủ 12 route hiện có trong `BE/app/api/v1/admin.py`: `GET/POST /accounts`, `PATCH /accounts/{id}`, `GET /audit-logs`, `POST /jobs/run`, `GET /jobs/last`, `GET /settings`, `PUT /settings/{key}`, `GET /integrations`, `PUT /integrations/{name}`, `GET /dashboard`. Tại thời điểm này chưa thấy route Admin nào chưa nối. BE có thể thêm route sau; vì vậy Nhã phải đối chiếu lại sau handoff (task ADM-API-1), không dựa vào kết luận này.
-
-**Technician (`/technician/*`):** đã nối: danh sách/chi tiết job, package, prepare, simulation, start, events, finish, incidents, photos (upload-url, tạo, sửa, xoá, submit), qc-fail, robot-commands, live, view-ticket, robot-status, ack/resolve alert. Chưa nối (đã kiểm tra, không có lời gọi trong `FE/src`):
-- `POST /technician/jobs/{job_id}/photos/{photo_id}/evaluate` và `GET /technician/jobs/{job_id}/quality` (`quality.py`).
-- `POST /technician/jobs/{job_id}/calibration`: theo `FE/AGENTS.md`, hiệu chuẩn gửi từ máy trạm, không từ web. Chỉ kiểm payload, không dựng form gửi.
-- `GET /technician/alerts` (danh sách cảnh báo có phân trang), `POST /technician/alerts` (tạo cảnh báo), `POST /technician/jobs/{job_id}/runs`, `PATCH /technician/runs/{run_id}`, `GET /technician/robots/{id}/scene`, `POST/DELETE .../agent-session`: thuộc Robot Agent hoặc vận hành; xếp P1.
-
-**Manager (`/manager/*`):** đã nối: staff, assignment, quotations pending-approval/approve/reject, papers/pens/inks/compat/templates/styles/robots/pricing-config, schedule queue/config/suggestion/schedule/reschedule/unschedule, jobs, technicians. Chưa nối (không có lời gọi trong `FE/src`):
-- Báo cáo: `GET /manager/dashboard`, `GET /manager/reports`, `GET /manager/reports/export` (`reports.py`).
-- Robot operations (`robot_ops.py`): `GET /manager/robot-status`, `GET /manager/robots/{id}/health`, `GET /manager/runs`, `GET /manager/jobs/{id}/compliance`, `GET /manager/alerts`, `POST /manager/alerts/{id}/ack`, `POST /manager/alerts/{id}/resolve`, `GET /manager/alert-catalog`, `PATCH /manager/alert-catalog/{code}`.
-- Robot link (`robot_link.py`): `POST /manager/robots/{id}/robot-commands`, `GET .../live`, `GET .../scene`, `GET .../agent`, `POST/DELETE .../agent-key`, `POST .../view-ticket`.
-- Sự cố (`scheduling.py`): `GET /manager/incidents`, `POST /manager/incidents/{id}/resolve`; sự kiện job `GET /manager/jobs/{id}/events` (VERIFY WITH BE về việc FE đã cần hay chưa).
-- Chất lượng: `GET /manager/jobs/{job_id}/quality`.
-- Đánh giá: `GET /manager/reviews`, `POST /manager/reviews/{id}/hide|unhide`.
-- `FE/src/pages/staff/ManagerDashboard.tsx` hiện tự tính số liệu từ `allWork`, `scheduleQueue`, `listRobots`, `pendingApprovals`, `adminPapers/Pens/Inks`, không dùng `/manager/dashboard`.
-
-**Staff (`/workshop/*`):** đã nối: danh sách/chi tiết đơn, claim, accept, reject, request-info, sketches, quotations, adjustment, send, cancel, pdf, payments, jobs, shipment, pickup, refunds, ETA, chat. Chưa nối: `GET /workshop/orders/{order_id}/material-suggestions`, `GET /workshop/orders/{order_id}/product-photos` (`workshop.py`); showcase `GET/POST/PATCH/DELETE /workshop/showcase` và `POST /workshop/showcase/upload-url` (`reviews.py`).
-
-**Công khai và khách (ngoài phạm vi sprint):** `GET /catalog/reviews`, `GET /catalog/showcase`, `/orders/{id}/review` chưa dùng trong FE. Xếp backlog.
-
-## 4. Task theo người
-
-### 4.1. Ân: Technician và Admin UI
-
-**Việc của Ân đối với Admin:** UI Admin đã có khung `AdminFrame`, dashboard, tài khoản, nhật ký, cài đặt (xem mục "Admin area" trong `FE/AGENTS.md`). Ân hoàn tất, kiểm tra và báo Nhã.
-
-| ID | Owner | Status | Phụ thuộc | File / route liên quan | Việc cần làm | API | Tiêu chí hoàn thành |
+| ID | Ưu tiên | Status | Phụ thuộc | File / route liên quan | Việc cần làm | API | Tiêu chí hoàn thành |
 |---|---|---|---|---|---|---|---|
-| ADM-UI | Ân | IN PROGRESS | Không | `src/pages/admin/*`, `src/components/admin/*`, `/admin`, `/admin/accounts`, `/admin/audit`, `/admin/settings` | Hoàn thiện và chốt UI Admin, commit phần Admin, chạy `node scripts/check-admin-browser.mjs` sau build | Các route Admin đã nối trong `services/admin.ts` | Bốn lệnh mục 7 qua; script browser Admin qua; ba ngôn ngữ; responsive (drawer trên màn nhỏ); không còn thay đổi Admin chưa commit |
-| ADM-HANDOFF | Ân | TODO | ADM-UI = DONE | Tin nhắn gửi Nhã; có thể ghi vào mục "Bàn giao Admin" cuối file | Ân báo Nhã khi UI Admin xong: nhánh/commit chứa UI, danh sách màn đã xong, phần còn lỗi biết trước | Không | Nhã xác nhận đã nhận; ghi ngày giờ bàn giao vào mục "Bàn giao Admin". Nhã chỉ bắt đầu ADM-API-1 sau bước này |
-| TECH-1 | Ân | TODO | Không | `src/pages/tech/TechDashboard.tsx`, `src/components/ws/*` (rail `TechRail`) | Chỉnh dashboard Technician: job đang hoạt động, job sắp tới, cảnh báo robot đang mở; làm rõ trạng thái trống và lỗi | `GET /technician/jobs`, `GET /technician/robot-status` (đã nối) | Dashboard hiển thị đúng số job theo trạng thái; có loading/error/empty; ba ngôn ngữ; responsive; không chữ bị cắt ở tiếng Việt và tiếng Nhật |
-| TECH-2 | Ân | TODO | Không | `src/pages/tech/PreviewOrders.tsx`, `JobDetail.tsx`, `JobWorkflow.tsx`, `JobPreparation.tsx`, `JobEvents.tsx`, `JobHistory.tsx`, `/tech/preview`, `/tech/qc`, `/tech/jobs/:id` | Chỉnh danh sách và chi tiết job: lọc trạng thái/khoảng ngày, bước chuẩn bị, mô phỏng, chạy, kết thúc; thanh tiến trình rõ | `GET /technician/jobs`, `GET /technician/jobs/{id}`, `.../package`, `.../events`, `.../prepare`, `.../simulation`, `.../start`, `.../finish` | Mỗi nút theo đúng điều kiện (`flow.ts`); lỗi API hiện chữ đã dịch (`orderErrorKey`); phân quyền `role="technician"` giữ nguyên; ba ngôn ngữ |
-| TECH-3 | Ân | TODO | Không | `src/pages/tech/RobotConsole.tsx`, `src/services/robot.ts`, `JobWorkflow.tsx` | Chỉnh phần cảnh báo: banner E-Stop mức 4, danh sách cảnh báo đang mở, nút ack và resolve có ghi chú | `GET /technician/robot-status`, `POST /technician/alerts/{id}/ack`, `POST /technician/alerts/{id}/resolve` (đã nối); `GET /technician/alerts` chưa nối, chỉ nối nếu cần danh sách đầy đủ có phân trang (VERIFY WITH BE về việc có cần) | Cảnh báo mới hiện không cần tải lại trang (poll hiện có); ack/resolve có xác nhận và lỗi hiển thị; không thay thế E-Stop vật lý (giữ chú thích) |
-| TECH-4 | Ân | TODO | TECH-2 | `src/services/technician.ts`, `src/pages/tech/JobPhotos.tsx`, `JobFeedback.tsx`, `qc.css`, `/tech/qc` | Nối đánh giá ảnh QC: sau khi tải ảnh, gọi evaluate cho ảnh và hiển thị kết quả; trang job hiển thị lịch sử đánh giá. Đọc `BE/app/api/v1/quality.py` và schema `QualityOut` trước khi định kiểu; trường nào không rõ ghi `VERIFY WITH BE` | `POST /technician/jobs/{job_id}/photos/{photo_id}/evaluate` (201), `GET /technician/jobs/{job_id}/quality` (mới đến cũ) | Hai API được gọi từ UI; trạng thái đang đánh giá, lỗi, chưa có kết quả đều có; kết quả khớp phản hồi BE (không tự suy diễn đạt/không đạt); luồng `qc-fail` và `photos/submit` hiện có không bị hỏng; ba ngôn ngữ |
-| TECH-5 | Ân | TODO | Không | `BE/app/api/ops_schemas.py` (`CalibrationIn`), `BE/app/services/technician.py` (`_server_validation`, `frame_transform.schema = "vhrs-motion/1"`), `FE/src/services/technician.ts` | Kiểm tra payload hiệu chuẩn: `frame_transform` là `dict` tùy chọn, bắt buộc `schema = "vhrs-motion/1"` khi bật `MOTION_VALIDATION_REQUIRED`; FE không gửi hiệu chuẩn (máy trạm gửi), nên chỉ đối chiếu FE hiển thị `calibration` từ chi tiết job không giả định khối này. Kết luận ghi vào mục "Ghi chú kiểm tra" | `POST /technician/jobs/{job_id}/calibration` (không dựng form web) | Có ghi chú nêu rõ: payload mẫu khớp `CalibrationIn`, FE không tự dựng `frame_transform`, nơi nào cần BE trả lời ghi `VERIFY WITH BE` |
-| TECH-6 | Ân | TODO | Không | `FE/src/services/technician.ts` (`canStart`, dòng `start:` trong điều kiện), `src/pages/tech/flow.ts` | Xác nhận FE dùng kết quả simulation và `can_start` do server trả: nút Start chỉ bật khi `simulation_passed === true` và `can_start`; nếu server trả `422`/mã lỗi khác thì hiển thị đúng và tải lại job. Không tự tính thay server | `GET /technician/jobs/{id}` (`can_start`, `simulation_passed`), `POST .../simulation`, `POST .../start` | Với `can_start = false` nút Start tắt và có lý do; sau lỗi API trạng thái trên màn hình khớp server; ghi vào "Ghi chú kiểm tra" |
+| TECH-UI | P0 | TODO | Không | `src/pages/tech/*`, `src/components/ws/Shell.tsx` (area `tech`), `/tech`, `/tech/preview`, `/tech/qc`, `/tech/jobs/:id` | Đồng bộ toàn khu vực `/tech` (dashboard, danh sách và chi tiết job, chuẩn bị, console robot, lịch sử, cảnh báo, QC) theo chuẩn Admin/Staff ở mục 2.9. Giữ guard trong `flow.ts`, workflow job, console và quyền `role="technician"` | Không đổi | Khớp Admin/Staff ở cả hai chế độ sáng/tối; ba ngôn ngữ; mobile có drawer, không tràn ngang; E-Stop banner và điều kiện bật nút giữ nguyên; `npm run test:technician` và `node scripts/check-technician-browser.mjs` qua |
+| TECH-API-1 | P0 | TODO | Không (giao diện nên làm sau TECH-UI) | `src/services/technician.ts`, `src/pages/tech/JobPhotos.tsx`, `JobFeedback.tsx`, `qc.css` | T-API-01: gọi đánh giá cho ảnh đã tải và xem kết quả; trang job hiển thị lịch sử đánh giá. Đọc `BE/app/api/v1/quality.py` và schema `QualityOut` trước khi định kiểu; trường không rõ ghi `VERIFY WITH BE` | `POST /technician/jobs/{job_id}/photos/{photo_id}/evaluate`, `GET /technician/jobs/{job_id}/quality` | Hai API được gọi từ UI; có trạng thái đang đánh giá, lỗi, chưa có kết quả; kết quả khớp phản hồi BE, không tự suy ra đạt/không đạt; luồng `qc-fail` và `photos/submit` hiện có không hỏng; ba ngôn ngữ |
+| TECH-API-2 | P1 | TODO | TECH-UI | `src/services/robot.ts`, `src/pages/tech/RobotConsole.tsx` | T-API-02: danh sách cảnh báo đầy đủ có lọc và phân trang. FE đã có robot-status, ack, resolve: không coi là chưa nối | `GET /technician/alerts` | Danh sách có phân trang; ack/resolve vẫn hoạt động; mức đỏ có chữ và icon |
+| TECH-CHK | P0 | TODO | Không | `BE/app/api/ops_schemas.py` (`CalibrationIn`), `BE/app/services/technician.py` (`_server_validation`), `src/services/technician.ts`, `src/pages/tech/flow.ts` | (1) Kiểm payload hiệu chuẩn `frame_transform` (dict tùy chọn, cần `schema = "vhrs-motion/1"` khi bật `MOTION_VALIDATION_REQUIRED`); FE không gửi hiệu chuẩn (máy trạm gửi), chỉ kiểm FE hiển thị `calibration` không giả định khối này. (2) Xác nhận nút Start chỉ bật khi `simulation_passed === true` và `can_start` do server trả. (3) X-DATA-03: kiểm package và job response mới không mất metadata/gate | `POST /technician/jobs/{job_id}/calibration` (không dựng form web), `GET /technician/jobs/{id}`, `POST .../simulation`, `POST .../start` | Ghi kết luận vào mục 9; với `can_start = false` nút Start tắt và có lý do; chỗ cần BE trả lời ghi `VERIFY WITH BE` |
 
-### 4.2. Quang: Manager
+### 3.2. Customer
 
-| ID | Owner | Status | Phụ thuộc | File / route liên quan | Việc cần làm | API | Tiêu chí hoàn thành |
+| ID | Ưu tiên | Status | Phụ thuộc | File / route liên quan | Việc cần làm | API | Tiêu chí hoàn thành |
 |---|---|---|---|---|---|---|---|
-| MGR-1 | Quang | TODO | Không | `src/services/manage.ts` hoặc `src/services/workshop.ts` (thêm hàm), `BE/app/api/v1/reports.py` | Đối chiếu Manager: đọc `reports.py`, `robot_ops.py`, `robot_link.py`, `scheduling.py`; lập danh sách API chưa nối (mục 3 là điểm xuất phát, kiểm lại bằng code). Kiểu dữ liệu `dict[str, Any]` của dashboard/reports: lấy cấu trúc từ `BE/app/services` hoặc gọi thử, trường nào không rõ ghi `VERIFY WITH BE` | `GET /manager/dashboard`, `GET /manager/reports` (`from`, `to`, `group`) | Có danh sách đối chiếu trong "Ghi chú kiểm tra"; hàm service có kiểu rõ; chưa đổi UI |
-| MGR-2 | Quang | TODO | MGR-1 | `src/pages/staff/ManagerDashboard.tsx`, `src/components/ws/charts.tsx`, `/staff` | P0. Chỉnh dashboard Manager theo số liệu từ API dashboard sản xuất thay vì tự tính khi dữ liệu có. Giữ bố cục Manager hiện có (xem "Staff presentation" trong `AGENTS.md`: Manager giữ layout) | `GET /manager/dashboard` | Số liệu khớp phản hồi BE; loading/error/empty; ba ngôn ngữ; responsive; vai trò Staff không thấy dashboard Manager |
-| MGR-3 | Quang | TODO | MGR-1 | trang mới dưới `src/pages/staff/` (ví dụ `Reports.tsx`), `src/App.tsx` (route `<RequireStaff manager>`), `src/components/ws/Shell.tsx` (mục điều hướng) | P0. Trang báo cáo: chọn khoảng ngày và nhóm (`day`, theo giá trị BE chấp nhận: kiểm `Group` trong `reports.py`), hiển thị doanh thu, sản lượng, tỷ lệ từ chối/viết lại, robot, trễ ETA. Mỗi biểu đồ có bảng số | `GET /manager/reports` | Đổi khoảng ngày gọi lại API; lỗi `422` hiện thông báo; có bảng số bên cạnh biểu đồ; ba ngôn ngữ |
-| MGR-4 | Quang | TODO | MGR-3 | Trang báo cáo | P1 (backlog nếu không kịp). Nút xuất Excel/PDF; tải bằng `fetch` có Bearer rồi tạo file, không dùng liên kết thường | `GET /manager/reports/export` (`format=xlsx|pdf`) | File tải được, tên lấy từ `Content-Disposition`; lỗi hiện đã dịch |
-| MGR-5 | Quang | TODO | MGR-1 | trang mới (ví dụ `src/pages/staff/Robots.tsx`), `src/services/` (hàm mới), `Shell.tsx` | P0. Giám sát trạng thái robot: bảng tất cả robot (online/offline, chế độ, cảnh báo đang mở, tuổi hiệu chuẩn) và sức khỏe theo N ngày | `GET /manager/robot-status`, `GET /manager/robots/{id}/health` | Trạng thái không chỉ dựa vào màu (có chữ/icon); có loading/error/empty; ba ngôn ngữ; responsive |
-| MGR-6 | Quang | TODO | MGR-5 | trang giám sát robot | P0. Cảnh báo robot cho Manager: danh sách chưa xử lý (nặng nhất trước), ack và resolve có ghi chú, hiển thị lời nhắn và việc cần làm từ danh mục | `GET /manager/alerts`, `POST /manager/alerts/{id}/ack`, `POST /manager/alerts/{id}/resolve`, `GET /manager/alert-catalog` | Hành động cập nhật danh sách; mức 4 nổi bật có chữ; sai quyền (Staff/Technician) bị `RequireStaff manager` chặn |
-| MGR-7 | Quang | TODO | MGR-6 | trang giám sát robot | P1. Lịch sử lần chạy, compliance từng job, sự cố robot/vật tư, chỉnh danh mục cảnh báo | `GET /manager/runs`, `GET /manager/jobs/{id}/compliance`, `GET /manager/incidents`, `POST /manager/incidents/{id}/resolve`, `PATCH /manager/alert-catalog/{code}` | Làm khi P0 xong; nếu không, giữ TODO và chuyển backlog |
-| MGR-8 | Quang | TODO | Không | `src/pages/staff/Approvals.tsx`, `Schedule.tsx`, `Catalog.tsx`, `Pricing.tsx` | P1. Rà soát chung: lỗi và trạng thái trống của các màn Manager hiện có sau thay đổi Shell/i18n | Không đổi API | Không hỏng hồi quy; ghi chú nếu có |
-| MGR-BACKLOG | Quang | TODO | Không | Chưa có file | Backlog (không làm trước Chủ Nhật): lệnh robot từ Manager, khóa Robot Agent, cảnh 3D, vé xem (`/manager/robots/{id}/robot-commands`, `/agent`, `/agent-key`, `/view-ticket`, `/live`, `/scene`), `/manager/jobs/{id}/quality`, `/manager/reviews` | Xem mục 3 | Chỉ khi cả P0 đã DONE |
+| CUS-UI | P0 | TODO | Không | `src/pages/create-order/*`, `src/pages/order/*`, `src/pages/account/*`, `src/components/layout/*`, `src/components/ui/Chat*.tsx` | Đồng bộ UI khách (tạo đơn, trang đơn, cọc, giao hàng, tài khoản, chat) theo chuẩn Admin/Staff (mục 2.9). Không đổi luồng, trạng thái đơn hay điều kiện bật nút; preview giấy giữ màu gốc | Không đổi | Khớp Admin/Staff ở sáng/tối; ba ngôn ngữ; mobile không tràn ngang; luồng tạo đơn, cọc, hoàn tiền và thông báo vẫn chạy |
+| CUS-API-1 | P0 | TODO | Không | `src/services/orders.ts` hoặc service mới, `src/pages/order/OrderReview.tsx` | C-API-01: xem, gửi, sửa đánh giá sau hoàn tất và tải ảnh đánh giá; theo trạng thái đơn, chủ đơn và thời hạn sửa | `GET/POST/PUT /orders/{id}/review`, `POST /orders/{id}/review/photos/upload-url` | Có loading/error/empty; lỗi BE hiện chữ đã dịch; ba ngôn ngữ |
+| CUS-API-2 | P0 | TODO | Không | `src/services/locations.ts`, `src/pages/order/Delivery.tsx`, form địa chỉ ở tài khoản | C-API-03: chuyển nguồn tỉnh/phường từ dịch vụ ngoài sang API BE hai cấp, dùng đúng code khi gửi địa chỉ. Comment FE nói BE chưa có API địa chỉ đã cũ | `GET /locations/provinces`, `GET /locations/provinces/{province_code}/wards` | Chọn địa chỉ chạy bằng API BE; giao hàng và báo phí vận chuyển vẫn đúng; ghi `VERIFY WITH BE` cho trường chưa rõ |
+| CUS-API-3 | P1 | TODO | Không | `src/pages/create-order/*`, `src/services/orders.ts` | C-API-04, X-DATA-02: gợi ý vật tư, kiểu chữ cho toolbar, thư viện kiểu chữ của khách; preview theo đoạn nếu toolbar hỗ trợ. Không nhầm với API chọn bút/mực hiện có | `GET /catalog/suggest-materials`, `GET /catalog/text-styles`, `GET /catalog/my-styles` | Dữ liệu từ server vào luồng tạo đơn; trạng thái trống; ba ngôn ngữ |
+| CUS-API-4 | P1 | TODO | Không | `src/pages/landing/*`, `src/services/` | C-API-02: nối đánh giá và showcase công khai vào nơi phù hợp; không nhầm `#showcase` trên landing với API showcase | `GET /catalog/reviews`, `GET /catalog/showcase` | Nội dung thật từ API; trạng thái trống; ba ngôn ngữ |
+| CUS-API-5 | P1 | TODO | Không | `src/pages/account/Account.tsx`, `src/services/auth.ts`, `ResetPassword.tsx` | A-API-01/02, A-UI-01/02: OTP số điện thoại hồ sơ, khôi phục mật khẩu bằng điện thoại, form đổi mật khẩu (`apiChangePassword` chưa có UI), địa chỉ lưu server. Xử lý giới hạn gửi lại, hết hạn, sai mã; hiện đúng MOCK khi BE trả MOCK | `POST /me/phone/otp`, `POST /me/phone/verify`, `POST /auth/phone-reset/request`, `POST /auth/phone-reset/verify`, `POST /me/change-password` | Mỗi luồng có thông báo đã dịch; không coi SMS thật là sẵn sàng khi BE trả MOCK |
+| CUS-API-6 | P1 | TODO | Không | `src/components/ui/Chat.tsx`, `services/chat.ts`, `services/notifications.ts` | X-CHAT-01: xử lý `event: message` trên stream thông báo, khử trùng ID, dùng `latest=true`, `before_id`, `next_before_id` để tải tin mới nhất và cuộn lấy lịch sử | `GET /me/notifications/stream`, `GET /orders/{id}/messages` | Tin mới hiện không cần chờ poll 10 giây; hội thoại dài không mất tin; chat phía Staff/Manager vẫn đúng quyền đọc/ghi |
+| CUS-DATA | P1 | TODO | Cần Nhã làm STF-API-3 phía Staff | `src/services/orders.ts`, `src/pages/order/*` | X-DATA-01 phía khách: kiểm DTO, map và UI cho `revision_reason`, `region_counts`, `restoration_mode` trong báo giá/sketch | Theo `customer_quotes.py` | Trường mới hiển thị khi BE trả; không đổi luồng báo giá |
 
-### 4.3. Nhã: Admin API và UI Staff
+## 4. Phần việc của Nhã: Staff và Admin
 
-**Phần Admin phải chờ Ân.** Nhã không bắt đầu ADM-API-1 trước khi ADM-HANDOFF = DONE (trạng thái `BLOCKED` ghi rõ "chờ Ân bàn giao UI Admin"). Trong lúc chờ, Nhã làm các task Staff không phụ thuộc Admin.
+### 4.1. Staff
 
-| ID | Owner | Status | Phụ thuộc | File / route liên quan | Việc cần làm | API | Tiêu chí hoàn thành |
+| ID | Ưu tiên | Status | Phụ thuộc | File / route liên quan | Việc cần làm | API | Tiêu chí hoàn thành |
 |---|---|---|---|---|---|---|---|
-| ADM-API-1 | Nhã | BLOCKED | ADM-HANDOFF = DONE | `BE/app/api/v1/admin.py`, `BE/app/main.py` (prefix `/api/v1`), `FE/src/services/admin.ts` | Sau khi nhận bàn giao: `git pull` nhánh mới nhất, đọc lại mọi route trong `admin.py` (và bất kỳ router Admin mới trong `main.py`), so với từng hàm trong `services/admin.ts`. Chỉ ghi "chưa nối" cho route đã xác minh trong code và không có lời gọi trong `FE/src`. Ghi kết quả vào bảng "Đối chiếu Admin" cuối file | Mọi `/admin/*` | Bảng có đủ cột: route, method, có trong `admin.py`, hàm FE gọi, kết luận (Đã nối / Chưa nối / VERIFY WITH BE); không có hàng bịa |
-| ADM-API-2 | Nhã | BLOCKED | ADM-API-1 | `FE/src/services/admin.ts`, `FE/src/pages/admin/*` | Nối từng API còn thiếu theo bảng ADM-API-1: thêm hàm service có kiểu, gắn vào UI do Ân bàn giao mà không đổi kiểu thiết kế (làm đúng "Admin area" trong `AGENTS.md`). Nếu không có API nào thiếu: ghi rõ và đánh DONE | Theo kết quả ADM-API-1 | Mỗi API mới có loading/error/empty; ba ngôn ngữ; `node scripts/check-admin-browser.mjs` qua; không đổi UI mà không báo Ân |
-| STF-1 | Nhã | TODO | Không | `src/pages/staff/StaffDashboard.tsx`, `src/components/ws/staff-ui.css`, `docs/STAFF_CRM_UI.md`, `/staff` | P0. Hoàn thiện dashboard Staff theo thiết kế CRM trong `docs/STAFF_CRM_UI.md`: KPI giữ tổng hiện tại, biểu đồ đơn nhận có chọn 7/30 ngày; không dữ liệu mẫu, không hành động CRM không có API | `GET /workshop/orders` (qua `allWork`) | `node scripts/check-staff-ui-browser.mjs` qua; loading/error/empty; ba ngôn ngữ; responsive; phân quyền Staff/Manager đúng |
-| STF-2 | Nhã | TODO | Không | `src/pages/staff/Workbench.tsx`, `/staff/review`, `/staff/review/:id` | P0. Hàng đợi đơn: các cột pipeline, thẻ mở `/staff/review/:id`, lọc bằng `AdminSelect`, tìm kiếm, phân trang; giữ nguyên hành động claim/accept/reject/request-info; không kéo-thả đổi trạng thái | `GET /workshop/orders`, `GET /workshop/orders/{id}`, `POST .../claim|accept|reject|request-info` | Mọi hành động cũ còn hoạt động; lỗi API đã dịch; không chữ bị cắt ở tiếng Việt/Nhật; mobile không tràn ngang |
-| STF-3 | Nhã | TODO | STF-2 | `src/pages/staff/Workbench.tsx` (phần tiếp nhận, phác thảo, báo giá), `QuotationPanel.tsx`, `SketchPanel.tsx`, `src/services/workshop.ts` | P0. Workbench: kiểm tra toàn luồng tiếp nhận, phác thảo, báo giá, chat sau thay đổi giao diện. Nối API gợi ý vật tư vào chỗ Staff chọn giấy/bút/mực khi lập báo giá; đọc `material_candidates` (trong `BE/app/services`) để định kiểu, trường không rõ ghi `VERIFY WITH BE` | `GET /workshop/orders/{order_id}/material-suggestions` | Gợi ý hiển thị theo lựa chọn của khách và luật tương thích; không có gợi ý thì hiện trạng thái trống; Staff chọn được gợi ý và gửi báo giá như cũ; ba ngôn ngữ |
-| STF-4 | Nhã | TODO | STF-2 | `src/pages/staff/Refunds.tsx`, `PaidOrderDesk.tsx`, `FulfillmentPanel.tsx`, `/staff/refunds`, `/staff/fulfillment` | P0. Kiểm tra các màn Staff đã nối (hoàn tiền, giao hàng, nhận tại xưởng) còn đúng sau thay đổi UI; đối chiếu `docs/REFUND_FLOW.md` và `docs/FULFILLMENT_UI.md` | `/workshop/refunds`, `/workshop/payments/{id}/refund`, `/workshop/refunds/{id}/confirm`, `/workshop/orders/{id}/shipment`, `.../pickup/confirm` | `npm run test:fulfillment:browser` qua; hoàn tiền xác nhận thủ công hoạt động |
-| STF-5 | Nhã | TODO | STF-3 | `src/services/workshop.ts`, UI ảnh sản phẩm trong chi tiết đơn | P1. Ảnh sản phẩm của đơn cho Staff | `GET /workshop/orders/{order_id}/product-photos` | Làm khi P0 xong |
-| STF-BACKLOG | Nhã | TODO | Không | Chưa có file | Backlog: showcase của xưởng (`/workshop/showcase`, `upload-url`), đánh giá của khách, SMS OTP, chat realtime/SSE mới, các API vận hành ít ưu tiên | Xem mục 3 | Không làm trước Chủ Nhật nếu P0 chưa DONE |
+| STF-UI | P0 | TODO | Không | `src/pages/staff/*` (phần Staff), `src/components/ws/staff-*.css`, `docs/STAFF_CRM_UI.md` | Giữ UI Staff làm chuẩn: khi thêm tính năng ở dưới, dùng cùng thành phần, không thiết kế lại luồng đã có. Rà hồi quy dashboard, hàng đợi `/staff/review`, Workbench, hoàn tiền, giao hàng sau mỗi thay đổi | Không đổi | `node scripts/check-staff-ui-browser.mjs` và `node scripts/check-fulfillment-browser.mjs` qua; sáng/tối; ba ngôn ngữ |
+| STF-API-1 | P0 | TODO | Không | `src/pages/staff/Workbench.tsx`, `QuotationPanel.tsx`, `src/services/workshop.ts` | S-API-01: gợi ý vật tư vào chỗ Staff chọn giấy/bút/mực khi lập báo giá; đọc `material_candidates` trong `BE/app/services` để định kiểu | `GET /workshop/orders/{id}/material-suggestions` | Gợi ý theo lựa chọn của khách và luật tương thích; trạng thái trống; Staff chọn được gợi ý và gửi báo giá như cũ; ba ngôn ngữ |
+| STF-API-2 | P0 | TODO | Không | `src/pages/staff/OrderDetail.tsx` hoặc Workbench, `src/services/workshop.ts` | S-API-02: ảnh thành phẩm của đơn cho Staff. `GET /orders/{id}/product-photos` là API khách, không thay thế quyền Staff | `GET /workshop/orders/{id}/product-photos` | Ảnh hiển thị ở chi tiết đơn; trạng thái trống; lỗi đã dịch |
+| STF-API-3 | P1 | TODO | Không | `src/pages/staff/SketchPanel.tsx`, `SketchEditor.tsx`, `src/services/workshop.ts` | S-API-03, X-DATA-01 phía Staff: xem và sửa vùng của phác thảo; đối chiếu mode, region counts, ORIGINAL/RESTORED/INFERRED trong schema; giữ version và finalize. Kiểm thêm `GET /workshop/quotations/{id}`: nếu danh sách báo giá của đơn thiếu dữ liệu thì nối vào màn hiện có | `GET /workshop/orders/{id}/sketches/{version}/regions`, `POST .../regions/{region_id}/edit`, `GET /workshop/quotations/{id}` | Xem/sửa vùng chạy; không tạo thao tác trùng; ba ngôn ngữ |
+| STF-API-4 | P1 | TODO | Không | trang showcase xưởng (mới) hoặc mục trong Staff, `src/services/` | S-API-04: quản lý bài showcase, ảnh, thứ tự, ẩn/hiện; dùng chung service với Manager khi phù hợp | `GET/POST /workshop/showcase`, `PATCH/DELETE /workshop/showcase/{id}`, `POST /workshop/showcase/upload-url` | Theo contract BE; có loading/error/empty; ba ngôn ngữ |
 
-## 5. Backlog chung (P1, không làm nếu P0 chưa DONE)
+### 4.2. Admin (đối chiếu và nối API)
 
-- Showcase (`/workshop/showcase`, `/catalog/showcase`) và đánh giá (`/orders/{id}/review`, `/manager/reviews`, `/catalog/reviews`).
-- SMS OTP (đặt lại mật khẩu, xác minh số điện thoại) ngoài những gì FE đã có: VERIFY WITH BE trước khi nối.
-- Chat realtime mới và các API vận hành robot của Robot Agent (`/agent/*`, `/technician/robots/{id}/agent-session`, `/technician/jobs/{id}/runs`).
-- Báo cáo xuất file (MGR-4) và nhóm Manager P1 (MGR-7, MGR-8).
+| ID | Ưu tiên | Status | Phụ thuộc | File / route liên quan | Việc cần làm | API | Tiêu chí hoàn thành |
+|---|---|---|---|---|---|---|---|
+| ADM-API-1 | P0 | TODO | Không | `BE/app/api/v1/admin.py`, `BE/app/main.py`, `src/services/admin.ts`, `src/pages/admin/*` | Đọc mọi route trong `admin.py` (và router Admin mới nếu `main.py` thêm), so với từng hàm trong `services/admin.ts` và màn đang gọi hàm đó. Chỉ ghi "chưa nối" cho route đã xác minh trong code và không có lời gọi trong FE. Điền bảng ở mục 8. Audit ngày 12/11 chưa thấy nhóm Admin nào bị bỏ sót; kiểm lại từ code mới nhất | Mọi `/admin/*` | Bảng đủ cột: route, method, có trong `admin.py`, hàm FE gọi, màn gọi, kết luận (Đã nối / Chưa nối / VERIFY WITH BE); không có hàng bịa |
+| ADM-API-2 | P0 | TODO | ADM-API-1 | `src/services/admin.ts`, `src/pages/admin/*` | Nối từng API còn thiếu: thêm hàm service có kiểu và gắn vào màn Admin hiện có, giữ UI hiện tại và component chung. Nếu không có API nào thiếu: ghi rõ và đánh `DONE` | Theo kết quả ADM-API-1 | Mỗi API mới có loading/error/empty, khóa gửi lặp, ba ngôn ngữ; `node scripts/check-admin-browser.mjs` qua; không đổi luồng hay quyền Admin |
+
+## 5. Phần việc của Quang: Manager
+
+| ID | Ưu tiên | Status | Phụ thuộc | File / route liên quan | Việc cần làm | API | Tiêu chí hoàn thành |
+|---|---|---|---|---|---|---|---|
+| MGR-UI | P0 | TODO | Không | `src/pages/staff/ManagerDashboard.tsx`, `Approvals.tsx`, `Schedule.tsx`, `ScheduleCalendar.tsx`, `Catalog.tsx`, `Materials.tsx`, `Pricing.tsx`, `src/components/ws/Shell.tsx` (area `manager`) | Đồng bộ UI Manager theo chuẩn Admin/Staff (mục 2.9), kể cả màn mới ở các task dưới. Manager vẫn là Manager: không biến thành Staff để ghi đơn, giữ guard `RequireStaff manager`. Khi xong, cập nhật câu "Manager and Technician keep their current presentation" trong `FE/AGENTS.md` cho đúng thực tế | Không đổi | Khớp Admin/Staff ở sáng/tối; ba ngôn ngữ; mobile có drawer, không tràn ngang; Staff không vào được các trang Manager |
+| MGR-API-1 | P0 | TODO | Không | `src/pages/staff/ManagerDashboard.tsx`, trang báo cáo mới (ví dụ `Reports.tsx`) dưới `src/pages/staff/`, `src/App.tsx` (route `<RequireStaff manager>`), `src/services/` | M-API-01: dashboard dùng số liệu từ BE thay vì tự tính khi có dữ liệu; trang báo cáo chọn khoảng ngày và nhóm (kiểm giá trị `Group` trong `reports.py`), mỗi biểu đồ có bảng số; xuất Excel/PDF bằng `fetch` có Bearer. Cấu trúc `dict[str, Any]`: lấy từ `BE/app/services` hoặc gọi thử; trường không rõ ghi `VERIFY WITH BE` | `GET /manager/dashboard`, `GET /manager/reports`, `GET /manager/reports/export` | Số liệu khớp phản hồi BE; lỗi `422` hiện thông báo; tải file đúng content type; ba ngôn ngữ |
+| MGR-API-2 | P0 | TODO | Không | trang giám sát robot mới (ví dụ `Robots.tsx`), `src/services/` | M-API-02: trạng thái robot (online/offline, chế độ, cảnh báo đang mở, tuổi hiệu chuẩn), sức khỏe theo N ngày, lịch sử lần chạy, tuân thủ của job | `GET /manager/robot-status`, `GET /manager/robots/{id}/health`, `GET /manager/runs`, `GET /manager/jobs/{id}/compliance` | Trạng thái có chữ/icon, không chỉ màu; có loading/error/empty; lọc/phân trang khi API hỗ trợ |
+| MGR-API-3 | P0 | TODO | MGR-API-2 | trang giám sát robot | M-API-03: danh sách cảnh báo chưa xử lý (nặng nhất trước), ack, resolve có ghi chú, danh mục cảnh báo (xem và chỉnh); giữ điều kiện quyền xử lý cảnh báo đỏ | `GET /manager/alerts`, `POST /manager/alerts/{id}/ack`, `POST /manager/alerts/{id}/resolve`, `GET /manager/alert-catalog`, `PATCH /manager/alert-catalog/{code}` | Hành động cập nhật danh sách; mức 4 nổi bật có chữ; Staff/Technician bị chặn |
+| MGR-API-4 | P1 | TODO | Không | màn chi tiết job (Schedule) | M-API-05: chi tiết job, sự kiện và sự cố, xử lý sự cố. Danh sách job và lập lịch đã có, không viết lại | `GET /manager/jobs/{id}`, `GET /manager/jobs/{id}/events`, `GET /manager/incidents`, `POST /manager/incidents/{id}/resolve` | Theo contract; không tạo thao tác trùng với màn Schedule |
+| MGR-API-5 | P1 | TODO | Không | màn chi tiết job | M-API-06: kết quả QC cho Manager xem | `GET /manager/jobs/{id}/quality` | Hiển thị đúng dữ liệu BE; trạng thái trống |
+| MGR-API-6 | P1 | TODO | Không | trang đánh giá khách (mới) | M-API-07: danh sách đánh giá, ẩn/hiện có lý do; không xóa đánh giá thay cho ẩn | `GET /manager/reviews`, `POST /manager/reviews/{id}/hide`, `POST /manager/reviews/{id}/unhide` | Theo schema BE; ba ngôn ngữ |
+| MGR-API-7 | P1 (backlog nếu không kịp) | TODO | MGR-API-2 | trang giám sát robot | M-API-04: lệnh robot từ Manager, khóa Robot Agent, vé xem, live, scene. Xác minh viewer đã đảm nhiệm scene/live để tránh gọi trùng; không lộ agent key vào log | `POST /manager/robots/{id}/robot-commands`, `GET .../live`, `GET .../scene`, `GET .../agent`, `POST/DELETE .../agent-key`, `POST .../view-ticket` | Chỉ làm khi P0 xong; hiển thị khóa agent một lần, không ghi log |
 
 ## 6. Tiêu chí tích hợp cuối (Chủ Nhật 15/11)
 
-Chạy trên nhánh gộp của cả ba người, bằng tài khoản seed (`admin@netviet.vn`, `manager@netviet.vn`, `staff@netviet.vn`, `tech@netviet.vn`, mật khẩu `ChangeMe@123`):
+Chạy trên nhánh gộp của cả ba người, bằng tài khoản seed (`admin@netviet.vn`, `manager@netviet.vn`, `staff@netviet.vn`, `tech@netviet.vn`, `customer@example.com`, mật khẩu `ChangeMe@123`):
 
-1. **Phân quyền:** mỗi vai trò chỉ thấy và vào được màn của mình (`RequireStaff`, `manager`, `role="admin"`, `role="technician"`). Staff không vào `/staff/catalog`, `/staff/pricing`, `/staff/approvals`, `/staff/schedule` và các trang Manager mới. Truy cập thẳng bằng URL cũng bị chặn. Technician và Admin không vào được màn Staff/Manager.
-2. **Trạng thái:** mọi màn mới hoặc sửa có đủ loading, lỗi (chữ đã dịch, không lộ mã thô) và trống.
+1. **Phân quyền:** mỗi vai trò chỉ vào được màn của mình (`RequireStaff`, `manager`, `role="admin"`, `role="technician"`). Staff không vào `/staff/catalog`, `/staff/pricing`, `/staff/approvals`, `/staff/schedule` và trang Manager mới. Truy cập thẳng bằng URL cũng bị chặn. Technician và Admin không vào được màn Staff/Manager.
+2. **Trạng thái:** mọi màn mới hoặc sửa có loading, lỗi (chữ đã dịch, không lộ mã thô) và trống.
 3. **Responsive:** kiểm ở 360 px, 768 px và desktop; không tràn ngang, không đè chữ; menu mobile hoạt động.
-4. **Ba ngôn ngữ:** chuyển en, vi, ja; không còn chữ Anh trái quy định (`FE/AGENTS.md`). Chiều dài tiếng Việt và tiếng Nhật không cắt nút.
-5. **Dữ liệu:** không dữ liệu mẫu; không nút cho API chưa nối.
-6. **Hồi quy:** luồng khách (tạo đơn, cọc, hoàn tiền) và thông báo vẫn chạy.
+4. **Ba ngôn ngữ:** chuyển en, vi, ja; không còn chữ Anh trái quy định (`FE/AGENTS.md`); tiếng Việt và tiếng Nhật không cắt nút.
+5. **Đồng bộ UI:** Technician, Customer và Manager khớp Admin và Staff về header, điều hướng, màu, chữ, thẻ, form, dropdown ở cả sáng và tối. Chữ tab đang chọn đủ tương phản trong chế độ tối.
+6. **Dữ liệu:** không dữ liệu mẫu; không nút cho API chưa nối.
+7. **Hồi quy:** luồng khách (tạo đơn, cọc, hoàn tiền) và thông báo vẫn chạy.
 
-Mỗi người ghi kết quả từng mục cho phần của mình vào "Ghi chú kiểm tra"; chỉ khi cả sáu mục qua thì sprint DONE.
+Mỗi người ghi kết quả từng mục cho phần của mình vào mục 9; chỉ khi cả bảy mục qua thì sprint DONE.
 
 ## 7. Lệnh kiểm tra FE (chạy trong thư mục `FE/`)
 
@@ -126,31 +113,27 @@ npm run lint          # oxlint
 npm run build         # tsc -b && vite build
 ```
 
-Kiểm tra thêm khi chạm vào phần liên quan:
+Kiểm tra thêm khi chạm vào phần liên quan (chạy sau build). Trong PowerShell có thể dùng `npm.cmd` thay `npm`:
 
 ```bash
-node scripts/check-admin-browser.mjs          # sau build, cho Admin
-node scripts/check-staff-ui-browser.mjs       # sau build, cho Staff
+npm run api:audit                             # cập nhật sổ API (ngày BE thêm, ngày FE nối)
+node scripts/api-audit.mjs --check            # liệt kê route chưa nối
+node scripts/check-admin-browser.mjs          # Admin
+node scripts/check-staff-ui-browser.mjs       # Staff
+node scripts/check-fulfillment-browser.mjs    # giao hàng/nhận tại xưởng
 npm run test:technician                       # Technician
-npm run test:technician:browser               # Technician, có build
-npm run test:fulfillment:browser              # giao hàng/nhận tại xưởng
+node scripts/check-technician-browser.mjs     # Technician, trình duyệt
 ```
 
-## 8. Bàn giao Admin (điền khi ADM-HANDOFF xảy ra)
+Ổ đĩa phải còn chỗ trống: khi ổ C đầy, Vite có thể trả CSS rỗng và giao diện mất màu.
 
-- Ân báo Nhã lúc: `…`
-- Nhánh / commit chứa UI Admin: `…`
-- Màn đã xong: `…`
-- Việc còn dở biết trước: `…`
-- Nhã xác nhận đã nhận lúc: `…`
+## 8. Đối chiếu Admin (Nhã điền ở ADM-API-1)
 
-## 9. Đối chiếu Admin (Nhã điền ở ADM-API-1)
+| Route | Method | Có trong `admin.py` | Hàm FE gọi | Màn gọi | Kết luận |
+|---|---|---|---|---|---|
+| (điền khi làm ADM-API-1) | | | | | |
 
-| Route | Method | Có trong `admin.py` | Hàm FE gọi | Kết luận |
-|---|---|---|---|---|
-| (điền sau handoff) | | | | |
-
-## 10. Ghi chú kiểm tra
+## 9. Ghi chú kiểm tra
 
 Mỗi người ghi ngắn: task, ngày, kết quả (đạt/không đạt), nội dung `VERIFY WITH BE` còn treo.
 
