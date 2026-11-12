@@ -94,10 +94,44 @@ class SketchOut(_ORM):
     image_urls: list[str] = []          # customer-facing JPEG per page (what the customer will see)
     trajectory_url: str | None = None   # signed link of the robot trajectory JSON
     warnings: list[str] = []
+    region_counts: dict[str, int] = {}  # U4: {"ORIGINAL": n, "RESTORED": n, "INFERRED": n}; {} = no regions (OT-3, manual)
+
+
+class SketchRegionOut(_ORM):
+    """U4: a word region of an OT-1 sketch. Box in mm from the top-left of page `page_no`; strokes
+    [stroke_start, stroke_end) of that page in the trajectory file."""
+    id: int
+    page_no: int
+    region_no: int
+    x0: Decimal
+    y0: Decimal
+    x1: Decimal
+    y1: Decimal
+    stroke_start: int
+    stroke_end: int
+    label: Literal["ORIGINAL", "RESTORED", "INFERRED"]
+    confidence: Decimal | None
+    metrics: dict[str, Any] | None
+    text: str | None
+    source: str
+    note: str | None
+    edited_by: int | None
+
+
+class RegionEditIn(BaseModel):
+    action: Literal["REPLACE_STROKES", "TEXT", "REMOVE"]
+    note: str = Field(min_length=1, max_length=1000, description="Why this region was changed (kept in the region + audit).")
+    strokes: list[list[list[float]]] | None = Field(
+        default=None, description="REPLACE_STROKES: [[[x_mm, y_mm], ...], ...] on the same page.")
+    label: Literal["RESTORED", "INFERRED"] | None = Field(
+        default=None, description="REPLACE_STROKES: RESTORED (redrawn from what the image shows, default) or INFERRED (guessed).")
+    text: str | None = Field(default=None, max_length=200, description="TEXT: words written into the region box (always INFERRED).")
+    font: str | None = Field(default=None, description="TEXT: single-line font, default cursive.")
 
 
 class SketchDetailOut(SketchOut):
     trajectory: dict[str, Any]
+    regions: list[SketchRegionOut] = []
 
 
 # ---- quotations (UC-26) ----------------------------------------------------------------------------
@@ -277,6 +311,15 @@ class ChangeRequestIn(BaseModel):
     note: str = Field(min_length=1, max_length=1000)
 
 
+class RegionForCustomer(BaseModel):
+    page_no: int
+    region_no: int
+    bbox_mm: list[Decimal]               # [x0, y0, x1, y1] from the page's top-left
+    label: Literal["RESTORED", "INFERRED"]
+    confidence: Decimal | None
+    text: str | None
+
+
 class SketchForCustomer(BaseModel):
     id: int | None = None          # send back as `sketch_id` when approving (U2)
     version: int
@@ -285,6 +328,9 @@ class SketchForCustomer(BaseModel):
     approach_note: str | None
     estimated_writing_sec: int | None
     similarity_score: Decimal | None
+    restoration_mode: str | None = None        # U4 (OT-1): FAITHFUL | ASSISTED (null on an OT-1 order = FAITHFUL)
+    region_counts: dict[str, int] = {}
+    regions: list[RegionForCustomer] = []      # only the RESTORED / INFERRED ones, to highlight on the image
 
 
 class QuoteRevisionOut(BaseModel):

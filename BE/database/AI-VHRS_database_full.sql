@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0017 (alembic head), generated 2026-11-12 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0018 (alembic head), generated 2026-11-12 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0017);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0017;
+--      baseline schema and every migration up to 0018);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0018;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -1111,11 +1111,13 @@ CREATE TABLE public.orders (
     shipping_carrier public.carrier,
     shipping_service_code character varying(30),
     shipping_eta timestamp with time zone,
+    restoration_mode character varying(10),
     CONSTRAINT chk_orders_estimate CHECK (((estimated_price_min IS NULL) OR (estimated_price_max IS NULL) OR (estimated_price_min <= estimated_price_max))),
     CONSTRAINT chk_orders_materials_after_submit CHECK (((order_status = ANY (ARRAY['DRAFT'::public.order_status, 'CANCELLED'::public.order_status])) OR workshop_suggest_materials OR ((paper_type_id IS NOT NULL) AND (pen_type_id IS NOT NULL) AND (ink_color_id IS NOT NULL)))),
     CONSTRAINT chk_orders_pickup_slot CHECK (((pickup_slot_end IS NULL) OR (pickup_slot_end > pickup_slot_start))),
     CONSTRAINT chk_orders_privacy_before_quote CHECK (((order_status <> ALL (ARRAY['QUOTED'::public.order_status, 'AWAITING_DEPOSIT'::public.order_status, 'CONFIRMED'::public.order_status, 'AWAITING_ACCEPTANCE'::public.order_status, 'AWAITING_FINAL_PAYMENT'::public.order_status, 'READY_TO_DELIVER'::public.order_status, 'DELIVERING'::public.order_status, 'COMPLETED'::public.order_status])) OR (privacy_accepted_at IS NOT NULL))),
     CONSTRAINT chk_orders_reject CHECK (((order_status <> 'REJECTED'::public.order_status) OR (reject_reason IS NOT NULL))),
+    CONSTRAINT chk_orders_restoration_mode CHECK (((restoration_mode)::text = ANY ((ARRAY['FAITHFUL'::character varying, 'ASSISTED'::character varying])::text[]))),
     CONSTRAINT chk_orders_shipping_service CHECK (((shipping_carrier IS NULL) = (shipping_service_code IS NULL))),
     CONSTRAINT chk_orders_staff_after_accept CHECK (((order_status = ANY (ARRAY['DRAFT'::public.order_status, 'SUBMITTED'::public.order_status, 'NEED_INFO'::public.order_status, 'REJECTED'::public.order_status, 'CANCELLED'::public.order_status])) OR (assigned_staff_id IS NOT NULL))),
     CONSTRAINT orders_char_count_check CHECK ((char_count >= 0)),
@@ -1933,6 +1935,55 @@ CREATE SEQUENCE public.sketch_approvals_id_seq
 ALTER SEQUENCE public.sketch_approvals_id_seq OWNED BY public.sketch_approvals.id;
 
 --
+-- Name: sketch_regions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sketch_regions (
+    id bigint NOT NULL,
+    sketch_id bigint NOT NULL,
+    page_no integer NOT NULL,
+    region_no integer NOT NULL,
+    x0 numeric(7,2) NOT NULL,
+    y0 numeric(7,2) NOT NULL,
+    x1 numeric(7,2) NOT NULL,
+    y1 numeric(7,2) NOT NULL,
+    stroke_start integer NOT NULL,
+    stroke_end integer NOT NULL,
+    label character varying(10) NOT NULL,
+    confidence numeric(4,3),
+    metrics jsonb,
+    text text,
+    source character varying(10) DEFAULT 'AUTO'::character varying NOT NULL,
+    note text,
+    edited_by bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_sketch_region_strokes CHECK ((stroke_end >= stroke_start)),
+    CONSTRAINT sketch_regions_confidence_check CHECK (((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))),
+    CONSTRAINT sketch_regions_label_check CHECK (((label)::text = ANY ((ARRAY['ORIGINAL'::character varying, 'RESTORED'::character varying, 'INFERRED'::character varying])::text[]))),
+    CONSTRAINT sketch_regions_page_no_check CHECK ((page_no >= 1)),
+    CONSTRAINT sketch_regions_region_no_check CHECK ((region_no >= 1)),
+    CONSTRAINT sketch_regions_source_check CHECK (((source)::text = ANY ((ARRAY['AUTO'::character varying, 'STAFF'::character varying])::text[]))),
+    CONSTRAINT sketch_regions_stroke_start_check CHECK ((stroke_start >= 0))
+);
+
+--
+-- Name: sketch_regions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sketch_regions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: sketch_regions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sketch_regions_id_seq OWNED BY public.sketch_regions.id;
+
+--
 -- Name: sketches; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2099,6 +2150,12 @@ ALTER TABLE ONLY public.robot_agents ALTER COLUMN id SET DEFAULT nextval('public
 --
 
 ALTER TABLE ONLY public.sketch_approvals ALTER COLUMN id SET DEFAULT nextval('public.sketch_approvals_id_seq'::regclass);
+
+--
+-- Name: sketch_regions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_regions ALTER COLUMN id SET DEFAULT nextval('public.sketch_regions_id_seq'::regclass);
 
 --
 -- Name: accounts accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2458,6 +2515,13 @@ ALTER TABLE ONLY public.sketch_approvals
     ADD CONSTRAINT sketch_approvals_quotation_id_key UNIQUE (quotation_id);
 
 --
+-- Name: sketch_regions sketch_regions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_regions
+    ADD CONSTRAINT sketch_regions_pkey PRIMARY KEY (id);
+
+--
 -- Name: sketches sketches_order_id_version_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2498,6 +2562,13 @@ ALTER TABLE ONLY public.templates
 
 ALTER TABLE ONLY public.templates
     ADD CONSTRAINT templates_pkey PRIMARY KEY (id);
+
+--
+-- Name: sketch_regions ux_sketch_region; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_regions
+    ADD CONSTRAINT ux_sketch_region UNIQUE (sketch_id, page_no, region_no);
 
 --
 -- Name: ix_accounts_role; Type: INDEX; Schema: public; Owner: -
@@ -3675,6 +3746,20 @@ ALTER TABLE ONLY public.sketch_approvals
     ADD CONSTRAINT sketch_approvals_sketch_id_fkey FOREIGN KEY (sketch_id) REFERENCES public.sketches(id) ON DELETE CASCADE;
 
 --
+-- Name: sketch_regions sketch_regions_edited_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_regions
+    ADD CONSTRAINT sketch_regions_edited_by_fkey FOREIGN KEY (edited_by) REFERENCES public.accounts(id);
+
+--
+-- Name: sketch_regions sketch_regions_sketch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_regions
+    ADD CONSTRAINT sketch_regions_sketch_id_fkey FOREIGN KEY (sketch_id) REFERENCES public.sketches(id) ON DELETE CASCADE;
+
+--
 -- Name: sketches sketches_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3955,7 +4040,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0017');
+INSERT INTO alembic_version (version_num) VALUES ('0018');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

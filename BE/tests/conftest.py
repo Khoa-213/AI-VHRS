@@ -47,6 +47,7 @@ def _cleanup() -> None:
         c.execute(text(f"update production_jobs set snapshot_id = null where order_id in {_TEST_ORDERS} and snapshot_id is not null"))
         c.execute(text(f"delete from production_snapshots where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from sketch_approvals where order_id in {_TEST_ORDERS}"))
+        c.execute(text(f"delete from sketch_regions where sketch_id in (select id from sketches where order_id in {_TEST_ORDERS})"))
         c.execute(text(f"delete from payments where order_id in {_TEST_ORDERS}"))
         # product_photos.job_id does not cascade, so photos go before their jobs
         c.execute(text(f"delete from quality_evaluations where created_by in {_TEST_IDS} or order_id in {_TEST_ORDERS}"))   # before the photos

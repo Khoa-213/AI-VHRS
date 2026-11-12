@@ -97,6 +97,8 @@ class OrderUpdateIn(BaseModel):
     workshop_suggest_materials: bool | None = None
     quantity: int | None = Field(default=None, ge=1, le=10000)
     customer_note: str | None = Field(default=None, max_length=2000)
+    restoration_mode: Literal["FAITHFUL", "ASSISTED"] | None = Field(
+        default=None, description="OT-1 only (U4): FAITHFUL = only what is in the image; ASSISTED = Staff may fill missing parts (marked INFERRED).")
 
 
 class OrderOut(_ORM):
@@ -117,6 +119,7 @@ class OrderOut(_ORM):
     deposit_pct: Decimal | None = None
     deposit_amount: Decimal | None = None
     customer_note: str | None
+    restoration_mode: str | None = None
     info_request_note: str | None
     reject_reason: str | None
     reject_note: str | None

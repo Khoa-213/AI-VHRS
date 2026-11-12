@@ -187,6 +187,10 @@ class OrderService:
             order.quantity = changes["quantity"]
         if "customer_note" in changes:
             order.customer_note = changes["customer_note"]
+        if changes.get("restoration_mode") is not None:                              # U4
+            if order.order_type != OrderType.OT1_COPY_RESTORE:
+                raise AppError(422, "RESTORATION_MODE_OT1_ONLY", "Chế độ phục dựng chỉ áp dụng cho đơn sao chép / phục dựng.")
+            order.restoration_mode = changes["restoration_mode"]
         if "workshop_suggest_materials" in changes and changes["workshop_suggest_materials"] is not None:
             order.workshop_suggest_materials = changes["workshop_suggest_materials"]
         if {"paper_type_id", "pen_type_id", "ink_color_id"} & changes.keys():

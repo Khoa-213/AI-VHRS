@@ -25,6 +25,7 @@ import numpy as np
 
 from app.core.errors import AppError
 from app.services.handwriting_image import _apply_orientation
+from app.services.stroke_ai.regions import RegionDraft, label_for
 from app.services.stroke_ai.trajectory import PAPER_MM, Page, Stroke
 
 MAX_SIDE_PX = 1600
@@ -40,16 +41,21 @@ class RecoveryStats:
     stroke_width_mm: float
     deskew_deg: float
     warnings: list[str] = field(default_factory=list)
+    regions: list[RegionDraft] = field(default_factory=list)      # U4: one per word, page_no left at 1
 
 
 # ---------------------------------------------------------------------------------------------
 # 1. preprocessing
 # ---------------------------------------------------------------------------------------------
-def _binarise(gray: np.ndarray) -> np.ndarray:
+def _flatten(gray: np.ndarray) -> np.ndarray:
     k = max(15, (min(gray.shape) // 30) | 1)
     background = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
     flat = cv2.divide(gray, np.maximum(background, 1), scale=255)           # flatten uneven light / yellowed paper
-    flat = cv2.GaussianBlur(flat, (3, 3), 0)
+    return cv2.GaussianBlur(flat, (3, 3), 0)
+
+
+def _binarise(gray: np.ndarray) -> np.ndarray:
+    flat = _flatten(gray)
     _, ink = cv2.threshold(flat, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     return ink
 
@@ -350,8 +356,9 @@ def _orient(pts: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------------------------
 # 6. reading order
 # ---------------------------------------------------------------------------------------------
-def _reading_order(strokes: list[np.ndarray], comp_of: list[int]) -> list[tuple[int, str]]:
-    """Return [(stroke index, kind)] in writing order; kind is 'base' or 'mark'."""
+def _reading_order(strokes: list[np.ndarray], comp_of: list[int]) -> list[tuple[int, str, int]]:
+    """Return [(stroke index, kind, word index)] in writing order; kind is 'base' or 'mark'. A word's strokes are
+    contiguous (bases, then its marks), which the restoration regions (U4) rely on."""
     comps: dict[int, list[int]] = {}
     for i, c in enumerate(comp_of):
         comps.setdefault(c, []).append(i)
@@ -407,14 +414,14 @@ def _reading_order(strokes: list[np.ndarray], comp_of: list[int]) -> list[tuple[
         nearest = min(owner, key=dist)
         word_marks[owner[nearest]].append(c)
 
-    order: list[tuple[int, str]] = []
+    order: list[tuple[int, str, int]] = []
     for wi, w in enumerate(words):
         for c in sorted(w, key=lambda c: boxes[c][0]):
             for i in sorted(comps[c], key=lambda i: strokes[i][0, 0]):
-                order.append((i, "base"))
+                order.append((i, "base", wi))
         for c in sorted(word_marks[wi], key=lambda c: boxes[c][0]):
             for i in sorted(comps[c], key=lambda i: strokes[i][0, 0]):
-                order.append((i, "mark"))
+                order.append((i, "mark", wi))
     return order
 
 
@@ -434,6 +441,10 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
 
     ink = _remove_specks(_binarise(img))
     ink, angle = _deskew(ink)
+    flat = _flatten(img)                                    # U4: ink darkness per region, same rotation as `ink`
+    if angle:
+        rot = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+        flat = cv2.warpAffine(flat, rot, (w, h), flags=cv2.INTER_LINEAR, borderValue=255)
     ink = _remove_specks(ink)
     if not ink.any():
         raise AppError(422, "NO_STROKES_FOUND", "Không tìm thấy nét chữ trong ảnh. Hãy kiểm tra độ tương phản.")
@@ -482,12 +493,37 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
     s = min((pw - 2 * margin_mm) / w, (ph - 2 * margin_mm) / h)
     ox, oy = (pw - w * s) / 2, (ph - h * s) / 2
     page = Page(paper_size)
-    for i, kind in order:
+    for i, kind, _ in order:
         pts = [(ox + float(x) * s, oy + float(y) * s) for x, y in strokes_px[i]]
         page.strokes.append(Stroke(pts, kind))
+
+    # U4: one region per word, with the local fit of the redrawn strokes against the ink inside its box
+    runs: dict[int, list[int]] = {}
+    for pos, (_, _, wi) in enumerate(order):
+        runs.setdefault(wi, []).append(pos)
+    page_dark = float(np.median(255 - flat[ink > 0])) if ink.any() else 1.0
+    regions = []
+    for n, wi in enumerate(sorted(runs, key=lambda w: runs[w][0]), start=1):
+        pos = runs[wi]
+        allp = np.concatenate([strokes_px[order[k][0]] for k in pos])
+        x0, y0 = np.floor(allp.min(axis=0)).astype(int) - thick
+        x1, y1 = np.ceil(allp.max(axis=0)).astype(int) + thick + 1
+        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w), min(y1, h)
+        c, k = canvas[y0:y1, x0:x1] > 0, ink[y0:y1, x0:x1] > 0
+        u = int(np.logical_or(c, k).sum())
+        fit = round(float(np.logical_and(c, k).sum()) / u, 3) if u else 0.0
+        dark = float(np.median(255 - flat[y0:y1, x0:x1][k])) if k.any() else 0.0
+        contrast = round(min(dark / max(page_dark, 1.0), 1.0), 3)       # faded ink compared with the rest of the page
+        conf = min(fit, contrast)
+        mm = [page.strokes[k2] for k2 in range(pos[0], pos[-1] + 1)]
+        bx = (min(p[0] for st in mm for p in st.points), min(p[1] for st in mm for p in st.points),
+              max(p[0] for st in mm for p in st.points), max(p[1] for st in mm for p in st.points))
+        regions.append(RegionDraft(1, n, pos[0], pos[-1] + 1, tuple(round(v, 2) for v in bx), label_for(conf), conf,
+                                   metrics={"fit": fit, "contrast": contrast}))
 
     warnings = []
     if similarity < 80.0:
         warnings.append("SIMILARITY_BELOW_80")      # NFR-02 target; Staff should edit or reject the image
     return page, RecoveryStats(similarity=similarity, n_strokes=len(page.strokes), mm_per_px=round(s, 5),
-                               stroke_width_mm=round(width_px * s, 3), deskew_deg=angle, warnings=warnings)
+                               stroke_width_mm=round(width_px * s, 3), deskew_deg=angle, warnings=warnings,
+                               regions=regions)

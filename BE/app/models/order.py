@@ -103,6 +103,7 @@ class Order(Base):
     deposit_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     deposit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 0))     # D
     customer_note: Mapped[str | None] = mapped_column(Text)
+    restoration_mode: Mapped[str | None] = mapped_column(String(10))     # U4: OT-1 FAITHFUL (NULL) | ASSISTED
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     assigned_staff_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     assigned_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))

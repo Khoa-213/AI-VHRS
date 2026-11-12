@@ -95,6 +95,29 @@ class Quotation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
 
 
+class SketchRegion(Base):
+    """U4: one word region of an OT-1 sketch version (migration 0018)."""
+    __tablename__ = "sketch_regions"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    sketch_id: Mapped[int] = mapped_column(ForeignKey("sketches.id"))
+    page_no: Mapped[int] = mapped_column(Integer)
+    region_no: Mapped[int] = mapped_column(Integer)
+    x0: Mapped[Decimal] = mapped_column(Numeric(7, 2))
+    y0: Mapped[Decimal] = mapped_column(Numeric(7, 2))
+    x1: Mapped[Decimal] = mapped_column(Numeric(7, 2))
+    y1: Mapped[Decimal] = mapped_column(Numeric(7, 2))
+    stroke_start: Mapped[int] = mapped_column(Integer)
+    stroke_end: Mapped[int] = mapped_column(Integer)
+    label: Mapped[str] = mapped_column(String(10))
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    text: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(10), default="AUTO")
+    note: Mapped[str | None] = mapped_column(Text)
+    edited_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+
+
 class SketchApproval(Base):
     """U2: what the customer had on screen when approving (append-only, migration 0017)."""
     __tablename__ = "sketch_approvals"
