@@ -91,7 +91,25 @@ class Quotation(Base):
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     customer_responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     customer_note: Mapped[str | None] = mapped_column(Text)
+    revision_reason: Mapped[str | None] = mapped_column(Text)     # U2: why a re-quote's price changed (or not)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+
+
+class SketchApproval(Base):
+    """U2: what the customer had on screen when approving (append-only, migration 0017)."""
+    __tablename__ = "sketch_approvals"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    quotation_id: Mapped[int] = mapped_column(ForeignKey("quotations.id"))
+    sketch_id: Mapped[int] = mapped_column(ForeignKey("sketches.id"))
+    sketch_version: Mapped[int] = mapped_column(Integer)
+    sketch_content_hash: Mapped[str | None] = mapped_column(String(64))
+    image_paths: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    chosen_option: Mapped[int] = mapped_column(Integer)
+    total: Mapped[Decimal] = mapped_column(Numeric(14, 0))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
 
 
 class Message(Base):

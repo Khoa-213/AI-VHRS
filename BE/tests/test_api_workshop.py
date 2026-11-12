@@ -707,12 +707,19 @@ def test_request_changes_then_requote_skips_the_second_privacy_prompt(client, cu
     assert client.post(f"{API}/orders/{oid}/quotation/request-changes", headers=cust, json={"note": "lại"}).status_code == 409
     v2 = client.post(f"{W}/orders/{oid}/sketches/generate", headers=sh, json={"seed": 3}).json()["version"]
     client.post(f"{W}/orders/{oid}/sketches/{v2}/finalize", headers=sh)
-    q2 = client.post(f"{W}/orders/{oid}/quotations", headers=sh, json={}).json()
-    assert q2["version"] == 2
+    r = client.post(f"{W}/orders/{oid}/quotations", headers=sh, json={"revision_reason": "  "})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "REVISION_REASON_REQUIRED"     # U2 / Q4
+    assert r.json()["error"]["details"]["customer_note"] == "Chữ to hơn"
+    q2 = client.post(f"{W}/orders/{oid}/quotations", headers=sh,
+                     json={"revision_reason": "Chữ to hơn nên thêm trang, giá giữ nguyên"}).json()
+    assert q2["version"] == 2 and q2["revision_reason"] == "Chữ to hơn nên thêm trang, giá giữ nguyên"
     assert _sql("select status::text from quotations where id=:q", q=q1["id"]) == "SUPERSEDED"
     assert client.post(f"{W}/quotations/{q2['id']}/send", headers=sh).status_code == 200
     assert _order_status(oid) == "QUOTED"                      # consent already given for this policy version
-    assert client.get(f"{API}/orders/{oid}/quotation", headers=cust).json()["version"] == 2
+    view = client.get(f"{API}/orders/{oid}/quotation", headers=cust).json()
+    assert view["version"] == 2
+    assert view["revision"] == {"reason": "Chữ to hơn nên thêm trang, giá giữ nguyên", "previous_version": 1,
+                                "previous_total": q1["final_total"]}
 
 
 def test_quotation_expires_after_its_validity(client, cust, staff, wcat):

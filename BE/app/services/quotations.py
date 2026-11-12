@@ -123,7 +123,8 @@ class QuotationService:
 
     # ---- create (FR-15, FR-29) ----
     def create(self, order_id: int, *, complexity: str | None, char_count: int | None,
-               options: list[dict[str, int | None]] | None, eta: date | None) -> Quotation:
+               options: list[dict[str, int | None]] | None, eta: date | None,
+               revision_reason: str | None = None) -> Quotation:
         order = self.access.order(order_id, write=True, lock=True)
         if order.order_status != OrderStatus.ACCEPTED:
             raise AppError(409, "ORDER_NOT_ACCEPTED", "Chỉ lập báo giá khi đơn đã được tiếp nhận.")
@@ -132,6 +133,12 @@ class QuotationService:
             raise AppError(409, "SKETCH_REQUIRED", "Cần lưu và chốt phác thảo trước khi lập báo giá (BR-22).")
         if self.quotes.live(order.id) is not None:
             raise AppError(409, "QUOTATION_ALREADY_OPEN", "Đơn đã có báo giá đang xử lý; hãy sửa hoặc hủy báo giá đó.")
+        revision_reason = (revision_reason or "").strip() or None
+        changed = self.quotes.latest(order.id, (QuotationStatus.CHANGES_REQUESTED,))
+        if changed is not None and revision_reason is None:       # owner decision Q4 (U2)
+            raise AppError(422, "REVISION_REASON_REQUIRED",
+                           "Khách đã yêu cầu chỉnh sửa: hãy ghi lý do giá thay đổi (hoặc giữ nguyên) cho báo giá mới.",
+                           {"previous_version": changed.version, "customer_note": changed.customer_note})
         cfg = self.catalog.active_pricing()
         if cfg is None:
             raise AppError(503, "PRICING_NOT_CONFIGURED", "Chưa có bảng giá đang áp dụng.")
@@ -172,13 +179,16 @@ class QuotationService:
                                "canvas_mm_per_char": str(params.canvas_mm_per_char)},
             "adjust_threshold_pct": str(cfg.adjust_threshold_pct), "chars": chars, "quantity": order.quantity,
             "complexity": level, "options": snap_options, "computed_at": _now().isoformat()}
+        if changed is not None:
+            snapshot["revision"] = {"from_quotation_id": changed.id, "from_version": changed.version,
+                                    "previous_total": str(changed.final_total), "customer_note": changed.customer_note}
         self.quotes.supersede_open_changes(order.id)
         row = self.quotes.add(Quotation(
             order_id=order.id, version=self.quotes.next_version(order.id), sketch_id=sketch.id,
             pricing_config_id=cfg.id, created_by=self.actor.id, status=QuotationStatus.DRAFT, line_items=line_items,
             char_count=chars, quantity=order.quantity, complexity=ComplexityLevel(level),
             computed_total=built[0].total, adjustment_status=AdjustmentStatus.NONE, min_deposit_pct=cfg.p_min_pct,
-            price_snapshot=snapshot,
+            price_snapshot=snapshot, revision_reason=revision_reason if changed is not None else None,
             eta=eta if eta and eta >= date.today() else EtaService(self.session, self.actor).estimate(order)))   # BR-15
         audit.record(self.session, actor_id=self.actor.id, action="QUOTATION_CREATE", entity_type="quotation",
                      entity_id=row.id, new={"order_id": order.id, "version": row.version,
@@ -421,7 +431,8 @@ class QuotationService:
         return quotation_pdf.render(quotation_pdf.QuotationDoc(
             order_code=order.code, version=q.version, customer_name=customer.full_name if customer else "",
             issued_at=q.sent_at, valid_until=q.valid_until, eta=q.eta, options=opts,
-            min_deposit_pct=q.min_deposit_pct, adjusted=q.adjusted_total is not None, multi_option=multi))
+            min_deposit_pct=q.min_deposit_pct, adjusted=q.adjusted_total is not None, multi_option=multi,
+            **revision_info(q)))
 
     def pdf_url(self, quotation_id: int) -> str:
         q, _ = self._quote(quotation_id)
@@ -433,6 +444,15 @@ class QuotationService:
 # ---------------------------------------------------------------------------------------------
 # customer side
 # ---------------------------------------------------------------------------------------------
+def revision_info(q: Quotation) -> dict[str, Any]:
+    """U2: what the customer is told about a re-quote (empty for a first quote)."""
+    rev = (q.price_snapshot or {}).get("revision")
+    if not q.revision_reason or not rev:
+        return {}
+    return {"revision_reason": q.revision_reason, "previous_version": rev.get("from_version"),
+            "previous_total": Decimal(rev["previous_total"]) if rev.get("previous_total") else None}
+
+
 VISIBLE = (QuotationStatus.SENT, QuotationStatus.APPROVED, QuotationStatus.CHANGES_REQUESTED, QuotationStatus.EXPIRED)
 QUOTE_STAGES = {OrderStatus.QUOTED, OrderStatus.AWAITING_DEPOSIT, OrderStatus.CONFIRMED, OrderStatus.AWAITING_ACCEPTANCE,
                 OrderStatus.AWAITING_FINAL_PAYMENT, OrderStatus.READY_TO_DELIVER, OrderStatus.DELIVERING,

@@ -12,13 +12,13 @@ from app.api.order_schemas import OrderOut
 from app.api.schemas import ErrorOut
 from app.api.ops_schemas import ApproveQuotationIn
 from app.api.staff_schemas import (ChangeRequestIn, PrivacyDecisionIn, PrivacyPolicyOut, QuotationCustomerOut,
-                                   SketchForCustomer)
+                                   QuoteRevisionOut, SketchForCustomer)
 from app.api.v1.orders import optional_storage
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
 from app.repositories.catalog import CatalogRepository
 from app.services.payments import QuotationApprovalService
-from app.services.quotations import CustomerQuoteService, current_privacy_policy, option_summaries
+from app.services.quotations import CustomerQuoteService, current_privacy_policy, option_summaries, revision_info
 
 router = APIRouter(tags=["Quotations"])
 CustomerDep = Annotated[Account, Depends(require_roles(RoleCode.CUSTOMER.value))]
@@ -56,7 +56,9 @@ def view_quotation(order_id: int, svc: Svc) -> QuotationCustomerOut:
         id=q.id, version=q.version, status=q.status, line_items=q.line_items, options=option_summaries(q),
         chosen_option=q.chosen_option, char_count=q.char_count, quantity=q.quantity, final_total=q.final_total,
         min_deposit_pct=q.min_deposit_pct, eta=q.eta, valid_until=q.valid_until, pdf_url=pdf,
-        sketch=SketchForCustomer(version=sketch.version, preview_urls=svc.sketch_image_urls(sketch) or previews,
+        revision=QuoteRevisionOut(reason=rev["revision_reason"], previous_version=rev["previous_version"],
+                                  previous_total=rev["previous_total"]) if (rev := revision_info(q)) else None,
+        sketch=SketchForCustomer(id=sketch.id, version=sketch.version, preview_urls=svc.sketch_image_urls(sketch) or previews,
                                  image_urls=svc.sketch_image_urls(sketch), approach_note=sketch.approach_note,
                                  estimated_writing_sec=sketch.estimated_writing_sec,
                                  similarity_score=sketch.similarity_score) if sketch else None)
@@ -70,9 +72,10 @@ def request_changes(order_id: int, body: ChangeRequestIn, svc: Svc) -> OrderOut:
 
 @router.post("/orders/{order_id}/quotation/approve", response_model=OrderOut,
              summary="FR-15 Duyệt báo giá và chọn mức cọc (QUOTED → AWAITING_DEPOSIT)",
-             responses={409: {"model": ErrorOut, "description": "QUOTATION_NOT_OPEN / QUOTATION_EXPIRED"},
+             responses={409: {"model": ErrorOut, "description": "QUOTATION_NOT_OPEN / QUOTATION_EXPIRED / SKETCH_VERSION_STALE"},
                         422: {"model": ErrorOut, "description": "INVALID_DEPOSIT / OPTION_REQUIRED / INVALID_OPTION"}})
 def approve_quotation(order_id: int, body: ApproveQuotationIn, session: SessionDep, customer: CustomerDep,
                       request: Request) -> OrderOut:
     return OrderOut.model_validate(QuotationApprovalService(session, customer, client_ip(request))
-                                   .approve(order_id, option=body.option, deposit_pct=body.deposit_pct))
+                                   .approve(order_id, option=body.option, deposit_pct=body.deposit_pct,
+                                            sketch_id=body.sketch_id))

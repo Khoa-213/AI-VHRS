@@ -282,15 +282,19 @@ Sau `confirm`, BE kiểm tra chất lượng + ước lượng số ký tự; n�
   2. `POST /orders/{id}/privacy {accept:true}` → `QUOTED`. `{accept:false}` → đơn **bị huỷ**; hãy hỏi xác nhận trước khi gọi.
   3. Trước bước này `GET /orders/{id}/quotation` trả `403 PRIVACY_REQUIRED`.
 - `GET /orders/{id}/quotation` → `{status, line_items[], options[], final_total, min_deposit_pct, eta, valid_until, pdf_url, sketch{image_urls[], preview_urls[], estimated_writing_sec, ...}}`. **`sketch.image_urls[]` là ảnh JPG phác thảo (mực, độ dày nét và loại giấy đúng như đơn) để khách xem rồi quyết định đặt cọc**, mỗi trang một ảnh, đặt trong thẻ báo giá / `ORDER_CARD`; `preview_urls` giữ để tương thích (bằng `image_urls` khi có). Ảnh là hình dung **kế hoạch** nét viết, không phải ảnh chụp kết quả. `pdf_url` và các link ảnh là **link hết hạn sau 10 phút**: lấy lại khi cần.
+  - **Nâng cấp U2 (2026-11-12):** ảnh phác thảo (`image_urls`, `preview_urls`) đã có **dấu nhận diện AI-VHRS** in sẵn (dải chữ ở mép dưới kèm mã đơn + chữ chìm chéo mờ); FE không cần tự vẽ thêm và không được che / cắt dải dưới. Thêm `sketch.id` (gửi lại khi duyệt), `ai_notice` (câu "Phác thảo là bản tái tạo nét chữ bằng AI-VHRS, không phải văn bản gốc."; hiện ngay dưới ảnh), và `revision` (`null` ở báo giá đầu; báo giá lập lại sau khi khách yêu cầu sửa thì có `{reason, previous_version, previous_total}`: hiện "Lý do thay đổi so với báo giá v{previous_version} (tổng trước {previous_total} đ): {reason}"). PDF báo giá cũng in lý do này và câu AI.
   - Báo giá **1 phương án**: `options` có 1 phần tử. Khách chọn "để xưởng gợi ý" có thể có **2–3 phương án vật tư**: bắt khách chọn 1.
   - `valid_until` quá hạn: lần gọi kế tiếp thấy `status:"EXPIRED"` và đơn `CANCELLED` (đếm ngược 7 ngày trong UI).
 - Không đồng ý: `POST /orders/{id}/quotation/request-changes {note}` → đơn về `ACCEPTED`, xưởng lập lại; hoặc `POST /orders/{id}/cancel {reason}`.
 
 ### 5.3 Duyệt báo giá và đặt cọc
 ```
-POST /orders/{id}/quotation/approve {option?: 1..3, deposit_pct?: số}      → OrderOut (order_status = AWAITING_DEPOSIT)
+POST /orders/{id}/quotation/approve {option?: 1..3, deposit_pct?: số, sketch_id?: số}      → OrderOut (order_status = AWAITING_DEPOSIT)
       - deposit_pct: từ min_deposit_pct (trong quotation) tới 100; bỏ trống = mức tối thiểu
       - đơn nhiều phương án bắt buộc có `option`
+      - sketch_id (U2, nên gửi): `sketch.id` của màn hình khách đang xem; phác thảo đã đổi → 409 SKETCH_VERSION_STALE
+        (`details.sketch_id` là bản mới): tải lại báo giá, cho khách xem lại ảnh rồi mới duyệt
+      - khi duyệt, máy chủ lưu bản ghi bất biến: phiên bản + hash phác thảo, các ảnh khách thấy, phương án, tổng, IP
       - OrderOut mới có total_amount, deposit_pct, deposit_amount
 POST /orders/{id}/payments/deposit {gateway:"VNPAY"|"MOMO"}                → PaymentOut {id, amount, status:"PENDING", mode:"MOCK", checkout_path, gateway_txn_id}
 POST /payments/{payment_id}/mock-checkout {result:"SUCCESS"|"FAILED"}      → {result, status, order_status}
@@ -411,7 +415,10 @@ PATCH .../sketches/{version} {approach_note, suggested_complexity}      POST ...
 
 **Báo giá** (cần phác thảo đã chốt – BR-22):
 ```
-POST /workshop/orders/{id}/quotations {complexity?, char_count?, options?:[{paper_type_id,pen_type_id,ink_color_id}] (≤3), eta?}
+POST /workshop/orders/{id}/quotations {complexity?, char_count?, options?:[{paper_type_id,pen_type_id,ink_color_id}] (≤3), eta?, revision_reason?}
+      (U2: khi khách đã yêu cầu sửa báo giá trước, `revision_reason` là bắt buộc: lý do giá đổi hoặc giữ nguyên, ≤1000 ký tự;
+       thiếu → 422 REVISION_REASON_REQUIRED, `details` = {previous_version, customer_note} để hiện lại yêu cầu của khách.
+       Không giới hạn số vòng sửa. QuotationOut có thêm `revision_reason`)
 PUT  /workshop/quotations/{qid}/adjustment {adjusted_total, reason}     Staff điều chỉnh trong ngưỡng; vượt ngưỡng → chờ Manager
 DELETE /workshop/quotations/{qid}/adjustment
 POST /workshop/quotations/{qid}/send   (tạo PDF, hiệu lực 7 ngày)      POST .../cancel      GET .../pdf
@@ -840,6 +847,8 @@ Lỗi: `409 ORDER_NOT_COMPLETED`, `409 REVIEW_EXISTS` (đã có: dùng PUT), `42
 | `ORDER_TYPE_SUSPENDED` | 409 | Loại đơn đang tạm đóng | ẩn lựa chọn đó |
 | `PRIVACY_REQUIRED` | 403 | Chưa đồng ý chính sách | chuyển tới màn chính sách |
 | `QUOTATION_NOT_OPEN`, `QUOTATION_EXPIRED` | 409 | Báo giá không còn hiệu lực | tải lại đơn |
+| `SKETCH_VERSION_STALE` | 409 | Phác thảo đã đổi trong lúc khách xem (U2) | tải lại báo giá, cho khách xem ảnh mới rồi duyệt |
+| `REVISION_REASON_REQUIRED` | 422 | Báo giá lại sau yêu cầu sửa mà chưa ghi lý do (U2) | Staff nhập lý do giá thay đổi |
 | `INVALID_DEPOSIT` | 422 | % cọc ngoài khoảng | hiện `details.min_deposit_pct` |
 | `OPTION_REQUIRED`, `INVALID_OPTION` | 422 | Chưa chọn phương án | bắt chọn |
 | `DEPOSIT_NOT_EXPECTED`, `DEPOSIT_ALREADY_PAID` | 409 | Sai thời điểm đặt cọc | tải lại đơn |
