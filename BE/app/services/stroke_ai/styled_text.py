@@ -241,9 +241,10 @@ def compose_styled(text: str, layout: TextLayout, *, font_name: str | None = Non
                     extend(under[item.style.underline], x0, cursor, item.k, True)
                 if item.style.strike:
                     extend(struck, x0, cursor, item.k, True)
+            word_group = len(page.strokes)                # U7: the word's strokes stay together, in this order
             for kind, polys in (("base", bases), ("mark", marks)):
                 for pts in polys:
-                    page.strokes.append(Stroke(pts, kind))
+                    page.strokes.append(Stroke(pts, kind, word_group))
 
         # decorations last: the letters of the line are written first
         for kind, runs in under.items():

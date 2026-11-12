@@ -33,6 +33,8 @@ PEN_CYCLE_SEC = 0.5           # lift + lower per stroke
 class Stroke:
     points: list[tuple[float, float]]
     kind: str = "base"
+    # U7: strokes of one word share a value (consecutive); None = free stroke (drawing, underline). Not stored in the file.
+    group: int | None = field(default=None, compare=False)
 
     def length_mm(self) -> float:
         return sum(math.dist(a, b) for a, b in zip(self.points, self.points[1:]))

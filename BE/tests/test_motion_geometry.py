@@ -120,7 +120,7 @@ def test_speed_profile_slows_in_curves_at_corners_and_ends_and_limits_accelerati
 # ---------------------------------------------------------------- planning and validation
 def test_unconfigured_values_refuse_planning_instead_of_defaulting():
     empty = mp.MotionConfig()
-    assert set(empty.missing()) == set(CFG.__dataclass_fields__)
+    assert set(empty.missing()) == set(CFG.__dataclass_fields__) - mp.OPTIONAL      # U7: the jerk limit may stay off
     with pytest.raises(mp.PlanError) as e:
         mp.plan_page(page([(10, 10), (50, 10)]), build_frame(probes()), empty)
     assert e.value.code == "UNCONFIGURED"

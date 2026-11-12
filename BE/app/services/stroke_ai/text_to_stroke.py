@@ -272,11 +272,12 @@ def compose_text(text: str, *, font_name: str | None = None, paper_size: str, fo
                 cursor += c.advance
             cursor += gap
             # S4: the word's letters first, its tone marks / modifiers after the word
+            word_group = len(page.strokes)                # U7: the word's strokes stay together, in this order
             for kind, polys in (("base", bases), ("mark", marks)):
                 for poly in polys:
                     pts = [(m.left + ux * scale, line_top + (uy + CAP_UNITS - 9.0 + HEADROOM_UNITS) * scale)
                            for ux, uy in poly]
-                    page.strokes.append(Stroke(pts, kind))
+                    page.strokes.append(Stroke(pts, kind, word_group))
     pages = [p for p in pages if p.strokes] or pages[:1]
     place_vertically(pages, vertical_align, m, height_mm)
     return pages

@@ -23,7 +23,7 @@ from typing import Any, Callable
 import numpy as np
 
 from app.services.motion.frame import PaperFrame, build_frame
-from app.services.motion.plan import MotionConfig, PagePlan
+from app.services.motion.plan import OPTIONAL, MotionConfig, PagePlan
 from app.services.motion.validate import Workspace, validate
 from app.services.stroke_ai.trajectory import Page
 
@@ -141,7 +141,9 @@ class ControllerLock:
 
 # ---------------------------------------------------------------------------------------------- plan digest
 def plan_digest(package_hash: str, probes: list[Any], cfg: MotionConfig, ws: Workspace) -> str:
-    blob = json.dumps({"hash": package_hash, "probes": probes, "cfg": cfg.__dict__, "ws": ws.__dict__},
+    # an optional field left off (U7 jerk limit) is not part of the plan, so digests and AUTHORIZE codes stay as before
+    params = {k: v for k, v in cfg.__dict__.items() if not (k in OPTIONAL and v is None)}
+    blob = json.dumps({"hash": package_hash, "probes": probes, "cfg": params, "ws": ws.__dict__},
                       sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()
 

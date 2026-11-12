@@ -13,7 +13,7 @@ import unicodedata
 
 from app.domain import text_layout
 from app.models.order import OrderType
-from app.services.stroke_ai import outline_font, recovery, styled_text, text_to_stroke
+from app.services.stroke_ai import outline_font, path_order, recovery, styled_text, text_to_stroke
 from app.services.stroke_ai import regions as regions_mod
 from app.services.stroke_ai.trajectory import Metrics, Page, compute_metrics
 
@@ -71,6 +71,7 @@ def generate_ot1(images: list[ImageSource], *, paper_size: str, v_max_mm_s: floa
             r.page_no = page_no
             regions.append(r)
     similarity = round(sum(s.similarity for s in stats) / len(stats), 2)
+    order_summary = _order_ot1(pages, regions)                                   # U7
     metrics = compute_metrics(pages, v_max_mm_s)
     warnings = sorted({w for s in stats for w in s.warnings})
     engine = {"name": "zhang-suen-skeleton", "version": ENGINE_VERSION, "similarity_method": "ink-iou-v1",
@@ -81,7 +82,27 @@ def generate_ot1(images: list[ImageSource], *, paper_size: str, v_max_mm_s: floa
     if any(r.label != "ORIGINAL" for r in regions):
         warnings.append("UNCERTAIN_REGIONS")                 # U4: Staff should review the RESTORED regions
     engine["regions"] = {"method": "word-local-ink-iou-v1", "uncertain_below": regions_mod.UNCERTAIN_BELOW}
+    engine["path_order"] = order_summary
     return Generated(pages, engine, metrics, similarity, complexity, warnings, regions)
+
+
+def _order_ot1(pages: list[Page], regions: list) -> dict[str, Any]:
+    """U7 for OT-1: a U4 region (one word) is one cluster; its stroke range is moved with it."""
+    by_page: dict[int, list] = {}
+    for r in regions:
+        by_page.setdefault(r.page_no, []).append(r)
+    for page_no, page in enumerate(pages, start=1):
+        for r in by_page.get(page_no, []):
+            for s in page.strokes[r.stroke_start:r.stroke_end]:
+                s.group = r.region_no
+    results, summary = path_order.optimise_pages(pages)
+    for page_no, res in enumerate(results, start=1):
+        new_pos = {old: new for new, old in enumerate(res.order)}
+        for r in by_page.get(page_no, []):
+            n = r.stroke_end - r.stroke_start
+            r.stroke_start = new_pos[r.stroke_start]
+            r.stroke_end = r.stroke_start + n
+    return summary
 
 
 def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None, font_size_mm: float | None,
@@ -130,6 +151,7 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
             plain_pages[0].strokes.extend(canvas_strokes)
     if not pages:
         raise AppError(422, "NO_CONTENT", "Đơn chưa có nội dung chữ hoặc hình vẽ để sinh phác thảo.")
+    _, order_summary = path_order.optimise_pages(pages)                         # U7: words stay whole
     metrics = compute_metrics(pages, v_max_mm_s)
     kind = ("outline-centerline-compose" if font_uri and font_uri.startswith(outline_font.OUTLINE_PREFIX)
             else "hershey-vi-compose")
@@ -139,6 +161,7 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
         m = placement.page_margins
         engine["margins_mm"] = {"top": m.top, "bottom": m.bottom, "left": m.left, "right": m.right}
         engine["vertical_align"] = placement.page_vertical_align
+    engine["path_order"] = order_summary
     if styled:                                              # complexity (and so the price) deliberately ignores styles
         engine["layout"] = {"spans": len(styled.spans), "line_spacing": styled.line_spacing}
     if kind == "outline-centerline-compose" and text:
