@@ -283,6 +283,7 @@ Sau `confirm`, BE kiểm tra chất lượng + ước lượng số ký tự; n�
   3. Trước bước này `GET /orders/{id}/quotation` trả `403 PRIVACY_REQUIRED`.
 - `GET /orders/{id}/quotation` → `{status, line_items[], options[], final_total, min_deposit_pct, eta, valid_until, pdf_url, sketch{image_urls[], preview_urls[], estimated_writing_sec, ...}}`. **`sketch.image_urls[]` là ảnh JPG phác thảo (mực, độ dày nét và loại giấy đúng như đơn) để khách xem rồi quyết định đặt cọc**, mỗi trang một ảnh, đặt trong thẻ báo giá / `ORDER_CARD`; `preview_urls` giữ để tương thích (bằng `image_urls` khi có). Ảnh là hình dung **kế hoạch** nét viết, không phải ảnh chụp kết quả. `pdf_url` và các link ảnh là **link hết hạn sau 10 phút**: lấy lại khi cần.
   - **Nâng cấp U2 (2026-11-12):** ảnh phác thảo (`image_urls`, `preview_urls`) đã có **dấu nhận diện AI-VHRS** in sẵn (dải chữ ở mép dưới kèm mã đơn + chữ chìm chéo mờ); FE không cần tự vẽ thêm và không được che / cắt dải dưới. Thêm `sketch.id` (gửi lại khi duyệt), `ai_notice` (câu "Phác thảo là bản tái tạo nét chữ bằng AI-VHRS, không phải văn bản gốc."; hiện ngay dưới ảnh), và `revision` (`null` ở báo giá đầu; báo giá lập lại sau khi khách yêu cầu sửa thì có `{reason, previous_version, previous_total}`: hiện "Lý do thay đổi so với báo giá v{previous_version} (tổng trước {previous_total} đ): {reason}"). PDF báo giá cũng in lý do này và câu AI.
+  - **U6 (mọi đơn):** `sketch.preview_tier` = `VISUAL` | `CALIBRATED` | `PRODUCTION_READY` và `sketch.preview_note` (câu tiếng Việt). **FE phải hiện nhãn này cạnh ảnh phác thảo**: `VISUAL` = ảnh minh hoạ, nét theo độ rộng danh định của bút; `CALIBRATED` = nét vẽ theo số đo thật của đúng giấy + bút + mực này; `PRODUCTION_READY` = hồ sơ vật tư đã được xác nhận và gói sản xuất đã khoá đúng phác thảo này (chỉ có sau khi cọc). Hồ sơ bị đo lại sau khi vẽ ảnh → ảnh về `VISUAL`.
   - **U4 (đơn OT-1):** `sketch` có thêm `restoration_mode` (`FAITHFUL` / `ASSISTED`), `region_counts` và `regions[]` = các vùng **không** phải nét gốc: `{page_no, region_no, bbox_mm:[x0,y0,x1,y1], label: "RESTORED"|"INFERRED", confidence, text}`. FE vẽ khung lên ảnh phác thảo (màu riêng cho "phục dựng từ chỗ mờ" và "xưởng viết bù"), kèm chú thích, để khách biết chính xác phần nào không phải nét gốc trước khi duyệt.
   - Báo giá **1 phương án**: `options` có 1 phần tử. Khách chọn "để xưởng gợi ý" có thể có **2–3 phương án vật tư**: bắt khách chọn 1.
   - `valid_until` quá hạn: lần gọi kế tiếp thấy `status:"EXPIRED"` và đơn `CANCELLED` (đếm ngược 7 ngày trong UI).
@@ -414,6 +415,8 @@ PATCH .../sketches/{version} {approach_note, suggested_complexity}      POST ...
 GET  .../sketches/{version}/regions                                    U4: các vùng phục dựng (OT-1)
 POST .../sketches/{version}/regions/{region_id}/edit {action, note, strokes?, label?, text?, font?}   U4: sửa đúng 1 vùng → phiên bản mới (201 SketchOut)
 ```
+**Cấp ảnh xem trước (U6):** mọi `SketchOut` có `render_profile_id` (hồ sơ vật tư đã dùng để vẽ ảnh, `null` = độ rộng danh định) và `preview_tier` (`VISUAL` / `CALIBRATED` / `PRODUCTION_READY`, xem mục 5).
+
 **Vùng phục dựng (U4, chỉ OT-1):** khi sinh phác thảo từ ảnh, mỗi **từ** là một vùng: `{id, page_no, region_no, x0, y0, x1, y1 (mm, gốc góc trên trái trang), stroke_start, stroke_end (dải nét của trang đó trong file quỹ đạo), label, confidence, metrics{fit, fit_rel, contrast}, text, source AUTO|STAFF, note, edited_by}`. Nhãn: `ORIGINAL` (nét rõ trong ảnh), `RESTORED` (mực mờ / nét khớp kém, hoặc Staff vẽ lại theo ảnh; cần Staff xem lại), `INFERRED` (không có trong ảnh, Staff viết bù). `confidence` = min(độ khớp nét với mực so với trung vị của trang `fit_rel`, độ đậm mực so với cả trang `contrast`), 0..1, ngưỡng 0,6 đã đo trên 50 ảnh thật (U3): ảnh sạch 0,1% vùng bị gắn RESTORED, mực mờ giả lập 96,9% được gắn; chưa đo trên ảnh hư hại thật; không phải điểm nhận dạng chữ. Mực mất hẳn (rách, tẩy trắng) thì không có nét nên **không có vùng**: Staff phải tự xem ảnh gốc. `SketchOut.region_counts` = `{"ORIGINAL": n, "RESTORED": n, "INFERRED": n}` (`{}` với OT-3 / quỹ đạo tải tay); `SketchDetailOut.regions[]`; `warnings` có `UNCERTAIN_REGIONS` khi có vùng RESTORED. Từ 2026-11-12 không còn cảnh báo `SIMILARITY_BELOW_80` (tạm tắt: cách đo `similarity` có trần khoảng 62–69 trên ảnh thật, xem `docs/benchmarks/`); `similarity_score` vẫn trả về để tham khảo. FE editor: vẽ khung vùng lên ảnh (quy đổi `x_px = x_mm / chiều rộng giấy mm × chiều rộng ảnh`), tô màu theo nhãn, cho chọn một vùng rồi:
 - `{"action":"REPLACE_STROKES","strokes":[[[x,y],...],...],"label":"RESTORED"|"INFERRED","note":"..."}` vẽ lại nét (mm, cùng trang);
 - `{"action":"TEXT","text":"...","font?":"cursive","note":"..."}` viết chữ vào khung vùng (luôn `INFERRED`);
@@ -440,6 +443,21 @@ GET  /manager/quotations/pending-approval      POST /manager/quotations/{qid}/ap
 - Chat dùng chung endpoint với khách (`/orders/{id}/messages`); Manager cũng nhắn được cho khách để xử lý khiếu nại.
 
 ## 7. Luồng Manager (`/manager/*`)
+
+### 7.U6 Thông số vật tư mở rộng và hồ sơ hiệu chuẩn (U6, migration 0019)
+```
+GET  /manager/material-specs/fields                     {sources:[SUPPLIER,MEASURED,ASSUMED], fields:{paper:[..], pen:[..], ink:[..]}}
+PUT  /manager/papers/{id}/specs  {specs}                 thay TOÀN BỘ specs của giấy  → PaperOut (có `specs`)
+PUT  /manager/pens/{id}/specs    {specs}                 → PenOut
+PUT  /manager/inks/{id}/specs    {specs}                 → InkOut
+GET  /manager/material-profiles?paper_id=&pen_id=&ink_id=
+POST /manager/material-profiles  {paper_type_id, pen_type_id, ink_color_id, robot_id?, line_width_mm?, darkness?, bleed_mm?, v_max_mm_s?, method?, evidence_uri?, note?}   201
+PATCH /manager/material-profiles/{id}  {line_width_mm?, darkness?, bleed_mm?, v_max_mm_s?, method?, evidence_uri?, note?}
+POST /manager/material-profiles/{id}/verify  {note?}     MEASURED → VERIFIED
+```
+- `specs` = `{khoá: {value, source, note?}}`, BE trả thêm `unit`. **`source` bắt buộc**: `SUPPLIER` (thông số nhà cung cấp), `MEASURED` (xưởng tự đo), `ASSUMED` (giả định). FE dựng form từ `/material-specs/fields` (`kind`: `num` có `rule:[min,max]`, `enum` có danh sách, `bool`, `hex`, `text` có độ dài tối đa); mỗi trường có ô chọn nguồn. Sai khoá / giá trị / thiếu nguồn → `422 INVALID_SPECS`, `details.key` = trường lỗi. `PUT` thay cả object: gửi lại các trường cũ nếu muốn giữ.
+- **Hồ sơ hiệu chuẩn** = số đo thật của một tổ hợp giấy + bút + mực trên tờ thử: `line_width_mm` (độ rộng nét), `darkness` 0..1, `bleed_mm` (lem), `v_max_mm_s` (tốc độ khuyên dùng). Trạng thái: `UNCALIBRATED` (chưa có số đo) → `MEASURED` (có `line_width_mm`) → `VERIFIED` (người khác hoặc cùng người xác nhận; audit ghi rõ). Sửa **bất kỳ số đo nào** = lần đo mới: về `MEASURED`, mất xác nhận; sửa `method` / `evidence_uri` / `note` thì giữ nguyên. Mực phải thuộc bút (`422 INK_NOT_FOR_PEN`), giấy–bút phải tương thích (`422 PEN_INCOMPATIBLE`), mỗi tổ hợp một hồ sơ (`409 PROFILE_EXISTS`; `robot_id` bỏ trống = mọi robot). FE nên hiện bảng tổ hợp với nhãn trạng thái và nút "Xác nhận".
+- Từ khi tổ hợp có hồ sơ `MEASURED`/`VERIFIED`, **ảnh phác thảo mới** của đơn dùng tổ hợp đó được vẽ bằng độ rộng nét đo được (thay vì độ rộng danh định của bút); ảnh cũ giữ nguyên. Gói sản xuất ký (U1) ghi thêm `materials.profile` (số đo dạng chuỗi, `null` nếu chưa hiệu chuẩn).
 
 ## 7f. Vận hành robot: lần chạy, cảnh báo, tình trạng (migration 0008)
 
@@ -858,6 +876,8 @@ Lỗi: `409 ORDER_NOT_COMPLETED`, `409 REVIEW_EXISTS` (đã có: dùng PUT), `42
 | `SKETCH_VERSION_STALE` | 409 | Phác thảo đã đổi trong lúc khách xem (U2) | tải lại báo giá, cho khách xem ảnh mới rồi duyệt |
 | `INFERRED_NOT_ALLOWED` | 409 | Đơn OT-1 chế độ trung thành không được có vùng suy đoán (U4) | Staff vẽ lại theo ảnh (RESTORED) hoặc hỏi khách đổi sang ASSISTED |
 | `SKETCH_VERSION_CONFLICT` | 409 | Phác thảo đã có phiên bản mới hơn (U4) | mở phiên bản `details.latest_version` rồi sửa |
+| `INVALID_SPECS` | 422 | Thông số vật tư sai khoá / giá trị / thiếu nguồn (U6) | tô đỏ trường `details.key` |
+| `INK_NOT_FOR_PEN`, `PROFILE_EXISTS`, `PROFILE_NOT_MEASURED`, `LINE_WIDTH_REQUIRED` | 422 / 409 | Hồ sơ hiệu chuẩn: mực không thuộc bút, tổ hợp đã có hồ sơ, xác nhận khi chưa đo, xoá độ rộng nét (U6) | hiện thông báo; với `PROFILE_EXISTS` mở hồ sơ có sẵn |
 | `REVISION_REASON_REQUIRED` | 422 | Báo giá lại sau yêu cầu sửa mà chưa ghi lý do (U2) | Staff nhập lý do giá thay đổi |
 | `INVALID_DEPOSIT` | 422 | % cọc ngoài khoảng | hiện `details.min_deposit_pct` |
 | `OPTION_REQUIRED`, `INVALID_OPTION` | 422 | Chưa chọn phương án | bắt chọn |

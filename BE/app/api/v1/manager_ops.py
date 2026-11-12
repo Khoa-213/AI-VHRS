@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (CompatIn, CompatOut, InkIn, InkOut, InkPatch, PaperIn, PaperOut, PaperPatch, PenIn,
-                                 PenOut, PenPatch, PricingOut, PricingSaveIn, RobotIn, RobotOut, RobotPatch, StockIn,
+                                 PenOut, PenPatch, ProfileIn, ProfileOut, ProfilePatch, ProfileVerifyIn, SpecsIn, PricingOut, PricingSaveIn, RobotIn, RobotOut, RobotPatch, StockIn,
                                  StyleOut, TemplateAdminOut, TemplateIn, TemplatePatch)
 from app.api.staff_schemas import ReasonIn
 from app.models.account import Account, RoleCode
@@ -18,7 +18,9 @@ from app.models.ops import RobotStatus
 from app.models.order import StyleStatus
 from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import RobotRepository
+from app.domain import material_specs
 from app.services.manager_catalog import ManagerCatalogService
+from app.services.material_profiles import MaterialProfileService
 
 router = APIRouter(prefix="/manager", tags=["Manager"])
 ManagerDep = Annotated[Account, Depends(require_roles(RoleCode.MANAGER.value))]
@@ -29,6 +31,13 @@ def _svc(session: SessionDep, manager: ManagerDep, request: Request) -> ManagerC
 
 
 Svc = Annotated[ManagerCatalogService, Depends(_svc)]
+
+
+def _profiles(session: SessionDep, manager: ManagerDep, request: Request) -> MaterialProfileService:
+    return MaterialProfileService(session, manager, client_ip(request))
+
+
+Profiles = Annotated[MaterialProfileService, Depends(_profiles)]
 RobotStatusQuery = Annotated[RobotStatus | None, Query(alias="status")]
 
 
@@ -93,6 +102,51 @@ def update_ink(ink_id: int, body: InkPatch, svc: Svc) -> InkOut:
 @router.post("/inks/{ink_id}/stock", response_model=InkOut, summary="Điều chỉnh tồn kho mực")
 def ink_stock(ink_id: int, body: StockIn, svc: Svc) -> InkOut:
     return InkOut.model_validate(svc.adjust_stock("ink", ink_id, body.mode, body.quantity, body.reason))
+
+
+# ---- U6: extended specs (each value with its source) and measured material profiles ---------------
+@router.get("/material-specs/fields", summary="U6 Danh sách trường thông số mở rộng của giấy / bút / mực")
+def spec_fields(_: ManagerDep) -> dict:
+    return {"sources": list(material_specs.SOURCES), "fields": material_specs.catalog()}
+
+
+@router.put("/papers/{paper_id}/specs", response_model=PaperOut, summary="U6 Ghi thông số mở rộng của giấy (thay toàn bộ)")
+def paper_specs(paper_id: int, body: SpecsIn, svc: Svc) -> PaperOut:
+    return PaperOut.model_validate(svc.set_specs("paper", paper_id, body.specs))
+
+
+@router.put("/pens/{pen_id}/specs", response_model=PenOut, summary="U6 Ghi thông số mở rộng của bút (thay toàn bộ)")
+def pen_specs(pen_id: int, body: SpecsIn, svc: Svc) -> PenOut:
+    return PenOut.model_validate(svc.set_specs("pen", pen_id, body.specs))
+
+
+@router.put("/inks/{ink_id}/specs", response_model=InkOut, summary="U6 Ghi thông số mở rộng của mực (thay toàn bộ)")
+def ink_specs(ink_id: int, body: SpecsIn, svc: Svc) -> InkOut:
+    return InkOut.model_validate(svc.set_specs("ink", ink_id, body.specs))
+
+
+@router.get("/material-profiles", response_model=list[ProfileOut], summary="U6 Hồ sơ hiệu chuẩn giấy + bút + mực")
+def material_profiles(svc: Profiles, paper_id: int | None = Query(default=None), pen_id: int | None = Query(default=None),
+                      ink_id: int | None = Query(default=None)) -> list[ProfileOut]:
+    return [ProfileOut.model_validate(p) for p in svc.list(paper_id, pen_id, ink_id)]
+
+
+@router.post("/material-profiles", response_model=ProfileOut, status_code=status.HTTP_201_CREATED,
+             summary="U6 Lập hồ sơ cho một tổ hợp (có line_width_mm = MEASURED, không có = UNCALIBRATED)")
+def create_material_profile(body: ProfileIn, svc: Profiles) -> ProfileOut:
+    return ProfileOut.model_validate(svc.create(body.model_dump()))
+
+
+@router.patch("/material-profiles/{profile_id}", response_model=ProfileOut,
+              summary="U6 Sửa hồ sơ (đổi số đo = lần đo mới, mất xác nhận)")
+def update_material_profile(profile_id: int, body: ProfilePatch, svc: Profiles) -> ProfileOut:
+    return ProfileOut.model_validate(svc.update(profile_id, body.model_dump(exclude_unset=True)))
+
+
+@router.post("/material-profiles/{profile_id}/verify", response_model=ProfileOut,
+             summary="U6 Xác nhận hồ sơ đã đo (MEASURED → VERIFIED)")
+def verify_material_profile(profile_id: int, body: ProfileVerifyIn, svc: Profiles) -> ProfileOut:
+    return ProfileOut.model_validate(svc.verify(profile_id, body.note))
 
 
 # ---- compatibility -------------------------------------------------------------------------------

@@ -53,6 +53,7 @@ class Sketch(Base):
     pen_lift_count: Mapped[int | None] = mapped_column(Integer)
     approach_note: Mapped[str | None] = mapped_column(Text)
     content_hash: Mapped[str | None] = mapped_column(String(64))
+    render_profile_id: Mapped[int | None] = mapped_column(ForeignKey("material_profiles.id"))   # U6: NULL = visual
     is_final: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
 

@@ -210,7 +210,7 @@ Mỗi phase: code + test + chạy toàn suite trên Supabase + cập nhật `PRO
 | **U3** ✅ đợt 1 (2026-11-12, chưa commit; báo cáo `docs/benchmarks/U3_recovery_viet_hw_2026-11-12.md`) | Bộ đánh giá: công cụ đo (topology, endpoint, vùng / từ, dấu, độ nhạy mực mờ; SSIM bỏ vì cần căn ảnh, CER chờ nhận dạng chữ) + cấu trúc bộ dữ liệu + báo cáo; chạy trên 50 ảnh **thật** | Q5 (dữ liệu) | Báo cáo số đo thật, không số giả |
 | **U4** ✅ code + test (2026-11-12, commit `766b89a`; HTR chưa có) | Vùng phục dựng: `sketch_regions`, nhãn ORIGINAL / RESTORED / INFERRED, chế độ Faithful / Assisted, Staff sửa theo vùng, sửa chữ không đụng vùng khác | Không (HTR thêm sau) | Sửa vùng 3 không đổi byte nét của vùng khác |
 | **U5** | Studio + AI Assistant: bản nháp trước khi gửi xưởng, revision + undo/redo, hội thoại, tool calling, ghi chi phí | **Q1** (LLM, khoá), **Q2** (nghiệp vụ studio) | Kịch bản hội thoại mẫu chạy với công cụ thật; LLM không bịa vật tư (test bằng catalog) |
-| **U6** | Vật tư mở rộng + profile tổ hợp + nhãn cấp preview | Không (đo thật là HW) | Manager nhập được, trường đo được ghi nguồn |
+| **U6** ✅ code (2026-11-12, migration 0019, chưa commit) | Vật tư mở rộng + profile tổ hợp + nhãn cấp preview | Không (đo thật là HW) | Manager nhập được, trường đo được ghi nguồn |
 | **U7** | Robot engine: tối ưu thứ tự nét + pen-up, jerk limit, benchmark mô phỏng | Không (đo thật là HW) | Quãng pen-up / thời gian giảm, đo bằng mô phỏng trên bộ phác thảo mẫu |
 | **U8** | Watermark vật lý + chứng nhận + trang xác thực QR | **Q3** | Snapshot có watermark; agent từ chối gói thiếu watermark bắt buộc |
 | **U9** | Đậm nhạt + hiệu chuẩn vật liệu + QC trên robot thật | **HW**, người vận hành | Số đo NFR-04/05 thật |

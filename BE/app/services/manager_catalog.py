@@ -21,6 +21,7 @@ from app.models.ops import ACTIVE_JOB_STATUSES, Robot, RobotStatus
 from app.models.order import HandwritingStyle, StyleStatus
 from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import JobRepository, RobotRepository
+from app.domain import material_specs
 from app.services import audit
 from app.services.stroke_ai.outline_font import OUTLINE_PREFIX
 from app.services.stroke_ai.text_to_stroke import FONT_PREFIX, SUPPORTED_FONTS
@@ -271,6 +272,23 @@ class ManagerCatalogService:
         return Decimal(str(a)) == Decimal(str(b))
 
     # ------------------------------------------------------------------ helpers
+    def set_specs(self, material: str, pk: int, specs: dict[str, Any]) -> Any:
+        """U6: replace the extended specs of a paper / pen / ink; every value must carry its source."""
+        model, label = {"paper": (PaperType, "loại giấy"), "pen": (PenType, "loại bút"), "ink": (InkColor, "màu mực")}[material]
+        row = self._locked(model, pk, f"Không tìm thấy {label}.")
+        try:
+            clean = material_specs.validate(material, specs)
+        except material_specs.SpecError as exc:
+            raise AppError(422, "INVALID_SPECS", exc.message, {"key": exc.key}) from None
+        old = dict(row.specs or {})
+        if clean == old:
+            return row
+        row.specs = clean
+        self.session.flush()
+        self._audit(f"CATALOG_{material.upper()}_SPECS", {"paper": "paper_type", "pen": "pen_type", "ink": "ink_color"}[material],
+                    row.id, {"specs": old}, {"specs": clean})
+        return row
+
     def _locked(self, model: Any, pk: int, message: str) -> Any:
         row = self.catalog.lock(model, pk)
         if row is None:
