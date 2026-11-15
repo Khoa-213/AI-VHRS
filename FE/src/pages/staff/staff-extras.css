@@ -1,0 +1,20 @@
+/* Staff blocks added for material suggestions and product photos. Theme tokens only, so dark mode follows staff-theme.css. */
+.ws .stx-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.ws .stx-head>:first-child{flex:1 1 auto;margin:0}
+.ws .stx-error{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+
+.ws .stx-suggest{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--field)}
+.ws .stx-combos{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ws .stx-combos li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.ws .stx-combo-name{flex:1 1 220px;min-width:0;font-size:13px;color:var(--ink);overflow-wrap:anywhere}
+.ws .stx-combos .vh-btn{display:inline-flex;align-items:center;gap:6px;min-height:36px;white-space:nowrap}
+
+.ws .stx-photos{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:14px}
+.ws .stx-photo{display:flex;flex-direction:column;gap:6px;min-width:0;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.ws .stx-photo img{display:block;width:100%;height:160px;object-fit:contain;border-radius:8px;background:var(--field)}
+.ws .stx-photo-missing{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;height:160px;padding:10px;border-radius:8px;background:var(--field);color:var(--ink3);font-size:12px;text-align:center}
+.ws .stx-photo-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.ws .stx-photo-meta b{font-size:13px}
+.ws .stx-qc{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--field);color:var(--ink2);font-size:12px;font-weight:600}
+.ws .stx-qc.ok{background:var(--green1);color:var(--green3)}
+.ws .stx-qc.bad{background:var(--red1);color:var(--red3)}

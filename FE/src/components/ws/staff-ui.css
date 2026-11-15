@@ -172,8 +172,11 @@
  .ws.ws-staff .staff-header .nbell-pop{right:12px;top:calc(100% + 8px);width:calc(100% - 24px);max-height:65dvh}
 }
 
-.ws.ws-staff .staff-header .nbell{position:static}
-.ws.ws-staff .staff-header .nbell-pop{right:12px;top:calc(100% + 8px);max-width:calc(100% - 24px)}
+/* Desktop: the panel drops straight down, centred under the bell. Mobile keeps the full-width sheet above. */
+@media(min-width:761px){
+ .ws.ws-staff .staff-header .nbell{position:relative}
+ .ws.ws-staff .staff-header .nbell-pop{left:50%;right:auto;top:calc(100% + 10px);width:min(360px,calc(100vw - 32px));transform:translateX(-50%)}
+}
 
 /* A single viewport frame prevents page content from sliding behind the header. */
 .ws.ws-staff{--staff-header-offset:72px;display:grid;grid-template-columns:224px minmax(0,1fr);grid-template-rows:72px minmax(0,1fr);gap:0;height:100dvh;min-height:0;padding:0;overflow:hidden}
@@ -202,3 +205,7 @@
 .ws.ws-staff .staff-sidebar-footer{margin-top:auto;padding-top:16px;border-top:0}
 .ws.ws-staff .staff-sidebar-signout{display:flex;align-items:center;justify-content:flex-start;gap:12px;min-height:46px;width:100%;padding:10px 14px;border:0;border-radius:8px;background:transparent;color:var(--ink3);font:inherit;font-size:14px;font-weight:500;cursor:pointer}
 .ws.ws-staff .staff-sidebar-signout:hover{background:var(--field);color:var(--ink)}
+
+/* Sidebar still scrolls (wheel, touch, keyboard) when zoomed, but hides the scrollbar track. */
+.ws.ws-staff .staff-sidebar{scrollbar-width:none;-ms-overflow-style:none}
+.ws.ws-staff .staff-sidebar::-webkit-scrollbar{display:none;width:0;height:0}

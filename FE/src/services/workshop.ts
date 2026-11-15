@@ -205,6 +205,40 @@ export interface MaterialOption {
   ink_color_id: number
 }
 
+/** One paper, pen and ink combination Staff may still offer; names come from the catalog. */
+export interface MaterialCombo extends MaterialOption { paper: string; pen: string; ink: string }
+
+export interface MaterialSuggestions {
+  /** The customer asked the workshop to suggest materials. */
+  enabled: boolean
+  /** The customer's own picks (0 when left to the workshop) and their names. */
+  fixed: MaterialOption & { paper: string | null; pen: string | null; ink: string | null }
+  /** All combinations; `combos` holds at most the first 60. */
+  total: number
+  combos: MaterialCombo[]
+}
+
+interface RawMaterialSuggestions {
+  suggest_enabled: boolean
+  fixed: { paper_type_id: number | null; pen_type_id: number | null; ink_color_id: number | null; paper_type_id_name?: string | null; pen_type_id_name?: string | null; ink_color_id_name?: string | null }
+  total: number
+  combos: MaterialCombo[]
+}
+
+/** `GET /workshop/orders/{id}/material-suggestions`: combinations that keep the customer's choices and the compatibility rules. */
+export async function materialSuggestions(orderId: number): Promise<MaterialSuggestions> {
+  const r = await api<RawMaterialSuggestions>(`/workshop/orders/${orderId}/material-suggestions`)
+  return {
+    enabled: r.suggest_enabled,
+    fixed: {
+      paper_type_id: r.fixed.paper_type_id ?? 0, pen_type_id: r.fixed.pen_type_id ?? 0, ink_color_id: r.fixed.ink_color_id ?? 0,
+      paper: r.fixed.paper_type_id_name ?? null, pen: r.fixed.pen_type_id_name ?? null, ink: r.fixed.ink_color_id_name ?? null,
+    },
+    total: r.total,
+    combos: r.combos ?? [],
+  }
+}
+
 export const createQuotation = async (orderId: number, body: { complexity?: Complexity; char_count?: number; options?: MaterialOption[]; eta?: string }) =>
   toQuotation(await api<RawWorkQuotation>(`/workshop/orders/${orderId}/quotations`, { method: 'POST', body }))
 
@@ -255,6 +289,30 @@ const toJob = (j: RawJob): Job => ({
 })
 
 export const orderJobs = async (orderId: number) => (await api<RawJob[]>(`/workshop/orders/${orderId}/jobs`)).map(toJob)
+
+/** A finished-product photo of one of the order's jobs, with the technician's QC verdict. `url` is signed and expires. */
+export interface WorkshopPhoto {
+  id: number
+  jobId: number
+  jobStatus: JobStatus
+  kind: 'OVERALL' | 'CLOSE_UP' | 'OTHER'
+  qcResult: 'PASS' | 'FAIL' | null
+  qcNote: string | null
+  createdAt: string
+  url: string | null
+}
+
+interface RawWorkshopPhoto {
+  id: number; job_id: number; job_status: JobStatus; kind: WorkshopPhoto['kind']; qc_result: WorkshopPhoto['qcResult']
+  qc_note: string | null; created_at: string; url?: string | null
+}
+
+/** `GET /workshop/orders/{id}/product-photos`: every live photo of the order's jobs, newest job first (read only). */
+export const orderProductPhotos = async (orderId: number): Promise<WorkshopPhoto[]> =>
+  (await api<RawWorkshopPhoto[]>(`/workshop/orders/${orderId}/product-photos`)).map((p) => ({
+    id: p.id, jobId: p.job_id, jobStatus: p.job_status, kind: p.kind, qcResult: p.qc_result, qcNote: p.qc_note,
+    createdAt: p.created_at, url: p.url ?? null,
+  }))
 
 // ---------- manager ----------
 

@@ -19,9 +19,12 @@ import ChangeRequests from './ChangeRequests'
 import { isManagerRole } from './RequireStaff'
 import FulfillmentPanel, { FULFILLMENT_STATES } from './FulfillmentPanel'
 import PaidOrderDesk, { PAID_STATES } from './PaidOrderDesk'
+import ProductPhotosPanel from './ProductPhotosPanel'
 import QuotationPanel from './QuotationPanel'
 import SketchPanel from './SketchPanel'
 
+/** Order statuses in which a job may already have product photos. */
+const PHOTO_STATES = ['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED']
 const AFTER_QUOTE = ['AWAITING_PRIVACY', 'QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED']
 
 /** One order for the workshop: what the customer sent, intake decisions, sketch, quotation, payments, jobs and chat. */
@@ -236,6 +239,8 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
           </dl>
         </section>
       )}
+      {PHOTO_STATES.includes(order.status) && <ProductPhotosPanel order={order} />}
+
       {manager && order.production === 'PENDING_SCHEDULE' && (
         <Link to={`/staff/schedule/${order.id}`} className="vh-btn vh-btn--primary vh-btn--md wk-link">{t('wk.goSchedule')}</Link>
       )}

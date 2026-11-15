@@ -1,0 +1,23 @@
+/* Customer review of a completed order. Theme tokens only (theme.css), so light and dark follow the shared preference. */
+.rv-panel{display:flex;flex-direction:column;gap:12px;padding-top:16px;border-top:1px solid var(--line, var(--fx-08))}
+.rv-panel h3{margin:0;font-size:16px;font-weight:700;color:var(--t1)}
+.rv-view,.rv-form{display:flex;flex-direction:column;gap:12px}
+.rv-stars{display:inline-flex;align-items:center;gap:2px;color:var(--warn)}
+.rv-stars-n{margin-left:8px;font-size:13px;font-weight:600;color:var(--t2)}
+.rv-comment{margin:0;font-size:14px;line-height:1.6;color:var(--t2);white-space:pre-wrap;overflow-wrap:anywhere}
+.rv-photos{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.rv-photos li{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--fx-06)}
+.rv-photos img{display:block;width:100%;height:100%;object-fit:cover}
+.rv-photo-off{display:grid;place-items:center;width:100%;height:100%;color:var(--t4)}
+.rv-remove{position:absolute;top:4px;right:4px;display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;background:var(--bg);color:var(--t1);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.rv-remove:focus-visible,.rv-rate-row label:has(input:focus-visible),.rv-add:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.rv-rate{border:0;margin:0;padding:0;min-width:0}
+.rv-rate legend{margin-bottom:6px}
+.rv-rate-row{display:flex;flex-wrap:wrap;gap:4px}
+.rv-rate-row label{display:grid;place-items:center;width:44px;height:44px;border-radius:10px;color:var(--t4);cursor:pointer}
+.rv-rate-row label.on{color:var(--warn)}
+.rv-rate-row label:hover{background:var(--fx-06)}
+.rv-rate-row input{position:absolute;opacity:0;width:1px;height:1px}
+.rv-add{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;cursor:pointer}
+.rv-actions{display:flex;flex-wrap:wrap;gap:8px}
+.rv-sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
