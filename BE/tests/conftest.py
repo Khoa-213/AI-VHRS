@@ -150,6 +150,9 @@ def _no_real_provider_credentials(monkeypatch):
     # e-mail: never reach a real SMTP server (alerts go to every active Manager, and the database holds real people)
     for name in ("smtp_host", "smtp_user", "smtp_password", "smtp_from"):
         monkeypatch.setattr(s, name, None)
+    # U5: never call a real LLM (BE/.env may hold a Gemini / Claude / OpenAI key); assistant tests use scripted providers
+    for name in ("anthropic_api_key", "openai_api_key", "gemini_api_key"):
+        monkeypatch.setattr(s, name, None)
     from app.integrations.mailer import ConsoleMailer
     ConsoleMailer.outbox.clear()
     # the notification stream would otherwise stay open for 30 minutes (TestClient reads the whole body)

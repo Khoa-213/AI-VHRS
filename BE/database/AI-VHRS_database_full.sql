@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0020 (alembic head), generated 2026-11-14 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0021 (alembic head), generated 2026-11-15 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0020);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0020;
+--      baseline schema and every migration up to 0021);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0021;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -707,6 +707,112 @@ ALTER TABLE public.accounts ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     NO MAXVALUE
     CACHE 1
 );
+
+--
+-- Name: ai_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_messages (
+    id bigint NOT NULL,
+    session_id bigint NOT NULL,
+    role character varying(10) NOT NULL,
+    content text NOT NULL,
+    status character varying(10) DEFAULT 'OK'::character varying NOT NULL,
+    provider character varying(20),
+    model character varying(80),
+    model_calls smallint DEFAULT 0 NOT NULL,
+    input_tokens integer,
+    output_tokens integer,
+    cost_usd numeric(12,6),
+    latency_ms integer,
+    input_sha256 character(64),
+    attempts jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ai_messages_role_check CHECK (((role)::text = ANY ((ARRAY['USER'::character varying, 'ASSISTANT'::character varying])::text[]))),
+    CONSTRAINT ai_messages_status_check CHECK (((status)::text = ANY ((ARRAY['OK'::character varying, 'FAILED'::character varying, 'CAPPED'::character varying])::text[])))
+);
+
+--
+-- Name: ai_messages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_messages_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: ai_messages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_messages_id_seq OWNED BY public.ai_messages.id;
+
+--
+-- Name: ai_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_sessions (
+    id bigint NOT NULL,
+    draft_id bigint NOT NULL,
+    customer_id bigint NOT NULL,
+    provider character varying(20),
+    model character varying(80),
+    consented_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_message_at timestamp with time zone
+);
+
+--
+-- Name: ai_sessions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_sessions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: ai_sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_sessions_id_seq OWNED BY public.ai_sessions.id;
+
+--
+-- Name: ai_tool_calls; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_tool_calls (
+    id bigint NOT NULL,
+    message_id bigint NOT NULL,
+    name character varying(40) NOT NULL,
+    args jsonb DEFAULT '{}'::jsonb NOT NULL,
+    result jsonb,
+    ok boolean NOT NULL,
+    revision_id bigint,
+    duration_ms integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: ai_tool_calls_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_tool_calls_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: ai_tool_calls_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_tool_calls_id_seq OWNED BY public.ai_tool_calls.id;
 
 --
 -- Name: alembic_version; Type: TABLE; Schema: public; Owner: -
@@ -2142,6 +2248,80 @@ ALTER TABLE public.status_histories ALTER COLUMN id ADD GENERATED ALWAYS AS IDEN
 );
 
 --
+-- Name: studio_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.studio_drafts (
+    id bigint NOT NULL,
+    customer_id bigint NOT NULL,
+    mode character varying(10) NOT NULL,
+    status character varying(10) DEFAULT 'OPEN'::character varying NOT NULL,
+    title character varying(150),
+    current_revision_id bigint,
+    order_id bigint,
+    flags jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    submitted_at timestamp with time zone,
+    CONSTRAINT chk_studio_submitted CHECK ((((status)::text <> 'SUBMITTED'::text) OR (submitted_at IS NOT NULL))),
+    CONSTRAINT studio_drafts_mode_check CHECK (((mode)::text = ANY ((ARRAY['TEXT'::character varying, 'RESTORE'::character varying])::text[]))),
+    CONSTRAINT studio_drafts_status_check CHECK (((status)::text = ANY ((ARRAY['OPEN'::character varying, 'SUBMITTED'::character varying, 'ABANDONED'::character varying])::text[])))
+);
+
+--
+-- Name: studio_drafts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.studio_drafts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: studio_drafts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.studio_drafts_id_seq OWNED BY public.studio_drafts.id;
+
+--
+-- Name: studio_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.studio_revisions (
+    id bigint NOT NULL,
+    draft_id bigint NOT NULL,
+    parent_id bigint,
+    seq integer NOT NULL,
+    content jsonb NOT NULL,
+    author character varying(10) NOT NULL,
+    tool_name character varying(40),
+    note character varying(200),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_studio_rev_tool CHECK ((((author)::text <> 'AI'::text) OR (tool_name IS NOT NULL))),
+    CONSTRAINT studio_revisions_author_check CHECK (((author)::text = ANY ((ARRAY['CUSTOMER'::character varying, 'AI'::character varying])::text[]))),
+    CONSTRAINT studio_revisions_seq_check CHECK ((seq >= 1))
+);
+
+--
+-- Name: studio_revisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.studio_revisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: studio_revisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.studio_revisions_id_seq OWNED BY public.studio_revisions.id;
+
+--
 -- Name: system_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2213,6 +2393,24 @@ CREATE VIEW public.v_order_eta_postponement AS
   GROUP BY order_id;
 
 --
+-- Name: ai_messages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_messages ALTER COLUMN id SET DEFAULT nextval('public.ai_messages_id_seq'::regclass);
+
+--
+-- Name: ai_sessions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_sessions ALTER COLUMN id SET DEFAULT nextval('public.ai_sessions_id_seq'::regclass);
+
+--
+-- Name: ai_tool_calls id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tool_calls ALTER COLUMN id SET DEFAULT nextval('public.ai_tool_calls_id_seq'::regclass);
+
+--
 -- Name: material_profiles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2255,11 +2453,51 @@ ALTER TABLE ONLY public.sketch_approvals ALTER COLUMN id SET DEFAULT nextval('pu
 ALTER TABLE ONLY public.sketch_regions ALTER COLUMN id SET DEFAULT nextval('public.sketch_regions_id_seq'::regclass);
 
 --
+-- Name: studio_drafts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_drafts ALTER COLUMN id SET DEFAULT nextval('public.studio_drafts_id_seq'::regclass);
+
+--
+-- Name: studio_revisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_revisions ALTER COLUMN id SET DEFAULT nextval('public.studio_revisions_id_seq'::regclass);
+
+--
 -- Name: accounts accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_pkey PRIMARY KEY (id);
+
+--
+-- Name: ai_messages ai_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_messages
+    ADD CONSTRAINT ai_messages_pkey PRIMARY KEY (id);
+
+--
+-- Name: ai_sessions ai_sessions_draft_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_sessions
+    ADD CONSTRAINT ai_sessions_draft_id_key UNIQUE (draft_id);
+
+--
+-- Name: ai_sessions ai_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_sessions
+    ADD CONSTRAINT ai_sessions_pkey PRIMARY KEY (id);
+
+--
+-- Name: ai_tool_calls ai_tool_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tool_calls
+    ADD CONSTRAINT ai_tool_calls_pkey PRIMARY KEY (id);
 
 --
 -- Name: alembic_version alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2668,6 +2906,34 @@ ALTER TABLE ONLY public.status_histories
     ADD CONSTRAINT status_histories_pkey PRIMARY KEY (id);
 
 --
+-- Name: studio_drafts studio_drafts_order_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_drafts
+    ADD CONSTRAINT studio_drafts_order_id_key UNIQUE (order_id);
+
+--
+-- Name: studio_drafts studio_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_drafts
+    ADD CONSTRAINT studio_drafts_pkey PRIMARY KEY (id);
+
+--
+-- Name: studio_revisions studio_revisions_draft_id_seq_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_revisions
+    ADD CONSTRAINT studio_revisions_draft_id_seq_key UNIQUE (draft_id, seq);
+
+--
+-- Name: studio_revisions studio_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_revisions
+    ADD CONSTRAINT studio_revisions_pkey PRIMARY KEY (id);
+
+--
 -- Name: system_settings system_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2700,6 +2966,24 @@ ALTER TABLE ONLY public.sketch_regions
 --
 
 CREATE INDEX ix_accounts_role ON public.accounts USING btree (role_id);
+
+--
+-- Name: ix_ai_messages_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ai_messages_created ON public.ai_messages USING btree (created_at);
+
+--
+-- Name: ix_ai_messages_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ai_messages_session ON public.ai_messages USING btree (session_id, id);
+
+--
+-- Name: ix_ai_tool_calls_message; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ai_tool_calls_message ON public.ai_tool_calls USING btree (message_id);
 
 --
 -- Name: ix_audit_logs_actor; Type: INDEX; Schema: public; Owner: -
@@ -2978,6 +3262,12 @@ CREATE INDEX ix_sketch_approvals_order ON public.sketch_approvals USING btree (o
 CREATE INDEX ix_status_histories_order ON public.status_histories USING btree (order_id, created_at);
 
 --
+-- Name: ix_studio_drafts_customer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_studio_drafts_customer ON public.studio_drafts USING btree (customer_id, status);
+
+--
 -- Name: ix_styles_owner; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3240,6 +3530,41 @@ ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id);
 
 --
+-- Name: ai_messages ai_messages_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_messages
+    ADD CONSTRAINT ai_messages_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.ai_sessions(id) ON DELETE CASCADE;
+
+--
+-- Name: ai_sessions ai_sessions_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_sessions
+    ADD CONSTRAINT ai_sessions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+--
+-- Name: ai_sessions ai_sessions_draft_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_sessions
+    ADD CONSTRAINT ai_sessions_draft_id_fkey FOREIGN KEY (draft_id) REFERENCES public.studio_drafts(id) ON DELETE CASCADE;
+
+--
+-- Name: ai_tool_calls ai_tool_calls_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tool_calls
+    ADD CONSTRAINT ai_tool_calls_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.ai_messages(id) ON DELETE CASCADE;
+
+--
+-- Name: ai_tool_calls ai_tool_calls_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tool_calls
+    ADD CONSTRAINT ai_tool_calls_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.studio_revisions(id) ON DELETE SET NULL;
+
+--
 -- Name: alert_catalog alert_catalog_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3308,6 +3633,13 @@ ALTER TABLE ONLY public.orders
 
 ALTER TABLE ONLY public.status_histories
     ADD CONSTRAINT fk_status_histories_job FOREIGN KEY (job_id) REFERENCES public.production_jobs(id) ON DELETE SET NULL;
+
+--
+-- Name: studio_drafts fk_studio_drafts_current_revision; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_drafts
+    ADD CONSTRAINT fk_studio_drafts_current_revision FOREIGN KEY (current_revision_id) REFERENCES public.studio_revisions(id) ON DELETE SET NULL;
 
 --
 -- Name: handwriting_styles handwriting_styles_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -3975,6 +4307,34 @@ ALTER TABLE ONLY public.status_histories
     ADD CONSTRAINT status_histories_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
 
 --
+-- Name: studio_drafts studio_drafts_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_drafts
+    ADD CONSTRAINT studio_drafts_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+--
+-- Name: studio_drafts studio_drafts_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_drafts
+    ADD CONSTRAINT studio_drafts_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE SET NULL;
+
+--
+-- Name: studio_revisions studio_revisions_draft_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_revisions
+    ADD CONSTRAINT studio_revisions_draft_id_fkey FOREIGN KEY (draft_id) REFERENCES public.studio_drafts(id) ON DELETE CASCADE;
+
+--
+-- Name: studio_revisions studio_revisions_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.studio_revisions
+    ADD CONSTRAINT studio_revisions_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.studio_revisions(id) ON DELETE CASCADE;
+
+--
 -- Name: system_settings system_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4227,7 +4587,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0020');
+INSERT INTO alembic_version (version_num) VALUES ('0021');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

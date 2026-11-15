@@ -38,6 +38,12 @@ exists before the new code reads the order's `shipping_*` columns.
 | `PUBLIC_BASE_URL` | public `https` address of this API, e.g. `https://ai-vhrs-be.onrender.com` (no trailing slash). The gateways and carriers call back to it |
 | `PAYMENT_MODE` | `mock` (default) / `sandbox` (the gateways' TEST environments, test money) / `live` (**real money**: only with production credentials and the owner's say-so) |
 | `PUBLIC_VERIFY_URL` | U8: web-app page that shows a product's verification, e.g. `https://<app>.vercel.app/verify` (no trailing slash). The certificate card's QR code points to `{PUBLIC_VERIFY_URL}/{code}`; the default `http://localhost:5173/verify` only works locally, so set it before printing real cards |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | U5 studio AI assistant, Google Gemini (e.g. model `gemini-3.5-flash-lite` on the free tier). The free tier may use the data to improve Google's products: enable billing on the project before real customers use it. Key only in the environment, never in the repo |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | U5, Claude (model default `claude-sonnet-5-5`). Optional |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | U5, OpenAI (model required when the key is set). Optional |
+| `LLM_PROVIDER_ORDER` | U5: order the configured providers are tried in, default `anthropic,openai,gemini`; a provider without its key is skipped. No key at all = the assistant answers 503 AI_UNAVAILABLE and the studio still works through its forms |
+| `LLM_PRICES` | U5, optional: JSON `{"model": [USD per 1M input tokens, USD per 1M output tokens]}` from the provider's price page. Without it the cost is recorded as NULL and only the call caps apply (Admin settings `ai_daily_model_calls`, `ai_daily_messages_per_customer`) |
+| `LLM_TIMEOUT_SECONDS` | U5: per model call, default 30 |
 | `PAYMENT_RETURN_URL` | web-app page the customer is sent back to after paying, e.g. `https://<app>.vercel.app/payment/result` (display only) |
 | `PAYMENT_EXPIRE_MINUTES` | payment link lifetime, default 15 |
 | `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | from VNPay (sandbox: email after registering at sandbox.vnpayment.vn/devreg) |

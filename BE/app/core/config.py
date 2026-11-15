@@ -106,6 +106,20 @@ class Settings(BaseSettings):
     production_signing_key: str | None = None
     production_signing_key_id: str = "k1"
     production_verify_keys: str | None = None
+    # ---- AI assistant of the studio (upgrade U5, Q1: several providers, automatic failover) ------------------------
+    # A provider is used only when its key is set; the keys stay in the environment (BE/.env, Render), never in the DB.
+    # LLM_PROVIDER_ORDER: the order they are tried in. Without any key the assistant answers 503 AI_UNAVAILABLE and the
+    # studio still works through its forms. LLM_PRICES: JSON {model: [USD per 1M input tokens, USD per 1M output tokens]};
+    # a model without a price gets cost NULL (never a guessed figure) and then only the call caps apply.
+    llm_provider_order: str = "anthropic,openai,gemini"
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-sonnet-5-5"
+    openai_api_key: str | None = None
+    openai_model: str | None = None
+    gemini_api_key: str | None = None
+    gemini_model: str | None = None
+    llm_timeout_seconds: float = 30.0
+    llm_prices: str | None = None
 
     @property
     def production_key_ring(self) -> dict[str, str]:

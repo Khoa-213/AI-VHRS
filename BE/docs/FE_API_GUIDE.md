@@ -98,8 +98,9 @@ Bản nháp (`DRAFT`) chỉ chủ đơn thấy; xưởng không thấy cho tới
 | Công khai: `/health`, `/catalog/papers|pens|templates`, `/privacy-policy`, `/verify/{code}` (U8), đăng ký/đăng nhập/làm mới/quên mật khẩu | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Mọi vai trò đã đăng nhập: `/me*`, `/auth/logout` | ✔ | ✔ | ✔ | ✔ | ✔ |
 | `/orders/*` (đơn của mình), `/pricing/estimate`, `/catalog/my-styles`, thanh toán cọc, `/payments/{id}/mock-checkout` | ✔ | ✘ | ✘ | ✘ | ✘ |
+| `/studio/*` (bản nháp studio của mình + trợ lý AI, U5) | ✔ | ✘ | ✘ | ✘ | ✘ |
 | Chat `/orders/{id}/messages` (đọc, gửi, ảnh, đánh dấu đã đọc) | ✔ | ✔ | ✔ (xử lý khiếu nại) | ✘ | ✘ |
-| `/workshop/*` **đọc** (GET: hàng đợi, chi tiết, phác thảo, báo giá, PDF, payments, jobs, **product-photos**, thẻ chứng nhận U8) | ✘ | ✔ | ✔ | ✘ | ✘ |
+| `/workshop/*` **đọc** (GET: hàng đợi, chi tiết, phác thảo, báo giá, PDF, payments, jobs, **product-photos**, thẻ chứng nhận U8, bản nháp studio của đơn U5) | ✘ | ✔ | ✔ | ✘ | ✘ |
 | `/workshop/*` **ghi** (claim, accept, reject, request-info, phác thảo, báo giá, điều chỉnh, gửi, huỷ báo giá) | ✘ | ✔ | ✘ | ✘ | ✘ |
 | `/manager/*` (phân công, duyệt giá, vật tư, mẫu chữ, robot, bảng giá, lịch sản xuất, **sự cố, nhật ký job**) | ✘ | ✘ | ✔ | ✘ | ✘ |
 | `/technician/*` (job của tôi, gói job, hiệu chuẩn, mô phỏng, viết, sự kiện, sự cố, ảnh sản phẩm + QC) | ✘ | ✘ | ✘ | ✔ (chỉ job được giao) | ✘ |
@@ -870,6 +871,35 @@ Lỗi: `409 ORDER_NOT_COMPLETED`, `409 REVIEW_EXISTS` (đã có: dùng PUT), `42
 
 `GET /verify/{code}` (giới hạn 30 lần / phút / IP) nhận mã có hoặc không có gạch nối, chữ hoa hay thường (người dùng gõ lại từ tờ giấy). Trả `{code, status, status_text, statement, watermark_text, order_type, order_type_label, paper_size, pages, quantity, issued_at, production_locked_at, written_at}`; `status` = `VALID` (đã viết xong), `NOT_PRODUCED` (mã đã cấp, chưa viết xong), `REVOKED` (đơn đã huỷ). **Không** có tên khách, số điện thoại, mã đơn hay nội dung đã viết (thư có thể là riêng tư). Mã sai → `404 CERTIFICATE_NOT_FOUND`. QR trên thẻ trỏ tới `{PUBLIC_VERIFY_URL}/{code}` (mặc định `http://localhost:5173/verify`, đặt biến môi trường trên Render), nên **FE cần trang `/verify/:code`** gọi API này, hiện rõ câu `statement` (bản tái tạo bằng AI, không phải bản gốc), trạng thái và `watermark_text` để người cầm tờ giấy đối chiếu.
 
+## 7q. Studio và trợ lý AI (U5, migration 0021; Q1 nhiều nhà cung cấp, Q2 = A studio trước đơn)
+
+Studio là **lớp bản nháp đứng trước đơn hàng**: khách soạn, chọn vật tư, xem trước, nhờ trợ lý AI sửa, rồi bấm "Gửi xưởng" mới thành đơn `SUBMITTED`. Từ đó trở đi đơn chạy đúng luồng cũ (mục 4, 5). Luồng tạo đơn trực tiếp `/orders` **vẫn giữ nguyên**: FE có thể dùng studio làm màn tạo đơn mới, hoặc để cả hai.
+
+**Bản nháp** (CUSTOMER, chỉ thấy bản của mình; bản của người khác → `404 DRAFT_NOT_FOUND`):
+- `POST /studio {mode: "TEXT"|"RESTORE", title?}` → `201 DraftOut`. TEXT = soạn chữ theo mẫu (thành đơn OT-3); RESTORE = phục dựng ảnh (OT-1, dòng xác thực U8 luôn bật). Loại đơn đang tắt → `409 ORDER_TYPE_SUSPENDED`; quá 20 bản nháp mở → `409 TOO_MANY_DRAFTS`.
+- `GET /studio?status=OPEN|SUBMITTED|ABANDONED` (danh sách), `GET /studio/{id}` → `DraftOut = {id, mode, status, title, order_id, revision_id, revision_seq, content, can_undo, can_redo, ready, problems:[{field, code, message}], estimate:{chars_min, chars_max, price_min, price_max, basis, materials_priced}|null, warnings, created_at, updated_at, submitted_at}`.
+- `content` = `{order_type, quantity, text, template_id, font_size_mm, alignment, layout, canvas, paper_type_id, pen_type_id, ink_color_id, workshop_suggest_materials, physical_watermark, restoration_mode, customer_note, images:[{id, path, mime_type, size_bytes, rotation_deg, crop_box, quality_result, is_quality_warning}]}`.
+- `PATCH /studio/{id}` chỉ gửi trường cần đổi (`null` để xoá giá trị). **Mỗi lần đổi là một revision**; đổi mà không khác gì thì không tạo revision. Quy tắc giống đơn: vật tư (BR-05, `PEN_INCOMPATIBLE`, `INVALID_INK`, `INK_REQUIRES_PEN`, đổi giấy làm bút không hợp → `warnings: ["PEN_RESET"]`), mẫu chữ (`INVALID_TEMPLATE`), cỡ chữ 4–100 mm, `layout` như `PUT /orders/{id}/inputs/text` (sửa chữ làm offset của đoạn có kiểu chữ sai → bỏ kiểu chữ, `warnings: ["LAYOUT_RESET"]`). Bản RESTORE không có trường chữ (`422 FIELD_NOT_FOR_MODE`) và không tắt được dòng xác thực (`422 WATERMARK_MANDATORY_OT1`). Bản đã gửi / đã bỏ → `409 DRAFT_CLOSED`.
+- `POST /studio/{id}/undo`, `/redo` → `DraftOut` (`409 NOTHING_TO_UNDO` / `NOTHING_TO_REDO`). Sửa sau khi hoàn tác tạo nhánh mới (không còn "làm lại"). `GET /studio/{id}/revisions` → `[{id, seq, parent_id, author: "CUSTOMER"|"AI", tool_name, note, is_current, created_at}]`: FE hiện được "Trợ lý đã đổi vật tư" kèm nút hoàn tác.
+- `POST /studio/{id}/check` (30 lần/phút) → `{ready, problems, estimate, pages}`: chạy **đúng bộ sinh nét của xưởng** nên báo được nội dung có vừa khổ giấy không, ký tự không viết được (`UNSUPPORTED_CHARS`), chữ quá to (`FONT_TOO_LARGE`), hết chỗ cho dòng xác thực (`WATERMARK_NO_SPACE`), số trang. `GET /studio/{id}` chỉ kiểm tra nhanh (không sinh nét).
+- `GET /studio/{id}/preview?page=1` (30 lần/phút) → JPEG một trang, đúng màu mực / độ rộng nét / mặt giấy, có dấu AI (U2) và, nếu bật, dòng xác thực với mã giả `XXXX-XXXX` (mã thật cấp khi Staff lưu phác thảo). **Là ước tính**: Staff vẫn làm phác thảo chính thức để báo giá. Bản RESTORE chạy phục dựng thật trên ảnh nên chậm hơn (vài giây/ảnh); PDF chưa xem trước được (`PDF_NOT_SUPPORTED_AI`).
+- Ảnh bản gốc (RESTORE): `POST /studio/{id}/images/upload-url {mime_type, size_bytes}` → `{image_id, upload_url, method, expires_in}`; PUT file lên `upload_url`; `POST /studio/{id}/images/confirm {image_id}` (BE kiểm tra loại file thật + phân tích chất lượng FR-33). `PATCH /studio/{id}/images/{image_id} {rotation_deg, crop_box}`, `DELETE /studio/{id}/images/{image_id}` (hoàn tác được, ảnh chỉ xoá thật khi bỏ bản nháp).
+- `POST /studio/{id}/submit {terms_accepted, confirm_right_to_use}` → `{draft_id, order_id}`. Thiếu gì → `422 ORDER_INCOMPLETE` với `details` là danh sách `problems`. BE tạo đơn qua đúng service đơn hàng (ảnh được chép sang thư mục của đơn), rồi gửi đơn; sau đó dùng các API `/orders/{order_id}` như cũ.
+- `DELETE /studio/{id}` → `204`, bản nháp `ABANDONED`, ảnh đã tải của nó bị xoá.
+
+**Trợ lý AI** (`POST /studio/{id}/messages {text, ai_consent}`, 10 lần/phút):
+- Tin nhắn đầu tiên của mỗi bản nháp phải có `ai_consent: true` (FE hiện câu: "Tin nhắn và nội dung bản nháp sẽ được gửi tới nhà cung cấp AI bên ngoài để trả lời; ảnh của bạn không bị gửi"), không có → `422 AI_CONSENT_REQUIRED`.
+- Trả `{user, reply, draft}`; `reply = {id, role, content, status: "OK"|"FAILED", provider, model, tool_calls:[{name, ok, revision_id}], created_at}`, `draft` là `DraftOut` mới (FE cập nhật form + ảnh xem trước ngay). `content` có thể có markdown đơn giản (chữ đậm, danh sách): FE render markdown hoặc bỏ ký hiệu.
+- Trợ lý **chỉ sửa bản nháp bằng công cụ của hệ thống** (đọc bản nháp, đọc vật tư / mẫu chữ thật, sửa chữ / mẫu / cỡ / căn lề, chọn vật tư, đổi số bản / dòng xác thực / chế độ phục dựng / ghi chú, kiểm tra như khi gửi, hoàn tác, gắn cờ cho Staff); mọi tham số được kiểm tra như form, nên không bịa được vật tư hay chọn bút không hợp. Mỗi thay đổi là một revision `author: "AI"` → khách hoàn tác được. Tối đa 6 thao tác mỗi lượt. Trợ lý **không** xem ảnh (chỉ có số đo chất lượng), **không** đọc chữ trong ảnh, **không** gửi xưởng thay khách.
+- Yêu cầu làm giả chữ ký / giấy tờ: trợ lý từ chối và gắn cờ `FORGERY_RISK`; Staff thấy cờ khi nhận đơn.
+- Mọi nhà cung cấp đều lỗi → vẫn `200`, `reply.status = "FAILED"` và câu báo cho khách; studio vẫn dùng form bình thường.
+- Lỗi: `503 AI_UNAVAILABLE` (chưa cấu hình nhà cung cấp), `503 AI_DISABLED` (Admin tắt), `503 AI_BUDGET_EXHAUSTED` (hết lượt gọi / ngân sách ngày của hệ thống), `429 AI_DAILY_LIMIT` (khách hết lượt nhắn hôm nay, mặc định 30). Với các lỗi này FE ẩn / khoá ô chat, giữ nguyên studio.
+- `GET /studio/{id}/messages` → lịch sử hội thoại; `GET /studio/assistant/status` → `{enabled, available, providers, messages_left_today, daily_message_limit, sends_photos: false}` (không trả khoá hay chi phí).
+
+**Staff / Manager:** `GET /workshop/orders/{order_id}/studio` → `{draft_id, mode, flags:[{kind, note, by, at}], submitted_at, submitted_revision_id, revisions:[{seq, author, tool_name, note, created_at}], ai_consented_at, messages:[{role, content, status, provider, tools, created_at}]}`; đơn không tạo từ studio → `404 STUDIO_DRAFT_NOT_FOUND`. Nên hiện cờ `FORGERY_RISK` nổi bật ở màn tiếp nhận đơn.
+
+**Admin** (`PUT /admin/settings/{key}`, mục 7l): `ai_assistant_enabled` (bật/tắt), `ai_daily_messages_per_customer` (30), `ai_daily_model_calls` (400, toàn hệ thống), `ai_max_tool_calls` (6), `ai_daily_cost_cap_cents` (0 = không đặt; chỉ áp dụng khi đã cấu hình giá `LLM_PRICES`). Khoá API của nhà cung cấp chỉ nằm trong biến môi trường (`DEPLOY.md`).
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -888,6 +918,8 @@ Lỗi: `409 ORDER_NOT_COMPLETED`, `409 REVIEW_EXISTS` (đã có: dùng PUT), `42
 | `WATERMARK_MANDATORY_OT1` | 422 | Khách tắt dòng xác thực của đơn OT-1 (U8) | ẩn / khoá công tắc với OT-1 |
 | `WATERMARK_NO_SPACE` | 409 | Nội dung chiếm cả lề trên và lề dưới, không còn chỗ viết dòng xác thực (U8) | Staff tăng lề, thu nhỏ nội dung hoặc đổi khổ giấy |
 | `WATERMARK_MISSING` | 409 | Xếp lịch đơn bắt buộc có dòng xác thực mà phác thảo chốt chưa có (lưu trước U8) (U8) | Staff lưu lại phác thảo, chốt, gửi khách duyệt lại |
+| `DRAFT_NOT_FOUND`, `DRAFT_CLOSED`, `NOTHING_TO_UNDO`, `NOTHING_TO_REDO`, `FIELD_NOT_FOR_MODE`, `TOO_MANY_DRAFTS`, `DRAFT_HISTORY_FULL` | 404 / 409 / 422 | Studio (U5): bản nháp không có / đã gửi hoặc bỏ / hết lịch sử / trường không thuộc chế độ | hiện thông báo, khoá nút tương ứng |
+| `AI_CONSENT_REQUIRED`, `AI_UNAVAILABLE`, `AI_DISABLED`, `AI_BUDGET_EXHAUSTED`, `AI_DAILY_LIMIT` | 422 / 503 / 429 | Trợ lý AI (U5): chưa đồng ý gửi dữ liệu / chưa cấu hình / Admin tắt / hết ngân sách / khách hết lượt hôm nay | hỏi đồng ý; hoặc ẩn ô chat, studio vẫn dùng được |
 | `CERTIFICATE_NOT_READY`, `CERTIFICATE_REVOKED`, `CERTIFICATE_NOT_FOUND` | 409 / 404 | Thẻ chứng nhận: chưa khoá gói sản xuất / đơn đã huỷ; trang xác thực: mã không tồn tại (U8) | hiện thông báo |
 | `INVALID_SPECS` | 422 | Thông số vật tư sai khoá / giá trị / thiếu nguồn (U6) | tô đỏ trường `details.key` |
 | `INK_NOT_FOR_PEN`, `PROFILE_EXISTS`, `PROFILE_NOT_MEASURED`, `LINE_WIDTH_REQUIRED` | 422 / 409 | Hồ sơ hiệu chuẩn: mực không thuộc bút, tổ hợp đã có hồ sơ, xác nhận khi chưa đo, xoá độ rộng nét (U6) | hiện thông báo; với `PROFILE_EXISTS` mở hồ sơ có sẵn |
@@ -954,6 +986,7 @@ Tất cả idempotent theo mã giao dịch / mã vận đơn. Với cổng thậ
 - Cổng thanh toán thật (VNPay, MoMo) đã có code nhưng **chưa được thử với môi trường thật của họ**. **GHN** (hãng duy nhất) đã được thử trên staging ngày 2026-10-26: báo giá (`preview`), tạo/huỷ vận đơn, link nhãn, danh mục địa chỉ; **chưa** thử callback thật. Mặc định vẫn là MOCK cho tới khi cấu hình (xem `DEPLOY.md`).
 - Admin: tham số hệ thống, tích hợp, dashboard hệ thống **đã có** (mục 7l); Manager: dashboard sản xuất, báo cáo, xuất Excel **đã có** (mục 7m). Xuất PDF báo cáo, đánh giá, showcase: **đã có** (mục 7m, 7n, 7o). OTP SMS **đã có** ở chế độ MOCK (mục 3.2); gửi SMS thật chờ chủ dự án chọn nhà cung cấp.
 - OT-2 (nét đã học) khoá với khách; AI không sinh phác thảo cho OT-2.
+- Studio + trợ lý AI (U5): **đã có** (mục 7q). Chưa có: trợ lý đọc chữ trong ảnh (chưa có mô hình HTR), sửa theo vùng trong studio (Staff sửa vùng trên phác thảo chính thức, U4), gửi ảnh cho AI (mặc định không gửi), đẩy tức thời câu trả lời của trợ lý (gọi API thường, chờ vài giây).
 - Độ chính xác dựng nét OT-1 trên chữ viết tay thật **chưa được kiểm chứng**: giao diện nên cho Staff xem/sửa phác thảo trước khi gửi.
 
 ## 11. Ví dụ nhanh (fetch)
