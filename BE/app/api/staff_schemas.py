@@ -97,6 +97,7 @@ class SketchOut(_ORM):
     region_counts: dict[str, int] = {}  # U4: {"ORIGINAL": n, "RESTORED": n, "INFERRED": n}; {} = no regions (OT-3, manual)
     render_profile_id: int | None = None
     preview_tier: str = "VISUAL"       # U6: VISUAL | CALIBRATED | PRODUCTION_READY
+    watermark: dict[str, Any] | None = None   # U8: {code, text, method, pages: [{page_no, placement, cap_mm, strokes}]}
 
 
 class SketchRegionOut(_ORM):
@@ -335,6 +336,7 @@ class SketchForCustomer(BaseModel):
     regions: list[RegionForCustomer] = []      # only the RESTORED / INFERRED ones, to highlight on the image
     preview_tier: str = "VISUAL"               # U6: VISUAL | CALIBRATED | PRODUCTION_READY
     preview_note: str | None = None            # U6: Vietnamese sentence to show next to the image
+    watermark_text: str | None = None          # U8: the line the robot writes in the margin (null = none)
 
 
 class QuoteRevisionOut(BaseModel):

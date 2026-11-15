@@ -37,6 +37,7 @@ exists before the new code reads the order's `shipping_*` columns.
 |---|---|
 | `PUBLIC_BASE_URL` | public `https` address of this API, e.g. `https://ai-vhrs-be.onrender.com` (no trailing slash). The gateways and carriers call back to it |
 | `PAYMENT_MODE` | `mock` (default) / `sandbox` (the gateways' TEST environments, test money) / `live` (**real money**: only with production credentials and the owner's say-so) |
+| `PUBLIC_VERIFY_URL` | U8: web-app page that shows a product's verification, e.g. `https://<app>.vercel.app/verify` (no trailing slash). The certificate card's QR code points to `{PUBLIC_VERIFY_URL}/{code}`; the default `http://localhost:5173/verify` only works locally, so set it before printing real cards |
 | `PAYMENT_RETURN_URL` | web-app page the customer is sent back to after paying, e.g. `https://<app>.vercel.app/payment/result` (display only) |
 | `PAYMENT_EXPIRE_MINUTES` | payment link lifetime, default 15 |
 | `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | from VNPay (sandbox: email after registering at sandbox.vnpayment.vn/devreg) |

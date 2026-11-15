@@ -43,6 +43,7 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/webhooks/payments/\{gateway\}$", ALL, SIGNED),                      # no token: authenticated by the HMAC signature
     (r"^/agent/", ALL, AGENT_KEY),
     (r"^/robot-model/", READ, PUBLIC),                                       # vendor SDK files (public), served from storage
+    (r"^/verify/\{code\}$", READ, PUBLIC),                                    # U8: product verification page (rate limited)
     (r"^/viewer/\{ticket\}/", READ, VIEW_TICKET),
     (r"^/auth/logout$", ALL, ANY),
     (r"^/me/conversations", ALL, {CUSTOMER}),                                # the customer's chat inbox and unread badge

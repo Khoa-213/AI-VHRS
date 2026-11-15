@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0019 (alembic head), generated 2026-11-12 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0020 (alembic head), generated 2026-11-14 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0019);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0019;
+--      baseline schema and every migration up to 0020);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0020;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -1163,6 +1163,7 @@ CREATE TABLE public.orders (
     shipping_service_code character varying(30),
     shipping_eta timestamp with time zone,
     restoration_mode character varying(10),
+    physical_watermark boolean DEFAULT false NOT NULL,
     CONSTRAINT chk_orders_estimate CHECK (((estimated_price_min IS NULL) OR (estimated_price_max IS NULL) OR (estimated_price_min <= estimated_price_max))),
     CONSTRAINT chk_orders_materials_after_submit CHECK (((order_status = ANY (ARRAY['DRAFT'::public.order_status, 'CANCELLED'::public.order_status])) OR workshop_suggest_materials OR ((paper_type_id IS NOT NULL) AND (pen_type_id IS NOT NULL) AND (ink_color_id IS NOT NULL)))),
     CONSTRAINT chk_orders_pickup_slot CHECK (((pickup_slot_end IS NULL) OR (pickup_slot_end > pickup_slot_start))),
@@ -1406,6 +1407,35 @@ ALTER TABLE public.pricing_configs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
     NO MAXVALUE
     CACHE 1
 );
+
+--
+-- Name: product_certificates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_certificates (
+    id bigint NOT NULL,
+    order_id bigint NOT NULL,
+    code character varying(9) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT product_certificates_code_check CHECK (((code)::text ~ '^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$'::text))
+);
+
+--
+-- Name: product_certificates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.product_certificates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: product_certificates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.product_certificates_id_seq OWNED BY public.product_certificates.id;
 
 --
 -- Name: product_photos; Type: TABLE; Schema: public; Owner: -
@@ -2058,6 +2088,7 @@ CREATE TABLE public.sketches (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     image_urls text[] DEFAULT '{}'::text[] NOT NULL,
     render_profile_id bigint,
+    watermark jsonb,
     CONSTRAINT sketches_estimated_writing_sec_check CHECK ((estimated_writing_sec >= 0)),
     CONSTRAINT sketches_pen_lift_count_check CHECK ((pen_lift_count >= 0)),
     CONSTRAINT sketches_similarity_score_check CHECK (((similarity_score >= (0)::numeric) AND (similarity_score <= (100)::numeric))),
@@ -2186,6 +2217,12 @@ CREATE VIEW public.v_order_eta_postponement AS
 --
 
 ALTER TABLE ONLY public.material_profiles ALTER COLUMN id SET DEFAULT nextval('public.material_profiles_id_seq'::regclass);
+
+--
+-- Name: product_certificates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_certificates ALTER COLUMN id SET DEFAULT nextval('public.product_certificates_id_seq'::regclass);
 
 --
 -- Name: production_snapshots id; Type: DEFAULT; Schema: public; Owner: -
@@ -2419,6 +2456,27 @@ ALTER TABLE ONLY public.pricing_configs
 
 ALTER TABLE ONLY public.pricing_configs
     ADD CONSTRAINT pricing_configs_version_key UNIQUE (version);
+
+--
+-- Name: product_certificates product_certificates_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_certificates
+    ADD CONSTRAINT product_certificates_code_key UNIQUE (code);
+
+--
+-- Name: product_certificates product_certificates_order_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_certificates
+    ADD CONSTRAINT product_certificates_order_id_key UNIQUE (order_id);
+
+--
+-- Name: product_certificates product_certificates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_certificates
+    ADD CONSTRAINT product_certificates_pkey PRIMARY KEY (id);
 
 --
 -- Name: product_photos product_photos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3511,6 +3569,13 @@ ALTER TABLE ONLY public.pricing_configs
     ADD CONSTRAINT pricing_configs_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.accounts(id);
 
 --
+-- Name: product_certificates product_certificates_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_certificates
+    ADD CONSTRAINT product_certificates_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
+
+--
 -- Name: product_photos product_photos_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4162,7 +4227,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0019');
+INSERT INTO alembic_version (version_num) VALUES ('0020');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

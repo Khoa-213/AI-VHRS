@@ -37,7 +37,7 @@ from app.services import audit, notifications
 from app.services.motion import plan as motion_plan
 from app.services.production_snapshot import SnapshotService, material_drift, materials_of
 from app.services.motion import validate as motion_validate
-from app.services.stroke_ai import trajectory as tj
+from app.services.stroke_ai import physical_mark, trajectory as tj
 
 PACKAGE_URL_TTL = 1800                      # seconds a signed trajectory link stays valid
 RUNNABLE_ROBOT = (RobotStatus.AVAILABLE, RobotStatus.BUSY)
@@ -133,8 +133,10 @@ class TechnicianJobService:
         self.session.commit()
         return AppError(409, "JOB_HASH_MISMATCH", "Gói job không khớp phác thảo đã duyệt. Không thể chạy.")
 
-    def _signed(self, job: ProductionJob, trajectory_sha256: str | None) -> dict[str, Any] | None:
+    def _signed(self, job: ProductionJob, trajectory_sha256: str | None,
+                pages: list[tj.Page] | None = None) -> dict[str, Any] | None:
         """U1: verify the job's signed production snapshot. None = legacy job (created before U1, hash check only).
+        With `pages`, U8: the physical watermark the snapshot declares must be in the trajectory (OT-1: mandatory).
 
         Any failure is evidence: job event + audit row + incident are COMMITTED before the 409, and nothing bypasses it."""
         if job.snapshot_id is None:
@@ -142,7 +144,10 @@ class TechnicianJobService:
         snaps = SnapshotService(self.session)
         snap = snaps.get(job.snapshot_id)
         try:
-            return snaps.check(snap, order_id=job.order_id, sketch_id=job.sketch_id, trajectory_sha256=trajectory_sha256)
+            payload = snaps.check(snap, order_id=job.order_id, sketch_id=job.sketch_id, trajectory_sha256=trajectory_sha256)
+            if pages is not None:
+                physical_mark.check(payload, pages)
+            return payload
         except ps.SignatureError as exc:
             incident = self.incidents.add(Incident(
                 job_id=job.id, robot_id=job.robot_id, reported_by=self.tech.id, type=IncidentType.OTHER,
@@ -210,11 +215,11 @@ class TechnicianJobService:
         actual = tj.content_hash(raw)
         if job.package_hash is None or actual != job.package_hash or sketch.content_hash != job.package_hash:
             raise self._hash_mismatch(job, job.package_hash, actual)
-        signed = self._signed(job, actual)
         try:
             pages = tj.parse(json.loads(raw))
         except (ValueError, AppError) as exc:
             raise AppError(409, "JOB_PACKAGE_INVALID", "Quỹ đạo trong gói job không hợp lệ.") from exc
+        signed = self._signed(job, actual, pages)
 
         if job.downloaded_at is None:
             job.downloaded_at = _now()

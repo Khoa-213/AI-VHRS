@@ -99,6 +99,9 @@ class OrderUpdateIn(BaseModel):
     customer_note: str | None = Field(default=None, max_length=2000)
     restoration_mode: Literal["FAITHFUL", "ASSISTED"] | None = Field(
         default=None, description="OT-1 only (U4): FAITHFUL = only what is in the image; ASSISTED = Staff may fill missing parts (marked INFERRED).")
+    physical_watermark: bool | None = Field(
+        default=None, description="U8: robot writes a small verification line in the margin + certificate card with QR. "
+                                  "Optional for OT-3 (customer's choice); always on for OT-1 (false is refused).")
 
 
 class OrderOut(_ORM):
@@ -120,6 +123,8 @@ class OrderOut(_ORM):
     deposit_amount: Decimal | None = None
     customer_note: str | None
     restoration_mode: str | None = None
+    physical_watermark: bool = False            # U8: the customer's OT-3 choice
+    watermark_required: bool = False            # U8: effective rule (always true for OT-1)
     info_request_note: str | None
     reject_reason: str | None
     reject_note: str | None

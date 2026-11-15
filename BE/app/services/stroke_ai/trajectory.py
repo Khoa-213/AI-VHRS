@@ -20,7 +20,7 @@ FORMAT = "vhrs-trajectory/1"
 PAPER_MM = {"A6": (105.0, 148.0), "A5": (148.0, 210.0), "A4": (210.0, 297.0)}  # BR-07: up to A4
 MAX_PAGES = 10
 MAX_POINTS = 400_000
-STROKE_KINDS = {"base", "mark", "canvas", "manual"}
+STROKE_KINDS = {"base", "mark", "canvas", "manual", "watermark"}   # watermark: U8 physical line (physical_mark.py)
 
 # ESTIMATE constants for the writing-time figure (used by price and scheduling). The robot speed
 # profile (S6) is not implemented yet, so these are assumptions to be replaced by measured values.

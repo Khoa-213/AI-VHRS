@@ -20,7 +20,8 @@ from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit, material_profiles
-from app.services.stroke_ai import engine, regions as rg, render_image, trajectory as tj, watermark
+from app.services.certificates import CertificateService
+from app.services.stroke_ai import engine, physical_mark, regions as rg, render_image, trajectory as tj, watermark
 from app.services.workshop_access import WorkshopAccess
 
 DEFAULT_V_MAX = 30.0   # mm/s, used when the order has no pen yet ("để xưởng đề xuất")
@@ -64,6 +65,13 @@ class SketchService:
                  similarity: float | None, complexity: str | None, note: str | None,
                  regions: list[rg.RegionDraft] | None = None) -> Sketch:
         store = self._storage()
+        # U8: the physical watermark line is regenerated on every save (an upload / edit can neither drop nor fake it)
+        wm = None
+        if physical_mark.required(order.order_type.value, order.physical_watermark):
+            wm = physical_mark.apply(pages, CertificateService(self.session).ensure(order).code)
+        removed = physical_mark.strip(pages) if wm is None else 0
+        if wm is not None or removed:
+            metrics = tj.compute_metrics(pages, self._pen(order)[0])
         version = self.sketches.next_version(order.id)
         base = f"orders/{order.id}/sketches/v{version}"
         paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
@@ -91,7 +99,7 @@ class SketchService:
             suggested_complexity=ComplexityLevel(complexity) if complexity else None,
             estimated_writing_sec=metrics.estimated_writing_sec, total_stroke_mm=metrics.total_stroke_mm,
             pen_lift_count=metrics.pen_lift_count, approach_note=(note or None), content_hash=tj.content_hash(raw),
-            render_profile_id=profile.id if profile else None))
+            render_profile_id=profile.id if profile else None, watermark=wm))
         for r in regions or []:                                       # U4
             self.session.add(SketchRegion(
                 sketch_id=row.id, page_no=r.page_no, region_no=r.region_no, x0=r.bbox[0], y0=r.bbox[1], x1=r.bbox[2],

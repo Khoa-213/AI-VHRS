@@ -31,7 +31,7 @@ from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import PaymentRepository
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.services import audit, material_profiles
-from app.services.stroke_ai import trajectory as tj
+from app.services.stroke_ai import physical_mark, trajectory as tj
 
 log = logging.getLogger("app.snapshot")
 
@@ -123,6 +123,10 @@ class SnapshotService:
         deposit = PaymentRepository(self.session).success(order.id, PaymentType.DEPOSIT)
         if deposit is None or deposit.status != PaymentStatus.SUCCESS:
             raise AppError(409, "DEPOSIT_REQUIRED", "Chưa có khoản cọc được cổng thanh toán xác nhận.")
+        if physical_mark.required(order.order_type.value, order.physical_watermark) and not sketch.watermark:
+            raise AppError(409, "WATERMARK_MISSING",
+                           "Phác thảo chốt chưa có dòng xác thực bắt buộc (phác thảo lưu trước nâng cấp U8). Hãy lưu lại "
+                           "phác thảo (sinh lại hoặc tải lại), chốt, rồi gửi khách duyệt lại báo giá.")
         approval = self.session.scalar(select(SketchApproval).where(SketchApproval.quotation_id == quotation.id))
         package_id = str(uuid.uuid4())
         payload = {
@@ -140,7 +144,8 @@ class SnapshotService:
                          "ip": approval.ip, "approved_at": _iso(approval.approved_at)} if approval else None,
             "deposit": {"payment_id": deposit.id, "amount": _num(deposit.amount), "gateway": deposit.gateway.value,
                         "paid_at": _iso(deposit.paid_at)},
-            "watermark": None,                                # physical watermark: upgrade U8
+            # U8: the physical line the robot writes (its strokes are in the trajectory file, covered by trajectory_sha256)
+            "watermark": {"required": True, **sketch.watermark} if sketch.watermark else None,
         }
         text = ps.canonical(payload)
         snap = ProductionSnapshot(

@@ -191,6 +191,11 @@ class OrderService:
             if order.order_type != OrderType.OT1_COPY_RESTORE:
                 raise AppError(422, "RESTORATION_MODE_OT1_ONLY", "Chế độ phục dựng chỉ áp dụng cho đơn sao chép / phục dựng.")
             order.restoration_mode = changes["restoration_mode"]
+        if changes.get("physical_watermark") is not None:                            # U8 (Q3)
+            if order.order_type == OrderType.OT1_COPY_RESTORE and not changes["physical_watermark"]:
+                raise AppError(422, "WATERMARK_MANDATORY_OT1",
+                               "Đơn sao chép / phục dựng luôn có dòng xác thực trên tờ giấy; không tắt được.")
+            order.physical_watermark = changes["physical_watermark"]
         if "workshop_suggest_materials" in changes and changes["workshop_suggest_materials"] is not None:
             order.workshop_suggest_materials = changes["workshop_suggest_materials"]
         if {"paper_type_id", "pen_type_id", "ink_color_id"} & changes.keys():

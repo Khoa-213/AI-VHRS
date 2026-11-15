@@ -26,7 +26,9 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-SCHEMA = "vhrs-production/1"
+SCHEMA_V1 = "vhrs-production/1"      # U1: issued until U8; still verified so that its jobs can finish
+SCHEMA = "vhrs-production/2"         # U8: adds the physical watermark block (mandatory for OT-1)
+SUPPORTED_SCHEMAS = frozenset({SCHEMA_V1, SCHEMA})
 
 
 class SignatureError(ValueError):
@@ -111,7 +113,7 @@ def verify_package(snapshot: dict[str, Any], public_keys: dict[str, str], *, tra
     if sha256_hex(text) != snapshot.get("payload_sha256"):
         raise SignatureError("SNAPSHOT_HASH_MISMATCH", "Hash nội dung gói sản xuất không khớp.")
     payload = json.loads(text)
-    if payload.get("schema") != SCHEMA:
+    if payload.get("schema") not in SUPPORTED_SCHEMAS:
         raise SignatureError("SNAPSHOT_SCHEMA_UNSUPPORTED", f"Không hỗ trợ định dạng gói '{payload.get('schema')}'.")
     if job_order_id is not None and payload.get("order", {}).get("id") != job_order_id:
         raise SignatureError("SNAPSHOT_WRONG_JOB", "Gói sản xuất thuộc đơn khác.")

@@ -208,6 +208,15 @@ class ProductionSnapshot(Base):
     revoked_reason: Mapped[str | None] = mapped_column(Text)
 
 
+class ProductCertificate(Base):
+    """U8 (migration 0020): the verification code the robot writes on the sheet and the certificate card links to."""
+    __tablename__ = "product_certificates"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    code: Mapped[str] = mapped_column(String(9))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+
+
 class Calibration(Base):
     """Paper / force calibration of one job (FR-44, BR-19). A new valid record supersedes the older ones."""
     __tablename__ = "calibrations"

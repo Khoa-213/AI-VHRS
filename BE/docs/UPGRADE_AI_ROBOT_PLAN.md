@@ -211,8 +211,8 @@ Mỗi phase: code + test + chạy toàn suite trên Supabase + cập nhật `PRO
 | **U4** ✅ code + test (2026-11-12, commit `766b89a`; HTR chưa có) | Vùng phục dựng: `sketch_regions`, nhãn ORIGINAL / RESTORED / INFERRED, chế độ Faithful / Assisted, Staff sửa theo vùng, sửa chữ không đụng vùng khác | Không (HTR thêm sau) | Sửa vùng 3 không đổi byte nét của vùng khác |
 | **U5** | Studio + AI Assistant: bản nháp trước khi gửi xưởng, revision + undo/redo, hội thoại, tool calling, ghi chi phí | **Q1** (LLM, khoá), **Q2** (nghiệp vụ studio) | Kịch bản hội thoại mẫu chạy với công cụ thật; LLM không bịa vật tư (test bằng catalog) |
 | **U6** ✅ (2026-11-12, migration 0019, commit `00b7922`) | Vật tư mở rộng + profile tổ hợp + nhãn cấp preview | Không (đo thật là HW) | Manager nhập được, trường đo được ghi nguồn |
-| **U7** ✅ (2026-11-12, chưa commit, báo cáo `docs/benchmarks/U7_path_order_2026-11-12.md`): thứ tự nét + jerk limit tuỳ chọn (mặc định tắt, chưa thử trên robot) | Robot engine: tối ưu thứ tự nét + pen-up, jerk limit, benchmark mô phỏng | Không (đo thật là HW) | Quãng pen-up / thời gian giảm, đo bằng mô phỏng trên bộ phác thảo mẫu |
-| **U8** | Watermark vật lý + chứng nhận + trang xác thực QR | **Q3** | Snapshot có watermark; agent từ chối gói thiếu watermark bắt buộc |
+| **U7** ✅ (2026-11-12, commit `63fb37d`, báo cáo `docs/benchmarks/U7_path_order_2026-11-12.md`): thứ tự nét + jerk limit tuỳ chọn (mặc định tắt, chưa thử trên robot) | Robot engine: tối ưu thứ tự nét + pen-up, jerk limit, benchmark mô phỏng | Không (đo thật là HW) | Quãng pen-up / thời gian giảm, đo bằng mô phỏng trên bộ phác thảo mẫu |
+| **U8** ✅ code + test (2026-11-14, migration 0020, chưa commit; chữ cao 2,2 mm và lề 5 mm chưa thử trên giấy thật; `qc_measurements` để sang U9 vì cần số đo thật) | Watermark vật lý + chứng nhận + trang xác thực QR | **Q3** | Snapshot có watermark; agent từ chối gói thiếu watermark bắt buộc |
 | **U9** | Đậm nhạt + hiệu chuẩn vật liệu + QC trên robot thật | **HW**, người vận hành | Số đo NFR-04/05 thật |
 
 ---

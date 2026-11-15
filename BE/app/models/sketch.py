@@ -54,6 +54,7 @@ class Sketch(Base):
     approach_note: Mapped[str | None] = mapped_column(Text)
     content_hash: Mapped[str | None] = mapped_column(String(64))
     render_profile_id: Mapped[int | None] = mapped_column(ForeignKey("material_profiles.id"))   # U6: NULL = visual
+    watermark: Mapped[dict[str, Any] | None] = mapped_column(JSONB)        # U8: physical_mark.apply() summary, NULL = none
     is_final: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
 
