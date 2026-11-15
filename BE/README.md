@@ -125,3 +125,7 @@ draft to be approved by the workshop. The seed also adds one robot row (`FR3-01`
 `DATABASE_URL=postgresql://postgres:pw@localhost:55432/vhrs JWT_SECRET=x alembic upgrade head` and run the seed + tests.
 The quotation PDF uses the bundled DejaVu Sans (licence in `app/assets/fonts/`); put the workshop logo at
 `app/assets/logo.png` to have it printed in the header.
+The Manager report exports (`GET /manager/reports/export`, Excel or `format=pdf`) are built by `app/services/report_xlsx.py`
+and `report_pdf.py` with one shared look in `report_theme.py` (workshop palette from `FE/src/components/ws/ws.css`, logo
+`app/assets/report_logo.png`). `python scripts/report_samples.py` writes sample files to `docs/report_samples/` without a
+database.

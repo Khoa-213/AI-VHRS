@@ -30,9 +30,10 @@ def report(_: ManagerDep, session: SessionDep, from_: Annotated[date | None, Que
 
 @router.get("/reports/export", responses={200: {"content": {XLSX: {}, PDF: {}}}, 422: {"model": ErrorOut}},
             summary="FR-50 Xuất báo cáo ra Excel (mặc định) hoặc PDF (`format=pdf`)")
-def export(_: ManagerDep, session: SessionDep, from_: Annotated[date | None, Query(alias="from")] = None,
+def export(me: ManagerDep, session: SessionDep, from_: Annotated[date | None, Query(alias="from")] = None,
            to: date | None = None, group: Group = "day", format: Literal["xlsx", "pdf"] = "xlsx") -> Response:
     svc = ReportService(session)
-    data, name = svc.export_pdf(from_, to, group) if format == "pdf" else svc.export_xlsx(from_, to, group)
+    run = svc.export_pdf if format == "pdf" else svc.export_xlsx
+    data, name = run(from_, to, group, exported_by=me.full_name)
     return Response(content=data, media_type=PDF if format == "pdf" else XLSX,
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
