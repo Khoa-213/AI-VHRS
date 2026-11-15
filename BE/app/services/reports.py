@@ -6,7 +6,6 @@ they were paid, minus REFUNDs that succeeded on the day they were paid back. Day
 """
 from __future__ import annotations
 
-import io
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -164,46 +163,15 @@ class ReportService:
         }
 
     # ------------------------------------------------------------------ FR-50 export
-    def export_xlsx(self, start: date | None = None, end: date | None = None, group: str = "day") -> tuple[bytes, str]:
-        from openpyxl import Workbook
-        from openpyxl.styles import Font
+    # Layout lives in report_xlsx / report_pdf (shared look in report_theme); both get exactly the dict report() returns.
+    def export_xlsx(self, start: date | None = None, end: date | None = None, group: str = "day",
+                    exported_by: str | None = None) -> tuple[bytes, str]:
+        from app.services import report_xlsx
         rep = self.report(start, end, group)
-        wb = Workbook()
-        bold = Font(bold=True)
+        return report_xlsx.render(rep, datetime.now(VN), exported_by), f"bao-cao_{rep['from']}_{rep['to']}.xlsx"
 
-        def sheet(title: str, header: list[str], rows: list[list[Any]], first: bool = False):
-            ws = wb.active if first else wb.create_sheet()
-            ws.title = title
-            ws.append(header)
-            for c in ws[1]:
-                c.font = bold
-            for r in rows:
-                ws.append(r)
-            for col in ws.columns:
-                ws.column_dimensions[col[0].column_letter].width = max(12, min(40, max(len(str(c.value or "")) for c in col) + 2))
-
-        r = rep["rates"]
-        sheet("Tổng quan", ["Chỉ số", "Giá trị"], [
-            ["Từ ngày", rep["from"]], ["Đến ngày", rep["to"]], ["Gom theo", rep["group"]],
-            ["Tiền nhận (đ)", rep["revenue"]["received"]], ["Tiền hoàn (đ)", rep["revenue"]["refunded"]],
-            ["Doanh thu thuần (đ)", rep["revenue"]["net"]], ["Đơn gửi", r["submitted"]], ["Đơn bị từ chối", r["rejected"]],
-            ["Tỷ lệ từ chối", r["reject_rate"]], ["Job viết (lần đầu)", r["jobs_written"]], ["Job viết lại", r["rewrites"]],
-            ["Tỷ lệ viết lại", r["rewrite_rate"]], ["Đơn hoàn tất trễ ETA", rep["late_completed"]["count"]],
-            ["Tỷ lệ trễ", rep["late_completed"]["late_rate"]]], first=True)
-        sheet("Doanh thu", ["Kỳ", "Tiền nhận (đ)", "Tiền hoàn (đ)", "Thuần (đ)", "Số giao dịch"],
-              [[x["bucket"], x["received"], x["refunded"], x["net"], x["payments"]] for x in rep["revenue"]["series"]])
-        sheet("Sản lượng", ["Loại đơn", "Số đơn", "Số bản", "Giá trị (đ)"],
-              [[x["order_type"], x["orders"], x["quantity"], x["total_amount"]] for x in rep["output_by_type"]])
-        sheet("Robot", ["Robot", "Job đã viết", "Phút viết", "Sự cố"],
-              [[x["robot_code"], x["jobs_written"], x["writing_minutes"], x["incidents"]] for x in rep["robots"]])
-        sheet("Trễ ETA", ["Mã đơn", "ETA", "Hoàn tất", "Trễ (ngày)", "Đã dời (ngày)"],
-              [[x["code"], x["eta"], x["completed_on"], x["days_late"], x["eta_postponed_days"]]
-               for x in rep["late_completed"]["orders"]])
-        buf = io.BytesIO()
-        wb.save(buf)
-        return buf.getvalue(), f"bao-cao_{rep['from']}_{rep['to']}.xlsx"
-
-    def export_pdf(self, start: date | None = None, end: date | None = None, group: str = "day") -> tuple[bytes, str]:
+    def export_pdf(self, start: date | None = None, end: date | None = None, group: str = "day",
+                   exported_by: str | None = None) -> tuple[bytes, str]:
         from app.services import report_pdf
         rep = self.report(start, end, group)
-        return report_pdf.render(rep, datetime.now(VN)), f"bao-cao_{rep['from']}_{rep['to']}.pdf"
+        return report_pdf.render(rep, datetime.now(VN), exported_by), f"bao-cao_{rep['from']}_{rep['to']}.pdf"

@@ -121,7 +121,11 @@ def test_reports_export_to_excel(client):
     assert 'filename="bao-cao_' in r.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(r.content))
     assert wb.sheetnames == ["Tổng quan", "Doanh thu", "Sản lượng", "Robot", "Trễ ETA"]
-    assert wb["Tổng quan"]["A5"].value == "Tiền nhận (đ)"
+    ov = wb["Tổng quan"]
+    labels = {ov.cell(row=r, column=1).value: ov.cell(row=r, column=2).value for r in range(1, ov.max_row + 1)}
+    rep = client.get(f"{M}/reports", headers=mgr, params={"group": "month"}).json()
+    assert labels["Tiền đã nhận"] == rep["revenue"]["received"] and labels["Doanh thu thuần"] == rep["revenue"]["net"]
+    assert labels["Người xuất"] and labels["Đơn đã gửi"] == rep["rates"]["submitted"]
 
 
 def test_reports_export_to_pdf(client):
@@ -152,4 +156,5 @@ def test_report_pdf_long_tables_go_over_several_pages():
     pdf = report_pdf.render(rep, datetime(2026, 11, 10, 9, 30))
     assert pdf[:5] == b"%PDF-"
     assert len(re.findall(rb"/Type\s*/Page\b(?!s)", pdf)) >= 3
-    assert report_pdf._pct(0.2) == "20,0%" and report_pdf._pct(None) == "–" and report_pdf._money(1500000) == "1.500.000"
+    from app.services import report_theme as T
+    assert T.pct(0.2) == "20,0%" and T.pct(None) == "–" and T.money(1500000) == "1.500.000" and T.money(-900, True) == "-900 đ"
