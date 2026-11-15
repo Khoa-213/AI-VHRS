@@ -51,6 +51,7 @@ RULES: list[tuple[str, set[str], object]] = [
     (r"^/catalog/my-styles$", READ, {CUSTOMER}),
     (r"^/orders/\{order_id\}/messages", ALL, {CUSTOMER, STAFF, MANAGER}),    # the Manager joins chats to resolve complaints
     (r"^/orders", ALL, {CUSTOMER}),
+    (r"^/studio", ALL, {CUSTOMER}),                                          # U5: drafts before an order + AI assistant
     (r"^/payments/", ALL, {CUSTOMER}),                                       # gateways list, refresh, mock-checkout
     (r"^/workshop/showcase", ALL, {STAFF, MANAGER}),                        # sample products for the home page (Phase 5c)
     (r"^/workshop/", READ, {STAFF, MANAGER}),

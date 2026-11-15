@@ -84,6 +84,13 @@ SPECS: dict[str, Spec] = {
                                    "Phí ship dự phòng theo kiện (đ)"),
     "image_retention_days": Spec(_int(30, 3650), 90, "Giữ ảnh khách sau khi đơn xong (ngày, BR-23)"),
     "photo_purge_enabled": Spec(_bool, False, "Bật xoá thật ảnh khách quá hạn (BR-23)"),
+    # U5: AI assistant of the studio (the provider keys stay in the environment)
+    "ai_assistant_enabled": Spec(_bool, True, "Bật trợ lý AI trong studio"),
+    "ai_daily_messages_per_customer": Spec(_int(0, 1000), 30, "Số tin nhắn trợ lý AI mỗi khách mỗi ngày"),
+    "ai_daily_model_calls": Spec(_int(0, 1_000_000), 400, "Số lần gọi mô hình AI mỗi ngày (toàn hệ thống)"),
+    "ai_max_tool_calls": Spec(_int(1, 10), 6, "Số thao tác tối đa của trợ lý AI trong một lượt"),
+    "ai_daily_cost_cap_cents": Spec(_int(0, 10_000_000), 0,
+                                    "Trần chi phí AI mỗi ngày (cent USD, 0 = không đặt; chỉ áp dụng khi đã cấu hình giá LLM_PRICES)"),
 }
 TOGGLEABLE_INTEGRATIONS = ("GHN",)        # the only flag of integrations_enabled the code reads
 

@@ -37,6 +37,7 @@ from app.services.workshop_access import WorkshopAccess
 from app.services.quotations import QuotationService, option_summaries
 from app.services.sketches import SketchService
 from app.services.staff_orders import StaffOrderService
+from app.services.studio import studio_for_order
 
 router = APIRouter(prefix="/workshop", tags=["Workshop"])
 WorkshopDep = Annotated[Account, Depends(require_roles(RoleCode.STAFF.value, RoleCode.MANAGER.value))]
@@ -302,3 +303,10 @@ def certificate_card(order_id: int, session: SessionDep, actor: WorkshopDep) -> 
     data, name = CertificateService(session).card_pdf(order)
     return Response(content=data, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/orders/{order_id}/studio", responses={404: {"model": ErrorOut, "description": "STUDIO_DRAFT_NOT_FOUND"}},
+            summary="U5 Bản nháp studio đã tạo ra đơn: cờ cảnh báo (vd FORGERY_RISK), lịch sử sửa, hội thoại với trợ lý AI")
+def order_studio(order_id: int, session: SessionDep, actor: WorkshopDep) -> dict:
+    order = WorkshopAccess(session, actor).order(order_id)
+    return studio_for_order(session, order.id)
