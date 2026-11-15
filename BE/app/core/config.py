@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # Where the gateways send the customer back after paying (a page of the web app). Display only: the order is
     # only ever updated by the gateway's IPN, never by this redirect.
     payment_return_url: str = "http://localhost:5173/payment/result"
+    # U8: page of the web app that shows GET /api/v1/verify/{code}; the certificate card's QR code points to {url}/{code}
+    public_verify_url: str = "http://localhost:5173/verify"
     # Public base URL of this API (e.g. https://ai-vhrs-be.onrender.com); the gateways call back to {base}/api/v1/webhooks/...
     public_base_url: str | None = None
     payment_expire_minutes: int = 15

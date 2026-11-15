@@ -196,6 +196,12 @@ sửa mọi cột đã ký; chỉ được thu hồi một lần (huỷ đơn, �
 - Job xếp lịch trước U1 không có snapshot (`snapshot: null`) và chạy bằng kiểm hash cũ. Khi không còn job cũ, đặt
   `"require_signed_packages": true` trong `agent.json` để từ chối mọi gói không ký.
 - Vì sao chữ ký số mà không HMAC: máy trạm chỉ giữ khoá công khai, nên dù máy trạm bị lộ cũng không ai tự ký được gói giả.
+- **Dòng xác thực (U8, 2026-11-14):** gói mới có `schema: "vhrs-production/2"` và khối `watermark` (mã, văn bản, vị trí
+  từng trang). Nét dòng xác thực nằm ngay trong file quỹ đạo (`kind: "watermark"`, cuối mỗi trang, robot viết sau cùng),
+  nên đã được SHA-256 của file (có ký) bảo vệ. BE khi tải gói và agent trước LOAD đều dựng lại nét từ mã + vị trí đã ký
+  và so từng điểm (sai lệch ≤ 0,011 mm); đơn OT-1 không có dòng này → từ chối (`WATERMARK_REQUIRED`), nét không khớp →
+  `WATERMARK_MISMATCH`. Gói `vhrs-production/1` cấp trước U8 vẫn chạy. Agent cần gói `Hershey-Fonts` (đã có trong
+  `.simenv`) vì dựng lại nét bằng cùng code với BE.
 
 ## 11. Việc nhóm cần làm / quyết định
 

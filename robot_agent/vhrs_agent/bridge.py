@@ -13,7 +13,7 @@ from typing import Any, Callable
 import httpx
 
 from app.core import production_signing as ps
-from app.services.stroke_ai import trajectory as tj
+from app.services.stroke_ai import physical_mark, trajectory as tj
 from app.services.stroke_ai.trajectory import Page
 
 _EVENT_FIELDS = ("stroke_index", "progress_pct", "force_summary")
@@ -93,6 +93,12 @@ class BackendBridge:
             raise BridgeError(409, "JOB_HASH_MISMATCH", "File quỹ đạo tải về không khớp hash của gói job; không chạy.")
         signed = self.verify_snapshot(job_id, pkg, actual)
         pages: list[Page] = tj.parse(json.loads(raw))
+        if signed is not None:
+            try:
+                physical_mark.check(signed, pages)               # U8: OT-1 must carry its watermark line
+            except ps.SignatureError as exc:
+                raise BridgeError(409, "PRODUCTION_PACKAGE_INVALID", f"Gói sản xuất không qua kiểm tra dòng xác thực "
+                                  f"({exc.code}): {exc} Không chạy; báo Quản lý.") from None
         return {"package": pkg, "pages": pages, "hash": actual, "signed": signed}
 
     def verify_snapshot(self, job_id: int, pkg: dict[str, Any], trajectory_sha256: str) -> dict[str, Any] | None:

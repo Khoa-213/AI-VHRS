@@ -8,7 +8,7 @@ ADMIN get 403. Another Staff's order answers 404.
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.order_schemas import InputOut
@@ -30,6 +30,7 @@ from app.services import material_profiles
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.repositories.ops import JobRepository
 from app.services.acceptance import workshop_photos
+from app.services.certificates import CertificateService
 from app.services.delivery import PickupService
 from app.services.payments import PaymentService
 from app.services.workshop_access import WorkshopAccess
@@ -290,3 +291,14 @@ def order_jobs(order_id: int, session: SessionDep, actor: WorkshopDep) -> list[J
     order = WorkshopAccess(session, actor).order(order_id)
     return [JobOut.model_validate(j).model_copy(update={"order_code": order.code})
             for j in JobRepository(session).for_order(order.id)]
+
+
+@router.get("/orders/{order_id}/certificate", responses={200: {"content": {"application/pdf": {}}},
+                                                         409: {"model": ErrorOut, "description":
+                                                               "CERTIFICATE_NOT_READY | CERTIFICATE_REVOKED"}},
+            summary="U8 Thẻ chứng nhận (PDF khổ A6, có mã xác thực + QR tới trang xác thực công khai) để in kèm sản phẩm")
+def certificate_card(order_id: int, session: SessionDep, actor: WorkshopDep) -> Response:
+    order = WorkshopAccess(session, actor).order(order_id)
+    data, name = CertificateService(session).card_pdf(order)
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})

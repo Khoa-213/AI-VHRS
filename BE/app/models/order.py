@@ -104,6 +104,12 @@ class Order(Base):
     deposit_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 0))     # D
     customer_note: Mapped[str | None] = mapped_column(Text)
     restoration_mode: Mapped[str | None] = mapped_column(String(10))     # U4: OT-1 FAITHFUL (NULL) | ASSISTED
+    physical_watermark: Mapped[bool] = mapped_column(Boolean, default=False)   # U8: OT-3 opt-in (OT-1 always has it)
+
+    @property
+    def watermark_required(self) -> bool:
+        """U8 (Q3): mandatory for OT-1, the customer's choice otherwise."""
+        return self.order_type == OrderType.OT1_COPY_RESTORE or bool(self.physical_watermark)
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     assigned_staff_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     assigned_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))

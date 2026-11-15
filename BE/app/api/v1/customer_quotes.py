@@ -62,7 +62,8 @@ def view_quotation(order_id: int, svc: Svc) -> QuotationCustomerOut:
                                  image_urls=svc.sketch_image_urls(sketch), approach_note=sketch.approach_note,
                                  estimated_writing_sec=sketch.estimated_writing_sec,
                                  similarity_score=sketch.similarity_score, **svc.region_view(sketch, data["order"]),
-                                 **svc.tier_view(sketch))
+                                 **svc.tier_view(sketch),
+                                 watermark_text=(sketch.watermark or {}).get("text"))
         if sketch else None)
 
 
