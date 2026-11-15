@@ -1,4 +1,4 @@
-import { Pause, Play, Stop } from '@phosphor-icons/react'
+import { Check, Pause, Play, Stop, X } from '@phosphor-icons/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT, type TFn } from '../../i18n'
@@ -287,10 +287,16 @@ export default function RobotConsole({ job, refresh, run, verified, disabled }: 
           onClick={() => void exec('DRY_RUN', modeParams(), t('rb.confirmReal'))}>{t('rb.do.DRY_RUN', { mode: MODE })}</button>)}
 
       {step(5, t('td.flow.start'), job.status === 'PREPARING' ? null : writing,
-        <button type="button" className="sd-btn" disabled={disabled || !!pending || job.status !== 'PREPARING' || !verified || !job.canStart}
+        <button type="button" className="sd-btn" aria-describedby={`rb-start-why-${job.id}`}
+          disabled={disabled || !!pending || job.status !== 'PREPARING' || !verified || job.simulationPassed !== true || !job.canStart}
           onClick={() => void run(() => startJob(job.id), t('td.flow.confirmStart'))}>{t('td.flow.start')}</button>,
-        <p className="rb-res rb-gates">{([['td.flow.verified', verified], ['td.api.calibration', !!job.calibration?.is_valid], ['td.api.simulation', simRecorded]] as const).map(([key, ok]) =>
-          <span key={key} className={ok ? 'ok' : undefined}>{t(key)}</span>)}</p>)}
+        <>
+          <p className="rb-res rb-gates">{([['td.flow.verified', verified], ['td.api.downloaded', !!job.downloadedAt], ['td.api.calibration', !!job.calibration?.is_valid], ['td.api.simulation', simRecorded], ['td.chk.server', job.canStart]] as const).map(([key, ok]) =>
+            <span key={key} className={ok ? 'ok' : undefined}>{ok ? <Check size={12} weight="bold" aria-hidden /> : <X size={12} weight="bold" aria-hidden />} {t(key)}<span className="staff-sr">{t(ok ? 'rb.stepDone' : 'rb.stepTodo')}</span></span>)}</p>
+          {job.status === 'PREPARING' && (!job.canStart || !verified) && <p className="rb-res" id={`rb-start-why-${job.id}`}>
+            {t(!verified ? 'td.chk.whyHash' : !job.downloadedAt ? 'td.chk.whyDownload' : !job.calibration?.is_valid ? 'td.chk.whyCalibration' : job.simulationPassed !== true ? 'td.chk.whySimulation' : 'td.chk.whyServer')}
+          </p>}
+        </>)}
     </ol>
     </div>
 

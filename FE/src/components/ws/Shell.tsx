@@ -23,6 +23,7 @@ import './staff-ui.css'
 import './staff-theme.css'
 import './staff-depth.css'
 import './manager-ui.css'
+import './tech-ui.css'
 
 export type Area = 'staff' | 'manager' | 'tech' | 'admin'
 export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit' | 'refunds' | 'reports' | 'robots' | 'reviews'
@@ -102,7 +103,7 @@ export default function Shell({
   const sidebar = useRef<HTMLElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    if (!sidebarOpen || (area !== 'staff' && area !== 'manager')) return
+    if (!sidebarOpen || area === 'admin') return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     sidebar.current?.querySelector<HTMLElement>('a, button')?.focus()
@@ -160,17 +161,20 @@ export default function Shell({
   const name = user?.name ?? ''
   const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
 
-  // Staff and Manager share the Staff frame (header, sidebar, drawer, light/dark); the Manager has its own destinations.
-  const navLabel = t(area === 'manager' ? 'mgr.navAria' : 'rail.staff')
-  if (area === 'staff' || area === 'manager') return (
-    <div className={`ws ws-staff${area === 'manager' ? ' ws-manager' : ''}${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
+  // Staff, Manager and Technician share the Staff frame (header, sidebar, drawer, light/dark); each role has its own destinations.
+  const tech = area === 'tech'
+  const home = tech ? '/tech' : '/staff'
+  const navLabel = t(area === 'manager' ? 'mgr.navAria' : tech ? 'rail.tech' : 'rail.staff')
+  if (area === 'staff' || area === 'manager' || tech) return (
+    <div className={`ws ws-staff${area === 'manager' ? ' ws-manager' : ''}${tech ? ' ws-tech' : ''}${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
       <SkipLink />
       <header className="staff-header">
         <div className="staff-header-brand">
           <button ref={menuButton} type="button" className="staff-sidebar-menu" aria-label={t('adm.menuOpen')} aria-expanded={sidebarOpen} aria-controls="staff-sidebar" onClick={() => setSidebarOpen(true)}><List size={22} aria-hidden /></button>
-          <Link to="/staff" className="staff-brand" aria-label={t('rail.staffMark')}><BrandLogo /></Link>
+          <Link to={home} className="staff-brand" aria-label={t(tech ? 'rail.techMark' : 'rail.staffMark')}><BrandLogo /></Link>
         </div>
         <div className="staff-header-tools">
+          {tech && <RobotAlertBell />}
           <NotificationBell variant="ws" />
           <AppearanceSwitch className="staff-theme" />
           <LanguageToggle />
@@ -201,8 +205,9 @@ export default function Shell({
         <main className="main2" id="main">
           <header className="hd">
             <div className="t">
-              {active !== 'dashboard' && <Link to="/staff" className="staff-back"><ArrowLeft size={15} aria-hidden />{t('adm.backOverview')}</Link>}
+              {active !== 'dashboard' && <Link to={home} className="staff-back"><ArrowLeft size={15} aria-hidden />{t('adm.backOverview')}</Link>}
               <h1>{title}</h1>
+              {tech && lede && <p className="staff-lede">{lede}</p>}
             </div>
             {tools && <div className="staff-page-actions">{tools}</div>}
             {pinned && <div className="hd-pinned">{pinned}</div>}
@@ -210,17 +215,17 @@ export default function Shell({
           {children}
         </main>
       </div>
-      <ChatDock side="workshop" />
+      {!tech && <ChatDock side="workshop" />}
     </div>
   )
 
   return (
-    <div className={`ws${area === 'tech' ? ' ws-tech' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
+    <div className="ws">
       <SkipLink />
       <div className="app2">
         <div className="rail-col">
-          <Link to={area === 'tech' ? '/tech' : area === 'admin' ? '/admin' : '/staff'} className="logo" aria-label={t(area === 'tech' ? 'rail.techMark' : area === 'admin' ? 'rail.adminMark' : 'rail.staffMark')}>AV</Link>
-          <nav className="rail" aria-label={t(area === 'tech' ? 'rail.tech' : area === 'admin' ? 'rail.admin' : 'rail.staff')}>
+          <Link to="/admin" className="logo" aria-label={t('rail.adminMark')}>AV</Link>
+          <nav className="rail" aria-label={t('rail.admin')}>
             {items.map((it, i) =>
               it === 'gap' ? (
                 <span key={`g${i}`} className="gap" />
@@ -253,7 +258,6 @@ export default function Shell({
             </div>
             <div className="tools">
               {tools}
-              {area === 'tech' && <RobotAlertBell />}
               <NotificationBell variant="ws" />
               <LanguageToggle />
               <div className="me2"><span className="avatar">{initials(name)}</span><div>{name}<small>{role}</small></div></div>

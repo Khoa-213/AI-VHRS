@@ -588,17 +588,18 @@ export const requestRewrite = async (id: number, reason_code: RewriteReason, not
 
 // ---------- delivery or pick-up (after acceptance, before the final payment) ----------
 
-/** A delivery address as the backend takes and stores it: codes from `services/locations.ts`, names for GHTK. */
+/** A delivery address as the backend takes and stores it: province and ward codes from `services/locations.ts` (GHN, two levels). */
 export interface DeliveryAddress {
   receiver: string
   phone: string
   street: string
   province_code: string
-  district_code: string
   ward_code: string
   province_name?: string
-  district_name?: string
   ward_name?: string
+  /** Addresses saved before the two-level catalogue may still carry these; the backend ignores them. */
+  district_code?: string
+  district_name?: string
   label?: string
 }
 
@@ -682,6 +683,14 @@ const ERROR_KEYS: Record<string, string> = {
   RED_ALERT_PROTECTED: 'err.redAlertProtected',
   ALERT_CODE_NOT_FOUND: 'err.alertCodeNotFound',
   REVIEW_NOT_FOUND: 'err.reviewNotFound',
+  REVIEW_EXISTS: 'err.reviewExists',
+  REVIEW_HIDDEN: 'err.reviewHidden',
+  REVIEW_EDIT_CLOSED: 'err.reviewEditClosed',
+  ORDER_NOT_COMPLETED: 'err.orderNotCompleted',
+  PHOTO_NOT_UPLOADED: 'err.photoNotUploaded',
+  COMMENT_TOO_LONG: 'err.commentTooLong',
+  LOCATIONS_UNAVAILABLE: 'err.locationsUnavailable',
+  PROVINCE_NOT_FOUND: 'err.provinceNotFound',
   NETWORK: 'auth.err.network',
   RATE_LIMITED: 'auth.err.rate',
   VALIDATION_ERROR: 'auth.err.validation',

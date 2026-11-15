@@ -45,7 +45,7 @@ export default function TechDashboard() {
   return <Shell area="tech" active="dashboard" title={t('wk.hello', { name: user?.name ?? t('td.technician') })} lede={today}
     tools={<button type="button" className="sd-btn" onClick={() => void q.reload()}>{t('td.api.reload')}</button>}>
     <JobFeedback loading={q.loading && !q.data} error={q.error} retry={q.reload} />
-    <div className="row3">
+    <div className="row3 staff-kpis">
       <Kpi icon={<ClipboardText size={20} aria-hidden />} tone="a" title={t('td.kpi.qc')} value={count(qc)} note={t('td.kpi.qcHint')} to="/tech/qc" />
       <Kpi icon={<PlayCircle size={20} aria-hidden />} tone="p" title={t('td.api.live')} value={count(live)} note={t('td.api.liveHint')} to="/tech/preview" />
       <Kpi icon={<Timer size={20} aria-hidden />} tone="b" title={t('td.api.ready')} value={count(ready)} note={t('td.api.readyHint')} to="/tech/preview" />

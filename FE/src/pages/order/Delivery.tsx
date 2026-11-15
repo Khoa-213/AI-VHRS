@@ -6,7 +6,7 @@ import { useAsync } from '../../hooks/useAsync'
 import { useDebounced } from '../../hooks/useDebounced'
 import { useLocale, useT } from '../../i18n'
 import { Link, orderPath } from '../../router/router'
-import { getDistricts, getProvinces, getWards, type Place } from '../../services/locations'
+import { getProvinces, getWards, type Place } from '../../services/locations'
 import {
   chooseDelivery, errText, getDeliveryQuote, getOrder, orderErrorKey, previewDeliveryQuote,
   type DeliveryAddress, type DeliveryMethod, type Order, type ShippingService,
@@ -26,18 +26,17 @@ interface Form {
   phone: string
   street: string
   province: string
-  district: string
   ward: string
 }
 
-const EMPTY: Form = { receiver: '', phone: '', street: '', province: '', district: '', ward: '' }
+const EMPTY: Form = { receiver: '', phone: '', street: '', province: '', ward: '' }
 
 /** The address form starts from the address saved on the order, else from the account. */
 const formOf = (order: Order, name: string, phone: string): Form => {
   const a = order.deliveryMethod === 'DELIVERY' ? order.deliveryAddress : null
   return {
     receiver: a?.receiver ?? name, phone: a?.phone ?? phone, street: a?.street ?? '',
-    province: a?.province_code ?? '', district: a?.district_code ?? '', ward: a?.ward_code ?? '',
+    province: a?.province_code ?? '', ward: a?.ward_code ?? '',
   }
 }
 
@@ -89,19 +88,17 @@ export default function Delivery({ id }: { id: string | null }) {
   }
 
   const provinces = useAsync(getProvinces, [])
-  const districts = useAsync(() => (f.province ? getDistricts(f.province) : Promise.resolve([])), [f.province])
-  const wards = useAsync(() => (f.district ? getWards(f.district) : Promise.resolve([])), [f.district])
-  const placesErr = provinces.error ?? districts.error ?? wards.error
+  const wards = useAsync(() => (f.province ? getWards(f.province) : Promise.resolve([])), [f.province])
+  const placesErr = provinces.error ?? wards.error
 
   const provinceName = nameOf(provinces.data, f.province)
-  const districtName = nameOf(districts.data, f.district)
   const wardName = nameOf(wards.data, f.ward)
   const phoneOk = PHONE.test(f.phone.trim())
-  const address: DeliveryAddress | null = f.receiver.trim() && phoneOk && f.street.trim() && provinceName && districtName && wardName
+  const address: DeliveryAddress | null = f.receiver.trim() && phoneOk && f.street.trim() && provinceName && wardName
     ? {
         receiver: f.receiver.trim(), phone: f.phone.trim(), street: f.street.trim(),
-        province_code: f.province, district_code: f.district, ward_code: f.ward,
-        province_name: provinceName, district_name: districtName, ward_name: wardName,
+        province_code: f.province, ward_code: f.ward,
+        province_name: provinceName, ward_name: wardName,
       }
     : null
 
@@ -280,21 +277,14 @@ export default function Delivery({ id }: { id: string | null }) {
                       <div className="vh-form-grid vh-form-grid--160">
                         <label className="vh-stack" style={{ gap: 6 }}>
                           <span className="vh-label">{t('dl.province')}</span>
-                          <select className="vh-select" value={f.province} disabled={!provinces.data} onChange={(e) => set({ province: e.target.value, district: '', ward: '' })}>
+                          <select className="vh-select" value={f.province} disabled={!provinces.data} onChange={(e) => set({ province: e.target.value, ward: '' })}>
                             <option value="">{t('dl.pickProvince')}</option>
                             {provinces.data?.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
                           </select>
                         </label>
                         <label className="vh-stack" style={{ gap: 6 }}>
-                          <span className="vh-label">{t('dl.district')}</span>
-                          <select className="vh-select" value={f.district} disabled={!f.province || !districts.data?.length} onChange={(e) => set({ district: e.target.value, ward: '' })}>
-                            <option value="">{t('dl.pickDistrict')}</option>
-                            {districts.data?.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
-                          </select>
-                        </label>
-                        <label className="vh-stack" style={{ gap: 6 }}>
                           <span className="vh-label">{t('dl.ward')}</span>
-                          <select className="vh-select" value={f.ward} disabled={!f.district || !wards.data?.length} onChange={(e) => set({ ward: e.target.value })}>
+                          <select className="vh-select" value={f.ward} disabled={!f.province || !wards.data?.length} onChange={(e) => set({ ward: e.target.value })}>
                             <option value="">{t('dl.pickWard')}</option>
                             {wards.data?.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
                           </select>
@@ -303,7 +293,7 @@ export default function Delivery({ id }: { id: string | null }) {
                       {placesErr != null && (
                         <div className="vh-callout vh-callout--red" role="alert">
                           <span>{t('dl.placesErr')}</span>
-                          <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={() => void Promise.all([provinces.reload(), districts.reload(), wards.reload()])}>
+                          <button className="vh-btn vh-btn--ghost vh-btn--md" onClick={() => void Promise.all([provinces.reload(), wards.reload()])}>
                             {t('dl.retry')}
                           </button>
                         </div>

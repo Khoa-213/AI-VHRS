@@ -1,4 +1,4 @@
-import { Bell, BellRinging } from '@phosphor-icons/react'
+import { Robot } from '@phosphor-icons/react'
 import { useEffect, useRef, useState } from 'react'
 import { useLocale, useT } from '../../i18n'
 import { ackAlert, resolveAlert, type RobotAlert } from '../../services/robot'
@@ -70,7 +70,7 @@ export default function RobotAlertBell() {
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        {count ? <BellRinging size={20} weight="fill" aria-hidden /> : <Bell size={20} aria-hidden />}
+        <Robot size={20} weight={count ? 'fill' : 'regular'} aria-hidden />
         {count > 0 && <span className="rbell-count">{count > 99 ? '99+' : count}</span>}
       </button>
       {open && (

@@ -50,7 +50,7 @@ const locale = useLocale() // dates and numbers: date.toLocaleDateString(locale,
 
 - Put `<LanguageToggle />` right after every `<ThemeToggle ... />` (any header or top bar). It styles itself
   (`components/ui/language.css`, the landing page's look) so it is the same button everywhere: do not restyle it per page.
-- Staff and technician pages must render their rail (`StaffRail` / `TechRail`).
+- Staff, Manager and Technician pages render inside `components/ws/Shell.tsx` (header and labelled sidebar); Admin pages inside `AdminFrame`.
 - Keep layout working at the longest language: Vietnamese and Japanese text can be longer or wrap differently.
   Do not give buttons a fixed width that clips them.
 
@@ -89,13 +89,13 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   and never trusts the gateway's query parameters. `vercel.json` rewrites deep links to `index.html` so that page loads.
 - After acceptance (`AWAITING_FINAL_PAYMENT`) the order page links to `/orders/:id/delivery` (`pages/order/Delivery.tsx`):
   delivery with a carrier service priced live for the typed address (`POST /orders/{id}/delivery-quote`), or pick-up at
-  the workshop at a booked slot, saved with `PUT /orders/{id}/delivery`. Provinces, districts and wards come from the
-  public provinces.open-api.vn (`services/locations.ts`, the backend has no location endpoint), and the pick-up hours
+  the workshop at a booked slot, saved with `PUT /orders/{id}/delivery`. Provinces and wards come from the
+  backend (`GET /locations/provinces`, `.../{code}/wards`, GHN two levels, no district; `services/locations.ts`), and the pick-up hours
   copy the backend's `working_hours` seed (`utils/pickupSlots.ts`). Final payment and tracking have no pages yet.
 - The workshop side lives in `src/pages/staff/` and `src/services/workshop.ts`: dashboard, `Workbench` (intake, sketch, quotation, chat),
   `Approvals`, `Schedule` and `Catalog` (Manager only, via `services/manage.ts`: templates, robots, price list, and `Materials.tsx`, where paper, pens, ink colors and paper-pen compatibility are one list-and-detail view because the customer only sees the chain paper → compatible active pen → that pen's active inks; a new paper is created with its pens, a new pen with its inks and papers, and anything a customer cannot order is flagged). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
 - Errors from the API go through `orderErrorKey` / `errText` (`services/orders.ts`): known codes have translated text, any other code shows the backend's own message. Add a code to `ERROR_KEYS` and `err.*` when you want it translated.
-- Workshop screens (Staff, Manager, Technician) all render inside `components/ws/Shell.tsx`: the icon pill, the header and a language button. Their look is `components/ws/ws.css` (generated from the Figma-based design, everything under `.ws`, light only, no theme toggle) and `workshop.css`; the accent is the `--acc` variable. Use the shared pieces in `components/ws/parts.tsx` and `charts.tsx` before adding new markup.
+- Workshop screens (Staff, Manager, Technician) all render inside `components/ws/Shell.tsx`. All three render the Staff frame (`.ws.ws-staff`, see "Staff presentation"), on top of `components/ws/ws.css` and `workshop.css`; the accent is the `--acc` variable. Use the shared pieces in `components/ws/parts.tsx` and `charts.tsx` before adding new markup.
 - The order chat (`components/ui/Chat.tsx`) is shared by the customer and the workshop, and is reached only through the floating
   `components/ui/ChatDock.tsx`: `side="customer"` in `App.tsx`, `side="workshop"` in `Shell.tsx` (Staff, Manager). The list and badge come from
   `services/chat.ts` (`/me/conversations`, `/workshop/conversations`, `.../unread-count`). Opening the customer chat from an order sends
@@ -133,7 +133,7 @@ Admin dropdowns, including the audit record-kind filter, remain scrollable with 
 
 ## Staff presentation
 
-Staff retains the workshop `Shell` and existing workflow components. `components/ws/staff-ui.css` is scoped to `.ws.ws-staff` (`area="staff"` and `area="manager"`). Its CRM reference lives in `crm_video_reference/`: a sticky header for the logo, notifications, appearance, language and profile link, plus a labelled workflow sidebar with a mobile drawer, cool white page, white cards, black/deep navy accents and one dark KPI. Use dark text and a navy keyboard focus ring with clear contrast in both themes. Staff and Admin share the saved `AppearanceSwitch` preference. `staff-depth.css` adds gradients, layered surfaces and shadows scoped to Staff. No abstract 3D shapes (spheres, rings) on Staff screens. `staff-theme.css` supplies Staff dark tokens and surfaces; paper previews retain their original colours. `BrandLogo` follows the theme. Manager uses the same frame (see "Manager area"); Technician keeps its current presentation.
+Staff retains the workshop `Shell` and existing workflow components. `components/ws/staff-ui.css` is scoped to `.ws.ws-staff` (`area="staff"`, `"manager"` and `"tech"`). Its CRM reference lives in `crm_video_reference/`: a sticky header for the logo, notifications, appearance, language and profile link, plus a labelled workflow sidebar with a mobile drawer, cool white page, white cards, black/deep navy accents and one dark KPI. Use dark text and a navy keyboard focus ring with clear contrast in both themes. Staff and Admin share the saved `AppearanceSwitch` preference. `staff-depth.css` adds gradients, layered surfaces and shadows scoped to Staff. No abstract 3D shapes (spheres, rings) on Staff screens. `staff-theme.css` supplies Staff dark tokens and surfaces; paper previews retain their original colours. `BrandLogo` follows the theme. Manager and Technician use the same frame (see "Manager area" and "Technician area").
 
 `/staff/review` shows the existing open-order groups as responsive pipeline columns. Cards open the existing `/staff/review/:id` list/detail route. Stage/scope/search/collapse/pagination rules and action handlers stay unchanged; no drag-and-drop status mutations. For a Manager the same screens render in the Staff frame with the Manager sidebar. Staff filters use `AdminSelect`, portalled into `.ws-staff` for light tokens, with hidden scrollbar chrome. The dashboard's 7/30-day selector affects the received-orders chart only; KPIs keep current totals. No sample data or unsupported CRM actions in production.
 
@@ -146,3 +146,10 @@ Check `node scripts/check-staff-ui-browser.mjs` and existing fulfillment/Admin b
 - Data: `services/managerOps.ts`: `/manager/dashboard`, `/manager/reports` and its Excel/PDF export (through `apiFile` in `services/api.ts`, Bearer fetch), robot status, health, runs, process compliance, alerts and the alert catalogue, job detail, events, incidents, quality, and review moderation. Pages: `ManagerDashboard.tsx`, `Reports.tsx` (`/staff/reports`), `Robots.tsx` (`/staff/robots`, `?job=<id>` opens a job), `Reviews.tsx` (`/staff/reviews`).
 - Alert titles and actions (`title_vi`, `action_vi`, `headline_vi`), process steps and quality advice come from the backend in Vietnamese and are shown as received. A Manager may close a red (level 4) alert only after a confirmation; the E-Stop reminder stays. Red catalogue entries keep e-mail, stay on and keep technicians.
 - Check with `node scripts/check-manager-browser.mjs` after building (set `TECH_BROWSER_PATH` outside Windows; `MANAGER_SHOTS=<dir>` saves screenshots).
+
+## Technician area
+
+`Shell area="tech"` renders the Staff frame (`.ws.ws-staff.ws-tech`): the same header with a robot-alert button (`RobotAlertBell`, robot icon, red while an alert is open) next to notifications, the labelled sidebar (dashboard, preview, QC with the count of written jobs) and its mobile drawer, Staff tokens and the shared light/dark preference. No order chat for technicians. `components/ws/tech-ui.css` holds the few Technician-only rules (three KPIs, `sd-btn` as the Staff inverse button, sticky header while a job's progress is pinned, phone header fit); `pages/tech/tech.css` uses tokens only, so dark mode follows `staff-theme.css`.
+- Workflow guards (`flow.ts`, `jobPermissions`), robot console rules and the E-Stop banner are unchanged. Start stays off unless the package hash is verified, `simulation_passed === true` and the server's `can_start`; the gate chips show an icon and a word, and a line says why Start is off.
+- Quality check (Service G, `pages/tech/JobQuality.tsx`): `POST /technician/jobs/{id}/photos/{photoId}/evaluate` per photo (sketch page 1 to 10) and `GET .../quality`. The verdict, metrics and Vietnamese advisory are the backend's; the technician still sets each photo's QC result.
+- The verified package shows whether it is signed (`snapshot`) and lists `material_drift` (backend text, shown as received).
