@@ -172,10 +172,10 @@
  .ws.ws-staff .staff-header .nbell-pop{right:12px;top:calc(100% + 8px);width:calc(100% - 24px);max-height:65dvh}
 }
 
-/* Desktop: the panel drops straight down, centred under the bell. Mobile keeps the full-width sheet above. */
+/* Desktop: the panel drops from the bell, right edge aligned with it, and opens to the left toward the middle of the screen. Mobile keeps the full-width sheet above. */
 @media(min-width:761px){
  .ws.ws-staff .staff-header .nbell{position:relative}
- .ws.ws-staff .staff-header .nbell-pop{left:50%;right:auto;top:calc(100% + 10px);width:min(360px,calc(100vw - 32px));transform:translateX(-50%)}
+ .ws.ws-staff .staff-header .nbell-pop{left:auto;right:14px;top:calc(100% + 10px);width:min(420px,calc(100vw - 32px));transform:none}
 }
 
 /* A single viewport frame prevents page content from sliding behind the header. */
