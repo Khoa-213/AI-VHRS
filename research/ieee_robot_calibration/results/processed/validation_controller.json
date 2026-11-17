@@ -1,0 +1,36 @@
+{
+ "source": "read-only controller readings stored in robot_agent/runs (FR3 V6.0, controller V3.8.25-QX)",
+ "readings": [
+  {
+   "file": "robot_inspection.json",
+   "joints_deg": [
+    -88.58004760742188,
+    -64.54521942138672,
+    66.76315307617188,
+    -93.46580505371094,
+    -92.24555969238281,
+    32.134246826171875
+   ],
+   "fitted_flange_offset_mm": 99.99972851436125,
+   "flange_pos_err_with_100mm_mm": 0.010854554076127896,
+   "flange_rot_err_deg": 0.0005331322521716349,
+   "tcp_from_flange_plus_tool_err_mm": 0.0037807561177045303
+  },
+  {
+   "file": "robot_inspection_20261025.json",
+   "joints_deg": [
+    -88.56764221191406,
+    -127.97332000732422,
+    66.81493377685547,
+    -93.85609436035156,
+    -92.24578094482422,
+    32.13772964477539
+   ],
+   "fitted_flange_offset_mm": 100.00193557879709,
+   "flange_pos_err_with_100mm_mm": 0.009209089197340634,
+   "flange_rot_err_deg": 0.00027690184151289146,
+   "tcp_from_flange_plus_tool_err_mm": 0.003114608259608748
+  }
+ ],
+ "conclusion": "The controller's reported flange pose equals the vendor-URDF wrist3 frame shifted by ~100 mm along its z axis. This validates the NOMINAL model the controller uses; it says nothing about the robot's true (absolute) accuracy, which needs an external reference."
+}

@@ -1,0 +1,91 @@
+{
+ "experiment_id": "E1",
+ "timestamp": "2026-11-17T11:59:06+0700",
+ "git_head": "89ad8e3289ecaa0bd9fa70f39ed6c2a14c62f9b4",
+ "git_branch": "BE",
+ "research_dir_tracked": false,
+ "source_sha256": "9beada40e19a1e1e3aff8f87cbb8dd3929c518226b13a8b99d4b50064a6ce1b7",
+ "model_version": "FR3 V6 vendor URDF (fairino3_v6.urdf) + 100 mm flange offset",
+ "python": "3.11.9",
+ "numpy": "2.4.6",
+ "seeds": [
+  1000,
+  1001,
+  1002,
+  1003,
+  1004,
+  1005,
+  1006,
+  1007,
+  1008,
+  1009,
+  1010,
+  1011,
+  1012,
+  1013,
+  1014,
+  1015,
+  1016,
+  1017,
+  1018,
+  1019,
+  1020,
+  1021,
+  1022,
+  1023,
+  1024,
+  1025,
+  1026,
+  1027,
+  1028,
+  1029
+ ],
+ "config": {
+  "truth": {
+   "sigma_p_mm": 0.5,
+   "sigma_r_deg": 0.1,
+   "harmonic_amp_deg": 0.003,
+   "stiffness_nm_per_rad": [
+    30000.0,
+    30000.0,
+    20000.0,
+    10000.0,
+    10000.0,
+    10000.0
+   ],
+   "use_compliance": true,
+   "payload_kg": 0.6,
+   "sigma_tool_mm": 0.3,
+   "scale": 1.0
+  },
+  "collect": {
+   "cone_deg": 30.0,
+   "spin_deg": 60.0,
+   "sigma_seat_mm": 0.02,
+   "sigma_q_deg": 0.001,
+   "sigma_d_mm": 0.02,
+   "margin_deg": 5.0
+  },
+  "probe": {
+   "sigma_inplane_mm": 0.1,
+   "sigma_normal_mm": 0.02,
+   "sigma_q_deg": 0.001
+  },
+  "n_total": 60,
+  "spacing_mm": 150.0,
+  "socket_height_mm": 12.0,
+  "lam": 0.0001,
+  "n_test": 500,
+  "stroke_step_mm": 1.0
+ },
+ "methods": [
+  "nominal",
+  "S2",
+  "S3",
+  "S2x2",
+  "S3L"
+ ],
+ "wall_s": 10.803351402282715,
+ "n_rows": 150,
+ "n_failed": 0
+}

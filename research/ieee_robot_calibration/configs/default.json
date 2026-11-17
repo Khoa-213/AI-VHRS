@@ -1,0 +1,32 @@
+{
+  "_note": "Default simulation configuration. Every number below is a SIMULATION ASSUMPTION unless its comment cites a repository source. Units: mm, deg, N*m/rad, kg.",
+  "truth": {
+    "sigma_p_mm": 0.5,
+    "sigma_r_deg": 0.1,
+    "harmonic_amp_deg": 0.003,
+    "stiffness_nm_per_rad": [30000.0, 30000.0, 20000.0, 10000.0, 10000.0, 10000.0],
+    "use_compliance": true,
+    "payload_kg": 0.6,
+    "sigma_tool_mm": 0.3,
+    "scale": 1.0
+  },
+  "collect": {
+    "cone_deg": 30.0,
+    "spin_deg": 60.0,
+    "sigma_seat_mm": 0.02,
+    "sigma_q_deg": 0.001,
+    "sigma_d_mm": 0.02,
+    "margin_deg": 5.0
+  },
+  "probe": {
+    "sigma_inplane_mm": 0.1,
+    "sigma_normal_mm": 0.02,
+    "sigma_q_deg": 0.001
+  },
+  "n_total": 60,
+  "spacing_mm": 150.0,
+  "socket_height_mm": 12.0,
+  "lam": 0.0001,
+  "n_test": 500,
+  "stroke_step_mm": 1.0
+}

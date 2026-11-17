@@ -1,0 +1,89 @@
+{
+ "experiment_id": "E2",
+ "timestamp": "2026-11-17T12:06:25+0700",
+ "git_head": "89ad8e3289ecaa0bd9fa70f39ed6c2a14c62f9b4",
+ "git_branch": "BE",
+ "research_dir_tracked": false,
+ "source_sha256": "89abd85dfe80209ecf5d3644f11d01bdade826770f8596c2d5d5aa4506321c30",
+ "model_version": "FR3 V6 vendor URDF (fairino3_v6.urdf) + 100 mm flange offset",
+ "python": "3.11.9",
+ "numpy": "2.4.6",
+ "seeds": [
+  2000,
+  2001,
+  2002,
+  2003,
+  2004,
+  2005,
+  2006,
+  2007,
+  2008,
+  2009,
+  2010,
+  2011,
+  2012,
+  2013,
+  2014,
+  2015,
+  2016,
+  2017,
+  2018,
+  2019
+ ],
+ "config": {
+  "truth": {
+   "sigma_p_mm": 0.5,
+   "sigma_r_deg": 0.1,
+   "harmonic_amp_deg": 0.003,
+   "stiffness_nm_per_rad": [
+    30000.0,
+    30000.0,
+    20000.0,
+    10000.0,
+    10000.0,
+    10000.0
+   ],
+   "use_compliance": true,
+   "payload_kg": 0.6,
+   "sigma_tool_mm": 0.3,
+   "scale": 1.0
+  },
+  "collect": {
+   "cone_deg": 30.0,
+   "spin_deg": 60.0,
+   "sigma_seat_mm": 0.02,
+   "sigma_q_deg": 0.001,
+   "sigma_d_mm": 0.02,
+   "margin_deg": 5.0
+  },
+  "probe": {
+   "sigma_inplane_mm": 0.1,
+   "sigma_normal_mm": 0.02,
+   "sigma_q_deg": 0.001
+  },
+  "n_total": 60,
+  "spacing_mm": 150.0,
+  "socket_height_mm": 12.0,
+  "lam": 0.0001,
+  "n_test": 500,
+  "stroke_step_mm": 1.0
+ },
+ "settings": [
+  "noise_x0",
+  "noise_x0.5",
+  "noise_x1",
+  "noise_x2",
+  "noise_x4",
+  "noise_x8",
+  "unmod_none",
+  "unmod_harmonic_only",
+  "unmod_default",
+  "unmod_soft_x0.5K",
+  "geo_scale_x0.5",
+  "geo_scale_x2",
+  "geo_scale_x4"
+ ],
+ "wall_s": 290.19864535331726,
+ "n_rows": 1040,
+ "n_not_ok": 0
+}

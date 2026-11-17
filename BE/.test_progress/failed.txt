@@ -1,0 +1,3 @@
+tests/test_background_jobs.py::test_customer_photos_are_purged_after_90_days_only_when_enabled
+tests/test_background_jobs.py::test_the_runner_never_overlaps_and_keeps_going_after_an_error
+tests/test_permission_matrix.py::test_permission_matrix_is_enforced_on_every_route

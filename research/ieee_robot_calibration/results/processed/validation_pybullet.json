@@ -1,0 +1,16 @@
+{
+ "n_random_configs": 2000,
+ "fk_pos_err_mm": {
+  "max": 0.0007602197850110516,
+  "mean": 0.0001963817711447831
+ },
+ "fk_tool_axis_err_deg": {
+  "max": 5.518575175063948e-05
+ },
+ "n_ik_targets": 50,
+ "n_ik_solved": 50,
+ "pybullet_ik_then_our_fk_err_mm": {
+  "max": 0.00036148407199008763,
+  "mean": 0.0001802222449935059
+ }
+}

@@ -1,0 +1,3 @@
+tests/test_nfr01_performance.py::test_api_price_estimate_is_within_1_second
+tests/test_nfr01_performance.py::test_api_ot3_sketch_generation_of_an_a4_page_is_within_5_seconds
+tests/test_nfr01_performance.py::test_api_ot1_restoration_of_an_a5_scan_is_within_15_seconds
