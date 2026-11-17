@@ -104,7 +104,8 @@ class OtpSentOut(BaseModel):
     phone_masked: str = Field(examples=["090****567"])
     expires_in: int = Field(description="Giây tới khi mã hết hạn")
     resend_after: int = Field(description="Giây phải chờ trước khi xin mã mới")
-    mode: str = Field(description="MOCK: không gửi SMS thật (chưa chọn nhà cung cấp)")
+    mode: str = Field(description="MOCK: không gửi SMS thật; ESMS_SANDBOX: gọi eSMS ở chế độ thử (không giao tin); "
+                                  "ESMS: gửi SMS thật qua eSMS; SPEEDSMS: gửi SMS thật qua SpeedSMS")
 
 
 class PhoneResetTokenOut(BaseModel):
