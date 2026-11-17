@@ -107,11 +107,28 @@ def _cleanup() -> None:
         c.execute(text("delete from accounts where email like 'pytest\\_%@example.com'"))
 
 
+# Every session deletes ALL 'pytest_' rows at its start and end, so two sessions on the same database destroy each other's
+# data mid-test (2026-11-17: 6 U6/U8 tests failed with 422 / 409 / missing ids that way). A session-level Postgres advisory
+# lock lets only one session in; a second one stops at once instead of corrupting the first. The lock dies with its
+# connection, so a killed run never leaves it behind. Needs a session-mode connection (Supabase session pooler, local DB).
+_SUITE_LOCK_KEY = 0x56485253   # "VHRS"
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _db_clean():
-    _cleanup()
-    yield
-    _cleanup()
+    lock = get_engine().connect()
+    if not lock.execute(text("select pg_try_advisory_lock(:k)"), {"k": _SUITE_LOCK_KEY}).scalar():
+        lock.close()
+        pytest.exit("Another pytest session is already running on this database; wait for it to finish "
+                    "(two sessions delete each other's pytest_ data).", returncode=3)
+    lock.commit()
+    try:
+        _cleanup()
+        yield
+        _cleanup()
+    finally:
+        lock.execute(text("select pg_advisory_unlock(:k)"), {"k": _SUITE_LOCK_KEY})
+        lock.close()
 
 
 @pytest.fixture(scope="session", autouse=True)
