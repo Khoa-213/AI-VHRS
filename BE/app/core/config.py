@@ -80,9 +80,24 @@ class Settings(BaseSettings):
     smtp_from: str | None = None
     smtp_starttls: bool = True
     smtp_timeout_seconds: float = 10.0
-    # ---- SMS (Phase 5e, FR-53 OTP). mock = nothing leaves the server (default; the only mode until the project owner picks
-    # a provider, then its adapter and keys are added here). OTP rules are assumptions approved with the 5e plan (2026-11-11).
-    sms_mode: Literal["mock"] = "mock"
+    # ---- SMS (Phase 5e, FR-53 OTP). mock = nothing leaves the server (default; tests and local work). esms = eSMS.vn
+    # (integrations/sms.py). OTP rules are assumptions approved with the 5e plan (2026-11-11).
+    sms_mode: Literal["mock", "esms", "speedsms"] = "mock"
+    # SpeedSMS (personal account, no business licence). No sandbox: speedsms mode sends REAL, paid SMS.
+    # sms_type 4 = SpeedSMS's default Brandname (Verify / Notify); 2 = random number; 3 = own Brandname and 5 = their
+    # Android app both need SPEEDSMS_SENDER (the Brandname / the device id).
+    speedsms_access_token: str | None = None
+    speedsms_sms_type: Literal[2, 3, 4, 5] = 4
+    speedsms_sender: str | None = None
+    speedsms_base_url: str = "https://api.speedsms.vn/index.php"
+    sms_timeout_seconds: float = 10.0
+    esms_api_key: str | None = None
+    esms_secret_key: str | None = None
+    esms_brandname: str | None = None     # registered with the carriers through eSMS; the OTP texts must match its templates
+    # true = eSMS answers but delivers nothing and charges nothing. Real SMS (false) only on the project owner's say.
+    esms_sandbox: bool = True
+    esms_sms_type: int = 2                # 2 = Brandname CSKH (customer care / OTP)
+    esms_base_url: str = "https://rest.esms.vn/MainService.svc/json"
     otp_ttl_seconds: int = 300           # a code lives 5 minutes
     otp_max_attempts: int = 5            # wrong guesses per code, then it is burned
     otp_resend_seconds: int = 60         # wait between two codes to the same number

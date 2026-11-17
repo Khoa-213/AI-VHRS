@@ -121,6 +121,58 @@ class SketchRegionOut(_ORM):
     edited_by: int | None
 
 
+class CompareMetric(BaseModel):
+    from_: Any = Field(alias="from", serialization_alias="from")
+    to: Any
+    delta: float | int | None
+
+    model_config = {"populate_by_name": True}
+
+
+class ComparePage(BaseModel):
+    page_no: int
+    in_from: bool
+    in_to: bool
+    kept: int
+    removed: int
+    added: int
+    changed: bool
+    image_url: str | None = Field(description="JPEG chồng hai bản: xám = giữ, đỏ = bỏ, xanh dương = thêm (có dấu AI); null khi trang không đổi")
+
+
+class CompareRegion(BaseModel):
+    page_no: int
+    region_no: int
+    change: Literal["ADDED", "REMOVED", "LABEL_CHANGED", "EDITED"]
+    from_label: str | None
+    to_label: str | None
+    text: str | None
+    note: str | None
+
+
+class CompareQuote(BaseModel):
+    from_quotation_version: int
+    to_quotation_version: int
+    from_total: int
+    to_total: int
+    revision_reason: str | None
+
+
+class SketchCompareOut(BaseModel):
+    """U2: what changed between two sketch versions. A stroke that moved at all counts as removed + added."""
+    from_version: int
+    to_version: int
+    from_sketch_id: int
+    to_sketch_id: int
+    identical: bool
+    metrics: dict[str, CompareMetric]
+    pages: list[ComparePage]
+    regions: list[CompareRegion]
+    legend: dict[str, str]
+    quote: CompareQuote | None = None                 # customer view only
+    versions_available: list[int] = []                # customer view only: versions sent before that can be compared
+
+
 class RegionEditIn(BaseModel):
     action: Literal["REPLACE_STROKES", "TEXT", "REMOVE"]
     note: str = Field(min_length=1, max_length=1000, description="Why this region was changed (kept in the region + audit).")

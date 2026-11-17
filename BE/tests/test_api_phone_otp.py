@@ -224,3 +224,133 @@ def test_sms_is_listed_with_the_integrations(client):
     from tests.conftest import auth
     names = {i["name"]: i for i in client.get(f"{API}/admin/integrations", headers=auth(client, "ADMIN")).json()}
     assert names["SMS"]["mode"] == "MOCK" and names["SMS"]["toggleable"] is False
+
+
+# ---- eSMS adapter (SMS_MODE=esms). Mocked transport only: nothing reaches eSMS. ----------------------------------------------
+import json
+
+import httpx
+
+from app.core.errors import AppError
+from app.integrations.sms import EsmsSms
+
+
+def _esms(handler, sandbox: bool = True) -> EsmsSms:
+    return EsmsSms(api_key="k", secret_key="s", brandname="AIVHRS", base_url="https://esms.test/json/", sandbox=sandbox,
+                   transport=httpx.MockTransport(handler))
+
+
+def test_esms_sends_a_brandname_otp_and_keeps_the_text_out_of_the_log(caplog):
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append((str(req.url), json.loads(req.content)))
+        return httpx.Response(200, json={"CodeResult": "100", "SMSID": "abc-1"})
+
+    caplog.set_level("INFO", logger="app.sms")
+    sender = _esms(handler)
+    sender.send("0901234567", "AI-VHRS: ma xac minh cua ban la 123456")
+    url, body = seen[0]
+    assert url == "https://esms.test/json/SendMultipleMessage_V4_post_json/"
+    assert body["Phone"] == "0901234567" and body["Brandname"] == "AIVHRS" and body["SmsType"] == "2"
+    assert body["Sandbox"] == "1" and body["IsUnicode"] == "0" and len(body["RequestId"]) == 32
+    assert sender.mode == "ESMS_SANDBOX" and _esms(handler, sandbox=False).mode == "ESMS"
+    assert "123456" not in caplog.text and "0901234567" not in caplog.text and "090****567" in caplog.text
+
+
+@pytest.mark.parametrize("reply, status, code", [
+    (httpx.Response(200, json={"CodeResult": "101", "ErrorMessage": "Authorize Failed"}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(200, json={"CodeResult": "103"}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(200, json={"CodeResult": "99"}), 502, "SMS_REJECTED"),
+    (httpx.Response(500, text="oops"), 502, "SMS_UNAVAILABLE"),
+    (httpx.Response(502, json={"Message": "bad gateway"}), 502, "SMS_REJECTED"),
+])
+def test_esms_failures_become_clean_errors(reply, status, code):
+    with pytest.raises(AppError) as err:
+        _esms(lambda req: reply).send("0901234567", "x")
+    assert err.value.status == status and err.value.code == code
+
+
+def test_esms_network_error_is_sms_unavailable():
+    def handler(req):
+        raise httpx.ConnectTimeout("slow")
+    with pytest.raises(AppError) as err:
+        _esms(handler).send("0901234567", "x")
+    assert err.value.status == 502 and err.value.code == "SMS_UNAVAILABLE"
+
+
+def test_esms_mode_without_keys_is_not_configured(monkeypatch):
+    from app.core.config import get_settings
+    from app.integrations.sms import get_sms_sender
+    s = get_settings()
+    monkeypatch.setattr(s, "sms_mode", "esms")
+    monkeypatch.setattr(s, "esms_api_key", None)
+    with pytest.raises(AppError) as err:
+        get_sms_sender()
+    assert err.value.status == 503 and err.value.code == "SMS_NOT_CONFIGURED"
+    monkeypatch.setattr(s, "esms_api_key", "k")
+    monkeypatch.setattr(s, "esms_secret_key", "s")
+    monkeypatch.setattr(s, "esms_brandname", "AIVHRS")
+    assert isinstance(get_sms_sender(), EsmsSms)
+
+
+# ---- SpeedSMS adapter (SMS_MODE=speedsms). Mocked transport only: nothing reaches SpeedSMS. -----------------------------------
+import base64
+
+from app.integrations.sms import SpeedSms, intl_phone
+
+
+def _speedsms(handler, **kw) -> SpeedSms:
+    return SpeedSms(access_token="tok", base_url="https://speedsms.test/index.php/", transport=httpx.MockTransport(handler), **kw)
+
+
+def test_speedsms_posts_json_with_basic_auth_and_keeps_secrets_out_of_url_and_log(caplog):
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(200, json={"status": "success", "code": "00",
+                                         "data": {"tranId": 77, "totalSMS": 1, "totalPrice": 500, "invalidPhone": []}})
+
+    caplog.set_level("INFO", logger="app.sms")
+    _speedsms(handler).send("0901234567", "AI-VHRS: ma xac minh cua ban la 654321")
+    req = seen[0]
+    assert str(req.url) == "https://speedsms.test/index.php/sms/send" and "tok" not in str(req.url)
+    assert req.headers["authorization"] == "Basic " + base64.b64encode(b"tok:x").decode()
+    body = json.loads(req.content)
+    assert body == {"to": ["84901234567"], "content": "AI-VHRS: ma xac minh cua ban la 654321", "sms_type": 4, "sender": ""}
+    assert "654321" not in caplog.text and "0901234567" not in caplog.text and "tran=77" in caplog.text
+    assert intl_phone("+84901234567") == "84901234567" and intl_phone("84901234567") == "84901234567"
+
+
+@pytest.mark.parametrize("reply, status, code", [
+    (httpx.Response(200, json={"status": "error", "code": "300", "message": "balance not enough"}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(200, json={"status": "error", "code": "009", "message": "not allowed"}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(401, json={"status": "error", "message": "unauthorized"}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(200, json={"status": "error", "code": "105", "invalidPhone": ["84901234567"]}), 502, "SMS_REJECTED"),
+    (httpx.Response(200, json={"status": "success", "code": "00",
+                               "data": {"totalSMS": 0, "invalidPhone": ["84901234567"]}}), 502, "SMS_REJECTED"),
+    (httpx.Response(200, json={"status": "error", "code": "500"}), 502, "SMS_UNAVAILABLE"),
+    (httpx.Response(503, text="maintenance"), 502, "SMS_UNAVAILABLE"),
+])
+def test_speedsms_failures_become_clean_errors(reply, status, code):
+    with pytest.raises(AppError) as err:
+        _speedsms(lambda req: reply).send("0901234567", "x")
+    assert err.value.status == status and err.value.code == code
+
+
+def test_speedsms_mode_needs_a_token_and_a_sender_for_own_brandname(monkeypatch):
+    from app.core.config import get_settings
+    from app.integrations.sms import get_sms_sender, sms_mode_label
+    s = get_settings()
+    monkeypatch.setattr(s, "sms_mode", "speedsms")
+    monkeypatch.setattr(s, "speedsms_access_token", None)
+    with pytest.raises(AppError) as err:
+        get_sms_sender()
+    assert err.value.code == "SMS_NOT_CONFIGURED"
+    monkeypatch.setattr(s, "speedsms_access_token", "tok")
+    assert isinstance(get_sms_sender(), SpeedSms) and sms_mode_label() == "SPEEDSMS"
+    monkeypatch.setattr(s, "speedsms_sms_type", 3)                  # own Brandname without its name
+    monkeypatch.setattr(s, "speedsms_sender", None)
+    with pytest.raises(AppError):
+        get_sms_sender()

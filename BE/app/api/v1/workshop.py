@@ -20,7 +20,7 @@ from app.api.schemas import ErrorOut, Page
 from app.api.staff_schemas import (AcceptIn, AdjustIn, FileLinkOut, OptionSummary, QuotationCreateIn, QuotationOut, RejectIn,
                                    RequestInfoIn, SketchDetailOut, SketchGenerateIn, SketchManualIn, SketchOut,
                                    SketchPatchIn, WorkshopInputOut, WorkshopOrderDetail, WorkshopOrderRow,
-                                   RegionEditIn, SketchRegionOut)
+                                   RegionEditIn, SketchCompareOut, SketchRegionOut)
 from app.api.v1.orders import optional_storage
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
@@ -169,6 +169,14 @@ def create_manual_sketch(order_id: int, body: SketchManualIn, svc: Sketches) -> 
 @router.get("/orders/{order_id}/sketches", response_model=list[SketchOut], summary="Các phiên bản phác thảo")
 def list_sketches(order_id: int, svc: Sketches) -> list[SketchOut]:
     return [sketch_out(r, svc=svc) for r in svc.list(order_id)]
+
+
+@router.get("/orders/{order_id}/sketches/compare", response_model=SketchCompareOut, response_model_by_alias=True,
+            summary="U2 So sánh hai phiên bản phác thảo: chỉ số, nét thêm / bỏ từng trang (ảnh chồng màu), vùng đổi nhãn",
+            responses={404: {"description": "SKETCH_NOT_FOUND"}, 422: {"description": "SAME_VERSION"}})
+def compare_sketches(order_id: int, svc: Sketches, from_version: Annotated[int, Query(ge=1)],
+                     to_version: Annotated[int, Query(ge=1)]) -> SketchCompareOut:
+    return SketchCompareOut.model_validate(svc.compare(order_id, from_version, to_version))
 
 
 @router.get("/orders/{order_id}/sketches/{version}", response_model=SketchDetailOut,

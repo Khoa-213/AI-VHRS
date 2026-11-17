@@ -18,6 +18,10 @@ assumption to be calibrated on the real Vietnamese test set (U3).
 
 Editing a region (SketchService.edit_region) replaces only that run of strokes; every other stroke of the page is copied
 as is, so its bytes in the trajectory file do not change.
+
+U5: the customer can mark regions in the studio before ordering (`apply_edits`): REMOVE a region (a stain, a word they do
+not want) or, in ASSISTED mode only, write TEXT in its box (label INFERRED). The same edits are applied to the Staff's
+official sketch, with source CUSTOMER, so the Staff see exactly which parts the customer changed.
 """
 from __future__ import annotations
 
@@ -28,6 +32,8 @@ from app.services.stroke_ai import text_to_stroke
 from app.services.stroke_ai.trajectory import PAPER_MM, Page, Stroke
 
 LABELS = ("ORIGINAL", "RESTORED", "INFERRED")
+CUSTOMER_ACTIONS = ("REMOVE", "TEXT")
+MAX_CUSTOMER_EDITS = 100
 UNCERTAIN_BELOW = 0.6           # ASSUMPTION (not benchmarked): local IoU under this -> RESTORED / uncertain
 MAX_REGION_TEXT = 200
 MAX_REGION_STROKES = 400
@@ -44,7 +50,7 @@ class RegionDraft:
     label: str
     confidence: float | None
     text: str | None = None
-    source: str = "AUTO"                           # AUTO (recovery) | STAFF
+    source: str = "AUTO"                           # AUTO (recovery) | STAFF | CUSTOMER (studio edit, U5)
     note: str | None = None
     edited_by: int | None = None
     metrics: dict | None = None                    # AUTO only: {"fit": local IoU, "contrast": ink darkness vs page}
@@ -103,3 +109,59 @@ def text_in_box(text: str, box: tuple[float, float, float, float], paper_size: s
                for x, y in s.points]
         out.append(Stroke(pts, s.kind))
     return out
+
+
+def replace_region(pages: list[Page], regions: list[RegionDraft], target: RegionDraft, new: list[Stroke],
+                   replacement: RegionDraft | None) -> list[RegionDraft]:
+    """Put `new` in place of the target's strokes; the regions after it on the same page shift, every other stroke and
+    region is untouched. `replacement` (None = the region is dropped) must already carry its new stroke range."""
+    page = pages[target.page_no - 1]
+    page.strokes[target.stroke_start:target.stroke_end] = new
+    delta = len(new) - (target.stroke_end - target.stroke_start)
+    out = []
+    for r in regions:
+        if r is target:
+            if replacement is not None:
+                out.append(replacement)
+            continue
+        if r.page_no == target.page_no and r.stroke_start >= target.stroke_end:
+            r = RegionDraft(r.page_no, r.region_no, r.stroke_start + delta, r.stroke_end + delta, r.bbox, r.label,
+                            r.confidence, text=r.text, source=r.source, note=r.note, edited_by=r.edited_by, metrics=r.metrics)
+        out.append(r)
+    return out
+
+
+def apply_edits(pages: list[Page], regions: list[RegionDraft], edits: list[dict], *, assisted: bool,
+                strict: bool) -> tuple[list[RegionDraft], list[dict], list[dict]]:
+    """Apply the customer's studio edits [{page, region, action, text?, font?, note?}] in order.
+
+    Returns (regions, applied, skipped). With `strict` (studio preview) an edit that no longer fits raises; without it
+    (the Staff's official sketch, where the images may have been rotated since) it is skipped and reported instead."""
+    applied, skipped = [], []
+    for e in edits:
+        key = (int(e.get("page", 0)), int(e.get("region", 0)))
+        target = next((r for r in regions if (r.page_no, r.region_no) == key), None)
+        problem = None
+        if target is None:
+            problem = ("REGION_MISMATCH", f"Không còn vùng {key[1]} ở trang {key[0]} (ảnh hoặc khổ giấy đã đổi).")
+        elif e.get("action") == "TEXT" and not assisted:
+            problem = ("INFERRED_NOT_ALLOWED", "Chế độ phục dựng trung thành không cho viết chữ suy đoán vào vùng.")
+        elif e.get("action") not in CUSTOMER_ACTIONS:
+            problem = ("INVALID_REGION_EDIT", "Thao tác vùng phải là REMOVE hoặc TEXT.")
+        if problem is not None:
+            if strict:
+                raise AppError(409 if problem[0] != "INVALID_REGION_EDIT" else 422, problem[0], problem[1],
+                               {"page": key[0], "region": key[1]})
+            skipped.append({**e, "reason": problem[0]})
+            continue
+        if e["action"] == "REMOVE":
+            regions = replace_region(pages, regions, target, [], None)
+        else:
+            page = pages[target.page_no - 1]
+            new = text_in_box(e.get("text") or "", target.bbox, page.paper_size, e.get("font"))
+            rep = RegionDraft(target.page_no, target.region_no, target.stroke_start, target.stroke_start + len(new),
+                              bbox_of(new), "INFERRED", None, text=(e.get("text") or "").strip(), source="CUSTOMER",
+                              note=e.get("note"))
+            regions = replace_region(pages, regions, target, new, rep)
+        applied.append(e)
+    return regions, applied, skipped

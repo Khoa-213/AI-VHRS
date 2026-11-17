@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0021 (alembic head), generated 2026-11-15 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0022 (alembic head), generated 2026-11-16 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0021);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0021;
+--      baseline schema and every migration up to 0022);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0022;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -2151,7 +2151,7 @@ CREATE TABLE public.sketch_regions (
     CONSTRAINT sketch_regions_label_check CHECK (((label)::text = ANY ((ARRAY['ORIGINAL'::character varying, 'RESTORED'::character varying, 'INFERRED'::character varying])::text[]))),
     CONSTRAINT sketch_regions_page_no_check CHECK ((page_no >= 1)),
     CONSTRAINT sketch_regions_region_no_check CHECK ((region_no >= 1)),
-    CONSTRAINT sketch_regions_source_check CHECK (((source)::text = ANY ((ARRAY['AUTO'::character varying, 'STAFF'::character varying])::text[]))),
+    CONSTRAINT sketch_regions_source_check CHECK (((source)::text = ANY ((ARRAY['AUTO'::character varying, 'STAFF'::character varying, 'CUSTOMER'::character varying])::text[]))),
     CONSTRAINT sketch_regions_stroke_start_check CHECK ((stroke_start >= 0))
 );
 
@@ -4587,7 +4587,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0021');
+INSERT INTO alembic_version (version_num) VALUES ('0022');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

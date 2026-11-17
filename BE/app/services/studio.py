@@ -36,7 +36,7 @@ from app.services import audit
 from app.services.handwriting_image import analyze_image, sniff_mime
 from app.services.orders import DEFAULTS as ORDER_DEFAULTS, OrderService, PricingService
 from app.services.pricing import count_text_chars
-from app.services.stroke_ai import engine, physical_mark, render_image, trajectory as tj, watermark
+from app.services.stroke_ai import engine, physical_mark, regions as rg, render_image, trajectory as tj, watermark
 
 MODES = {"TEXT": OrderType.OT3_TEMPLATE, "RESTORE": OrderType.OT1_COPY_RESTORE}
 MAX_REVISIONS = 300                       # per draft: the history is kept whole; past this the customer starts a new draft
@@ -60,7 +60,7 @@ def empty_content(mode: str) -> dict[str, Any]:
     return {"order_type": MODES[mode].value, "quantity": 1, "text": "", "template_id": None, "font_size_mm": None,
             "alignment": None, "layout": None, "canvas": None, "paper_type_id": None, "pen_type_id": None,
             "ink_color_id": None, "workshop_suggest_materials": False, "physical_watermark": ot1,
-            "restoration_mode": None, "customer_note": None, "images": []}
+            "restoration_mode": None, "customer_note": None, "images": [], "region_edits": []}
 
 
 class StudioService:
@@ -236,6 +236,11 @@ class StudioService:
                 raise AppError(422, "RESTORATION_MODE_OT1_ONLY", "Chế độ phục dựng chỉ áp dụng cho bản phục dựng ảnh.")
             if ch["restoration_mode"] not in (None, "FAITHFUL", "ASSISTED"):
                 raise AppError(422, "INVALID_RESTORATION_MODE", "Chế độ phục dựng là FAITHFUL hoặc ASSISTED.")
+            texts = [e["region"] for e in c.get("region_edits") or [] if e.get("action") == "TEXT"]
+            if texts and ch["restoration_mode"] != "ASSISTED":
+                raise AppError(409, "INFERRED_NOT_ALLOWED",
+                               "Bản nháp có vùng viết chữ suy đoán; bỏ các vùng đó trước khi chuyển sang phục dựng trung thành.",
+                               {"regions": texts})
             c["restoration_mode"] = ch["restoration_mode"]
         if "customer_note" in ch:
             note = ch["customer_note"]
@@ -324,7 +329,7 @@ class StudioService:
         img = {"id": image_id, "path": path, "mime_type": mime, "size_bytes": len(data), "rotation_deg": 0, "crop_box": None}
         self._analyse(img, data)
         content["images"].append(img)
-        rev = self._add_revision(draft, content, author="CUSTOMER", tool=None, note="Thêm ảnh bản gốc")
+        rev = self._add_revision(draft, content, author="CUSTOMER", tool=None, note=self._reset_regions(content, "Thêm ảnh bản gốc"))
         return rev, img
 
     def patch_image(self, draft: StudioDraft, image_id: str, changes: dict[str, Any]) -> StudioRevision:
@@ -339,7 +344,7 @@ class StudioService:
         data = self._storage().read(img["path"])
         if data is not None:
             self._analyse(img, data)
-        return self._add_revision(draft, content, author="CUSTOMER", tool=None, note="Xoay / cắt ảnh")
+        return self._add_revision(draft, content, author="CUSTOMER", tool=None, note=self._reset_regions(content, "Xoay / cắt ảnh"))
 
     def remove_image(self, draft: StudioDraft, image_id: str) -> StudioRevision:
         """The object stays in storage while the draft is open (undo can bring the image back); it goes with the draft."""
@@ -348,7 +353,57 @@ class StudioService:
         if len(kept) == len(content["images"]):
             raise AppError(404, "IMAGE_NOT_FOUND", "Không tìm thấy ảnh.")
         content["images"] = kept
-        return self._add_revision(draft, content, author="CUSTOMER", tool=None, note="Bỏ ảnh")
+        return self._add_revision(draft, content, author="CUSTOMER", tool=None, note=self._reset_regions(content, "Bỏ ảnh"))
+
+    # ------------------------------------------------------------------ regions (RESTORE, U4 in the studio)
+    @staticmethod
+    def _reset_regions(content: dict[str, Any], note: str) -> str:
+        """Regions are numbered from the images: once the images change, the old numbers point at other words."""
+        if content.get("region_edits"):
+            content["region_edits"] = []
+            return f"{note}; bỏ chỉnh sửa vùng"
+        return note
+
+    def regions(self, draft: StudioDraft) -> dict[str, Any]:
+        """The word regions of the restored preview with the customer's edits applied, and the edits themselves."""
+        if draft.mode != "RESTORE":
+            raise AppError(422, "FIELD_NOT_FOR_MODE", "Chỉ bản nháp phục dựng ảnh mới có vùng.")
+        c = self.content(draft)
+        gen = self.generate(draft, c, 0)
+        return {"restoration_mode": c.get("restoration_mode") or "FAITHFUL", "edits": c.get("region_edits") or [],
+                "regions": [{"page_no": r.page_no, "region_no": r.region_no, "bbox_mm": list(r.bbox), "label": r.label,
+                             "confidence": r.confidence, "source": r.source, "text": r.text, "note": r.note}
+                            for r in gen.regions]}
+
+    def set_region_edit(self, draft: StudioDraft, page: int, region: int, action: str, *, text: str | None = None,
+                        font: str | None = None, note: str | None = None) -> StudioRevision:
+        if draft.mode != "RESTORE":
+            raise AppError(422, "FIELD_NOT_FOR_MODE", "Chỉ bản nháp phục dựng ảnh mới có vùng.")
+        if action not in rg.CUSTOMER_ACTIONS:
+            raise AppError(422, "INVALID_REGION_EDIT", "Thao tác vùng phải là REMOVE hoặc TEXT.")
+        if note is not None and len(note) > 500:
+            raise AppError(422, "NOTE_TOO_LONG", "Ghi chú tối đa 500 ký tự.")
+        c = copy.deepcopy(self.content(draft))
+        edits = [e for e in c.get("region_edits") or [] if (e["page"], e["region"]) != (page, region)]
+        if len(edits) >= rg.MAX_CUSTOMER_EDITS:
+            raise AppError(422, "TOO_MANY_REGION_EDITS", f"Tối đa {rg.MAX_CUSTOMER_EDITS} vùng được chỉnh trong một bản nháp.")
+        entry: dict[str, Any] = {"page": page, "region": region, "action": action, "note": (note or "").strip() or None}
+        if action == "TEXT":
+            entry["text"] = unicodedata.normalize("NFC", (text or "").strip())
+            entry["font"] = font
+        c["region_edits"] = [*edits, entry]
+        self.generate(draft, c, 0)                  # strict: the region must exist, TEXT needs ASSISTED and must fit
+        label = "Bỏ vùng" if action == "REMOVE" else "Viết chữ vào vùng"
+        return self._add_revision(draft, c, author="CUSTOMER", tool=None, note=f"{label} {region} trang {page}")
+
+    def remove_region_edit(self, draft: StudioDraft, page: int, region: int) -> StudioRevision:
+        c = copy.deepcopy(self.content(draft))
+        edits = c.get("region_edits") or []
+        kept = [e for e in edits if (e["page"], e["region"]) != (page, region)]
+        if len(kept) == len(edits):
+            raise AppError(404, "REGION_EDIT_NOT_FOUND", "Vùng này chưa được chỉnh.")
+        c["region_edits"] = kept
+        return self._add_revision(draft, c, author="CUSTOMER", tool=None, note=f"Bỏ chỉnh sửa vùng {region} trang {page}")
 
     # ------------------------------------------------------------------ checks, price, preview
     def _transient_inputs(self, draft: StudioDraft, c: dict[str, Any]) -> list[OrderInput]:
@@ -393,7 +448,14 @@ class StudioService:
             if data is None:
                 raise AppError(409, "FILE_MISSING", "Không đọc được ảnh gốc từ kho lưu trữ.")
             sources.append(engine.ImageSource(data, img.get("rotation_deg") or 0, img.get("crop_box")))
-        return engine.generate_ot1(sources, paper_size=size, v_max_mm_s=v_max, pen_category=category, chars=chars)
+        gen = engine.generate_ot1(sources, paper_size=size, v_max_mm_s=v_max, pen_category=category, chars=chars)
+        if c.get("region_edits"):
+            gen.regions, _, _ = rg.apply_edits(gen.pages, gen.regions, c["region_edits"],
+                                               assisted=c.get("restoration_mode") == "ASSISTED", strict=True)
+            if not any(p.strokes for p in gen.pages):
+                raise AppError(422, "NO_CONTENT", "Bản xem trước không còn nét nào.")
+            gen.metrics = tj.compute_metrics(gen.pages, v_max)
+        return gen
 
     def check(self, draft: StudioDraft, c: dict[str, Any] | None = None, *, render: bool = True) -> dict[str, Any]:
         """What would stop the draft from being sent, the price estimate and (when `render`) whether the content fits the paper.
