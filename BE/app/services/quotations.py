@@ -24,7 +24,7 @@ from app.repositories.accounts import AccountRepository
 from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository, SketchRepository
-from app.services import audit, material_profiles, notifications, quotation_pdf
+from app.services import audit, material_profiles, notifications, quotation_pdf, sketch_compare
 from app.services.eta import EtaService
 from app.services.orders import DEFAULT_COMPLEXITY, PricingService
 from app.services.pricing import MaterialPrices, compute_price
@@ -558,6 +558,39 @@ class CustomerQuoteService:
             previews = [self.storage.create_download_url(p["preview_path"], 600)
                         for p in json.loads(raw).get("pages", []) if p.get("preview_path")]
         return pdf, previews
+
+    def compare(self, order_id: int, against_version: int | None = None) -> dict[str, Any]:
+        """U2: the sketch of the current quote against one the customer was sent before (default: the previous one).
+        Only versions that reached the customer through a sent quote can be compared: Staff drafts stay private."""
+        data = self.view(order_id)
+        order, current, sketch = data["order"], data["quotation"], data["sketch"]
+        if self.storage is None:
+            raise AppError(503, "STORAGE_NOT_CONFIGURED", "Chưa cấu hình dịch vụ lưu trữ file.")
+        sent = list(self.session.scalars(select(Quotation).where(Quotation.order_id == order.id,
+                                                                 Quotation.sent_at.is_not(None),
+                                                                 Quotation.version < current.version)
+                                         .order_by(Quotation.version.desc())))
+        seen = [q for q in sent if q.sketch_id != current.sketch_id]
+        if against_version is not None:
+            seen = [q for q in seen if (s := self.sketches.get_by_id(q.sketch_id)) is not None and s.version == against_version]
+            if not seen:
+                raise AppError(404, "SKETCH_NOT_FOUND", "Không có phiên bản phác thảo này trong các báo giá đã gửi bạn.")
+        if not seen:
+            raise AppError(404, "NO_PREVIOUS_VERSION", "Chưa có phiên bản phác thảo trước để so sánh.")
+        previous = seen[0]
+        old = self.sketches.get_by_id(previous.sketch_id)
+
+        def regions(row) -> list[SketchRegion]:
+            return list(self.session.scalars(select(SketchRegion).where(SketchRegion.sketch_id == row.id)))
+
+        out = sketch_compare.compare(self.storage, old, sketch, regions(old), regions(sketch), order_id=order.id,
+                                     order_code=order.code)
+        out["quote"] = {"from_quotation_version": previous.version, "to_quotation_version": current.version,
+                        "from_total": int(previous.final_total), "to_total": int(current.final_total),
+                        "revision_reason": current.revision_reason}
+        out["versions_available"] = sorted({s.version for q in sent if q.sketch_id != current.sketch_id
+                                            if (s := self.sketches.get_by_id(q.sketch_id)) is not None})
+        return out
 
     def request_changes(self, order_id: int, note: str) -> Order:
         if not note.strip():

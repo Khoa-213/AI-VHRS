@@ -2,17 +2,24 @@
 
 Every route is CUSTOMER-only and scoped to the caller's own drafts (another customer's draft answers 404).
 """
+import json
+import logging
+import queue
+import threading
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.schemas import ErrorOut
 from app.api.v1.orders import optional_storage
+from app.core.errors import AppError
 from app.core.ratelimit import rate_limit
+from app.db.session import _factory
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
 from app.models.studio import StudioDraft
@@ -20,6 +27,8 @@ from app.services.ai.assistant import AssistantService
 from app.services.studio import StudioService
 
 router = APIRouter(prefix="/studio", tags=["Studio (U5)"])
+log = logging.getLogger(__name__)
+STREAM_PING_S = 10
 CustomerDep = Annotated[Account, Depends(require_roles(RoleCode.CUSTOMER.value))]
 
 
@@ -193,6 +202,30 @@ class AssistantStatusOut(BaseModel):
     sends_photos: bool
 
 
+class StudioRegionEditIn(BaseModel):
+    action: Literal["REMOVE", "TEXT"] = Field(description="REMOVE = bỏ vùng (vết bẩn, chữ không muốn giữ); TEXT = viết chữ vào ô (chỉ chế độ ASSISTED, nhãn INFERRED)")
+    text: str | None = Field(default=None, max_length=200)
+    font: str | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
+class StudioRegionOut(BaseModel):
+    page_no: int
+    region_no: int
+    bbox_mm: list[float]
+    label: str
+    confidence: float | None
+    source: str
+    text: str | None
+    note: str | None
+
+
+class StudioRegionsOut(BaseModel):
+    restoration_mode: str
+    edits: list[dict[str, Any]]
+    regions: list[StudioRegionOut]
+
+
 _ERR = {404: {"model": ErrorOut, "description": "DRAFT_NOT_FOUND"}, 409: {"model": ErrorOut, "description": "DRAFT_CLOSED"}}
 
 
@@ -308,6 +341,34 @@ def image_delete(draft_id: int, image_id: str, svc: Svc) -> DraftOut:
     return _draft_out(svc, draft)
 
 
+@router.get("/{draft_id}/regions", response_model=StudioRegionsOut, responses=_ERR,
+            dependencies=[Depends(rate_limit("studio_preview", 30, 60))],
+            summary="U5 Các vùng (từng chữ) của bản xem trước phục dựng, đã áp chỉnh sửa của khách")
+def regions(draft_id: int, svc: Svc) -> StudioRegionsOut:
+    return StudioRegionsOut(**svc.regions(svc.get(draft_id)))
+
+
+@router.put("/{draft_id}/regions/{page}/{region}", response_model=DraftOut,
+            responses={**_ERR, 409: {"model": ErrorOut, "description": "REGION_MISMATCH / INFERRED_NOT_ALLOWED / DRAFT_CLOSED"},
+                       422: {"model": ErrorOut, "description": "INVALID_REGION_TEXT / TOO_MANY_REGION_EDITS"}},
+            summary="U5 Bỏ một vùng hoặc viết chữ vào vùng (một revision, hoàn tác được; xưởng nhận đúng chỉnh sửa này)")
+def set_region(draft_id: int, page: Annotated[int, Path(ge=1, le=20)], region: Annotated[int, Path(ge=1)],
+               body: StudioRegionEditIn, svc: Svc) -> DraftOut:
+    draft = svc.get_open(draft_id)
+    svc.set_region_edit(draft, page, region, body.action, text=body.text, font=body.font, note=body.note)
+    return _draft_out(svc, draft)
+
+
+@router.delete("/{draft_id}/regions/{page}/{region}", response_model=DraftOut,
+               responses={**_ERR, 404: {"model": ErrorOut, "description": "DRAFT_NOT_FOUND / REGION_EDIT_NOT_FOUND"}},
+               summary="U5 Bỏ chỉnh sửa của một vùng (vùng trở lại như bản phục dựng)")
+def clear_region(draft_id: int, page: Annotated[int, Path(ge=1, le=20)], region: Annotated[int, Path(ge=1)],
+                 svc: Svc) -> DraftOut:
+    draft = svc.get_open(draft_id)
+    svc.remove_region_edit(draft, page, region)
+    return _draft_out(svc, draft)
+
+
 @router.post("/{draft_id}/submit", response_model=SubmitOut, responses={**_ERR, 422: {"model": ErrorOut, "description": "ORDER_INCOMPLETE"}},
              summary="U5 Gửi xưởng: tạo đơn SUBMITTED từ bản nháp (đi qua đúng luật của đơn hàng)")
 def submit(draft_id: int, body: StudioSubmitIn, svc: Svc) -> SubmitOut:
@@ -354,3 +415,70 @@ def send_message(draft_id: int, body: MessageIn, svc: Svc, assistant: Assistant)
     out = assistant.send(draft, body.text, consent=body.ai_consent)
     return TurnOut(user=_message_out(out["user"], []), reply=_message_out(out["reply"], out["tool_calls"]),
                    draft=_draft_out(svc, draft))
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+
+@router.post("/{draft_id}/messages/stream",
+             responses={200: {"content": {"text/event-stream": {}}}, **_ERR,
+                        422: {"model": ErrorOut, "description": "AI_CONSENT_REQUIRED"},
+                        429: {"model": ErrorOut, "description": "AI_DAILY_LIMIT / RATE_LIMITED"},
+                        503: {"model": ErrorOut, "description": "AI_UNAVAILABLE / AI_DISABLED / AI_BUDGET_EXHAUSTED"}},
+             summary="U5 Nhắn trợ lý AI, nhận tiến trình tức thời (Server-Sent Events)",
+             description=("Như `POST /studio/{id}/messages` nhưng trả `text/event-stream`: `user_saved`, `provider`, `tool` (mỗi thao "
+                          "trợ lý vừa làm, kèm `revision_id`), `failover`, rồi `reply` (đúng nội dung `TurnOut`) hoặc `error` "
+                          "({code, message}); cuối cùng `done`. Lỗi trước khi gọi mô hình (đồng ý, trần lượt, chưa cấu hình) "
+                          "vẫn trả HTTP lỗi thường. Câu trả lời đến một lần ở `reply`, không theo từng chữ."))
+def send_message_stream(draft_id: int, body: MessageIn, session: SessionDep, svc: Svc, assistant: Assistant,
+                        _limit: Annotated[None, Depends(rate_limit("studio_ai", 10, 60))]) -> StreamingResponse:
+    # the shared "studio_ai" bucket (with POST /messages) is counted after the role check, so a refused role never uses it
+    draft = svc.get(draft_id)
+    if draft.status != "OPEN":
+        svc.get_open(draft_id)                            # raises DRAFT_CLOSED with the usual message
+    text = assistant.precheck(draft, body.text, consent=body.ai_consent)
+    customer_id, storage, ip, providers = svc.customer.id, svc.storage, svc.ip, assistant._providers
+    session.commit()                                     # nothing written here: frees the row before the worker locks it
+    events: queue.Queue = queue.Queue()
+
+    def work() -> None:
+        s = _factory()()
+        try:
+            customer = s.get(Account, customer_id)
+            studio = StudioService(s, customer, storage, ip)
+            a = AssistantService(s, customer, studio, providers)
+            d = studio.get_open(draft_id)
+            out = a.send(d, text, consent=body.ai_consent, on_event=lambda name, data: events.put((name, data)))
+            turn = TurnOut(user=_message_out(out["user"], []), reply=_message_out(out["reply"], out["tool_calls"]),
+                           draft=_draft_out(studio, d))
+            s.commit()
+            events.put(("reply", turn.model_dump(mode="json")))
+        except AppError as exc:
+            s.rollback()
+            events.put(("error", {"code": exc.code, "message": exc.message}))
+        except Exception:
+            s.rollback()
+            log.exception("studio assistant stream failed (draft %s)", draft_id)
+            events.put(("error", {"code": "INTERNAL_ERROR", "message": "Có lỗi khi xử lý tin nhắn. Vui lòng thử lại."}))
+        finally:
+            s.close()
+            events.put(None)
+
+    threading.Thread(target=work, name=f"studio-ai-{draft_id}", daemon=True).start()
+
+    def stream():
+        yield "retry: 5000\n\n"
+        while True:
+            try:
+                item = events.get(timeout=STREAM_PING_S)
+            except queue.Empty:
+                yield ": ping\n\n"
+                continue
+            if item is None:
+                yield _sse("done", {})
+                return
+            yield _sse(*item)
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -16,10 +16,11 @@ from app.integrations.storage import ObjectStorage
 from app.models.account import Account
 from app.models.order import ComplexityLevel, Order, OrderInputKind, OrderStatus, OrderType
 from app.models.sketch import Sketch, SketchRegion
+from app.models.studio import StudioDraft, StudioRevision
 from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
-from app.services import audit, material_profiles
+from app.services import audit, material_profiles, sketch_compare
 from app.services.certificates import CertificateService
 from app.services.stroke_ai import engine, physical_mark, regions as rg, render_image, trajectory as tj, watermark
 from app.services.workshop_access import WorkshopAccess
@@ -140,6 +141,7 @@ class SketchService:
                 sources.append(engine.ImageSource(data, r.rotation_deg or 0, r.crop_box))
             gen = engine.generate_ot1(sources, paper_size=size, v_max_mm_s=v_max, pen_category=category,
                                       chars=order.char_count or 0)
+            self._customer_region_edits(order, gen, v_max)
         else:
             text_rows = [r for r in inputs if r.kind == OrderInputKind.TEXT_CONTENT]
             canvas_rows = [r for r in inputs if r.kind == OrderInputKind.CANVAS]
@@ -157,6 +159,26 @@ class SketchService:
         row = self._persist(order, gen.pages, gen.engine, gen.metrics, gen.similarity, gen.complexity, approach_note,
                             gen.regions)
         return row, gen.warnings
+
+    def _customer_region_edits(self, order: Order, gen: engine.Generated, v_max: float) -> None:
+        """U5: the regions the customer removed / wrote in the studio are applied to the official sketch too (source
+        CUSTOMER), so the Staff start from what the customer approved in the preview. An edit that no longer fits (the
+        images were rotated or cropped since) is skipped and reported, never guessed."""
+        draft = self.session.scalar(select(StudioDraft).where(StudioDraft.order_id == order.id))
+        rev = self.session.get(StudioRevision, draft.current_revision_id) if draft and draft.current_revision_id else None
+        edits = (rev.content.get("region_edits") or []) if rev else []
+        if not edits:
+            return
+        gen.regions, applied, skipped = rg.apply_edits(gen.pages, gen.regions, edits, assisted=_assisted(order), strict=False)
+        if not any(p.strokes for p in gen.pages):
+            raise AppError(422, "NO_CONTENT", "Phác thảo không còn nét nào sau chỉnh sửa vùng của khách.")
+        gen.metrics = tj.compute_metrics(gen.pages, v_max)
+        gen.engine["customer_region_edits"] = {"draft_id": draft.id, "revision_id": rev.id, "applied": applied,
+                                               "skipped": skipped}
+        if applied:
+            gen.warnings.append("CUSTOMER_REGION_EDITS_APPLIED")
+        if skipped:
+            gen.warnings.append("CUSTOMER_REGION_EDITS_SKIPPED")
 
     # ---- manual / edited trajectory ----
     def create_manual(self, order_id: int, trajectory: dict[str, Any], approach_note: str | None,
@@ -208,6 +230,13 @@ class SketchService:
         data = json.loads(raw)
         return row, data, [self._storage().create_download_url(p["preview_path"], 600)
                            for p in data.get("pages", []) if p.get("preview_path")]
+
+    def compare(self, order_id: int, from_version: int, to_version: int) -> dict[str, Any]:
+        """U2: what changed between two versions (metrics, strokes per page with an overlay image, regions)."""
+        order = self.access.order(order_id)
+        a, b = self._get(order, from_version), self._get(order, to_version)
+        return sketch_compare.compare(self._storage(), a, b, self.regions_of(a), self.regions_of(b), order_id=order.id,
+                                      order_code=order.code)
 
     # ---- U4: restoration regions ----
     def regions_of(self, row: Sketch) -> list[SketchRegion]:

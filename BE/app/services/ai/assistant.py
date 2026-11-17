@@ -19,7 +19,7 @@ import hashlib
 import json
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -146,21 +146,30 @@ class AssistantService:
         return f"{SYSTEM_PROMPT}\n<ban_nhap>\n{state}\n</ban_nhap>"
 
     # ------------------------------------------------------------------ one turn
-    def send(self, draft: StudioDraft, text: str, *, consent: bool) -> dict[str, Any]:
+    def precheck(self, draft: StudioDraft, text: str, *, consent: bool) -> str:
+        """Every refusal that comes before a model is called (the streaming route answers these as plain HTTP errors)."""
         text = (text or "").strip()
         if not text:
             raise AppError(422, "EMPTY_MESSAGE", "Tin nhắn không được để trống.")
         if len(text) > MAX_MESSAGE:
             raise AppError(422, "MESSAGE_TOO_LONG", f"Tin nhắn tối đa {MAX_MESSAGE} ký tự.")
-        providers = self.providers()
         self._check_caps()
-        if not providers:
+        if not self.providers():
             raise AppError(503, "AI_UNAVAILABLE", "Chưa cấu hình nhà cung cấp AI. Bạn vẫn dùng studio bằng các ô nhập.")
+        if not consent and self.session_of(draft) is None:
+            raise AppError(422, "AI_CONSENT_REQUIRED",
+                           "Cần đồng ý gửi tin nhắn và nội dung bản nháp cho nhà cung cấp AI bên ngoài trước khi dùng trợ lý.")
+        return text
+
+    def send(self, draft: StudioDraft, text: str, *, consent: bool,
+             on_event: Callable[[str, dict[str, Any]], None] | None = None) -> dict[str, Any]:
+        """One customer message and the assistant's answer. `on_event(name, data)` is told about each step as it happens
+        (user_saved, provider, tool, failover) so a streaming route can show progress; the return value is the same."""
+        emit = on_event or (lambda name, data: None)
+        text = self.precheck(draft, text, consent=consent)
+        providers = self.providers()
         sess = self.session_of(draft)
         if sess is None:
-            if not consent:
-                raise AppError(422, "AI_CONSENT_REQUIRED",
-                               "Cần đồng ý gửi tin nhắn và nội dung bản nháp cho nhà cung cấp AI bên ngoài trước khi dùng trợ lý.")
             sess = AiSession(draft_id=draft.id, customer_id=self.customer.id, consented_at=datetime.now(timezone.utc))
             self.session.add(sess)
             self.session.flush()
@@ -168,6 +177,7 @@ class AssistantService:
         user_msg = AiMessage(session_id=sess.id, role="USER", content=text, status="OK", model_calls=0)
         self.session.add(user_msg)
         self.session.flush()
+        emit("user_saved", {"id": user_msg.id})
 
         tools = StudioTools(self.studio, draft)
         # the provider that answered last goes first (Q1: a session keeps its provider until it fails)
@@ -177,13 +187,15 @@ class AssistantService:
         max_tools = int(self.setting("ai_max_tool_calls"))
         result = None
         for provider in ordered:
+            emit("provider", {"provider": provider.name, "model": provider.model})
             try:
-                result = self._turn(provider, tools, history, text, max_tools)
+                result = self._turn(provider, tools, history, text, max_tools, emit)
                 attempts.append({"provider": provider.name, "model": provider.model, "ok": True})
                 break
             except llm.ProviderError as exc:
                 attempts.append({"provider": provider.name, "model": provider.model, "ok": False, "reason": exc.reason,
                                  "status": exc.status})
+                emit("failover", {"provider": provider.name, "reason": exc.reason})
         latency = int((time.monotonic() - started) * 1000)
         if result is None:
             reply = AiMessage(session_id=sess.id, role="ASSISTANT", content=FAILED_TEXT, status="FAILED", attempts=attempts,
@@ -211,7 +223,7 @@ class AssistantService:
         return {"user": user_msg, "reply": reply, "tool_calls": logged}
 
     def _turn(self, provider: llm.Provider, tools: StudioTools, history: list[dict[str, Any]], text: str,
-              max_tools: int) -> dict[str, Any]:
+              max_tools: int, emit: Callable[[str, dict[str, Any]], None] = lambda name, data: None) -> dict[str, Any]:
         system = self._system(tools)
         transcript = [*history, {"role": "user", "text": text}]
         digest = hashlib.sha256(json.dumps({"system": system, "transcript": transcript}, ensure_ascii=False,
@@ -241,6 +253,8 @@ class AssistantService:
                     res, rev, ok = tools.run(call.name, call.args)
                 log.append({"name": call.name, "args": _jsonable(call.args), "result": _jsonable(res), "ok": ok,
                             "revision_id": rev, "ms": int((time.monotonic() - t0) * 1000)})
+                emit("tool", {"name": call.name, "ok": ok, "revision_id": rev,
+                              "error": None if ok else (res or {}).get("error")})
                 results.append({"id": call.id, "name": call.name, "result": _jsonable(res)})
             transcript.append({"role": "tool", "results": results})
         return {"provider": provider, "text": final[:4000], "calls": calls, "input_tokens": tin, "output_tokens": tout,

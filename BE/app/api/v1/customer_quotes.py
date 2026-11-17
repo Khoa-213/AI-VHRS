@@ -5,14 +5,14 @@ quote moves the order to AWAITING_DEPOSIT; the deposit itself is in payments.py.
 """
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.order_schemas import OrderOut
 from app.api.schemas import ErrorOut
 from app.api.ops_schemas import ApproveQuotationIn
 from app.api.staff_schemas import (ChangeRequestIn, PrivacyDecisionIn, PrivacyPolicyOut, QuotationCustomerOut,
-                                   QuoteRevisionOut, SketchForCustomer)
+                                   QuoteRevisionOut, SketchCompareOut, SketchForCustomer)
 from app.api.v1.orders import optional_storage
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
@@ -65,6 +65,15 @@ def view_quotation(order_id: int, svc: Svc) -> QuotationCustomerOut:
                                  **svc.tier_view(sketch),
                                  watermark_text=(sketch.watermark or {}).get("text"))
         if sketch else None)
+
+
+@router.get("/orders/{order_id}/quotation/compare", response_model=SketchCompareOut, response_model_by_alias=True,
+            summary="U2 So sánh phác thảo của báo giá hiện tại với phiên bản đã gửi trước đó",
+            responses={403: {"model": ErrorOut, "description": "PRIVACY_REQUIRED"},
+                       404: {"model": ErrorOut, "description": "NO_PREVIOUS_VERSION / QUOTATION_NOT_FOUND / SKETCH_NOT_FOUND"}})
+def compare_quotation_sketch(order_id: int, svc: Svc,
+                             against_version: Annotated[int | None, Query(ge=1)] = None) -> SketchCompareOut:
+    return SketchCompareOut.model_validate(svc.compare(order_id, against_version))
 
 
 @router.post("/orders/{order_id}/quotation/request-changes", response_model=OrderOut,
