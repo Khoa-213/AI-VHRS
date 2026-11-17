@@ -101,7 +101,8 @@ def _ot3(client, cust, cat, text_="Kính gửi quý khách", qty=1, paper="paper
     oid = client.post(f"{API}/orders", headers=cust, json={"order_type": "OT3_TEMPLATE", "quantity": qty}).json()["id"]
     body = {"workshop_suggest_materials": True} if suggest else {
         "paper_type_id": cat[paper], "pen_type_id": cat[pen], "ink_color_id": cat[pen + "_ink"]}
-    assert client.patch(f"{API}/orders/{oid}", headers=cust, json=body).status_code == 200
+    r = client.patch(f"{API}/orders/{oid}", headers=cust, json=body)
+    assert r.status_code == 200, r.text
     r = client.put(f"{API}/orders/{oid}/inputs/text", headers=cust,
                    json={"text_content": text_, "template_id": cat["tpl"], "font_size_mm": 8, "alignment": "LEFT"})
     assert r.status_code == 200, r.text
