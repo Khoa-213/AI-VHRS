@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import SiteFooter from '../../components/layout/SiteFooter'
+import CustomerFrame from '../../components/layout/CustomerFrame'
 import OrderPreview from '../../components/ui/OrderPreview'
 import { useAsync } from '../../hooks/useAsync'
 import { useDebounced } from '../../hooks/useDebounced'
@@ -42,11 +42,7 @@ function initialMode(): InputMode | null {
 /** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
 function Frame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
   return (
-    <div className="lp-root co-root">
-      <Header />
-      <main className={`co-frame${narrow ? ' co-frame--narrow' : ''}`} data-screen-label="Create Order">{children}</main>
-      <SiteFooter framed />
-    </div>
+    <CustomerFrame label="Create Order" narrow={narrow}>{children}</CustomerFrame>
   )
 }
 

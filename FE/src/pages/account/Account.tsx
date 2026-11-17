@@ -1,8 +1,7 @@
 import { openAuth } from '../../store/authDialog'
 import { ArrowLeft, Check, ClockCounterClockwise, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
 import { useRef, useState } from 'react'
-import SiteFooter from '../../components/layout/SiteFooter'
-import Header from '../landing/components/Header'
+import CustomerFrame from '../../components/layout/CustomerFrame'
 import { ORDER_HREF } from '../../constants'
 import { STATUS_COLOR, orderLink } from '../../constants/orderStatus'
 import { useAsync } from '../../hooks/useAsync'
@@ -28,11 +27,7 @@ const CUSTOMER_ONLY: Section[] = ['overview', 'orders', 'drafts']
 /** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
 function Frame({ children, narrow = false }: { children: React.ReactNode; narrow?: boolean }) {
   return (
-    <div className="lp-root co-root">
-      <Header />
-      <main className={`co-frame ac-frame${narrow ? ' co-frame--narrow' : ''}`} data-screen-label="Account">{children}</main>
-      <SiteFooter framed />
-    </div>
+    <CustomerFrame label="Account" className="ac-frame" narrow={narrow}>{children}</CustomerFrame>
   )
 }
 

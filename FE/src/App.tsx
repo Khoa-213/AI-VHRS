@@ -32,6 +32,8 @@ import OrderReview from './pages/order/OrderReview'
 import PrivacyPreview from './pages/order/PrivacyPreview'
 import PaymentResult from './pages/order/PaymentResult'
 import ResetPassword from './pages/login/ResetPassword'
+import { StudioEditor, StudioHome } from './pages/studio/Studio'
+import Verify from './pages/verify/Verify'
 import { matchOrderRoute, navigate, useInterceptLinks, usePath } from './router/router'
 import { useEffect } from 'react'
 import { useUser } from './store/store'
@@ -70,6 +72,13 @@ function Routes() {
   const draft = /^\/create-order\/draft\/(\d+)\/?$/.exec(path)
   if (draft) return <CreateOrder key="create" orderId={Number(draft[1])} />
   if (path === '/create-order' || path === '/create-order/draw') return <CreateOrder key="create" />
+  // Studio drafts (U5) and the public certificate check behind the QR code (U8).
+  if (path === '/studio') return <StudioHome />
+  const studio = /^\/studio\/(\d+)\/?$/.exec(path)
+  if (studio) return <StudioEditor key={studio[1]} id={Number(studio[1])} />
+  if (path === '/verify') return <Verify />
+  const verify = /^\/verify\/([^/]+)\/?$/.exec(path)
+  if (verify) return <Verify code={decodeURIComponent(verify[1])} />
   const account = /^\/account(?:\/([^/]+))?\/?$/.exec(path)
   if (account) {
     const known: Section[] = ['orders', 'drafts', 'preferences', 'profile']

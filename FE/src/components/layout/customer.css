@@ -1,0 +1,61 @@
+/* Order pages use the same surfaces, typography and controls as the create flow.
+   Scope every rule so workshop controls and physical paper previews keep their colours. */
+.co-root.customer-root .vh-wrap{width:100%;min-width:0}
+.co-root.customer-root .vh-h1{font-size:clamp(34px,4.6vw,64px);font-weight:600;line-height:1.08;letter-spacing:-.045em;text-wrap:balance}
+.co-root.customer-root .vh-eyebrow{font-family:inherit;font-size:12px;font-weight:500;letter-spacing:.02em;text-transform:none;color:var(--t5)}
+.co-root.customer-root .vh-h2{font-weight:600;letter-spacing:-.03em}
+.co-root.customer-root .vh-lede{line-height:1.6}
+.co-root.customer-root .ov{gap:28px}
+.co-root.customer-root .ov .vh-cols{gap:clamp(24px,3vw,40px)}
+.co-root.customer-root .vh-panel{border:1px solid var(--line-strong);border-radius:20px;background:var(--surface);padding:clamp(20px,3vw,32px)}
+.co-root.customer-root .vh-aside{top:96px;border:1px solid var(--line-strong);border-radius:20px;background:var(--tray);padding:22px;backdrop-filter:none;-webkit-backdrop-filter:none}
+.co-root.customer-root .ov .vh-aside{padding:0;overflow:hidden}
+.co-root.customer-root .vh-btn{min-height:48px;height:auto;padding:12px 24px;font-size:14px;font-weight:600;white-space:normal;line-height:1.4}
+.co-root.customer-root .vh-btn--sm{min-height:40px;padding:8px 18px;font-size:13px}
+.co-root.customer-root .vh-btn--primary{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.co-root.customer-root .vh-btn--primary:hover:not(:disabled){background:var(--btn-inv-hover);color:var(--btn-inv-fg)}
+.co-root.customer-root .vh-btn--ghost{background:transparent;border:1px solid var(--line-strong)}
+.co-root.customer-root .vh-btn--ghost:hover:not(:disabled){background:var(--tray-hover)}
+.co-root.customer-root .vh-btn:focus-visible{outline:2px solid var(--t1);outline-offset:3px}
+.co-root.customer-root .vh-link{color:var(--t1);text-decoration:underline;text-underline-offset:3px;font-weight:600}
+.co-root.customer-root .vh-input,.co-root.customer-root .vh-textarea{border:1px solid var(--line-strong);border-radius:12px;background:var(--tray);box-shadow:none}
+.co-root.customer-root .vh-select{border-color:var(--line-strong);border-radius:12px;background-color:var(--tray)}
+.co-root.customer-root .vh-input:focus,.co-root.customer-root .vh-textarea:focus,.co-root.customer-root .vh-select:focus{outline:2px solid var(--t1);outline-offset:2px;border-color:var(--t1);box-shadow:none}
+.co-root.customer-root .vh-choice-grid{gap:12px}
+.co-root.customer-root .vh-choice,.co-root.customer-root .ov-opt,.co-root.customer-root .or-variant{border:1px solid var(--line-strong);border-radius:16px;background:transparent;box-shadow:none;transition:background .2s,border-color .2s}
+.co-root.customer-root .vh-choice:hover:not(:disabled),.co-root.customer-root .ov-opt:hover:not(:disabled),.co-root.customer-root .or-variant:hover:not(:disabled){background:var(--tray)}
+.co-root.customer-root .vh-choice.on,.co-root.customer-root .ov-opt.on,.co-root.customer-root .or-variant.on{border-color:var(--t1);background:var(--tray);box-shadow:inset 0 0 0 1px var(--t1)}
+.co-root.customer-root .vh-choice.on::after,.co-root.customer-root .or-variant.on::after{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.co-root.customer-root .vh-choice:focus-visible,.co-root.customer-root .ov-opt:focus-visible,.co-root.customer-root .or-variant:focus-visible{outline:2px solid var(--t1);outline-offset:3px}
+.co-root.customer-root .ov-opts,.co-root.customer-root .or-variants,.co-root.customer-root .vh-card-grid{gap:12px}
+.co-root.customer-root .ov-opt-name,.co-root.customer-root .vh-choice-name,.co-root.customer-root .ov-rail-title,.co-root.customer-root .pay-order-title{font-weight:600}
+.co-root.customer-root .ov .vh-timeline{gap:8px}
+.co-root.customer-root .ov .vh-timeline i{border-radius:999px}
+.co-root.customer-root .ov .vh-timeline .now i{background:var(--t1)}
+.co-root.customer-root .ov .vh-timeline span{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+.co-root.customer-root .ov .vh-callout,.co-root.customer-root .ov .vh-qr,.co-root.customer-root .ov .vh-callout-plain{border-radius:16px}
+.co-root.customer-root .ov-policy{border:1px solid var(--line-strong);border-radius:16px;background:var(--tray)}
+.co-root.customer-root .or-stage{border:1px solid var(--line-strong);border-radius:20px;background:var(--tray)}
+.co-root.customer-root .pay-preview{border-radius:16px;background:var(--tray)}
+.co-root.customer-root .ov .pay-preview{border-radius:20px 20px 0 0}
+.co-root.customer-root .pay-due{flex-wrap:wrap}
+.co-root.customer-root .pay-due span:last-child{font-size:clamp(23px,2.5vw,30px);overflow-wrap:anywhere}
+.co-root.customer-root .or-actions{flex-wrap:wrap}
+.co-root.customer-root .or-actions .vh-btn{height:auto;flex:1 1 160px}
+.co-root.customer-root .rs-qc{gap:10px}
+.co-root.customer-root .rs-qc img{border-radius:12px}
+.co-root.customer-root .vh-row{gap:12px;flex-wrap:wrap;overflow-wrap:anywhere}
+@media(max-width:1100px){
+  .co-root.customer-root .vh-aside{position:static}
+  .co-root.customer-root .ac-nav{top:160px}
+}
+@media(max-width:640px){
+  .co-root.customer-root .vh-panel{padding:20px 16px}
+  .co-root.customer-root .ov-rail-body{padding:20px 16px}
+  .co-root.customer-root .ov .vh-timeline div:not(.now) span{display:block}
+  .co-root.customer-root .ov .vh-timeline span{font-size:10px;line-height:1.4}
+  .co-root.customer-root .vh-aside{flex-basis:100%;width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  .co-root.customer-root .vh-btn,.co-root.customer-root .vh-choice,.co-root.customer-root .ov-opt,.co-root.customer-root .or-variant{transition:none}
+}
