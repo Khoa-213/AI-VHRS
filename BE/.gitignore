@@ -138,3 +138,8 @@ __pycache__/
 
 # U3 benchmark images (dataset licence unclear: never commit)
 benchmarks/data/
+
+# Temporary data of interrupted Supabase test runs (lists, logs, resume script); never commit
+.test_progress/
+# Report exports made from REAL Supabase data (business figures); synthetic samples bao-cao_* stay tracked
+docs/report_samples/du-lieu-that_*

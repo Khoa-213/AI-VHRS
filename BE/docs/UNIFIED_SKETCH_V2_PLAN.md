@@ -232,7 +232,7 @@ Staff nhận v1 đúng nét đó (hash bằng nhau) → báo giá → duyệt �
 3. Ghi kết quả vào `PROJECT_STATUS.md` mục 9 (dòng V2 Phase B) và mục 6; commit khi chủ dự án yêu cầu (không gồm `docs/report_samples/`).
 4. Sau đó Phase C (trợ lý AI trên đơn) theo thứ tự đề xuất C → H → D → E → F → I.
 
-## 12. Phase C: trợ lý AI trên đơn (2026-11-18, migration 0024, chưa commit)
+## 12. Phase C: trợ lý AI trên đơn (2026-11-18, migration 0024, commit `8d466c1`)
 
 **Kết quả:** toàn suite cục bộ và Supabase THẬT đều 907 passed, 3 skipped, 0 failed (Supabase 5 giờ 18 phút, xong 2026-11-19); dữ liệu thật không đổi.
 
