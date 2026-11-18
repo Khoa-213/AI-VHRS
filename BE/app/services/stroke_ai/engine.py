@@ -5,6 +5,8 @@ OT-3 (template)        -> text_to_stroke.compose_text (+ the customer's canvas d
 OT-2 (learned style)   -> not supported: it needs the R&D style-learning model (LI-10); Staff upload a
                           hand-made trajectory instead.
 """
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -20,6 +22,18 @@ from app.services.stroke_ai.trajectory import Metrics, Page, compute_metrics
 ENGINE_VERSION = "1"
 MAX_AI_PAGES = 5                       # OT-1 images per generation run (keeps the request within NFR-01 limits)
 EXPENSIVE_PENS = {"FOUNTAIN", "BRUSH"}  # SRS 3.2: fountain / brush pens are "complex" (FR-29)
+
+
+def content_seed(text: str | None, canvas: dict | None, *, font_uri: str | None, font_size_mm: float, alignment: str,
+                 paper_size: str, layout: dict[str, Any] | None) -> int:
+    """The OT-3 variation seed derived from what is written, never from a row id. The studio preview and the Staff's
+    official sketch of the same content therefore draw the same strokes (before, the studio used draft.id and the
+    workshop order.id, so the two differed for no reason). Any change of content gives another seed, as it should."""
+    key = {"text": unicodedata.normalize("NFC", text or ""), "canvas": canvas or None, "font_uri": font_uri,
+           "font_size_mm": round(float(font_size_mm), 3), "alignment": alignment, "paper_size": paper_size,
+           "layout": layout or None}
+    raw = json.dumps(key, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+    return int(hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8], 16) & 0x7FFFFFFF
 
 
 @dataclass
@@ -106,12 +120,17 @@ def _order_ot1(pages: list[Page], regions: list) -> dict[str, Any]:
 
 
 def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None, font_size_mm: float | None,
-                 alignment: str | None, paper_size: str, seed: int, v_max_mm_s: float, pen_category: str | None,
+                 alignment: str | None, paper_size: str, seed: int | None, v_max_mm_s: float, pen_category: str | None,
                  chars: int, font_loader: Callable[[str], bytes | None] | None = None,
                  layout: dict[str, Any] | None = None) -> Generated:
     """`layout` (domain/text_layout.py) carries sizes and styles of parts of the text and the placement on the page (margins,
-    vertical alignment); without it the text is plain, 15 mm margins, from the top."""
+    vertical alignment); without it the text is plain, 15 mm margins, from the top.
+    `seed` None (the normal case) = `content_seed` of the content; an explicit seed is a deliberate variant (Staff)."""
     size = float(font_size_mm) if font_size_mm else text_to_stroke.DEFAULT_FONT_SIZE_MM
+    seed_source = "explicit" if seed is not None else "content"
+    if seed is None:
+        seed = content_seed(text, canvas, font_uri=font_uri, font_size_mm=size, alignment=alignment or "LEFT",
+                            paper_size=paper_size, layout=layout)
     pages: list[Page] = []
     plain_pages: list[Page] | None = None        # the same text without styles: the complexity (so the price) is judged on this
     styled = None
@@ -156,7 +175,8 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
     kind = ("outline-centerline-compose" if font_uri and font_uri.startswith(outline_font.OUTLINE_PREFIX)
             else "hershey-vi-compose")
     engine = {"name": kind if text else "canvas-passthrough", "version": ENGINE_VERSION,
-              "font_uri": font_uri, "font_size_mm": size, "alignment": alignment or "LEFT", "seed": seed}
+              "font_uri": font_uri, "font_size_mm": size, "alignment": alignment or "LEFT", "seed": seed,
+              "seed_source": seed_source}
     if text and text.strip():
         m = placement.page_margins
         engine["margins_mm"] = {"top": m.top, "bottom": m.bottom, "left": m.left, "right": m.right}

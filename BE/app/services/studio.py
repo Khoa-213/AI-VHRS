@@ -434,11 +434,15 @@ class StudioService:
         size = self._paper_size(c)
         if draft.mode == "TEXT":
             tpl = self.catalog.template(c["template_id"]) if c.get("template_id") else None
+            # exactly what submit() -> OrderService.set_text will store, so the Staff's sketch is this preview: NFC text and
+            # the canonical layout (vertical MIDDLE by default). Before, a draft without a layout was drawn from the top.
+            text = unicodedata.normalize("NFC", c.get("text") or "")
+            layout = OrderService._check_layout(c.get("layout"), text) if text.strip() else c.get("layout")
             return engine.generate_ot3(
-                c.get("text") or None, c.get("canvas"), font_uri=tpl.font_uri if tpl else None,
+                text or None, c.get("canvas"), font_uri=tpl.font_uri if tpl else None,
                 font_size_mm=c.get("font_size_mm"), alignment=c.get("alignment") or text_layout.DEFAULT_ALIGNMENT,
-                paper_size=size, seed=draft.id, v_max_mm_s=v_max, pen_category=category, chars=chars,
-                font_loader=self.storage.read if self.storage else None, layout=c.get("layout"))
+                paper_size=size, seed=None, v_max_mm_s=v_max, pen_category=category, chars=chars,
+                font_loader=self.storage.read if self.storage else None, layout=layout)
         store = self._storage()
         sources = []
         for img in c.get("images") or []:

@@ -105,6 +105,7 @@ class Order(Base):
     customer_note: Mapped[str | None] = mapped_column(Text)
     restoration_mode: Mapped[str | None] = mapped_column(String(10))     # U4: OT-1 FAITHFUL (NULL) | ASSISTED
     physical_watermark: Mapped[bool] = mapped_column(Boolean, default=False)   # U8: OT-3 opt-in (OT-1 always has it)
+    current_sketch_revision_id: Mapped[int | None] = mapped_column(BigInteger)   # V2 (0023): working sketch cursor
 
     @property
     def watermark_required(self) -> bool:

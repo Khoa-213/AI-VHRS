@@ -5,6 +5,7 @@ approves price adjustments and manages the workshop, see api/v1/manager*.py). ST
 (plus the unassigned SUBMITTED pool); MANAGER reads every order that has left DRAFT. CUSTOMER, TECHNICAL_STAFF and
 ADMIN get 403. Another Staff's order answers 404.
 """
+import logging
 from datetime import date
 from typing import Annotated
 
@@ -26,7 +27,8 @@ from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
 from app.models.order import Order, OrderStatus
 from app.models.sketch import Quotation, Sketch
-from app.services import material_profiles
+from app.core.errors import AppError
+from app.services import audit, material_profiles
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.repositories.ops import JobRepository
 from app.services.acceptance import workshop_photos
@@ -38,6 +40,8 @@ from app.services.quotations import QuotationService, option_summaries
 from app.services.sketches import SketchService
 from app.services.staff_orders import StaffOrderService
 from app.services.studio import studio_for_order
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workshop", tags=["Workshop"])
 WorkshopDep = Annotated[Account, Depends(require_roles(RoleCode.STAFF.value, RoleCode.MANAGER.value))]
@@ -133,8 +137,19 @@ def claim(order_id: int, svc: Orders) -> WorkshopOrderRow:
 
 
 @router.post("/orders/{order_id}/accept", dependencies=STAFF_ONLY, response_model=WorkshopOrderRow, summary="UC-24 Tiếp nhận (SUBMITTED → ACCEPTED)")
-def accept(order_id: int, body: AcceptIn, svc: Orders) -> WorkshopOrderRow:
-    return _row(svc.accept(order_id, body.staff_id), "")
+def accept(order_id: int, body: AcceptIn, svc: Orders, sketches: Sketches) -> WorkshopOrderRow:
+    order = svc.accept(order_id, body.staff_id)
+    # V2, D2: the customer's working sketch becomes official version v1 as it is (no new generation). A failure here (storage
+    # down, the U8 line has no room...) never blocks the intake: the Staff still generate / upload as before, and it is logged.
+    if order.current_sketch_revision_id is not None:
+        try:
+            with sketches.session.begin_nested():
+                sketches.adopt_customer_revision(order)
+        except AppError as exc:
+            log.warning("order %s: customer sketch not adopted (%s)", order.id, exc.code)
+            audit.record(sketches.session, actor_id=sketches.actor.id, action="SKETCH_ADOPT_FAILED", entity_type="order",
+                         entity_id=order.id, new={"code": exc.code, "revision_id": order.current_sketch_revision_id})
+    return _row(order, "")
 
 
 @router.post("/orders/{order_id}/reject", dependencies=STAFF_ONLY, response_model=WorkshopOrderRow,

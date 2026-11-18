@@ -62,7 +62,7 @@ class StaffBrief(BaseModel):
 class SketchGenerateIn(BaseModel):
     paper_size: PaperSizeLit | None = Field(default=None, description="Default: the order's paper, else A4.")
     approach_note: str | None = Field(default=None, max_length=2000)
-    seed: int | None = Field(default=None, description="Natural-variation seed (OT-3). Default: order id.")
+    seed: int | None = Field(default=None, description="Natural-variation seed (OT-3). Default: derived from the content, so it matches the studio preview.")
 
 
 class SketchManualIn(BaseModel):

@@ -474,6 +474,8 @@ class OrderService:
         if not terms_accepted:
             raise AppError(422, "TERMS_NOT_ACCEPTED", "Cần đồng ý điều khoản trước khi gửi đơn.")
         self._validate_complete(order, self.orders.inputs(order.id), confirm_right_to_use)
+        from app.services.sketch_work import check_fresh
+        check_fresh(self.session, order)                                    # V2: no stale working sketch to the Staff
         self._touch_and_price(order)
         order.terms_accepted_at = datetime.now(timezone.utc)
         order.order_status = OrderStatus.SUBMITTED           # DB guard validates the transition
@@ -488,6 +490,8 @@ class OrderService:
         if order.order_status != OrderStatus.NEED_INFO:
             raise AppError(409, "ORDER_NOT_NEED_INFO", "Đơn không ở trạng thái cần bổ sung.")
         self._validate_complete(order, self.orders.inputs(order.id), confirm_right_to_use)
+        from app.services.sketch_work import check_fresh
+        check_fresh(self.session, order)
         self._touch_and_price(order)
         order.order_status = OrderStatus.SUBMITTED
         self.session.flush()

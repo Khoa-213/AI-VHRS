@@ -15,7 +15,7 @@ from app.core.errors import AppError
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account
 from app.models.order import ComplexityLevel, Order, OrderInputKind, OrderStatus, OrderType
-from app.models.sketch import Sketch, SketchRegion
+from app.models.sketch import Sketch, SketchRegion, SketchRevision
 from app.models.studio import StudioDraft, StudioRevision
 from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
@@ -117,48 +117,42 @@ class SketchService:
     def generate(self, order_id: int, *, paper_size: str | None, approach_note: str | None,
                  seed: int | None) -> tuple[Sketch, list[str]]:
         order = self._editable_order(order_id)
-        store = self._storage()
-        v_max, category = self._pen(order)
-        size = self._paper_size(order, paper_size)
-        inputs = self.orders.inputs(order.id)
-
-        if order.order_type == OrderType.OT2_LEARNED_STYLE:
-            raise AppError(422, "AI_TYPE_UNSUPPORTED",
-                           "Loại Sáng tạo theo nét chữ đã học chưa hỗ trợ sinh phác thảo tự động (R&D, LI-10). "
-                           "Hãy tải phác thảo thủ công hoặc từ chối đơn.")
+        v_max, _ = self._pen(order)
+        gen = run_engine(self.session, self._storage(), order, paper_size=self._paper_size(order, paper_size), seed=seed)
         if order.order_type == OrderType.OT1_COPY_RESTORE:
-            images = [r for r in inputs if r.kind == OrderInputKind.ORIGINAL_IMAGE]
-            if any(r.mime_type == "application/pdf" for r in images):
-                raise AppError(422, "PDF_NOT_SUPPORTED_AI",
-                               "Chưa phục dựng tự động từ file PDF; hãy yêu cầu khách tải ảnh jpg/png.")
-            sources = []
-            for r in images:
-                if r.quality_result is None:
-                    continue                                    # upload never confirmed
-                data = store.read(r.file_url) if r.file_url else None
-                if data is None:
-                    raise AppError(409, "FILE_MISSING", "Không đọc được ảnh gốc từ kho lưu trữ.")
-                sources.append(engine.ImageSource(data, r.rotation_deg or 0, r.crop_box))
-            gen = engine.generate_ot1(sources, paper_size=size, v_max_mm_s=v_max, pen_category=category,
-                                      chars=order.char_count or 0)
             self._customer_region_edits(order, gen, v_max)
-        else:
-            text_rows = [r for r in inputs if r.kind == OrderInputKind.TEXT_CONTENT]
-            canvas_rows = [r for r in inputs if r.kind == OrderInputKind.CANVAS]
-            text = "\n".join(r.text_content or "" for r in text_rows)
-            first = text_rows[0] if text_rows else None
-            template = self.catalog.template(first.template_id) if first and first.template_id else None
-            gen = engine.generate_ot3(
-                text, canvas_rows[0].canvas_data if canvas_rows else None,
-                font_uri=template.font_uri if template else None,
-                font_size_mm=float(first.font_size_mm) if first and first.font_size_mm else None,
-                alignment=first.alignment if first else None, paper_size=size,
-                seed=seed if seed is not None else order.id, v_max_mm_s=v_max, pen_category=category,
-                chars=order.char_count or 0, font_loader=store.read,
-                layout=first.layout if first else None)             # the first text row starts the joined text: offsets hold
         row = self._persist(order, gen.pages, gen.engine, gen.metrics, gen.similarity, gen.complexity, approach_note,
                             gen.regions)
         return row, gen.warnings
+
+    def adopt_customer_revision(self, order: Order) -> Sketch | None:
+        """V2, D2: when the Staff take the order, official version v1 is EXACTLY the customer's working sketch (the strokes
+        of `orders.current_sketch_revision_id`), not a new generation. Only the U8 verification line is added (as on every
+        official save). OT-1 word regions keep their labels / confidence / text. Returns None when the customer made none."""
+        from app.services import sketch_geometry as geo
+        from app.services.sketch_work import load_geometry
+        if order.current_sketch_revision_id is None or self.sketches.next_version(order.id) != 1:
+            return None
+        rev = self.session.get(SketchRevision, order.current_sketch_revision_id)
+        doc = load_geometry(self._storage(), rev)
+        pages = geo.to_pages(doc)
+        regions: list[rg.RegionDraft] = []
+        for page_no, p in enumerate(doc["pages"], start=1):
+            pos = {st["id"]: i for i, st in enumerate(p["strokes"])}
+            for n, w in enumerate(p["words"], start=1):
+                idx = sorted(pos[s] for s in w["stroke_ids"])
+                if w.get("label") and idx == list(range(idx[0], idx[-1] + 1)):      # OT-1 words only, contiguous
+                    regions.append(rg.RegionDraft(page_no=page_no, region_no=w.get("region_no") or n, stroke_start=idx[0],
+                                                  stroke_end=idx[-1] + 1, bbox=tuple(w["bbox"]), label=w["label"],
+                                                  confidence=w.get("confidence"), text=w.get("text"), source="CUSTOMER"))
+        eng = {"name": "customer-working-sketch", "version": engine.ENGINE_VERSION, "source_revision_id": rev.id,
+               "source_revision_seq": rev.seq, "geometry_hash": rev.geometry_hash, "base_engine": doc.get("engine")}
+        metrics = tj.compute_metrics(pages, self._pen(order)[0])
+        row = self._persist(order, pages, eng, metrics, None, (rev.metrics or {}).get("suggested_complexity"),
+                            f"Phác thảo khách gửi (bản làm việc r{rev.seq})", regions or None)
+        row.source_revision_id = rev.id
+        self.session.flush()
+        return row
 
     def _customer_region_edits(self, order: Order, gen: engine.Generated, v_max: float) -> None:
         """U5: the regions the customer removed / wrote in the studio are applied to the official sketch too (source
@@ -344,3 +338,45 @@ class SketchService:
             audit.record(self.session, actor_id=self.actor.id, action="SKETCH_FINALIZE", entity_type="sketch",
                          entity_id=row.id, new={"order_id": order.id, "version": version}, ip=self.ip)
         return row
+
+def run_engine(session: Session, store: ObjectStorage, order: Order, *, paper_size: str, seed: int | None) -> engine.Generated:
+    """The AI pipeline on an order's inputs (OT-1 photos / OT-3 text + drawing). Shared by the Staff's official sketch and the
+    customer's working sketch (V2), so both run exactly the same code. Raises AppError with the engine's own codes."""
+    catalog, orders = CatalogRepository(session), OrderRepository(session)
+    pen = catalog.pen(order.pen_type_id) if order.pen_type_id else None
+    v_max, category = (float(pen.v_max_mm_s) if pen else DEFAULT_V_MAX), (pen.category if pen else None)
+    size = paper_size
+    inputs = orders.inputs(order.id)
+    if order.order_type == OrderType.OT2_LEARNED_STYLE:
+        raise AppError(422, "AI_TYPE_UNSUPPORTED",
+                       "Loại Sáng tạo theo nét chữ đã học chưa hỗ trợ sinh phác thảo tự động (R&D, LI-10). "
+                       "Hãy tải phác thảo thủ công hoặc từ chối đơn.")
+    if order.order_type == OrderType.OT1_COPY_RESTORE:
+        images = [r for r in inputs if r.kind == OrderInputKind.ORIGINAL_IMAGE]
+        if any(r.mime_type == "application/pdf" for r in images):
+            raise AppError(422, "PDF_NOT_SUPPORTED_AI",
+                           "Chưa phục dựng tự động từ file PDF; hãy yêu cầu khách tải ảnh jpg/png.")
+        sources = []
+        for r in images:
+            if r.quality_result is None:
+                continue                                    # upload never confirmed
+            data = store.read(r.file_url) if r.file_url else None
+            if data is None:
+                raise AppError(409, "FILE_MISSING", "Không đọc được ảnh gốc từ kho lưu trữ.")
+            sources.append(engine.ImageSource(data, r.rotation_deg or 0, r.crop_box))
+        return engine.generate_ot1(sources, paper_size=size, v_max_mm_s=v_max, pen_category=category,
+                                   chars=order.char_count or 0)
+    else:
+        text_rows = [r for r in inputs if r.kind == OrderInputKind.TEXT_CONTENT]
+        canvas_rows = [r for r in inputs if r.kind == OrderInputKind.CANVAS]
+        text = "\n".join(r.text_content or "" for r in text_rows)
+        first = text_rows[0] if text_rows else None
+        template = catalog.template(first.template_id) if first and first.template_id else None
+        return engine.generate_ot3(
+            text, canvas_rows[0].canvas_data if canvas_rows else None,
+            font_uri=template.font_uri if template else None,
+            font_size_mm=float(first.font_size_mm) if first and first.font_size_mm else None,
+            alignment=first.alignment if first else None, paper_size=size,
+            seed=seed, v_max_mm_s=v_max, pen_category=category,
+            chars=order.char_count or 0, font_loader=store.read,
+            layout=first.layout if first else None)             # the first text row starts the joined text: offsets hold
