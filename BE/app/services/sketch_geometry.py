@@ -73,9 +73,15 @@ def _bbox(points: list[list[float]]) -> list[float]:
     return [_r(min(xs)), _r(min(ys)), _r(max(xs)), _r(max(ys))]
 
 
-def from_generated(pages: list[tj.Page], engine_info: dict[str, Any], regions: list[Any] | None = None) -> dict[str, Any]:
-    """Build the document from an engine run (`engine.Generated`). `regions` = U4 RegionDraft list (OT-1)."""
+def from_generated(pages: list[tj.Page], engine_info: dict[str, Any], regions: list[Any] | None = None,
+                   word_texts: list[str] | None = None) -> dict[str, Any]:
+    """Build the document from an engine run (`engine.Generated`). `regions` = U4 RegionDraft list (OT-1).
+
+    `word_texts` (OT-3): the words of the order's text in reading order. The engine numbers each word's group in writing
+    order, so sorting the groups gives the reading order; the words get their `text` only when the counts match exactly
+    (otherwise none do: a wrong label is worse than none, the assistant then works from positions)."""
     n = 0
+    reading: list[tuple[int, int, str]] = []            # (page, group, word id) of OT-3 words
     out_pages = []
     by_page: dict[int, list[Any]] = {}
     for r in regions or []:
@@ -102,6 +108,7 @@ def from_generated(pages: list[tj.Page], engine_info: dict[str, Any], regions: l
                         word_seq += 1
                         group_ids[s.group] = f"w{word_seq}"
                     word_of[i] = group_ids[s.group]
+            reading.extend((page_no, g, w) for g, w in group_ids.items())
         for i, s in enumerate(page.strokes):
             if s.kind == "watermark":                    # U8 line: added again on every official save, never edited
                 continue
@@ -128,6 +135,11 @@ def from_generated(pages: list[tj.Page], engine_info: dict[str, Any], regions: l
             words.append({"id": wid, "stroke_ids": ids, "bbox": _bbox(pts), **{k: v for k, v in meta.get(wid, {}).items()}})
         out_pages.append({"no": page_no, "paper_size": page.paper_size, "width_mm": page.width_mm,
                           "height_mm": page.height_mm, "strokes": strokes, "words": words})
+    if word_texts is not None and reading and len(reading) == len(word_texts):
+        text_of = {w: word_texts[k] for k, (_, _, w) in enumerate(sorted(reading))}
+        for p in out_pages:
+            for w in p["words"]:
+                w["text"] = text_of.get(w["id"])
     return {"format": FORMAT, "engine": engine_info, "pages": out_pages, "next_id": n + 1}
 
 

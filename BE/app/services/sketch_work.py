@@ -160,7 +160,7 @@ class SketchWorkService:
         paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
         gen = run_engine(self.session, self._store(), order, paper_size=paper.size.value if paper else "A4", seed=None)
         regions = gen.regions if order.order_type == OrderType.OT1_COPY_RESTORE else None
-        doc = geo.from_generated(gen.pages, gen.engine, regions)
+        doc = geo.from_generated(gen.pages, gen.engine, regions, self._word_texts(order))
         parent = self._rev(order, order.current_sketch_revision_id)
         rev = self._save(order, doc, author="ENGINE", parent=parent, note="Sinh phác thảo từ nội dung đơn",
                          validation={"warnings": gen.warnings}, complexity=gen.complexity,
@@ -183,6 +183,15 @@ class SketchWorkService:
         rev = self._save(order, new, author=author, parent=current, operation=operation, validation=report, tool=tool,
                          provider=provider, model=model, note=note or _describe(report))
         return rev, new, report
+
+    def _word_texts(self, order: Order) -> list[str] | None:
+        """OT-3 words of the text in reading order (labels for the assistant: "dời chữ 'gửi'"). A drawing has no words."""
+        if order.order_type != OrderType.OT3_TEMPLATE:
+            return None
+        row = next((r for r in OrderRepository(self.session).inputs(order.id) if r.kind == OrderInputKind.TEXT_CONTENT), None)
+        if row is None or not row.text_content:
+            return None
+        return unicodedata.normalize("NFC", row.text_content).split()
 
     def undo(self, order_id: int) -> SketchRevision:
         order = self.order(order_id, write=True)
