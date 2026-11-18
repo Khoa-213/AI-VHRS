@@ -56,6 +56,29 @@ class Sketch(Base):
     render_profile_id: Mapped[int | None] = mapped_column(ForeignKey("material_profiles.id"))   # U6: NULL = visual
     watermark: Mapped[dict[str, Any] | None] = mapped_column(JSONB)        # U8: physical_mark.apply() summary, NULL = none
     is_final: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_revision_id: Mapped[int | None] = mapped_column(BigInteger)   # V2 (0023): customer revision v1 was taken from
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+
+
+class SketchRevision(Base):
+    """V2 (migration 0023): one state of an order's working sketch. Geometry = a `vhrs-sketch/2` file in storage."""
+    __tablename__ = "sketch_revisions"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    parent_id: Mapped[int | None] = mapped_column(BigInteger)
+    seq: Mapped[int] = mapped_column(Integer)
+    author: Mapped[str] = mapped_column(String(10))               # ENGINE | CUSTOMER | AI | STAFF
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    tool_name: Mapped[str | None] = mapped_column(String(40))
+    provider: Mapped[str | None] = mapped_column(String(20))
+    model: Mapped[str | None] = mapped_column(String(80))
+    note: Mapped[str | None] = mapped_column(String(300))
+    operation: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    geometry_uri: Mapped[str] = mapped_column(Text)
+    geometry_hash: Mapped[str] = mapped_column(String(64))
+    inputs_hash: Mapped[str | None] = mapped_column(String(64))
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    validation: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
 
 
