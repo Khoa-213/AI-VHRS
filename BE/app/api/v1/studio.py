@@ -407,10 +407,11 @@ def messages(draft_id: int, svc: Svc, assistant: Assistant) -> list[MessageOut]:
              responses={**_ERR, 422: {"model": ErrorOut, "description": "AI_CONSENT_REQUIRED"},
                         429: {"model": ErrorOut, "description": "AI_DAILY_LIMIT / RATE_LIMITED"},
                         503: {"model": ErrorOut, "description": "AI_UNAVAILABLE / AI_DISABLED / AI_BUDGET_EXHAUSTED"}},
-             dependencies=[Depends(rate_limit("studio_ai", 10, 60))],
              summary="U5 Nhắn trợ lý AI: trợ lý chỉ sửa bản nháp bằng công cụ của hệ thống (hoàn tác được)",
              description="Khi mọi nhà cung cấp AI đều lỗi, trả 200 với `reply.status = FAILED` và lời nhắn cho khách.")
-def send_message(draft_id: int, body: MessageIn, svc: Svc, assistant: Assistant) -> TurnOut:
+def send_message(draft_id: int, body: MessageIn, svc: Svc, assistant: Assistant,
+                 _limit: Annotated[None, Depends(rate_limit("studio_ai", 10, 60))]) -> TurnOut:
+    # counted after the role check (V2 Phase C: a refused role used the shared bucket and later roles got 429, not 403)
     draft = svc.get_open(draft_id)
     out = assistant.send(draft, body.text, consent=body.ai_consent)
     return TurnOut(user=_message_out(out["user"], []), reply=_message_out(out["reply"], out["tool_calls"]),

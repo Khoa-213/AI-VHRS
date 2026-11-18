@@ -40,6 +40,7 @@ from app.services.quotations import QuotationService, option_summaries
 from app.services.sketches import SketchService
 from app.services.staff_orders import StaffOrderService
 from app.services.studio import studio_for_order
+from app.services.ai.assistant import order_assistant_log
 
 log = logging.getLogger(__name__)
 
@@ -333,3 +334,10 @@ def certificate_card(order_id: int, session: SessionDep, actor: WorkshopDep) -> 
 def order_studio(order_id: int, session: SessionDep, actor: WorkshopDep) -> dict:
     order = WorkshopAccess(session, actor).order(order_id)
     return studio_for_order(session, order.id)
+
+
+@router.get("/orders/{order_id}/assistant",
+            summary="V2 Trợ lý AI trên đơn: cờ cảnh báo (vd FORGERY_RISK) và hội thoại với khách (đơn không dùng trợ lý: rỗng)")
+def order_assistant(order_id: int, session: SessionDep, actor: WorkshopDep) -> dict:
+    order = WorkshopAccess(session, actor).order(order_id)
+    return order_assistant_log(session, order.id)

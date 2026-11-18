@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0023 (alembic head), generated 2026-11-17 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0024 (alembic head), generated 2026-11-18 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0023);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0023;
+--      baseline schema and every migration up to 0024);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0024;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -728,6 +728,7 @@ CREATE TABLE public.ai_messages (
     input_sha256 character(64),
     attempts jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    client_ref character varying(64),
     CONSTRAINT ai_messages_role_check CHECK (((role)::text = ANY ((ARRAY['USER'::character varying, 'ASSISTANT'::character varying])::text[]))),
     CONSTRAINT ai_messages_status_check CHECK (((status)::text = ANY ((ARRAY['OK'::character varying, 'FAILED'::character varying, 'CAPPED'::character varying])::text[])))
 );
@@ -755,13 +756,16 @@ ALTER SEQUENCE public.ai_messages_id_seq OWNED BY public.ai_messages.id;
 
 CREATE TABLE public.ai_sessions (
     id bigint NOT NULL,
-    draft_id bigint NOT NULL,
+    draft_id bigint,
     customer_id bigint NOT NULL,
     provider character varying(20),
     model character varying(80),
     consented_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    last_message_at timestamp with time zone
+    last_message_at timestamp with time zone,
+    order_id bigint,
+    flags jsonb DEFAULT '[]'::jsonb NOT NULL,
+    CONSTRAINT chk_ai_sessions_target CHECK ((num_nonnulls(draft_id, order_id) = 1))
 );
 
 --
@@ -794,7 +798,8 @@ CREATE TABLE public.ai_tool_calls (
     ok boolean NOT NULL,
     revision_id bigint,
     duration_ms integer,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    sketch_revision_id bigint
 );
 
 --
@@ -3358,6 +3363,18 @@ CREATE UNIQUE INDEX ux_accounts_email ON public.accounts USING btree (lower((ema
 CREATE UNIQUE INDEX ux_accounts_verified_phone ON public.accounts USING btree (phone) WHERE (phone_verified_at IS NOT NULL);
 
 --
+-- Name: ux_ai_messages_client_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_ai_messages_client_ref ON public.ai_messages USING btree (session_id, client_ref) WHERE (client_ref IS NOT NULL);
+
+--
+-- Name: ux_ai_sessions_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_ai_sessions_order ON public.ai_sessions USING btree (order_id) WHERE (order_id IS NOT NULL);
+
+--
 -- Name: ux_jobs_one_active_per_order; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3623,6 +3640,13 @@ ALTER TABLE ONLY public.ai_sessions
     ADD CONSTRAINT ai_sessions_draft_id_fkey FOREIGN KEY (draft_id) REFERENCES public.studio_drafts(id) ON DELETE CASCADE;
 
 --
+-- Name: ai_sessions ai_sessions_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_sessions
+    ADD CONSTRAINT ai_sessions_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
+
+--
 -- Name: ai_tool_calls ai_tool_calls_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3635,6 +3659,13 @@ ALTER TABLE ONLY public.ai_tool_calls
 
 ALTER TABLE ONLY public.ai_tool_calls
     ADD CONSTRAINT ai_tool_calls_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.studio_revisions(id) ON DELETE SET NULL;
+
+--
+-- Name: ai_tool_calls ai_tool_calls_sketch_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tool_calls
+    ADD CONSTRAINT ai_tool_calls_sketch_revision_id_fkey FOREIGN KEY (sketch_revision_id) REFERENCES public.sketch_revisions(id) ON DELETE SET NULL;
 
 --
 -- Name: alert_catalog alert_catalog_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -4694,7 +4725,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0023');
+INSERT INTO alembic_version (version_num) VALUES ('0024');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

@@ -13,7 +13,7 @@ from app.api.deps import SessionDep
 from app.api.schemas import ErrorOut
 from app.api.v1 import (reviews, quality, robot_link, acceptance, admin, robot_ops, auth, catalog, customer_quotes, delivery, locations, manager,
                         manager_ops, me, conversations, eta, messages, notifications, orders, payments, pricing, refunds, reports, scheduling, shipments,
-                        studio, technician, verify, workshop, order_sketch)
+                        studio, technician, verify, workshop, order_sketch, order_assistant)
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 
@@ -168,6 +168,7 @@ v1.include_router(admin.router)
 v1.include_router(verify.router)
 v1.include_router(studio.router)
 v1.include_router(order_sketch.router)
+v1.include_router(order_assistant.router)
 
 
 @v1.get("/health", tags=["System"], summary="Kiểm tra API và kết nối DB")

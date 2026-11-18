@@ -940,6 +940,29 @@ Luồng (CUSTOMER, chủ đơn, đơn `DRAFT` hoặc `NEED_INFO`):
 
 **Nội dung đổi sau khi đã vẽ** (chữ, mẫu, cỡ, bố cục, ảnh, khổ giấy): `inputs_changed: true` → FE nhắc "Tạo lại phác thảo"; gửi đơn khi chưa tạo lại → `409 SKETCH_OUTDATED`. Đổi bút / mực / số bản không cần vẽ lại.
 
+## 7s. Trợ lý AI trên đơn (V2 Phase C, migration 0024, 2026-11-18)
+
+Trợ lý AI giờ làm việc **trên đơn DRAFT / NEED_INFO** (D1), cùng chỗ với editor phác thảo (mục 7r): khách chọn nét / từ trên canvas, gõ yêu cầu ("dời chữ này sang phải 1 mm", "nắn nét này thẳng lại", "đổi sang bút gel đen"), trợ lý sửa **bằng đúng các lệnh của Geometry Engine** (không bao giờ tự đưa toạ độ). Trần lượt, đồng ý gửi dữ liệu và nhà cung cấp dùng chung với studio (mục 7q: `GET /studio/assistant/status`). Studio vẫn chạy như cũ đến khi FE chuyển xong rồi mới bỏ (D1).
+
+```
+GET  /orders/{id}/assistant/messages          → {consented_at, flags, messages: MessageOut[]}
+POST /orders/{id}/assistant/messages          {text, ai_consent, base_revision_id?, selection?, client_ref?} → OrderTurnOut
+POST /orders/{id}/assistant/messages/stream   (cùng body) → text/event-stream
+GET  /workshop/orders/{id}/assistant          (Staff / Manager) cờ cảnh báo + hội thoại của đơn
+```
+
+- `ai_consent: true` bắt buộc ở tin nhắn đầu tiên của đơn (câu FE: "Tin nhắn, nội dung đơn và số đo phác thảo sẽ được gửi tới nhà cung cấp AI bên ngoài; ảnh của bạn không bị gửi").
+- `base_revision_id` = revision phác thảo khách đang nhìn (từ `GET /orders/{id}/sketch`). Đã đổi (tab khác) → `409 STALE_REVISION` **trước khi gọi AI** (không tốn lượt), tải lại rồi gửi lại.
+- `selection = {stroke_ids: [], word_ids: []}`: vùng khách đang chọn. Có selection thì trợ lý **chỉ được sửa trong vùng đó** (ngoài vùng → công cụ bị từ chối `OUTSIDE_SELECTION`, trợ lý báo lại). Không chọn gì thì trợ lý tìm từ theo chữ: với OT-3 mỗi từ trong `document.words[]` có `text` (vd "gửi"); OT-1 theo vùng / vị trí.
+- `client_ref`: id FE tự sinh cho mỗi tin nhắn (UUID). Gửi lại cùng id (mạng chập, bấm hai lần) → `200` với `replayed: true` và câu trả lời đã lưu, **không** gọi AI lần hai.
+- Một lượt mỗi đơn: tin nhắn thứ hai khi lượt trước chưa xong → `409 AI_TURN_IN_PROGRESS` (FE khoá ô nhập khi đang chờ).
+- `OrderTurnOut = {user, reply, replayed, sketch_revision_id}`; `reply.tool_calls[] = {name, ok, revision_id}` với `revision_id` là revision phác thảo trợ lý tạo. `sketch_revision_id` khác bản FE đang có → tải lại `GET /orders/{id}/sketch` (và preview). Mọi nhà cung cấp lỗi / quá thời gian → `200` với `reply.status = FAILED` và lời nhắn cho khách; phác thảo không đổi.
+- Stream: sự kiện như mục 7q (`user_saved`, `provider`, `tool {name, ok, revision_id, error}`, `failover`, `reply` = `OrderTurnOut`, `error`, `done`). Sau mỗi `tool` có `revision_id` FE có thể tải lại phác thảo ngay.
+- Mỗi sửa nét của trợ lý là một revision `author = AI` (`tool_name = edit_strokes`, `provider`, `model`) trong `GET /orders/{id}/sketch/revisions`; khách hoàn tác bằng `POST /orders/{id}/sketch/undo` như sửa tay.
+- Trợ lý **có thể** sửa nội dung chữ / mẫu / cỡ / căn lề (OT-3), vật tư, số bản, ghi chú, dòng xác thực, chế độ phục dựng (OT-1), tạo lại phác thảo. **Sửa nội dung / vật tư không hoàn tác bằng undo** (form đơn không có lịch sử; kết quả công cụ ghi giá trị cũ, trợ lý nói lại được). Nội dung đổi sau khi đã có phác thảo → `inputs_changed: true` (mục 7r), FE nhắc tạo lại.
+- Trợ lý **không** gửi đơn, thanh toán, huỷ đơn, không đọc ảnh (chỉ số đo chất lượng). Yêu cầu làm giả chữ ký / giấy tờ → trợ lý gắn cờ `FORGERY_RISK`, Staff thấy trong `GET /workshop/orders/{id}/assistant` (`flags`, `messages[].tools`).
+- OT-2: chưa có công cụ tạo phác thảo (đang nghiên cứu mô hình); các công cụ đơn / vật tư vẫn dùng được.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -964,7 +987,8 @@ Luồng (CUSTOMER, chủ đơn, đơn `DRAFT` hoặc `NEED_INFO`):
 | `INVALID_SPECS` | 422 | Thông số vật tư sai khoá / giá trị / thiếu nguồn (U6) | tô đỏ trường `details.key` |
 | `INK_NOT_FOR_PEN`, `PROFILE_EXISTS`, `PROFILE_NOT_MEASURED`, `LINE_WIDTH_REQUIRED` | 422 / 409 | Hồ sơ hiệu chuẩn: mực không thuộc bút, tổ hợp đã có hồ sơ, xác nhận khi chưa đo, xoá độ rộng nét (U6) | hiện thông báo; với `PROFILE_EXISTS` mở hồ sơ có sẵn |
 | `SKETCH_NOT_GENERATED` | 404 | Đơn chưa có phác thảo làm việc (V2) | hiện nút "Tạo phác thảo" |
-| `STALE_REVISION` | 409 | Phác thảo đã đổi ở nơi khác trước lệnh sửa này (V2) | tải lại `GET /orders/{id}/sketch`, sửa lại |
+| `STALE_REVISION` | 409 | Phác thảo đã đổi ở nơi khác trước lệnh sửa này hoặc trước tin nhắn trợ lý (V2) | tải lại `GET /orders/{id}/sketch`, sửa / nhắn lại |
+| `AI_TURN_IN_PROGRESS` | 409 | Trợ lý đang xử lý tin nhắn khác của đơn (V2 Phase C) | khoá ô nhập đến khi có trả lời |
 | `SKETCH_OUTDATED` | 409 | Gửi đơn khi phác thảo vẽ từ nội dung cũ (V2) | "Tạo lại phác thảo" rồi gửi |
 | `EDIT_OUT_OF_RANGE` | 422 | Tham số sửa vượt giới hạn của loại đơn (V2) | giới hạn thanh trượt theo `limits` |
 | `EDIT_OUTSIDE_PAPER` | 422 | Nét sau khi sửa ra ngoài mép giấy (V2) | báo, giữ bản cũ |

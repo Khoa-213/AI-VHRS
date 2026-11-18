@@ -1,6 +1,6 @@
 # AI-VHRS V2: Đơn hàng hợp nhất, phác thảo chuẩn (canonical sketch) và chỉnh sửa bằng AI
 
-Trạng thái: **Phase A xong; chủ dự án chốt D1–D6 (mục 9.0); Phase B (lõi) xong 2026-11-17, mục 11. Phase C trở đi chưa làm.**
+Trạng thái: **Phase A xong; chủ dự án chốt D1–D6 (mục 9.0); Phase B (lõi) xong 2026-11-17, mục 11; Phase C (trợ lý trên đơn) xong 2026-11-18, mục 12. Phase D trở đi chưa làm.**
 Một việc độc lập đã làm và test ngay (mục 2.3): bản xem trước studio và phác thảo của Staff giờ ra **cùng một nét**.
 
 Tài liệu này nối tiếp `docs/UPGRADE_AI_ROBOT_PLAN.md` (U1–U9). Quy ước trạng thái: **ĐÃ CÓ** = code + test chạy; **THIẾT KẾ** = mới
@@ -231,3 +231,19 @@ Staff nhận v1 đúng nét đó (hash bằng nhau) → báo giá → duyệt �
 2. Chạy toàn suite trên Supabase (migration 0023 **đã có** trên Supabase; chờ nếu phiên khác đang giữ khoá pytest).
 3. Ghi kết quả vào `PROJECT_STATUS.md` mục 9 (dòng V2 Phase B) và mục 6; commit khi chủ dự án yêu cầu (không gồm `docs/report_samples/`).
 4. Sau đó Phase C (trợ lý AI trên đơn) theo thứ tự đề xuất C → H → D → E → F → I.
+
+## 12. Phase C: trợ lý AI trên đơn (2026-11-18, migration 0024, chưa commit)
+
+**Kết quả:** toàn suite cục bộ và Supabase THẬT đều 907 passed, 3 skipped, 0 failed (Supabase 5 giờ 18 phút, xong 2026-11-19); dữ liệu thật không đổi.
+
+| | |
+|---|---|
+| Làm gì | Trợ lý (cùng `assistant.py`, cùng nhà cung cấp, trần lượt, đồng ý gửi dữ liệu) làm việc trên đơn DRAFT / NEED_INFO với bộ công cụ mới `app/services/ai/order_tools.py`: `get_order`, `list_materials`, `list_templates`, `update_text`, `choose_materials`, `set_options`, `check_order`, `generate_sketch`, `get_sketch`, `edit_strokes`, `undo_sketch`, `redo_sketch`, `flag_for_staff`. Sửa nét chỉ qua `edit_strokes` → `SketchWorkService.edit` → Geometry Engine (revision `author = AI`, `tool_name`, `provider`, `model`) |
+| Database | Migration 0024 (chỉ thêm): `ai_sessions.order_id` (một phiên mỗi đơn, CHECK đúng một trong `draft_id` / `order_id`, `draft_id` thành nullable), `ai_sessions.flags`, `ai_messages.client_ref` (UNIQUE theo phiên), `ai_tool_calls.sketch_revision_id`. Thử lên / xuống cục bộ; **đã áp Supabase** 2026-11-18: 69 đơn thật, 15 tài khoản thật, 0 phiên AI, checksum không đổi trước / sau. Script DB tổng tạo lại ở 0024 |
+| An toàn (Test 10) | Một lượt mỗi đơn (`pg_try_advisory_xact_lock` → `409 AI_TURN_IN_PROGRESS`); `base_revision_id` cũ → `409 STALE_REVISION` trước khi gọi AI; `client_ref` trùng → trả câu đã lưu, không gọi AI lần hai; nhà cung cấp quá thời gian / lỗi → chuyển bên khác, hết bên → `FAILED`, phác thảo không đổi; công cụ không có trong danh sách (vd `submit_order`) → `UNKNOWN_TOOL`; sửa ngoài vùng khách chọn → `OUTSIDE_SELECTION`; tham số ngoài giới hạn → `EDIT_OUT_OF_RANGE`; công cụ lỗi được rollback về savepoint (không để thay đổi dở) |
+| Hiểu "chữ này" | OT-3: `from_generated` gắn `text` cho từng từ (sắp các nhóm nét theo thứ tự viết của engine, chỉ gắn khi số nhóm = số từ của nội dung, lệch thì không gắn). OT-1: chưa có chữ (cần HTR, Phase E) |
+| Staff | `GET /workshop/orders/{id}/assistant`: cờ (vd `FORGERY_RISK`) + hội thoại + công cụ đã gọi |
+| Sửa thêm | `studio_ai` (trần 10 tin / phút dùng chung) giờ đếm **sau** bước kiểm vai trò ở cả `POST /studio/{id}/messages` và route mới: trước đây vai trò bị từ chối vẫn tiêu lượt, nên `test_permission_matrix` thấy `429` thay vì `403` (có thể là nguyên nhân lỗi "chưa rõ" của test này trên Supabase ngày 2026-11-16) |
+| Test | `tests/test_v2_order_assistant.py` (9): lát cắt (trợ lý dời đúng từ khách chọn, chỉ nét đó đổi, revision AI có provider / model, khách hoàn tác); từ chối ngoài vùng chọn / ngoài giới hạn / công cụ lạ / lệnh lạ không tạo revision; revision cũ bị từ chối trước khi gọi AI; tin nhắn trùng gọi AI một lần; lượt song song bị từ chối (route thường và stream); quá thời gian → chuyển nhà cung cấp, hết → FAILED; đồng ý, chủ đơn, đơn đã gửi; trợ lý sửa chữ → phác thảo cũ, gửi bị chặn, cờ FORGERY_RISK tới Staff; stream báo từng công cụ |
+| Chưa làm | `/studio` thành lớp tương thích gọi vào đơn (D1: giữ studio đến khi FE chuyển; chưa đổi để không phá FE đang dùng); hoàn tác nội dung / vật tư (form đơn chưa có lịch sử); trợ lý chưa đo chất lượng chọn công cụ trên cùng bộ kịch bản cho mọi nhà cung cấp (chưa gọi LLM thật cho Phase C); OT-1 chưa biết chữ của vùng (HTR) |
+
