@@ -1,4 +1,4 @@
-"""Upgrade U5: studio drafts, their revisions, and the AI assistant's log (schema: migration 0021)."""
+"""Upgrade U5: studio drafts, their revisions, and the AI assistant's log (schema: migration 0021; orders: 0024)."""
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -41,7 +41,9 @@ class StudioRevision(Base):
 class AiSession(Base):
     __tablename__ = "ai_sessions"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    draft_id: Mapped[int] = mapped_column(ForeignKey("studio_drafts.id"))
+    draft_id: Mapped[int | None] = mapped_column(ForeignKey("studio_drafts.id"))      # a studio draft (U5) ...
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))             # ... or an order (V2 Phase C, 0024)
+    flags: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)          # order sessions: flags for the Staff
     customer_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     provider: Mapped[str | None] = mapped_column(String(20))
     model: Mapped[str | None] = mapped_column(String(80))
@@ -66,6 +68,7 @@ class AiMessage(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     input_sha256: Mapped[str | None] = mapped_column(String(64))
     attempts: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    client_ref: Mapped[str | None] = mapped_column(String(64))                        # FE message id (duplicates, 0024)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
 
 
@@ -77,6 +80,7 @@ class AiToolCall(Base):
     args: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     ok: Mapped[bool] = mapped_column(Boolean)
-    revision_id: Mapped[int | None] = mapped_column(BigInteger)
+    revision_id: Mapped[int | None] = mapped_column(BigInteger)                       # studio_revisions
+    sketch_revision_id: Mapped[int | None] = mapped_column(BigInteger)                # sketch_revisions (orders, 0024)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")

@@ -66,6 +66,12 @@ SPEC_NAMES = {s.name for s in SPECS}
 
 
 class StudioTools:
+    kind = "studio"
+    revision_field = "revision_id"                  # ai_tool_calls column of the revisions these tools make
+
+    def bind(self, provider: Any) -> None:          # studio revisions do not record the provider
+        pass
+
     def __init__(self, studio: StudioService, draft: StudioDraft):
         self.studio, self.draft = studio, draft
         self.catalog = studio.catalog
@@ -129,23 +135,10 @@ class StudioTools:
         return {"draft": self.summary(), "problems": check["problems"], "estimate": _money(check["estimate"])}, None
 
     def _list_materials(self, a: dict[str, Any]) -> tuple[dict[str, Any], None]:
-        cat = self.catalog
-        if a.get("paper_type_id") is None:
-            return {"papers": [{"id": p.id, "name": p.name, "size": p.size.value, "surface": p.surface, "gsm": p.gsm,
-                                "unit_price": int(p.unit_price)} for p in cat.papers()]}, None
-        paper = cat.paper(int(a["paper_type_id"]))
-        if paper is None or not paper.is_active:
-            raise AppError(404, "PAPER_NOT_FOUND", "Không tìm thấy loại giấy.")
-        pens = []
-        for pen in cat.pens_for_paper(paper.id):
-            inks = cat.inks_for_pen(pen.id)
-            if inks:
-                pens.append({"id": pen.id, "name": pen.name, "category": pen.category, "surcharge": int(pen.surcharge),
-                             "inks": [{"id": i.id, "name": i.name, "hex": i.hex_code} for i in inks]})
-        return {"paper": {"id": paper.id, "name": paper.name}, "pens": pens}, None
+        return list_materials(self.catalog, a), None
 
     def _list_templates(self, _: dict[str, Any]) -> tuple[dict[str, Any], None]:
-        return {"templates": [{"id": t.id, "name": t.name, "kind": t.kind.value} for t in self.catalog.templates()]}, None
+        return list_templates(self.catalog), None
 
     def _check(self, _: dict[str, Any]) -> tuple[dict[str, Any], None]:
         r = self.studio.check(self.draft, render=True)
@@ -188,6 +181,27 @@ class StudioTools:
             raise AppError(422, "INVALID_FLAG", f"kind phải là một trong {list(FLAG_KINDS)}.")
         self.studio.flag(self.draft, kind, str(a.get("note") or ""), by="AI")
         return {"flagged": kind}, None
+
+
+def list_materials(cat: Any, a: dict[str, Any]) -> dict[str, Any]:
+    """Shared with the order assistant (order_tools.py): real catalog rows only."""
+    if a.get("paper_type_id") is None:
+        return {"papers": [{"id": p.id, "name": p.name, "size": p.size.value, "surface": p.surface, "gsm": p.gsm,
+                            "unit_price": int(p.unit_price)} for p in cat.papers()]}
+    paper = cat.paper(int(a["paper_type_id"]))
+    if paper is None or not paper.is_active:
+        raise AppError(404, "PAPER_NOT_FOUND", "Không tìm thấy loại giấy.")
+    pens = []
+    for pen in cat.pens_for_paper(paper.id):
+        inks = cat.inks_for_pen(pen.id)
+        if inks:
+            pens.append({"id": pen.id, "name": pen.name, "category": pen.category, "surcharge": int(pen.surcharge),
+                         "inks": [{"id": i.id, "name": i.name, "hex": i.hex_code} for i in inks]})
+    return {"paper": {"id": paper.id, "name": paper.name}, "pens": pens}
+
+
+def list_templates(cat: Any) -> dict[str, Any]:
+    return {"templates": [{"id": t.id, "name": t.name, "kind": t.kind.value} for t in cat.templates()]}
 
 
 def _money(est: dict[str, Any] | None) -> dict[str, Any] | None:

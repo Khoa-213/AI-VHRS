@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0022 (alembic head), generated 2026-11-16 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0024 (alembic head), generated 2026-11-18 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0022);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0022;
+--      baseline schema and every migration up to 0024);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0024;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -728,6 +728,7 @@ CREATE TABLE public.ai_messages (
     input_sha256 character(64),
     attempts jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    client_ref character varying(64),
     CONSTRAINT ai_messages_role_check CHECK (((role)::text = ANY ((ARRAY['USER'::character varying, 'ASSISTANT'::character varying])::text[]))),
     CONSTRAINT ai_messages_status_check CHECK (((status)::text = ANY ((ARRAY['OK'::character varying, 'FAILED'::character varying, 'CAPPED'::character varying])::text[])))
 );
@@ -755,13 +756,16 @@ ALTER SEQUENCE public.ai_messages_id_seq OWNED BY public.ai_messages.id;
 
 CREATE TABLE public.ai_sessions (
     id bigint NOT NULL,
-    draft_id bigint NOT NULL,
+    draft_id bigint,
     customer_id bigint NOT NULL,
     provider character varying(20),
     model character varying(80),
     consented_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    last_message_at timestamp with time zone
+    last_message_at timestamp with time zone,
+    order_id bigint,
+    flags jsonb DEFAULT '[]'::jsonb NOT NULL,
+    CONSTRAINT chk_ai_sessions_target CHECK ((num_nonnulls(draft_id, order_id) = 1))
 );
 
 --
@@ -794,7 +798,8 @@ CREATE TABLE public.ai_tool_calls (
     ok boolean NOT NULL,
     revision_id bigint,
     duration_ms integer,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    sketch_revision_id bigint
 );
 
 --
@@ -1270,6 +1275,7 @@ CREATE TABLE public.orders (
     shipping_eta timestamp with time zone,
     restoration_mode character varying(10),
     physical_watermark boolean DEFAULT false NOT NULL,
+    current_sketch_revision_id bigint,
     CONSTRAINT chk_orders_estimate CHECK (((estimated_price_min IS NULL) OR (estimated_price_max IS NULL) OR (estimated_price_min <= estimated_price_max))),
     CONSTRAINT chk_orders_materials_after_submit CHECK (((order_status = ANY (ARRAY['DRAFT'::public.order_status, 'CANCELLED'::public.order_status])) OR workshop_suggest_materials OR ((paper_type_id IS NOT NULL) AND (pen_type_id IS NOT NULL) AND (ink_color_id IS NOT NULL)))),
     CONSTRAINT chk_orders_pickup_slot CHECK (((pickup_slot_end IS NULL) OR (pickup_slot_end > pickup_slot_start))),
@@ -2173,6 +2179,50 @@ CREATE SEQUENCE public.sketch_regions_id_seq
 ALTER SEQUENCE public.sketch_regions_id_seq OWNED BY public.sketch_regions.id;
 
 --
+-- Name: sketch_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sketch_revisions (
+    id bigint NOT NULL,
+    order_id bigint NOT NULL,
+    parent_id bigint,
+    seq integer NOT NULL,
+    author character varying(10) NOT NULL,
+    actor_id bigint,
+    tool_name character varying(40),
+    provider character varying(20),
+    model character varying(80),
+    note character varying(300),
+    operation jsonb,
+    geometry_uri text NOT NULL,
+    geometry_hash character(64) NOT NULL,
+    inputs_hash character(64),
+    metrics jsonb,
+    validation jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_sketch_rev_tool CHECK ((((author)::text <> 'AI'::text) OR (tool_name IS NOT NULL))),
+    CONSTRAINT sketch_revisions_author_check CHECK (((author)::text = ANY ((ARRAY['ENGINE'::character varying, 'CUSTOMER'::character varying, 'AI'::character varying, 'STAFF'::character varying])::text[]))),
+    CONSTRAINT sketch_revisions_seq_check CHECK ((seq >= 1))
+);
+
+--
+-- Name: sketch_revisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sketch_revisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: sketch_revisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sketch_revisions_id_seq OWNED BY public.sketch_revisions.id;
+
+--
 -- Name: sketches; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2195,6 +2245,7 @@ CREATE TABLE public.sketches (
     image_urls text[] DEFAULT '{}'::text[] NOT NULL,
     render_profile_id bigint,
     watermark jsonb,
+    source_revision_id bigint,
     CONSTRAINT sketches_estimated_writing_sec_check CHECK ((estimated_writing_sec >= 0)),
     CONSTRAINT sketches_pen_lift_count_check CHECK ((pen_lift_count >= 0)),
     CONSTRAINT sketches_similarity_score_check CHECK (((similarity_score >= (0)::numeric) AND (similarity_score <= (100)::numeric))),
@@ -2451,6 +2502,12 @@ ALTER TABLE ONLY public.sketch_approvals ALTER COLUMN id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.sketch_regions ALTER COLUMN id SET DEFAULT nextval('public.sketch_regions_id_seq'::regclass);
+
+--
+-- Name: sketch_revisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_revisions ALTER COLUMN id SET DEFAULT nextval('public.sketch_revisions_id_seq'::regclass);
 
 --
 -- Name: studio_drafts id; Type: DEFAULT; Schema: public; Owner: -
@@ -2885,6 +2942,20 @@ ALTER TABLE ONLY public.sketch_regions
     ADD CONSTRAINT sketch_regions_pkey PRIMARY KEY (id);
 
 --
+-- Name: sketch_revisions sketch_revisions_order_id_seq_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_revisions
+    ADD CONSTRAINT sketch_revisions_order_id_seq_key UNIQUE (order_id, seq);
+
+--
+-- Name: sketch_revisions sketch_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_revisions
+    ADD CONSTRAINT sketch_revisions_pkey PRIMARY KEY (id);
+
+--
 -- Name: sketches sketches_order_id_version_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3256,6 +3327,12 @@ CREATE INDEX ix_showcase_visible ON public.showcase_posts USING btree (sort_orde
 CREATE INDEX ix_sketch_approvals_order ON public.sketch_approvals USING btree (order_id);
 
 --
+-- Name: ix_sketch_revisions_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sketch_revisions_order ON public.sketch_revisions USING btree (order_id, seq);
+
+--
 -- Name: ix_status_histories_order; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3284,6 +3361,18 @@ CREATE UNIQUE INDEX ux_accounts_email ON public.accounts USING btree (lower((ema
 --
 
 CREATE UNIQUE INDEX ux_accounts_verified_phone ON public.accounts USING btree (phone) WHERE (phone_verified_at IS NOT NULL);
+
+--
+-- Name: ux_ai_messages_client_ref; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_ai_messages_client_ref ON public.ai_messages USING btree (session_id, client_ref) WHERE (client_ref IS NOT NULL);
+
+--
+-- Name: ux_ai_sessions_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_ai_sessions_order ON public.ai_sessions USING btree (order_id) WHERE (order_id IS NOT NULL);
 
 --
 -- Name: ux_jobs_one_active_per_order; Type: INDEX; Schema: public; Owner: -
@@ -3551,6 +3640,13 @@ ALTER TABLE ONLY public.ai_sessions
     ADD CONSTRAINT ai_sessions_draft_id_fkey FOREIGN KEY (draft_id) REFERENCES public.studio_drafts(id) ON DELETE CASCADE;
 
 --
+-- Name: ai_sessions ai_sessions_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_sessions
+    ADD CONSTRAINT ai_sessions_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
+
+--
 -- Name: ai_tool_calls ai_tool_calls_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3563,6 +3659,13 @@ ALTER TABLE ONLY public.ai_tool_calls
 
 ALTER TABLE ONLY public.ai_tool_calls
     ADD CONSTRAINT ai_tool_calls_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.studio_revisions(id) ON DELETE SET NULL;
+
+--
+-- Name: ai_tool_calls ai_tool_calls_sketch_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_tool_calls
+    ADD CONSTRAINT ai_tool_calls_sketch_revision_id_fkey FOREIGN KEY (sketch_revision_id) REFERENCES public.sketch_revisions(id) ON DELETE SET NULL;
 
 --
 -- Name: alert_catalog alert_catalog_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -3621,11 +3724,25 @@ ALTER TABLE ONLY public.calibrations
     ADD CONSTRAINT calibrations_technician_id_fkey FOREIGN KEY (technician_id) REFERENCES public.accounts(id);
 
 --
+-- Name: orders fk_orders_current_sketch_revision; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_orders_current_sketch_revision FOREIGN KEY (current_sketch_revision_id) REFERENCES public.sketch_revisions(id) ON DELETE SET NULL;
+
+--
 -- Name: orders fk_orders_ink_of_pen; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.orders
     ADD CONSTRAINT fk_orders_ink_of_pen FOREIGN KEY (ink_color_id, pen_type_id) REFERENCES public.ink_colors(id, pen_type_id);
+
+--
+-- Name: sketches fk_sketches_source_revision; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketches
+    ADD CONSTRAINT fk_sketches_source_revision FOREIGN KEY (source_revision_id) REFERENCES public.sketch_revisions(id) ON DELETE SET NULL;
 
 --
 -- Name: status_histories fk_status_histories_job; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -4272,6 +4389,27 @@ ALTER TABLE ONLY public.sketch_regions
     ADD CONSTRAINT sketch_regions_sketch_id_fkey FOREIGN KEY (sketch_id) REFERENCES public.sketches(id) ON DELETE CASCADE;
 
 --
+-- Name: sketch_revisions sketch_revisions_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_revisions
+    ADD CONSTRAINT sketch_revisions_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+--
+-- Name: sketch_revisions sketch_revisions_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_revisions
+    ADD CONSTRAINT sketch_revisions_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
+
+--
+-- Name: sketch_revisions sketch_revisions_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sketch_revisions
+    ADD CONSTRAINT sketch_revisions_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.sketch_revisions(id) ON DELETE CASCADE;
+
+--
 -- Name: sketches sketches_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4587,7 +4725,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0022');
+INSERT INTO alembic_version (version_num) VALUES ('0024');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

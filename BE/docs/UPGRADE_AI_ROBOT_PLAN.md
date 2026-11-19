@@ -1,6 +1,7 @@
 # Nâng cấp AI phục dựng chữ viết tay và robot viết: audit, thiết kế, lộ trình
 
 Phiên bản 1, 2026-11-12. Viết theo "MASTER PROMPT: END-TO-END AI HANDWRITING RESTORATION & ROBOTIC REPRODUCTION UPGRADE" của chủ dự án.
+**Đợt tiếp theo (V2, 2026-11-17): đơn hợp nhất, phác thảo chuẩn, AI sửa vùng / nét, HTR: xem `docs/UNIFIED_SKETCH_V2_PLAN.md`.**
 Tài liệu này là **Phase 0 (audit AS-IS)** và **Phase 1 (gap analysis + thiết kế)**, kèm **lộ trình** và **các quyết định cần chủ dự án chốt**.
 Mọi con số trong tài liệu là số đo hoặc số đọc từ code. Những gì chưa đo được ghi rõ "chưa đo", không đoán.
 

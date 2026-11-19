@@ -411,7 +411,7 @@ PUT  /manager/orders/{id}/assignment {staff_id}      Manager phân công / đổ
 ```
 **Phác thảo (AI thật)** – chỉ khi đơn `ACCEPTED`:
 ```
-POST /workshop/orders/{id}/sketches/generate {paper_size?, approach_note?, seed?}   OT-1: phục dựng nét từ ảnh; OT-3: sinh nét từ font một nét
+POST /workshop/orders/{id}/sketches/generate {paper_size?, approach_note?, seed?}   (seed mặc định: theo nội dung, 2026-11-17)   OT-1: phục dựng nét từ ảnh; OT-3: sinh nét từ font một nét
 POST /workshop/orders/{id}/sketches {trajectory, approach_note?, suggested_complexity?}   tải quỹ đạo vẽ tay (OT-2 / chỉnh sửa)
 GET  /workshop/orders/{id}/sketches[/{version}]   danh sách / chi tiết (quỹ đạo + preview_urls từng trang)
 PATCH .../sketches/{version} {approach_note, suggested_complexity}      POST .../sketches/{version}/finalize   (chốt đúng 1 bản)
@@ -875,6 +875,8 @@ Lỗi: `409 ORDER_NOT_COMPLETED`, `409 REVIEW_EXISTS` (đã có: dùng PUT), `42
 
 ## 7q. Studio và trợ lý AI (U5, migration 0021; Q1 nhiều nhà cung cấp, Q2 = A studio trước đơn)
 
+**2026-11-17:** bản xem trước OT-3 của studio và phác thảo Staff sinh sau khi khách gửi giờ là **cùng một nét** (cùng seed theo nội dung, cùng bố cục: bản nháp chưa chọn bố cục được vẽ giữa trang như đơn). Bản xem trước của bản nháp cũ chưa có bố cục vì vậy dịch xuống giữa trang. Kế hoạch gộp studio vào màn tạo đơn: `docs/UNIFIED_SKETCH_V2_PLAN.md` (chưa làm, FE chưa cần đổi).
+
 Studio là **lớp bản nháp đứng trước đơn hàng**: khách soạn, chọn vật tư, xem trước, nhờ trợ lý AI sửa, rồi bấm "Gửi xưởng" mới thành đơn `SUBMITTED`. Từ đó trở đi đơn chạy đúng luồng cũ (mục 4, 5). Luồng tạo đơn trực tiếp `/orders` **vẫn giữ nguyên**: FE có thể dùng studio làm màn tạo đơn mới, hoặc để cả hai.
 
 **Bản nháp** (CUSTOMER, chỉ thấy bản của mình; bản của người khác → `404 DRAFT_NOT_FOUND`):
@@ -904,6 +906,63 @@ Studio là **lớp bản nháp đứng trước đơn hàng**: khách soạn, ch
 
 **Admin** (`PUT /admin/settings/{key}`, mục 7l): `ai_assistant_enabled` (bật/tắt), `ai_daily_messages_per_customer` (30), `ai_daily_model_calls` (400, toàn hệ thống), `ai_max_tool_calls` (6), `ai_daily_cost_cap_cents` (0 = không đặt; chỉ áp dụng khi đã cấu hình giá `LLM_PRICES`). Khoá API của nhà cung cấp chỉ nằm trong biến môi trường (`DEPLOY.md`).
 
+## 7r. Phác thảo làm việc của đơn + sửa nét (V2 Phase B, migration 0023, 2026-11-17)
+
+Kế hoạch V2 (`docs/UNIFIED_SKETCH_V2_PLAN.md`, chủ dự án đã chốt D1–D6): **đơn DRAFT là nơi khách soạn, xem và sửa phác thảo**; studio (mục 7q) sẽ thành lớp tương thích rồi bỏ dần. Phase B mới có phần hình học + API dưới đây; **trợ lý AI chưa gắn vào đơn** (Phase C: vẫn ở studio), nên lúc này FE gọi các lệnh sửa trực tiếp (nút / kéo thả). FE có thể bắt đầu làm màn "Tạo đơn = editor phác thảo" với các API này.
+
+Luồng (CUSTOMER, chủ đơn, đơn `DRAFT` hoặc `NEED_INFO`):
+1. Nhập nội dung / ảnh / vật tư như cũ (mục 5) → `POST /orders/{id}/sketch/generate` → `201 WorkingSketchOut` (engine giống hệt của xưởng; OT-2 → `422 AI_TYPE_UNSUPPORTED`).
+2. Hiển thị `document` (vector, vẽ lên canvas để chọn) và/hoặc ảnh `GET /orders/{id}/sketch/preview?page=1` (JPEG đúng màu mực, mặt giấy, có dấu AI).
+3. Khách chọn nét (click) hoặc cả từ (khung `words[].bbox`), chọn lệnh → `POST /orders/{id}/sketch/edit`.
+4. `POST /orders/{id}/sketch/undo`, `/redo`; `GET /orders/{id}/sketch/revisions` (lịch sử: `author`, `operation`, `note`); `GET /orders/{id}/sketch?revision_id=` xem một bản cũ (Before / After: tải hai bản rồi so trên FE).
+5. Gửi đơn như cũ (`POST /orders/{id}/submit`). Khi Staff tiếp nhận, **phiên bản chính thức v1 chính là hình học này** (không sinh lại; `trajectory.engine.name = "customer-working-sketch"`, `source_revision_id`). Đơn không tạo phác thảo làm việc thì luồng xưởng như cũ.
+
+`WorkingSketchOut = {revision:{id, seq, parent_id, author: ENGINE|CUSTOMER|AI|STAFF, tool_name, provider, model, note, operation, geometry_hash, metrics:{total_stroke_mm, pen_lift_count, travel_mm, estimated_writing_sec, suggested_complexity}, validation, created_at}, is_current, can_undo, can_redo, inputs_changed, limits, document, warnings, report}`.
+
+`document` (`vhrs-sketch/2`, toạ độ mm, gốc góc trên trái, y hướng xuống): `{format, engine, next_id, pages:[{no, paper_size, width_mm, height_mm, strokes:[{id: "s12", kind: base|mark|canvas, points:[[x,y],...], word: "w3"|null, provenance: ENGINE|RECOVERED|INFERRED|RESTORED|CANVAS|EDITED, edits?}], words:[{id, stroke_ids, bbox:[x0,y0,x1,y1], label?, confidence?, text?, region_no?}]}]}`. **Id ổn định**: sửa giữ id; tách nét cho id mới; sinh lại (đổi nội dung) cho bộ id mới. OT-1: mỗi từ là một vùng U4 (`label` ORIGINAL / RESTORED / INFERRED).
+
+`POST /orders/{id}/sketch/edit {base_revision_id, op, stroke_ids?, word_ids?, params?, note?}` (120 lần/phút). `base_revision_id` = bản khách đang nhìn; bản hiện tại đã khác (tab khác, sau này là trợ lý) → `409 STALE_REVISION` (`details.current_revision_id`), tải lại rồi sửa. Các nét chọn phải cùng một trang. Nét ngoài vùng chọn **không bao giờ đổi** (BE tự kiểm, `report.untouched_verified`). `report = {op, params, page, changed, added, removed, max_point_shift_mm, limits}`.
+
+| `op` | `params` | Ghi chú |
+|---|---|---|
+| `translate` | `dx_mm`, `dy_mm` | dời |
+| `rotate` | `degrees` | quanh tâm vùng chọn |
+| `scale` | `factor` | quanh tâm vùng chọn |
+| `slant` | `degrees` | dương = nghiêng phải |
+| `curvature` | `factor` | 1 = giữ nguyên; < 1 thẳng bớt; > 1 cong thêm; hai đầu nét giữ nguyên |
+| `smooth` | `passes` 1–5 | làm mượt, hai đầu giữ nguyên |
+| `extend` / `trim` | `mm`, `end`: `start`\|`end` | kéo dài theo hướng đầu nét / cắt ngắn |
+| `join` | — | đúng 2 nét theo thứ tự (cuối nét 1 nối đầu nét 2) |
+| `split` | `at` 0,05–0,95 | 1 nét thành 2 |
+| `delete` | — | xoá nét |
+
+`limits` (thanh trượt trên FE): OT-3 (`TEXT`) chặt vì nét là của mẫu chữ: dời ≤ 3 mm, xoay ≤ 15°, co giãn 0,8–1,25, nghiêng ≤ 15°, độ cong 0,5–1,5, kéo dài ≤ 3 mm, nối khi hai đầu cách ≤ 2 mm. OT-1 / OT-2 (`FREE`): 10 mm, 45°, 0,5–2, 30°, 0–2, 10 mm, 5 mm. Vượt → `422 EDIT_OUT_OF_RANGE` (`details.min/max`).
+
+**Nội dung đổi sau khi đã vẽ** (chữ, mẫu, cỡ, bố cục, ảnh, khổ giấy): `inputs_changed: true` → FE nhắc "Tạo lại phác thảo"; gửi đơn khi chưa tạo lại → `409 SKETCH_OUTDATED`. Đổi bút / mực / số bản không cần vẽ lại.
+
+## 7s. Trợ lý AI trên đơn (V2 Phase C, migration 0024, 2026-11-18)
+
+Trợ lý AI giờ làm việc **trên đơn DRAFT / NEED_INFO** (D1), cùng chỗ với editor phác thảo (mục 7r): khách chọn nét / từ trên canvas, gõ yêu cầu ("dời chữ này sang phải 1 mm", "nắn nét này thẳng lại", "đổi sang bút gel đen"), trợ lý sửa **bằng đúng các lệnh của Geometry Engine** (không bao giờ tự đưa toạ độ). Trần lượt, đồng ý gửi dữ liệu và nhà cung cấp dùng chung với studio (mục 7q: `GET /studio/assistant/status`). Studio vẫn chạy như cũ đến khi FE chuyển xong rồi mới bỏ (D1).
+
+```
+GET  /orders/{id}/assistant/messages          → {consented_at, flags, messages: MessageOut[]}
+POST /orders/{id}/assistant/messages          {text, ai_consent, base_revision_id?, selection?, client_ref?} → OrderTurnOut
+POST /orders/{id}/assistant/messages/stream   (cùng body) → text/event-stream
+GET  /workshop/orders/{id}/assistant          (Staff / Manager) cờ cảnh báo + hội thoại của đơn
+```
+
+- `ai_consent: true` bắt buộc ở tin nhắn đầu tiên của đơn (câu FE: "Tin nhắn, nội dung đơn và số đo phác thảo sẽ được gửi tới nhà cung cấp AI bên ngoài; ảnh của bạn không bị gửi").
+- `base_revision_id` = revision phác thảo khách đang nhìn (từ `GET /orders/{id}/sketch`). Đã đổi (tab khác) → `409 STALE_REVISION` **trước khi gọi AI** (không tốn lượt), tải lại rồi gửi lại.
+- `selection = {stroke_ids: [], word_ids: []}`: vùng khách đang chọn. Có selection thì trợ lý **chỉ được sửa trong vùng đó** (ngoài vùng → công cụ bị từ chối `OUTSIDE_SELECTION`, trợ lý báo lại). Không chọn gì thì trợ lý tìm từ theo chữ: với OT-3 mỗi từ trong `document.words[]` có `text` (vd "gửi"); OT-1 theo vùng / vị trí.
+- `client_ref`: id FE tự sinh cho mỗi tin nhắn (UUID). Gửi lại cùng id (mạng chập, bấm hai lần) → `200` với `replayed: true` và câu trả lời đã lưu, **không** gọi AI lần hai.
+- Một lượt mỗi đơn: tin nhắn thứ hai khi lượt trước chưa xong → `409 AI_TURN_IN_PROGRESS` (FE khoá ô nhập khi đang chờ).
+- `OrderTurnOut = {user, reply, replayed, sketch_revision_id}`; `reply.tool_calls[] = {name, ok, revision_id}` với `revision_id` là revision phác thảo trợ lý tạo. `sketch_revision_id` khác bản FE đang có → tải lại `GET /orders/{id}/sketch` (và preview). Mọi nhà cung cấp lỗi / quá thời gian → `200` với `reply.status = FAILED` và lời nhắn cho khách; phác thảo không đổi.
+- Stream: sự kiện như mục 7q (`user_saved`, `provider`, `tool {name, ok, revision_id, error}`, `failover`, `reply` = `OrderTurnOut`, `error`, `done`). Sau mỗi `tool` có `revision_id` FE có thể tải lại phác thảo ngay.
+- Mỗi sửa nét của trợ lý là một revision `author = AI` (`tool_name = edit_strokes`, `provider`, `model`) trong `GET /orders/{id}/sketch/revisions`; khách hoàn tác bằng `POST /orders/{id}/sketch/undo` như sửa tay.
+- Trợ lý **có thể** sửa nội dung chữ / mẫu / cỡ / căn lề (OT-3), vật tư, số bản, ghi chú, dòng xác thực, chế độ phục dựng (OT-1), tạo lại phác thảo. **Sửa nội dung / vật tư không hoàn tác bằng undo** (form đơn không có lịch sử; kết quả công cụ ghi giá trị cũ, trợ lý nói lại được). Nội dung đổi sau khi đã có phác thảo → `inputs_changed: true` (mục 7r), FE nhắc tạo lại.
+- Trợ lý **không** gửi đơn, thanh toán, huỷ đơn, không đọc ảnh (chỉ số đo chất lượng). Yêu cầu làm giả chữ ký / giấy tờ → trợ lý gắn cờ `FORGERY_RISK`, Staff thấy trong `GET /workshop/orders/{id}/assistant` (`flags`, `messages[].tools`).
+- OT-2: chưa có công cụ tạo phác thảo (đang nghiên cứu mô hình); các công cụ đơn / vật tư vẫn dùng được.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -927,6 +986,14 @@ Studio là **lớp bản nháp đứng trước đơn hàng**: khách soạn, ch
 | `CERTIFICATE_NOT_READY`, `CERTIFICATE_REVOKED`, `CERTIFICATE_NOT_FOUND` | 409 / 404 | Thẻ chứng nhận: chưa khoá gói sản xuất / đơn đã huỷ; trang xác thực: mã không tồn tại (U8) | hiện thông báo |
 | `INVALID_SPECS` | 422 | Thông số vật tư sai khoá / giá trị / thiếu nguồn (U6) | tô đỏ trường `details.key` |
 | `INK_NOT_FOR_PEN`, `PROFILE_EXISTS`, `PROFILE_NOT_MEASURED`, `LINE_WIDTH_REQUIRED` | 422 / 409 | Hồ sơ hiệu chuẩn: mực không thuộc bút, tổ hợp đã có hồ sơ, xác nhận khi chưa đo, xoá độ rộng nét (U6) | hiện thông báo; với `PROFILE_EXISTS` mở hồ sơ có sẵn |
+| `SKETCH_NOT_GENERATED` | 404 | Đơn chưa có phác thảo làm việc (V2) | hiện nút "Tạo phác thảo" |
+| `STALE_REVISION` | 409 | Phác thảo đã đổi ở nơi khác trước lệnh sửa này hoặc trước tin nhắn trợ lý (V2) | tải lại `GET /orders/{id}/sketch`, sửa / nhắn lại |
+| `AI_TURN_IN_PROGRESS` | 409 | Trợ lý đang xử lý tin nhắn khác của đơn (V2 Phase C) | khoá ô nhập đến khi có trả lời |
+| `SKETCH_OUTDATED` | 409 | Gửi đơn khi phác thảo vẽ từ nội dung cũ (V2) | "Tạo lại phác thảo" rồi gửi |
+| `EDIT_OUT_OF_RANGE` | 422 | Tham số sửa vượt giới hạn của loại đơn (V2) | giới hạn thanh trượt theo `limits` |
+| `EDIT_OUTSIDE_PAPER` | 422 | Nét sau khi sửa ra ngoài mép giấy (V2) | báo, giữ bản cũ |
+| `STROKE_NOT_FOUND` / `WORD_NOT_FOUND` | 404 | Id nét / từ không còn (đã sinh lại) (V2) | tải lại phác thảo |
+| `EMPTY_SELECTION`, `SELECTION_SPANS_PAGES`, `INVALID_EDIT`, `INVALID_EDIT_PARAMS`, `NO_CHANGE`, `STROKE_TOO_SHORT`, `JOIN_TOO_FAR` | 422 | Lệnh sửa không hợp lệ (V2) | hiện `message` |
 | `NO_PREVIOUS_VERSION` | 404 | Báo giá đầu tiên: chưa có phiên bản trước để so (U2) | ẩn nút "So sánh" |
 | `SAME_VERSION` | 422 | Staff chọn cùng một phiên bản để so (U2) | chọn hai phiên bản khác nhau |
 | `REGION_MISMATCH` | 409 | Vùng không còn trong bản xem trước (ảnh / khổ giấy đã đổi) (U5) | tải lại danh sách vùng |
