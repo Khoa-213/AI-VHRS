@@ -187,6 +187,24 @@ class RegionEditIn(BaseModel):
 class SketchDetailOut(SketchOut):
     trajectory: dict[str, Any]
     regions: list[SketchRegionOut] = []
+    # V2 Phase H: the vhrs-sketch/2 document (stroke / word ids for the editor; each stroke's `provenance` and
+    # `edited_by` [CUSTOMER | AI | STAFF]); `derived: true` = version saved before migration 0025, ids made on read
+    document: dict[str, Any] | None = None
+    edit_summary: dict[str, int] = {}     # {"strokes", "edited", "CUSTOMER", "AI", "STAFF"}: strokes changed by each
+
+
+class StaffStrokeEditIn(BaseModel):
+    """V2 Phase H: one Geometry Engine edit on the latest version (same ops and limits per order type as the customer's
+    editor, `FE_API_GUIDE.md` 7r). Select by `stroke_ids` and / or `word_ids` of `document`."""
+    op: Literal["translate", "rotate", "scale", "slant", "curvature", "smooth", "extend", "trim", "join", "split", "delete"]
+    stroke_ids: list[str] = Field(default_factory=list, max_length=500)
+    word_ids: list[str] = Field(default_factory=list, max_length=200)
+    params: dict[str, Any] = Field(default_factory=dict)
+    note: str = Field(min_length=1, max_length=300, description="Why (kept in the version's engine record + audit).")
+
+
+class StaffStrokeEditOut(SketchOut):
+    report: dict[str, Any]               # {op, page, changed, added, removed, untouched_verified, max_point_shift_mm, limits}
 
 
 # ---- quotations (UC-26) ----------------------------------------------------------------------------

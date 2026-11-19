@@ -109,7 +109,7 @@ Yêu cầu đã làm · file tạo/sửa · test đã chạy + kết quả (số
 - Chạy lệnh trong `BE/` (uvicorn, pytest, alembic, seed). Từ thư mục gốc repo sẽ lỗi `No module named 'app'`.
 - venv: `BE/.venv` (Linux: `source .venv/bin/activate`; Windows: `.venv/Scripts/python.exe`). Python 3.14 local, 3.11 khi deploy: tránh cú pháp/thư viện chỉ có ở bản mới.
 - Heredoc có dấu nháy trên Windows/Git Bash dễ lỗi: dùng công cụ ghi file thay vì `cat <<`.
-- Test nặng (Tokyo pooler, ~1 giây/lệnh gọi) → chạy nền, kiên nhẫn; đừng chạy lại cả suite vì một lỗi nhỏ: sửa rồi chạy riêng test đó, cuối cùng mới chạy toàn bộ.
+- Test nặng (Supabase pooler; DB chuyển từ Tokyo sang Singapore ngày 2026-11-19, số "~1 giây/lệnh gọi" đo khi còn ở Tokyo) → chạy nền, kiên nhẫn; đừng chạy lại cả suite vì một lỗi nhỏ: sửa rồi chạy riêng test đó, cuối cùng mới chạy toàn bộ.
 - Xem route thật: `python -c "from app.main import app; print(sorted(app.openapi()['paths']))"` (không cần DB).
 
 ### S17 · Khi test fail
@@ -234,3 +234,5 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 ### 2026-11-17 · Test fail "ngẫu nhiên" ở cuối lượt Supabase = hai phiên pytest chồng nhau
 **Bối cảnh:** lượt chạy tiếp toàn suite (11:08–11:34) fail 6 test U6/U8 ở cuối với ba lỗi khác nhau (422 `PATCH /orders`, `KeyError: 'id'` khi tạo đơn, 409 `CONFLICT`). Chạy riêng thì pass. Cùng buổi sáng AI chạy `test_api_phone_otp.py` trên Supabase ở phiên khác; bước dọn `pytest_*` lúc bắt đầu / kết thúc phiên đó xoá dữ liệu test của phiên kia.
 **Bài học:** nhiều lỗi khác loại dồn vào một đoạn ngắn, chạy riêng lại pass → nghi dữ liệu bị xoá giữa chừng trước khi nghi code. Trước khi chạy pytest trên Supabase, hỏi xem có lượt nào đang chạy không. `tests/conftest.py` giờ giữ khoá advisory (`0x56485253`) nên phiên thứ hai dừng ngay; đừng gỡ khoá này. Helper `_ot3` giờ in nội dung lỗi (`r.text`) khi `PATCH` không trả 200.
+
+**2026-11-19 (Phase H, Supabase):** một ERROR ở teardown của test cuối cùng, trong khi mọi test đều pass. Nguyên nhân: kết nối giữ khoá advisory nằm yên khoảng 5 giờ, Supabase đóng nó, nên `pg_advisory_unlock` báo lỗi. **Bài học:** gặp ERROR teardown ở test cuối, xem traceback có phải `_db_clean` không trước khi nghi code. Lệnh mở khoá giờ bỏ qua `OperationalError` (kết nối chết thì khoá đã tự nhả).

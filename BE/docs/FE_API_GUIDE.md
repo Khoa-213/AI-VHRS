@@ -963,6 +963,23 @@ GET  /workshop/orders/{id}/assistant          (Staff / Manager) cờ cảnh báo
 - Trợ lý **không** gửi đơn, thanh toán, huỷ đơn, không đọc ảnh (chỉ số đo chất lượng). Yêu cầu làm giả chữ ký / giấy tờ → trợ lý gắn cờ `FORGERY_RISK`, Staff thấy trong `GET /workshop/orders/{id}/assistant` (`flags`, `messages[].tools`).
 - OT-2: chưa có công cụ tạo phác thảo (đang nghiên cứu mô hình); các công cụ đơn / vật tư vẫn dùng được.
 
+## 7t. Staff sửa nét bằng Geometry Engine (V2 Phase H, migration 0025, 2026-11-19)
+
+Editor phác thảo của Staff dùng **cùng lệnh và cùng giới hạn** với editor của khách (mục 7r): `translate`, `rotate`, `scale`, `slant`, `curvature`, `smooth`, `extend`, `trim`, `join`, `split`, `delete`; OT-3 giới hạn chặt (dời ≤ 3 mm mỗi lệnh...), OT-1 / OT-2 rộng hơn. Cần hơn thế thì vẫn sinh lại hoặc tải quỹ đạo tay như cũ.
+
+```
+GET  /workshop/orders/{id}/sketches/{version}        → SketchDetailOut + document + edit_summary
+POST /workshop/orders/{id}/sketches/{version}/edit   {op, stroke_ids?, word_ids?, params, note} → 201 StaffStrokeEditOut
+```
+
+- `document` = tài liệu `vhrs-sketch/2` của phiên bản (như `GET /orders/{id}/sketch` của khách): `pages[].strokes[] = {id, kind, points, word, provenance, edited_by?}`, `pages[].words[] = {id, stroke_ids, bbox, label?, text?}`. FE chọn nét / từ theo `id`.
+- `edited_by` của nét = ai đã sửa nét đó, theo thứ tự (`CUSTOMER`, `AI`, `STAFF`). v1 nhận từ khách (D2) giữ **đúng id và dấu** của bản khách gửi: FE tô màu khác cho nét khách / trợ lý đã sửa để Staff kiểm. `edit_summary = {strokes, edited, CUSTOMER, AI, STAFF}` (số nét).
+- `document.derived: true`: phiên bản lưu trước migration 0025, tài liệu được dựng lại từ file quỹ đạo khi đọc (id theo thứ tự nét, không có dấu ai sửa). Sửa được như thường; phiên bản mới sinh ra có tài liệu riêng.
+- `edit` chỉ trên **phiên bản mới nhất** (khác → `409 SKETCH_VERSION_CONFLICT` kèm `latest_version`), đơn phải `ACCEPTED`. Kết quả là **phiên bản mới** (chưa chốt), phiên bản cũ không đổi; nét ngoài vùng chọn được kiểm từng byte; id nét không sửa được giữ nguyên. `note` bắt buộc (ghi vào engine + audit `SKETCH_GEOMETRY_EDIT`). `report = {op, page, changed, added, removed, untouched_verified, max_point_shift_mm, limits}`.
+- OT-1: vùng U4 đi theo (nhãn giữ nguyên; vùng có nét bị sửa thành `source = STAFF`).
+- Lỗi: như mục 7r (`EDIT_OUT_OF_RANGE`, `EDIT_OUTSIDE_PAPER`, `STROKE_NOT_FOUND`, `WORD_NOT_FOUND`, `EMPTY_SELECTION`, `INVALID_EDIT`, `JOIN_TOO_FAR`, ...) + `GEOMETRY_TAMPERED` (file tài liệu / quỹ đạo trong kho không khớp mã băm).
+- Sau khi khách duyệt báo giá, đơn không còn `ACCEPTED` nên không sửa được nữa. Gói sản xuất (snapshot) chỉ khoá **đúng phiên bản và mã băm khách đã duyệt** (`409 SKETCH_NOT_APPROVED` nếu lệch, khi Manager xếp lịch).
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -988,6 +1005,7 @@ GET  /workshop/orders/{id}/assistant          (Staff / Manager) cờ cảnh báo
 | `INK_NOT_FOR_PEN`, `PROFILE_EXISTS`, `PROFILE_NOT_MEASURED`, `LINE_WIDTH_REQUIRED` | 422 / 409 | Hồ sơ hiệu chuẩn: mực không thuộc bút, tổ hợp đã có hồ sơ, xác nhận khi chưa đo, xoá độ rộng nét (U6) | hiện thông báo; với `PROFILE_EXISTS` mở hồ sơ có sẵn |
 | `SKETCH_NOT_GENERATED` | 404 | Đơn chưa có phác thảo làm việc (V2) | hiện nút "Tạo phác thảo" |
 | `STALE_REVISION` | 409 | Phác thảo đã đổi ở nơi khác trước lệnh sửa này hoặc trước tin nhắn trợ lý (V2) | tải lại `GET /orders/{id}/sketch`, sửa / nhắn lại |
+| `SKETCH_NOT_APPROVED` | 409 | Phác thảo chốt khác phiên bản / mã băm khách đã duyệt (V2 Phase H, khi xếp lịch) | Staff kiểm phác thảo chốt; lập báo giá mới cho khách duyệt lại |
 | `AI_TURN_IN_PROGRESS` | 409 | Trợ lý đang xử lý tin nhắn khác của đơn (V2 Phase C) | khoá ô nhập đến khi có trả lời |
 | `SKETCH_OUTDATED` | 409 | Gửi đơn khi phác thảo vẽ từ nội dung cũ (V2) | "Tạo lại phác thảo" rồi gửi |
 | `EDIT_OUT_OF_RANGE` | 422 | Tham số sửa vượt giới hạn của loại đơn (V2) | giới hạn thanh trượt theo `limits` |

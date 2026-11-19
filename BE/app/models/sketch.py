@@ -57,6 +57,8 @@ class Sketch(Base):
     watermark: Mapped[dict[str, Any] | None] = mapped_column(JSONB)        # U8: physical_mark.apply() summary, NULL = none
     is_final: Mapped[bool] = mapped_column(Boolean, default=False)
     source_revision_id: Mapped[int | None] = mapped_column(BigInteger)   # V2 (0023): customer revision v1 was taken from
+    document_uri: Mapped[str | None] = mapped_column(Text)               # V2 H (0025): vhrs-sketch/2 document, NULL = older
+    geometry_hash: Mapped[str | None] = mapped_column(String(64))        # V2 H (0025): geometry_hash of that document
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
 
 

@@ -69,6 +69,16 @@ def load_geometry(storage: ObjectStorage, rev: SketchRevision) -> dict[str, Any]
     return doc
 
 
+def order_word_texts(session: Session, order: Order) -> list[str] | None:
+    """OT-3 words of the text in reading order (labels for the assistant: "dời chữ 'gửi'"). A drawing has no words."""
+    if order.order_type != OrderType.OT3_TEMPLATE:
+        return None
+    row = next((r for r in OrderRepository(session).inputs(order.id) if r.kind == OrderInputKind.TEXT_CONTENT), None)
+    if row is None or not row.text_content:
+        return None
+    return unicodedata.normalize("NFC", row.text_content).split()
+
+
 def check_fresh(session: Session, order: Order) -> None:
     """Called when the order is sent: a working sketch drawn from older inputs must be redrawn first."""
     if order.current_sketch_revision_id is None:
@@ -179,19 +189,14 @@ class SketchWorkService:
         doc = load_geometry(self._store(), current)
         ids = list(stroke_ids or []) + (geo.word_strokes(doc, list(word_ids)) if word_ids else [])
         new, report = geo.apply(doc, op, ids, params, geo.limits_for(order.order_type.value))
+        geo.mark_edit(new, report, author)
         operation = {"op": op, "stroke_ids": stroke_ids or [], "word_ids": word_ids or [], "params": params or {}}
         rev = self._save(order, new, author=author, parent=current, operation=operation, validation=report, tool=tool,
                          provider=provider, model=model, note=note or _describe(report))
         return rev, new, report
 
     def _word_texts(self, order: Order) -> list[str] | None:
-        """OT-3 words of the text in reading order (labels for the assistant: "dời chữ 'gửi'"). A drawing has no words."""
-        if order.order_type != OrderType.OT3_TEMPLATE:
-            return None
-        row = next((r for r in OrderRepository(self.session).inputs(order.id) if r.kind == OrderInputKind.TEXT_CONTENT), None)
-        if row is None or not row.text_content:
-            return None
-        return unicodedata.normalize("NFC", row.text_content).split()
+        return order_word_texts(self.session, order)
 
     def undo(self, order_id: int) -> SketchRevision:
         order = self.order(order_id, write=True)

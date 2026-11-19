@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0024 (alembic head), generated 2026-11-18 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0025 (alembic head), generated 2026-11-19 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0024);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0024;
+--      baseline schema and every migration up to 0025);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0025;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -2246,12 +2246,26 @@ CREATE TABLE public.sketches (
     render_profile_id bigint,
     watermark jsonb,
     source_revision_id bigint,
+    document_uri text,
+    geometry_hash character varying(64),
     CONSTRAINT sketches_estimated_writing_sec_check CHECK ((estimated_writing_sec >= 0)),
     CONSTRAINT sketches_pen_lift_count_check CHECK ((pen_lift_count >= 0)),
     CONSTRAINT sketches_similarity_score_check CHECK (((similarity_score >= (0)::numeric) AND (similarity_score <= (100)::numeric))),
     CONSTRAINT sketches_total_stroke_mm_check CHECK ((total_stroke_mm >= (0)::numeric)),
     CONSTRAINT sketches_version_check CHECK ((version >= 1))
 );
+
+--
+-- Name: COLUMN sketches.document_uri; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sketches.document_uri IS 'V2 Phase H: vhrs-sketch/2 document of this version (NULL = saved before 0025, derived from the trajectory)';
+
+--
+-- Name: COLUMN sketches.geometry_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sketches.geometry_hash IS 'V2 Phase H: sketch_geometry.geometry_hash of the document (strokes without the U8 line)';
 
 --
 -- Name: sketches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -4725,7 +4739,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0024');
+INSERT INTO alembic_version (version_num) VALUES ('0025');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

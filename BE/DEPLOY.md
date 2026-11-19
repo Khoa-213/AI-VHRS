@@ -1,6 +1,6 @@
 # Deploy the backend to Render
 
-Target: Render web service (Docker, Singapore) + Supabase Postgres (Tokyo) + FE on Vercel.
+Target: Render web service (Docker, Singapore) + Supabase Postgres (Singapore, `ap-southeast-1`; moved from Tokyo on 2026-11-19) + FE on Vercel.
 
 ## 0. Before the first deploy (do once)
 

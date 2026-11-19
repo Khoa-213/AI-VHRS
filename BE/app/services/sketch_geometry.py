@@ -15,7 +15,8 @@ The document
   `next_id`. A new generation (the customer changed the text or the images) starts new ids, which the revision says.
 * Words come from the engine: OT-3 strokes carry their word group (U7), OT-1 strokes belong to the U4 regions.
 * `provenance`: ENGINE (text engine), RECOVERED (traced from the photo), INFERRED / RESTORED (U4 labels), CANVAS (the
-  customer's drawing), EDITED (changed by an edit; `edits` counts them).
+  customer's drawing), EDITED (changed by an edit; `edits` counts them, `edited_by` lists who: CUSTOMER / AI / STAFF,
+  V2 Phase H). Official sketch versions keep their document too (`sketches.document_uri`, migration 0025).
 
 The Geometry Engine
 -------------------
@@ -416,6 +417,39 @@ def _refresh_words(page: dict[str, Any]) -> None:
         w["bbox"] = _bbox([p for s in sts for p in s["points"]])
         kept.append(w)
     page["words"] = kept
+
+
+EDITORS = ("CUSTOMER", "AI", "STAFF")
+
+
+def mark_edit(doc: dict[str, Any], report: dict[str, Any], author: str) -> None:
+    """V2 Phase H: remember WHO changed each stroke (`edited_by`, in order, no repeats), so the Staff editor can show the
+    strokes the customer / the assistant changed in v1 (D2). Metadata only: `geometry_hash` covers kind + points."""
+    if author not in EDITORS:
+        return
+    touched = set(report.get("changed") or []) | set(report.get("added") or [])
+    for p in doc["pages"]:
+        for st in p["strokes"]:
+            if st["id"] in touched:
+                who = list(st.get("edited_by") or [])
+                if author not in who:
+                    who.append(author)
+                st["edited_by"] = who
+
+
+def edit_summary(doc: dict[str, Any]) -> dict[str, int]:
+    """{"strokes": n, "edited": n, "CUSTOMER": n, "AI": n, "STAFF": n}: strokes changed by each editor."""
+    out = {"strokes": 0, "edited": 0, **{k: 0 for k in EDITORS}}
+    for p in doc["pages"]:
+        for st in p["strokes"]:
+            out["strokes"] += 1
+            who = st.get("edited_by") or []
+            if who or st.get("provenance") == "EDITED":
+                out["edited"] += 1
+            for k in who:
+                if k in out:
+                    out[k] += 1
+    return out
 
 
 def word_strokes(doc: dict[str, Any], word_ids: list[str]) -> list[str]:
