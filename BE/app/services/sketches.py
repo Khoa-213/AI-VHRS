@@ -149,7 +149,10 @@ class SketchService:
         rev = self.session.get(SketchRevision, order.current_sketch_revision_id)
         doc = load_geometry(self._storage(), rev)
         pages = geo.to_pages(doc)
-        regions = _regions_from_doc(doc, lambda page_no, region_no, w: ("CUSTOMER", None))
+        from app.services.htr_hints import hints_for          # E2b: the AI text hints go with v1 (metrics.htr)
+        hints = hints_for(self.session, order, doc, outdated=False)    # sending checked the sketch is not outdated
+        regions = _regions_from_doc(doc, lambda page_no, region_no, w: ("CUSTOMER", None),
+                                    hints=(hints or {}).get("words"))
         eng = {"name": "customer-working-sketch", "version": engine.ENGINE_VERSION, "source_revision_id": rev.id,
                "source_revision_seq": rev.seq, "geometry_hash": rev.geometry_hash, "base_engine": doc.get("engine")}
         metrics = tj.compute_metrics(pages, self._pen(order)[0])
@@ -243,7 +246,7 @@ class SketchService:
             doc = json.loads(raw)
             if geo.geometry_hash(doc) != row.geometry_hash:
                 raise AppError(409, "GEOMETRY_TAMPERED", "File tài liệu phác thảo không khớp mã băm đã lưu; không dùng được.")
-            return doc
+            return geo.ensure_structure(doc)                 # Phase F: lines / paragraphs for documents saved before them
         raw = store.read(row.trajectory_uri)
         if raw is None:
             raise AppError(409, "FILE_MISSING", "Không đọc được file quỹ đạo từ kho lưu trữ.")
@@ -257,7 +260,8 @@ class SketchService:
         return doc
 
     def edit_strokes(self, order_id: int, version: int, *, op: str, stroke_ids: list[str] | None,
-                     word_ids: list[str] | None, params: dict[str, Any] | None, note: str) -> tuple[Sketch, dict[str, Any]]:
+                     word_ids: list[str] | None, params: dict[str, Any] | None, note: str,
+                     line_ids: list[str] | None = None, paragraph_ids: list[str] | None = None) -> tuple[Sketch, dict[str, Any]]:
         """V2 Phase H: one Geometry Engine edit by the Staff on the LATEST version -> a new version (never in place). Same
         limits per order type as the customer / assistant (H-a); strokes outside the selection are verified unchanged;
         ids the edit did not touch are kept, so a later compare / the customer's markers still line up."""
@@ -270,10 +274,11 @@ class SketchService:
                            {"latest_version": latest})
         doc = self.document_of(row)
         doc.pop("derived", None)
-        ids = list(stroke_ids or []) + (geo.word_strokes(doc, list(word_ids)) if word_ids else [])
+        ids = list(stroke_ids or []) + geo.group_strokes(doc, word_ids, line_ids, paragraph_ids)
         new, report = geo.apply(doc, op, ids, params, geo.limits_for(order.order_type.value))
         geo.mark_edit(new, report, "STAFF")
-        operation = {"op": op, "stroke_ids": stroke_ids or [], "word_ids": word_ids or [], "params": params or {}}
+        operation = {"op": op, "stroke_ids": stroke_ids or [], "word_ids": word_ids or [], "params": params or {},
+                     **({"line_ids": line_ids} if line_ids else {}), **({"paragraph_ids": paragraph_ids} if paragraph_ids else {})}
         eng = {"name": "staff-geometry-edit", "version": engine.ENGINE_VERSION, "from_version": row.version,
                "operation": operation, "note": note, "base_engine": doc.get("engine")}
         new["engine"] = eng
@@ -286,7 +291,13 @@ class SketchService:
             old = old_regions.get((page_no, region_no))
             return (old.source, old.edited_by) if old else ("STAFF", self.actor.id)
 
-        regions = _regions_from_doc(new, source_of) if old_regions else None
+        carried = {}                                       # E2b: the AI text hint stays with its region across edits
+        for page_no, p in enumerate(new["pages"], start=1):
+            for n, w in enumerate(p["words"], start=1):
+                old = old_regions.get((page_no, w.get("region_no") or n))
+                if old is not None and (old.metrics or {}).get("htr"):
+                    carried[w["id"]] = old.metrics["htr"]
+        regions = _regions_from_doc(new, source_of, hints=carried) if old_regions else None
         pages = geo.to_pages(new)
         metrics = tj.compute_metrics(pages, self._pen(order)[0])
         new_row = self._persist(order, pages, eng, metrics, None,
@@ -412,10 +423,10 @@ class SketchService:
                          entity_id=row.id, new={"order_id": order.id, "version": version}, ip=self.ip)
         return row
 
-def _regions_from_doc(doc: dict[str, Any], source_of) -> list[rg.RegionDraft]:
+def _regions_from_doc(doc: dict[str, Any], source_of, hints: dict[str, dict[str, Any]] | None = None) -> list[rg.RegionDraft]:
     """U4 region rows of a document's labelled words (OT-1), with their stroke range in `geo.to_pages(doc)`. A word whose
     strokes are no longer contiguous is left out (a region is a stroke range). `source_of(page_no, region_no, word)` ->
-    (source, edited_by)."""
+    (source, edited_by). `hints` (E2b, word id -> {text, status}) is kept in `metrics.htr` (a hint, never `text`)."""
     regions: list[rg.RegionDraft] = []
     for page_no, p in enumerate(doc["pages"], start=1):
         pos = {st["id"]: i for i, st in enumerate(p["strokes"])}
@@ -427,7 +438,8 @@ def _regions_from_doc(doc: dict[str, Any], source_of) -> list[rg.RegionDraft]:
                 regions.append(rg.RegionDraft(page_no=page_no, region_no=region_no, stroke_start=idx[0],
                                               stroke_end=idx[-1] + 1, bbox=tuple(w["bbox"]), label=w["label"],
                                               confidence=w.get("confidence"), text=w.get("text"), source=source,
-                                              edited_by=edited_by))
+                                              edited_by=edited_by,
+                                              metrics={"htr": hints[w["id"]]} if hints and w["id"] in hints else None))
     return regions
 
 

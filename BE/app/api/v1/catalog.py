@@ -67,7 +67,7 @@ def _template_preview(tpl, text: str, *, size: float = 9.0, alignment: str = tex
     """PNG of the first page of `text` in a template, optionally with sizes and styles of parts of it and its placement
     (centred on the sheet unless chosen otherwise, as an order's text). A faint frame shows the margins."""
     try:
-        placement = text_layout.parse(layout or {}, len(unicodedata.normalize("NFC", text))).with_defaults()
+        placement = text_layout.parse(layout or {}, unicodedata.normalize("NFC", text)).with_defaults()
     except text_layout.TextLayoutError as exc:
         raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
     parsed = None if placement.is_plain else placement

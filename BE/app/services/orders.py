@@ -140,6 +140,7 @@ class OrderService:
         self.orders = OrderRepository(session)
         self.catalog = CatalogRepository(session)
         self.pricing = PricingService(session)
+        self.layout_remap: dict[str, int] | None = None    # V2 Phase D: what the last set_text(keep_layout) kept
 
     # ---- helpers ----
     def _get(self, order_id: int) -> Order:
@@ -327,6 +328,11 @@ class OrderService:
         if row is None:
             row = self.orders.add_input(OrderInput(order_id=order.id, kind=OrderInputKind.TEXT_CONTENT))
         data = {**data, "text_content": unicodedata.normalize("NFC", data["text_content"] or "")}   # S0: Unicode NFC
+        self.layout_remap = None
+        if data.pop("keep_layout", False) and data.get("layout") is None and row.layout:
+            # V2 Phase D: the stored layout follows the edit of the text (unchanged characters / paragraphs keep their style)
+            data["layout"], self.layout_remap = text_layout.remap_stored(
+                unicodedata.normalize("NFC", row.text_content or ""), data["text_content"], row.layout)
         data["layout"] = self._check_layout(data.get("layout"), data["text_content"])
         data["alignment"] = data.get("alignment") or text_layout.DEFAULT_ALIGNMENT   # centred on the sheet unless chosen
         for k, v in data.items():
@@ -339,7 +345,7 @@ class OrderService:
         """FR-08: sizes and styles of parts of the text and the placement on the page. Offsets index the NFC text just
         stored; stored in canonical form, always with a vertical alignment (MIDDLE unless the customer chose another)."""
         try:
-            parsed = text_layout.parse(raw or {}, len(text))
+            parsed = text_layout.parse(raw or {}, text)
         except text_layout.TextLayoutError as exc:
             raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
         return text_layout.to_json(parsed.with_defaults())

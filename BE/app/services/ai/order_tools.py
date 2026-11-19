@@ -13,13 +13,17 @@ Same rules as the studio tools (tools.py):
 """
 from __future__ import annotations
 
+import json
+import unicodedata
 from decimal import Decimal
 from typing import Any, Callable
 
 from app.core.errors import AppError
+from app.domain import text_layout
 from app.models.order import Order, OrderInputKind, OrderType
 from app.repositories.orders import OrderRepository
 from app.services import audit
+from app.services import htr_hints
 from app.services import sketch_geometry as geo
 from app.services.ai.llm import ToolSpec
 from app.services.ai.tools import FLAG_KINDS, _obj, list_materials, list_templates
@@ -29,6 +33,8 @@ from app.services.sketch_work import SketchWorkService
 _TEXT_FOR_MODEL = 3000
 _WORDS_FOR_MODEL = 200            # words listed by get_sketch (ids, text, box); more -> truncated, the model is told
 _STROKES_FOR_MODEL = 60           # strokes of the selection described individually
+SELECTION_KEYS = ("stroke_ids", "word_ids", "line_ids", "paragraph_ids")
+_LINES_FOR_MODEL = 80
 
 SPECS: list[ToolSpec] = [
     ToolSpec("get_order", "Đọc đơn hiện tại: loại đơn, nội dung, vật tư, giá ước tính, phác thảo hiện tại và vùng khách đang chọn.",
@@ -40,11 +46,25 @@ SPECS: list[ToolSpec] = [
     ToolSpec("list_templates", "Danh sách mẫu chữ đang bật (đơn viết theo mẫu chữ).", _obj({})),
     ToolSpec("update_text",
              "Sửa nội dung chữ / mẫu chữ / cỡ chữ / căn lề của đơn viết theo mẫu. Chỉ gửi trường cần đổi. Chỉ đổi nội dung khi "
-             "khách yêu cầu rõ; giữ nguyên câu chữ của khách. Không hoàn tác được bằng undo: kết quả có giá trị cũ.",
+             "khách yêu cầu rõ; giữ nguyên câu chữ của khách. Định dạng của phần chữ không đổi được giữ. Kết quả có giá "
+             "trị cũ; undo_sketch qua một lần tạo lại phác thảo cũng đưa nội dung về bản đã vẽ.",
              _obj({"text": {"type": "string", "description": "toàn bộ nội dung mới"},
                    "template_id": {"type": "integer"},
                    "font_size_mm": {"type": "number", "description": "chiều cao chữ hoa, mm"},
                    "alignment": {"type": "string", "enum": ["LEFT", "CENTER", "RIGHT", "JUSTIFY"]}})),
+    ToolSpec("set_layout",
+             "Đổi bố cục chữ của đơn viết theo mẫu (không đổi giá). Chỉ gửi phần cần đổi: line_spacing (0.8-2.5, cả bài); "
+             "margins_mm {top,bottom,left,right} (5-80 mm, phía không gửi giữ nguyên); vertical_align TOP|MIDDLE|BOTTOM; "
+             "paragraph {index (đoạn văn tách theo xuống dòng, từ 0), line_spacing?, alignment?, space_before_mm? (0-50)} "
+             "(chỉ gửi index = bỏ định dạng riêng của đoạn đó); span {match (đoạn chữ cần định dạng, lần xuất hiện đầu) "
+             "hoặc start/end, size_mm? (4-100), italic?, underline? single|double, strike?} (không gửi kiểu nào = bỏ định "
+             "dạng của đoạn chữ đó). Không có chữ đậm. Sau đó phác thảo cần tạo lại.",
+             _obj({"line_spacing": {"type": "number"},
+                   "margins_mm": {"type": "object", "description": "{top, bottom, left, right} mm"},
+                   "vertical_align": {"type": "string", "enum": ["TOP", "MIDDLE", "BOTTOM"]},
+                   "paragraph": {"type": "object", "description": "{index, line_spacing?, alignment?, space_before_mm?}"},
+                   "span": {"type": "object",
+                            "description": "{match | start,end, size_mm?, italic?, underline?, strike?}"}})),
     ToolSpec("choose_materials", "Chọn giấy, bút, màu mực (id từ list_materials), hoặc để xưởng đề xuất vật tư.",
              _obj({"paper_type_id": {"type": "integer"}, "pen_type_id": {"type": "integer"},
                    "ink_color_id": {"type": "integer"}, "workshop_suggest_materials": {"type": "boolean"}})),
@@ -58,13 +78,15 @@ SPECS: list[ToolSpec] = [
              "khách kết quả thật.", _obj({})),
     ToolSpec("generate_sketch",
              "Tạo (lại) phác thảo nét từ nội dung đơn. Tạo lại thì các sửa nét trước đó không còn trong bản mới (vẫn hoàn tác "
-             "được). Nếu khách đã sửa nét, hỏi khách trước khi tạo lại.", _obj({})),
+             "được). Phác thảo có nét đã sửa → lỗi SKETCH_HAS_EDITS: hỏi khách, chỉ gửi discard_edits=true khi khách đồng ý.",
+             _obj({"discard_edits": {"type": "boolean"}})),
     ToolSpec("get_sketch",
-             "Đọc phác thảo hiện tại: các từ (id, chữ nếu biết, khung mm, số nét) theo từng trang, giới hạn sửa của loại đơn "
-             "và chi tiết các nét khách đang chọn. Toạ độ mm, gốc góc trên trái, y hướng xuống.",
+             "Đọc phác thảo hiện tại: các từ (id, chữ nếu biết, khung mm, số nét), các dòng (id, từ) và đoạn (id, dòng) theo "
+             "từng trang, giới hạn sửa của loại đơn và chi tiết các nét khách đang chọn. Toạ độ mm, gốc góc trên trái, y hướng xuống.",
              _obj({"page": {"type": "integer", "description": "chỉ một trang (mặc định: tất cả)"}})),
     ToolSpec("edit_strokes",
-             "Sửa hình học bằng MỘT lệnh có cấu trúc trên các nét (stroke_ids) hoặc cả từ (word_ids). Không bao giờ gửi toạ độ. "
+             "Sửa hình học bằng MỘT lệnh có cấu trúc trên các nét (stroke_ids), cả từ (word_ids), cả dòng (line_ids) hoặc cả "
+             "đoạn (paragraph_ids). Không bao giờ gửi toạ độ. "
              "op và params: translate {dx_mm, dy_mm}; rotate {degrees}; scale {factor}; slant {degrees, dương = nghiêng "
              "phải}; curvature {factor: 1 giữ nguyên, <1 thẳng bớt, >1 cong thêm}; smooth {passes 1-5}; extend / trim "
              "{mm, end: start|end}; join (đúng 2 nét); split {at 0.05-0.95}; delete. Tham số phải nằm trong limits của "
@@ -72,10 +94,17 @@ SPECS: list[ToolSpec] = [
              _obj({"op": {"type": "string", "enum": list(geo.OPS)},
                    "stroke_ids": {"type": "array", "items": {"type": "string"}},
                    "word_ids": {"type": "array", "items": {"type": "string"}},
+                   "line_ids": {"type": "array", "items": {"type": "string"}},
+                   "paragraph_ids": {"type": "array", "items": {"type": "string"}},
                    "params": {"type": "object", "description": "tham số của lệnh, ví dụ {\"dx_mm\": 1.5}"},
                    "note": {"type": "string", "description": "mô tả ngắn cho lịch sử, tiếng Việt"}}, ["op"])),
-    ToolSpec("undo_sketch", "Hoàn tác thay đổi phác thảo gần nhất (của khách hoặc của trợ lý).", _obj({})),
-    ToolSpec("redo_sketch", "Làm lại thay đổi phác thảo vừa hoàn tác.", _obj({})),
+    ToolSpec("undo_sketch",
+             "Hoàn tác thay đổi phác thảo gần nhất (của khách hoặc của trợ lý). Qua một lần tạo lại, nội dung / bố cục / vật tư "
+             "của đơn cũng về bản đã vẽ (inputs_restored). Lỗi UNDRAWN_INPUT_CHANGES: hỏi khách, chỉ gửi "
+             "discard_input_changes=true khi khách đồng ý bỏ phần sửa chưa vẽ.",
+             _obj({"discard_input_changes": {"type": "boolean"}})),
+    ToolSpec("redo_sketch", "Làm lại thay đổi phác thảo vừa hoàn tác (như undo_sketch về nội dung đơn).",
+             _obj({"discard_input_changes": {"type": "boolean"}})),
     ToolSpec("flag_for_staff",
              "Gắn cờ để nhân viên xưởng xem khi nhận đơn. Bắt buộc dùng FORGERY_RISK khi khách muốn làm giả chữ ký, giấy tờ, "
              "văn bản pháp lý hoặc mạo danh người khác.",
@@ -91,13 +120,13 @@ class OrderTools:
                  selection: dict[str, list[str]] | None = None):
         self.orders, self.work, self.order_id, self.ai_session = orders, work, order_id, ai_session
         self.session, self.catalog = orders.session, orders.catalog
-        self.selection = {"stroke_ids": list((selection or {}).get("stroke_ids") or []),
-                          "word_ids": list((selection or {}).get("word_ids") or [])}
+        self.selection = {k: list((selection or {}).get(k) or []) for k in SELECTION_KEYS}
         self.provider: str | None = None
         self.model: str | None = None
         self._run: dict[str, Callable[[dict[str, Any]], tuple[dict[str, Any], int | None]]] = {
             "get_order": self._get_order, "list_materials": self._list_materials, "list_templates": self._list_templates,
-            "update_text": self._update_text, "choose_materials": self._choose_materials, "set_options": self._set_options,
+            "update_text": self._update_text, "set_layout": self._set_layout, "choose_materials": self._choose_materials,
+            "set_options": self._set_options,
             "check_order": self._check, "generate_sketch": self._generate, "get_sketch": self._get_sketch,
             "edit_strokes": self._edit, "undo_sketch": self._undo, "redo_sketch": self._redo, "flag_for_staff": self._flag}
 
@@ -111,7 +140,7 @@ class OrderTools:
         t = self.order().order_type
         hide = set()
         if t != OrderType.OT3_TEMPLATE:
-            hide |= {"list_templates", "update_text"}
+            hide |= {"list_templates", "update_text", "set_layout"}
         if t == OrderType.OT2_LEARNED_STYLE:                 # no automatic sketch yet (R&D, owner decision on OT-2)
             hide |= {"generate_sketch"}
         return [s for s in SPECS if s.name not in hide]
@@ -173,7 +202,7 @@ class OrderTools:
                         "has_styled_parts": bool(((row.layout if row else None) or {}).get("spans")),
                         "has_drawing": any(x.kind == OrderInputKind.CANVAS for x in inputs)})
         out["sketch"] = self._sketch_brief(order)
-        out["selection"] = self.selection if (self.selection["stroke_ids"] or self.selection["word_ids"]) else None
+        out["selection"] = self.selection if self._has_selection() else None
         return out
 
     def _sketch_brief(self, order: Order) -> dict[str, Any] | None:
@@ -212,6 +241,8 @@ class OrderTools:
         order = self.order()
         v = self.work.view(order.id)
         doc = v["document"]
+        hints = htr_hints.hints_for(self.session, order, doc, outdated=v["inputs_changed"])     # E2b, OT-1 only
+        hw = (hints or {}).get("words", {})
         only = a.get("page")
         pages, listed = [], 0
         for p in doc["pages"]:
@@ -222,15 +253,26 @@ class OrderTools:
                 if listed >= _WORDS_FOR_MODEL:
                     break
                 listed += 1
+                h = hw.get(w["id"])
                 words.append({"id": w["id"], "text": w.get("text"), "bbox": w["bbox"], "strokes": len(w["stroke_ids"]),
-                              **({"label": w["label"]} if w.get("label") else {})})
+                              **({"label": w["label"]} if w.get("label") else {}),
+                              **({"text_hint": h["text"]} if h and h["status"] == "READ" else
+                                 {"text_hint_unread": True} if h else {})})
             loose = [st["id"] for st in p["strokes"] if not st.get("word")]
             pages.append({"no": p["no"], "width_mm": p["width_mm"], "height_mm": p["height_mm"], "words": words,
+                          "lines": [{"id": ln["id"], "word_ids": ln["word_ids"], "paragraph": ln.get("paragraph")}
+                                    for ln in (p.get("lines") or [])[:_LINES_FOR_MODEL]],
+                          "paragraphs": [{"id": pa["id"], "line_ids": pa["line_ids"], "source": pa.get("source")}
+                                         for pa in p.get("paragraphs") or []],
                           "strokes_without_word": loose[:50]})
         total = sum(len(p["words"]) for p in doc["pages"])
         sel = self._selected_strokes(doc)
         lim = geo.limits_for(order.order_type.value)
         return {"revision_id": v["revision"].id, "inputs_changed": v["inputs_changed"], "pages": pages,
+                **({"text_hints": {"state": hints["state"], "note": (
+                    "text_hint = chữ AI đọc từ ảnh khách gửi, có thể sai: dùng để gọi tên chữ, nói rõ đó là gợi ý; "
+                    "text_hint_unread = chưa đọc được chữ đó. Khách bấm \"Đọc chữ trên ảnh\" và đồng ý gửi ảnh mới có "
+                    "gợi ý; trợ lý không tự gửi ảnh.")}} if hints else {}),
                 "words_truncated": listed < total if only is None else False,
                 "limits": {"max_shift_mm": lim.max_shift_mm, "max_rotate_deg": lim.max_rotate_deg,
                            "scale_range": list(lim.scale_range), "max_slant_deg": lim.max_slant_deg,
@@ -243,10 +285,11 @@ class OrderTools:
         return [st for p in doc["pages"] for st in p["strokes"] if st["id"] in ids]
 
     def _selected_ids(self, doc: dict[str, Any]) -> list[str]:
-        ids = list(self.selection["stroke_ids"])
-        if self.selection["word_ids"]:
-            ids += geo.word_strokes(doc, self.selection["word_ids"])
-        return ids
+        s = self.selection
+        return list(s["stroke_ids"]) + geo.group_strokes(doc, s["word_ids"], s["line_ids"], s["paragraph_ids"])
+
+    def _has_selection(self) -> bool:
+        return any(self.selection[k] for k in SELECTION_KEYS)
 
     # ------------------------------------------------------------------ change: content
     def _pick(self, a: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
@@ -274,10 +317,13 @@ class OrderTools:
         new = dict(cur)
         warnings: list[str] = []
         if "text" in ch:
-            new["text_content"] = str(ch["text"])
-            if new["text_content"] != cur["text_content"] and (cur["layout"] or {}).get("spans"):
-                new["layout"] = {k: v for k, v in cur["layout"].items() if k != "spans"}   # offsets of the old text
-                warnings.append("STYLED_PARTS_RESET")
+            new["text_content"] = unicodedata.normalize("NFC", str(ch["text"]))
+            if new["text_content"] != cur["text_content"] and cur["layout"]:
+                # V2 Phase D: the styled parts follow the unchanged characters (they used to be dropped)
+                new["layout"], remap = text_layout.remap_stored(unicodedata.normalize("NFC", cur["text_content"] or ""),
+                                                                new["text_content"], cur["layout"])
+                if remap.get("spans_dropped") or remap.get("paragraphs_dropped") or remap.get("invalid"):
+                    warnings.append("STYLED_PARTS_PARTLY_RESET")
         if "template_id" in ch:
             new["template_id"] = int(ch["template_id"])
         if "font_size_mm" in ch:
@@ -286,6 +332,40 @@ class OrderTools:
             new["alignment"] = ch["alignment"]
         self.orders.set_text(order.id, new)
         return self._after_change(self.order(), before, warnings), None
+
+    def _set_layout(self, a: dict[str, Any]) -> tuple[dict[str, Any], None]:
+        """V2 Phase D (D-e): change the layout through the same checks as the customer's form (OrderService.set_text)."""
+        ch = self._pick(a, ("line_spacing", "margins_mm", "vertical_align", "paragraph", "span"))
+        order = self.order()
+        row = self._text_row(order)
+        if row is None or not row.text_content:
+            raise AppError(409, "NO_TEXT", "Đơn chưa có nội dung chữ để định dạng.")
+        text = unicodedata.normalize("NFC", row.text_content)
+        raw: dict[str, Any] = json.loads(json.dumps(row.layout or {"version": text_layout.VERSION}))
+        before = json.loads(json.dumps(raw))
+        if "line_spacing" in ch:
+            raw["line_spacing"] = ch["line_spacing"]
+        if "margins_mm" in ch:
+            if not isinstance(ch["margins_mm"], dict):
+                raise AppError(422, "INVALID_LAYOUT", "margins_mm phải là object {top, bottom, left, right}.")
+            raw["margins_mm"] = {**(raw.get("margins_mm") or {}), **ch["margins_mm"]}
+        if "vertical_align" in ch:
+            raw["vertical_align"] = ch["vertical_align"]
+        if "paragraph" in ch:
+            p = ch["paragraph"]
+            if not isinstance(p, dict) or "index" not in p:
+                raise AppError(422, "INVALID_LAYOUT", "paragraph phải là object có index.")
+            paras = [x for x in raw.get("paragraphs") or [] if x.get("index") != p["index"]]
+            if set(p) - {"index"}:
+                paras.append(dict(p))
+            raw["paragraphs"] = paras
+        if "span" in ch:
+            raw["spans"] = _with_span(text, raw.get("spans") or [], ch["span"])
+        new = {"text_content": row.text_content, "template_id": row.template_id,
+               "handwriting_style_id": row.handwriting_style_id, "font_size_mm": row.font_size_mm,
+               "alignment": row.alignment, "layout": raw}
+        self.orders.set_text(order.id, new)
+        return self._after_change(self.order(), {"layout": before}, []), None
 
     def _update(self, ch: dict[str, Any]) -> tuple[dict[str, Any], None]:
         order = self.order()
@@ -305,12 +385,17 @@ class OrderTools:
         return self._update(ch)
 
     # ------------------------------------------------------------------ change: sketch
-    def _generate(self, _: dict[str, Any]) -> tuple[dict[str, Any], int]:
-        rev, doc, warnings = self.work.generate(self.order_id)
-        self.selection = {"stroke_ids": [], "word_ids": []}           # the old ids do not exist in a new generation
+    def _generate(self, a: dict[str, Any]) -> tuple[dict[str, Any], int]:
+        rev, doc, warnings = self.work.generate(self.order_id, discard_edits=a.get("discard_edits") is True)
+        self.selection = {k: [] for k in SELECTION_KEYS}               # the customer chose on the old drawing: ask again
+        redraw = self.work.last_redraw
         return {"revision_id": rev.id, "seq": rev.seq, "warnings": warnings, "pages": len(doc["pages"]),
                 "words": sum(len(p["words"]) for p in doc["pages"]),
-                "note": "Phác thảo mới có bộ id mới; vùng chọn cũ không còn."}, rev.id
+                **({"redraw": {"ids": redraw["ids"], "reapplied": len(redraw["reapplied"]),
+                               "dropped": [{"op": d["op"], "reason": d["reason"]} for d in redraw["dropped"]][:20]}}
+                   if redraw else {}),
+                "note": "Từ được vẽ lại giữ id cũ (redraw.ids); lệnh dời / xoay / đổi cỡ / nghiêng trên cả từ đã áp lại, "
+                        "lệnh khác bị bỏ (redraw.dropped). Vùng chọn cũ của khách đã bỏ: đọc lại get_sketch."}, rev.id
 
     def _edit(self, a: dict[str, Any]) -> tuple[dict[str, Any], int]:
         op = a.get("op")
@@ -318,33 +403,36 @@ class OrderTools:
             raise AppError(422, "INVALID_EDIT", f"op phải là một trong {list(geo.OPS)}.")
         stroke_ids = [str(x) for x in (a.get("stroke_ids") or [])]
         word_ids = [str(x) for x in (a.get("word_ids") or [])]
+        line_ids = [str(x) for x in (a.get("line_ids") or [])]
+        paragraph_ids = [str(x) for x in (a.get("paragraph_ids") or [])]
         params = a.get("params") or {}
         if not isinstance(params, dict):
             raise AppError(422, "INVALID_EDIT_PARAMS", "params phải là object.")
         order = self.order()
         current = self.work.view(order.id)
-        if self.selection["stroke_ids"] or self.selection["word_ids"]:
+        if self._has_selection():
             doc = current["document"]
             allowed = set(self._selected_ids(doc))
-            wanted = set(stroke_ids) | set(geo.word_strokes(doc, word_ids) if word_ids else [])
+            wanted = set(stroke_ids) | set(geo.group_strokes(doc, word_ids, line_ids, paragraph_ids))
             if not wanted <= allowed:
                 raise AppError(403, "OUTSIDE_SELECTION",
                                "Chỉ được sửa các nét / từ khách đang chọn.", {"not_selected": sorted(wanted - allowed)[:20]})
         note = str(a.get("note") or "")[:200] or None
         rev, _doc, report = self.work.edit(order.id, base_revision_id=current["revision"].id, op=op, stroke_ids=stroke_ids,
                                            word_ids=word_ids, params=params, note=note, author="AI", tool="edit_strokes",
+                                           line_ids=line_ids, paragraph_ids=paragraph_ids,
                                            provider=self.provider, model=self.model)
         return {"revision_id": rev.id, "seq": rev.seq, "note": rev.note,
                 "report": {k: report.get(k) for k in ("op", "page", "changed", "added", "removed", "max_point_shift_mm",
-                                                      "untouched_verified")}}, rev.id
+                                                      "untouched_verified", "affected")}}, rev.id
 
-    def _undo(self, _: dict[str, Any]) -> tuple[dict[str, Any], None]:
-        rev = self.work.undo(self.order_id)
-        return {"revision_id": rev.id, "seq": rev.seq}, None
+    def _undo(self, a: dict[str, Any]) -> tuple[dict[str, Any], None]:
+        rev = self.work.undo(self.order_id, discard_input_changes=a.get("discard_input_changes") is True)
+        return {"revision_id": rev.id, "seq": rev.seq, "inputs_restored": self.work.inputs_restored}, None
 
-    def _redo(self, _: dict[str, Any]) -> tuple[dict[str, Any], None]:
-        rev = self.work.redo(self.order_id)
-        return {"revision_id": rev.id, "seq": rev.seq}, None
+    def _redo(self, a: dict[str, Any]) -> tuple[dict[str, Any], None]:
+        rev = self.work.redo(self.order_id, discard_input_changes=a.get("discard_input_changes") is True)
+        return {"revision_id": rev.id, "seq": rev.seq, "inputs_restored": self.work.inputs_restored}, None
 
     def _flag(self, a: dict[str, Any]) -> tuple[dict[str, Any], None]:
         kind = a.get("kind")
@@ -380,3 +468,35 @@ def _jsonable_before(d: dict[str, Any]) -> dict[str, Any]:
     for k, v in d.items():
         out[k] = int(v) if isinstance(v, Decimal) else (v.value if hasattr(v, "value") else v)
     return out
+
+
+def _with_span(text: str, spans: list[dict[str, Any]], s: Any) -> list[dict[str, Any]]:
+    """Put one styled part into the stored spans: the range is cut out of the spans it overlaps, then the new style (if
+    any) is added. The result is checked by text_layout.parse when it is saved."""
+    if not isinstance(s, dict):
+        raise AppError(422, "INVALID_LAYOUT", "span phải là object.")
+    s = dict(s)
+    match = s.pop("match", None)
+    if match is not None:
+        needle = unicodedata.normalize("NFC", str(match))
+        i = text.find(needle) if needle else -1
+        if i < 0:
+            raise AppError(422, "TEXT_NOT_FOUND", "Không tìm thấy đoạn chữ này trong nội dung đơn.", {"match": match})
+        s["start"], s["end"] = i, i + len(needle)
+    start, end = s.get("start"), s.get("end")
+    if not (isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(text)):
+        raise AppError(422, "INVALID_LAYOUT", "span cần match hoặc start < end trong nội dung.",
+                       {"start": start, "end": end, "text_length": len(text)})
+    out: list[dict[str, Any]] = []
+    for old in spans:
+        a, b = old.get("start", 0), old.get("end", 0)
+        if b <= start or a >= end:
+            out.append(old)
+            continue
+        if a < start:
+            out.append({**old, "end": start})
+        if b > end:
+            out.append({**old, "start": end})
+    if set(s) - {"start", "end"}:
+        out.append(s)
+    return sorted(out, key=lambda x: x.get("start", 0))

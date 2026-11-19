@@ -140,7 +140,7 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
             raise AppError(422, "TEMPLATE_REQUIRED", "Đơn chưa chọn mẫu chữ.")
         if layout:
             try:
-                parsed = text_layout.parse(layout, len(unicodedata.normalize("NFC", text)))
+                parsed = text_layout.parse(layout, unicodedata.normalize("NFC", text))
             except text_layout.TextLayoutError as exc:
                 raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
             styled = None if parsed.is_plain else parsed
@@ -184,6 +184,8 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
     engine["path_order"] = order_summary
     if styled:                                              # complexity (and so the price) deliberately ignores styles
         engine["layout"] = {"spans": len(styled.spans), "line_spacing": styled.line_spacing}
+        if styled.paragraphs:                               # V2 Phase D
+            engine["layout"]["paragraphs"] = len(styled.paragraphs)
     if kind == "outline-centerline-compose" and text:
         engine["stroke_order"] = "reconstructed"          # a person would not write the letters in this order
     judged = compute_metrics(plain_pages, v_max_mm_s) if plain_pages is not None and plain_pages is not pages else metrics
