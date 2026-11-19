@@ -247,7 +247,7 @@ Staff nhận v1 đúng nét đó (hash bằng nhau) → báo giá → duyệt �
 | Test | `tests/test_v2_order_assistant.py` (9): lát cắt (trợ lý dời đúng từ khách chọn, chỉ nét đó đổi, revision AI có provider / model, khách hoàn tác); từ chối ngoài vùng chọn / ngoài giới hạn / công cụ lạ / lệnh lạ không tạo revision; revision cũ bị từ chối trước khi gọi AI; tin nhắn trùng gọi AI một lần; lượt song song bị từ chối (route thường và stream); quá thời gian → chuyển nhà cung cấp, hết → FAILED; đồng ý, chủ đơn, đơn đã gửi; trợ lý sửa chữ → phác thảo cũ, gửi bị chặn, cờ FORGERY_RISK tới Staff; stream báo từng công cụ |
 | Chưa làm | `/studio` thành lớp tương thích gọi vào đơn (D1: giữ studio đến khi FE chuyển; chưa đổi để không phá FE đang dùng); hoàn tác nội dung / vật tư (form đơn chưa có lịch sử); trợ lý chưa đo chất lượng chọn công cụ trên cùng bộ kịch bản cho mọi nhà cung cấp (chưa gọi LLM thật cho Phase C); OT-1 chưa biết chữ của vùng (HTR) |
 
-## 13. Phase H: Staff sửa bằng cùng Geometry Engine (2026-11-19, migration 0025, chưa commit)
+## 13. Phase H: Staff sửa bằng cùng Geometry Engine (2026-11-19, migration 0025, commit `9f38e29`)
 
 Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **H-a** Staff dùng cùng giới hạn lệnh theo loại đơn với khách / AI; **H-b** chưa làm trợ lý AI cho Staff; **H-c** phiên bản cũ không backfill, tài liệu dựng lại khi đọc.
 
