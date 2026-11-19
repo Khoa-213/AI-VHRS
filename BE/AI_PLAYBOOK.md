@@ -109,7 +109,7 @@ Yêu cầu đã làm · file tạo/sửa · test đã chạy + kết quả (số
 - Chạy lệnh trong `BE/` (uvicorn, pytest, alembic, seed). Từ thư mục gốc repo sẽ lỗi `No module named 'app'`.
 - venv: `BE/.venv` (Linux: `source .venv/bin/activate`; Windows: `.venv/Scripts/python.exe`). Python 3.14 local, 3.11 khi deploy: tránh cú pháp/thư viện chỉ có ở bản mới.
 - Heredoc có dấu nháy trên Windows/Git Bash dễ lỗi: dùng công cụ ghi file thay vì `cat <<`.
-- Test nặng (Tokyo pooler, ~1 giây/lệnh gọi) → chạy nền, kiên nhẫn; đừng chạy lại cả suite vì một lỗi nhỏ: sửa rồi chạy riêng test đó, cuối cùng mới chạy toàn bộ.
+- Test nặng (Supabase pooler; DB chuyển từ Tokyo sang Singapore ngày 2026-11-19, số "~1 giây/lệnh gọi" đo khi còn ở Tokyo) → chạy nền, kiên nhẫn; đừng chạy lại cả suite vì một lỗi nhỏ: sửa rồi chạy riêng test đó, cuối cùng mới chạy toàn bộ.
 - Xem route thật: `python -c "from app.main import app; print(sorted(app.openapi()['paths']))"` (không cần DB).
 
 ### S17 · Khi test fail
