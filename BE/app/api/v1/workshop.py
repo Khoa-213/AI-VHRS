@@ -212,11 +212,13 @@ def get_sketch(order_id: int, version: int, svc: Sketches) -> SketchDetailOut:
              status_code=status.HTTP_201_CREATED,
              summary="V2 H Sửa nét bằng Geometry Engine (cùng lệnh / giới hạn với khách) → phiên bản mới, nét ngoài vùng chọn giữ nguyên",
              responses={409: {"description": "SKETCH_VERSION_CONFLICT / ORDER_NOT_ACCEPTED / GEOMETRY_TAMPERED"},
-                        404: {"description": "STROKE_NOT_FOUND / WORD_NOT_FOUND / SKETCH_NOT_FOUND"},
+                        404: {"description": "STROKE_NOT_FOUND / WORD_NOT_FOUND / LINE_NOT_FOUND / PARAGRAPH_NOT_FOUND / "
+                                             "SKETCH_NOT_FOUND"},
                         422: {"description": "EDIT_OUT_OF_RANGE / EDIT_OUTSIDE_PAPER / EMPTY_SELECTION / INVALID_EDIT ..."}})
 def edit_sketch_strokes(order_id: int, version: int, body: StaffStrokeEditIn, svc: Sketches) -> StaffStrokeEditOut:
     row, report = svc.edit_strokes(order_id, version, op=body.op, stroke_ids=body.stroke_ids, word_ids=body.word_ids,
-                                   params=body.params, note=body.note.strip())
+                                   params=body.params, note=body.note.strip(), line_ids=body.line_ids,
+                                   paragraph_ids=body.paragraph_ids)
     return StaffStrokeEditOut.model_validate({**sketch_out(row, svc.preview_urls(row), None, svc).model_dump(),
                                               "report": report})
 

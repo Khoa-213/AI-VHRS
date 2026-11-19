@@ -89,7 +89,9 @@ def delete_draft(order_id: int, svc: Svc) -> Response:
 
 @router.put("/{order_id}/inputs/text", response_model=InputOut, summary="UC-09/10 Nhập nội dung chữ + mẫu/bộ nét")
 def put_text(order_id: int, body: TextInputIn, svc: Svc) -> InputOut:
-    return input_out(svc.set_text(order_id, body.model_dump()))
+    out = input_out(svc.set_text(order_id, body.model_dump()))
+    out.layout_remap = svc.layout_remap
+    return out
 
 
 @router.put("/{order_id}/inputs/canvas", response_model=InputOut, summary="UC-10 Lưu hình vẽ canvas")

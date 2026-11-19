@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0025 (alembic head), generated 2026-11-19 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0027 (alembic head), generated 2026-11-19 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0025);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0025;
+--      baseline schema and every migration up to 0027);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0027;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -962,6 +962,52 @@ ALTER TABLE public.handwriting_styles ALTER COLUMN id ADD GENERATED ALWAYS AS ID
     NO MAXVALUE
     CACHE 1
 );
+
+--
+-- Name: htr_readings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.htr_readings (
+    id bigint NOT NULL,
+    order_id bigint NOT NULL,
+    input_id bigint,
+    source_key character(64) NOT NULL,
+    status character varying(10) NOT NULL,
+    provider character varying(20),
+    model character varying(80),
+    transcript text,
+    input_tokens integer,
+    output_tokens integer,
+    attempts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    consent_by bigint,
+    consent_text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_htr_read_has_text CHECK ((((status)::text <> 'READ'::text) OR ((transcript IS NOT NULL) AND (provider IS NOT NULL)))),
+    CONSTRAINT htr_readings_status_check CHECK (((status)::text = ANY ((ARRAY['READ'::character varying, 'FAILED'::character varying])::text[])))
+);
+
+--
+-- Name: TABLE htr_readings; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.htr_readings IS 'V2 Phase E2b: AI transcript of a customer photo (OT-1) read with the customer''s consent; region text hints are computed from it';
+
+--
+-- Name: htr_readings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.htr_readings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: htr_readings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.htr_readings_id_seq OWNED BY public.htr_readings.id;
 
 --
 -- Name: incidents; Type: TABLE; Schema: public; Owner: -
@@ -2200,10 +2246,17 @@ CREATE TABLE public.sketch_revisions (
     metrics jsonb,
     validation jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    inputs_snapshot jsonb,
     CONSTRAINT chk_sketch_rev_tool CHECK ((((author)::text <> 'AI'::text) OR (tool_name IS NOT NULL))),
     CONSTRAINT sketch_revisions_author_check CHECK (((author)::text = ANY ((ARRAY['ENGINE'::character varying, 'CUSTOMER'::character varying, 'AI'::character varying, 'STAFF'::character varying])::text[]))),
     CONSTRAINT sketch_revisions_seq_check CHECK ((seq >= 1))
 );
+
+--
+-- Name: COLUMN sketch_revisions.inputs_snapshot; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sketch_revisions.inputs_snapshot IS 'V2 Phase D: order text / layout / canvas / materials this revision was drawn from (NULL = before 0026)';
 
 --
 -- Name: sketch_revisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -2476,6 +2529,12 @@ ALTER TABLE ONLY public.ai_sessions ALTER COLUMN id SET DEFAULT nextval('public.
 ALTER TABLE ONLY public.ai_tool_calls ALTER COLUMN id SET DEFAULT nextval('public.ai_tool_calls_id_seq'::regclass);
 
 --
+-- Name: htr_readings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings ALTER COLUMN id SET DEFAULT nextval('public.htr_readings_id_seq'::regclass);
+
+--
 -- Name: material_profiles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2625,6 +2684,13 @@ ALTER TABLE ONLY public.production_jobs
 
 ALTER TABLE ONLY public.handwriting_styles
     ADD CONSTRAINT handwriting_styles_pkey PRIMARY KEY (id);
+
+--
+-- Name: htr_readings htr_readings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings
+    ADD CONSTRAINT htr_readings_pkey PRIMARY KEY (id);
 
 --
 -- Name: incidents incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3105,6 +3171,18 @@ CREATE INDEX ix_auth_sessions_expiry ON public.auth_sessions USING btree (expire
 --
 
 CREATE INDEX ix_calibrations_job ON public.calibrations USING btree (job_id, created_at DESC);
+
+--
+-- Name: ix_htr_readings_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_htr_readings_created ON public.htr_readings USING btree (created_at);
+
+--
+-- Name: ix_htr_readings_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_htr_readings_order ON public.htr_readings USING btree (order_id, source_key);
 
 --
 -- Name: ix_incidents_open; Type: INDEX; Schema: public; Owner: -
@@ -3792,6 +3870,27 @@ ALTER TABLE ONLY public.handwriting_styles
 
 ALTER TABLE ONLY public.handwriting_styles
     ADD CONSTRAINT handwriting_styles_source_order_id_fkey FOREIGN KEY (source_order_id) REFERENCES public.orders(id) ON DELETE SET NULL;
+
+--
+-- Name: htr_readings htr_readings_consent_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings
+    ADD CONSTRAINT htr_readings_consent_by_fkey FOREIGN KEY (consent_by) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+--
+-- Name: htr_readings htr_readings_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings
+    ADD CONSTRAINT htr_readings_input_id_fkey FOREIGN KEY (input_id) REFERENCES public.order_inputs(id) ON DELETE SET NULL;
+
+--
+-- Name: htr_readings htr_readings_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings
+    ADD CONSTRAINT htr_readings_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
 
 --
 -- Name: incidents incidents_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -4739,7 +4838,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0025');
+INSERT INTO alembic_version (version_num) VALUES ('0027');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

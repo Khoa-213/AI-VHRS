@@ -199,6 +199,8 @@ class StaffStrokeEditIn(BaseModel):
     op: Literal["translate", "rotate", "scale", "slant", "curvature", "smooth", "extend", "trim", "join", "split", "delete"]
     stroke_ids: list[str] = Field(default_factory=list, max_length=500)
     word_ids: list[str] = Field(default_factory=list, max_length=200)
+    line_ids: list[str] = Field(default_factory=list, max_length=100, description="V2 Phase F: whole lines of `document`")
+    paragraph_ids: list[str] = Field(default_factory=list, max_length=50, description="V2 Phase F: whole paragraphs")
     params: dict[str, Any] = Field(default_factory=dict)
     note: str = Field(min_length=1, max_length=300, description="Why (kept in the version's engine record + audit).")
 

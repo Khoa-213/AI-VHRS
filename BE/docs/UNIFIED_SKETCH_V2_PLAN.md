@@ -1,6 +1,6 @@
 # AI-VHRS V2: Đơn hàng hợp nhất, phác thảo chuẩn (canonical sketch) và chỉnh sửa bằng AI
 
-Trạng thái: **Phase A xong; chủ dự án chốt D1–D6 (mục 9.0); Phase B (lõi) xong 2026-11-17, mục 11; Phase C (trợ lý trên đơn) xong 2026-11-18, mục 12; Phase H (Staff sửa bằng cùng engine) xong 2026-11-19, mục 13. Phase D, E, F, I chưa làm.**
+Trạng thái: **Phase A xong; chủ dự án chốt D1–D6 (mục 9.0); Phase B (lõi) xong 2026-11-17, mục 11; Phase C (trợ lý trên đơn) xong 2026-11-18, mục 12; Phase H (Staff sửa bằng cùng engine) xong 2026-11-19, mục 13; Phase D (cấp 1 trên đơn) xong 2026-11-19, mục 14; Phase E phần 1 (đo HTR) xong 2026-11-19, mục 15, phần 2 (tích hợp) chờ chủ dự án quyết. Phase F, I chưa làm.**
 Một việc độc lập đã làm và test ngay (mục 2.3): bản xem trước studio và phác thảo của Staff giờ ra **cùng một nét**.
 
 Tài liệu này nối tiếp `docs/UPGRADE_AI_ROBOT_PLAN.md` (U1–U9). Quy ước trạng thái: **ĐÃ CÓ** = code + test chạy; **THIẾT KẾ** = mới
@@ -262,3 +262,65 @@ Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **H-a** Staff dùng cùn
 | Kết quả test | Cục bộ (Postgres 18) 914 passed, 3 skipped. Supabase THẬT 914 passed, 3 skipped, 0 failed, 1 error teardown (kết nối khoá suite bị đóng sau khoảng 5 giờ, đã sửa `conftest.py`); dữ liệu thật không đổi |
 | Chưa làm | Trợ lý AI cho Staff (H-b); hoàn tác trong editor Staff (Staff mở lại phiên bản cũ rồi sửa tiếp, hoặc chốt phiên bản cũ); đọc lại file quỹ đạo ngay lúc phát hành snapshot (hiện so ở mỗi lần tải gói, U1) |
 
+## 14. Phase D: chỉnh cả văn bản trên đơn (2026-11-19, migration 0026, chưa commit)
+
+Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **D-a** định dạng theo đoạn văn = giãn dòng, căn ngang, khoảng trước đoạn (không font riêng); **D-b** vẽ lại khi có nét đã sửa → báo trước, cần `discard_edits` (chưa tự áp lại lệnh sửa); **D-c** lưu form theo lần vẽ, hoàn tác / làm lại kéo theo form (migration 0026); **D-d** một màu mực mỗi đơn; **D-e** trợ lý có `set_layout`, không đổi vật tư / giá.
+
+| | |
+|---|---|
+| Đã có từ trước (không làm lại) | Cỡ / nghiêng / gạch theo đoạn chữ (`spans`), giãn dòng chung, lề, căn dọc, căn ngang, màu mực trên ảnh xem trước |
+| Làm gì | `layout.paragraphs` (`text_layout.py` kiểm, `styled_text.py` vẽ: giãn dòng / căn / khoảng trước theo đoạn, khoảng trước bỏ ở đầu trang); `text_layout.remap` (difflib: định dạng theo phần chữ không đổi, định dạng đoạn theo đoạn giữ / sửa tại chỗ) dùng cho `keep_layout` của form và `update_text` của trợ lý (trước đây xoá hết); `SKETCH_HAS_EDITS` khi vẽ lại đè nét đã sửa; `sketch_revisions.inputs_snapshot` + hoàn tác / làm lại qua lần vẽ khác khôi phục form (chữ, bố cục, canvas, giấy / bút / mực; tính lại giá ước tính; audit `ORDER_INPUTS_RESTORED`), sửa chưa vẽ → `UNDRAWN_INPUT_CHANGES`; công cụ trợ lý `set_layout` |
+| Database | Migration 0026 (chỉ thêm): `sketch_revisions.inputs_snapshot JSONB`. Thử lên / xuống / lên cục bộ; **đã áp Supabase**: 69 đơn thật, 34 phác thảo thật, 0 revision làm việc của đơn thật, 1 bản duyệt, 1 snapshot, 15 tài khoản thật, checksum không đổi trước / sau. Script DB tổng tạo lại ở 0026 |
+| API | `PUT /orders/{id}/inputs/text` thêm `layout.paragraphs`, `keep_layout`, phản hồi `layout_remap`; `POST .../sketch/generate` body `{discard_edits}`; `POST .../sketch/undo|redo` body `{discard_input_changes}`, phản hồi `inputs_restored` (FE mục 7u) |
+| Test 1 | `tests/test_v2_document_level.py` (8): luật đoạn văn (đọc / ghi, 9 trường hợp từ chối); mỗi thiết lập đoạn chỉ dời đúng đoạn đó, đo bằng toạ độ nét (giãn dòng = đúng một bước dòng, khoảng trước = đúng 6 mm, căn phải chạm lề phải); remap giữ định dạng; trên đơn: cỡ một đoạn chữ, giãn dòng đoạn, khoảng trước, căn đoạn, lề, mỗi lần là revision mới đo trên khung từ; từ chối cỡ < 4 mm, đoạn không tồn tại, lề quá lớn không tạo revision; đổi mực không đổi nét nhưng đổi ảnh xem trước; `keep_layout`; `SKETCH_HAS_EDITS`; hoàn tác / làm lại khôi phục chữ, bố cục, giấy; `UNDRAWN_INPUT_CHANGES`; revision trước 0026 chỉ đổi phác thảo; gửi đơn → Staff nhận v1 đúng hash; trợ lý `set_layout` (3 thành công, 2 từ chối), `update_text` giữ định dạng, `generate_sketch` bị chặn khi có nét đã sửa. Không gọi LLM thật |
+| Kết quả Supabase | Toàn suite 2026-11-19 14:02 → 16:55: 913 passed, 3 skipped, 9 failed; 9 test trợ lý hỏng vì `ImportError` do code E2b được sửa giữa lượt chạy, không do Phase D. Chạy lại cùng E2b + F |
+| Chưa làm | Tự áp lại lệnh sửa nét sau khi vẽ lại (D-b phương án B; làm ở Phase F); nhiều màu mực; font riêng theo đoạn; định dạng cho OT-1 / OT-2; khôi phục ảnh OT-1 khi hoàn tác; trợ lý chưa đo chất lượng chọn `set_layout` với LLM thật |
+
+## 15. Phase E phần 1: đo nhận dạng chữ viết tay (2026-11-19, không đổi code BE / DB, chưa commit)
+
+Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **E-a** cài PyTorch CPU + VietOCR + trọng số `vgg_transformer` trong môi trường đo riêng `benchmarks/.venv-htr` (không vào `requirements`); **E-b** Gemini tối đa 100 lượt trên 50 ảnh công khai; **E-c** tách dòng bằng code tự viết (không PaddleOCR); **E-d** phần 2 (tích hợp) trình riêng sau khi có số đo.
+
+| | |
+|---|---|
+| Kết quả | Báo cáo `docs/benchmarks/E_htr_benchmark_2026-11-19.md`, script `scripts/benchmark_htr.py`. CER trung vị: **Gemini 0,024**, **VietOCR 0,245**; WER 0,097 / 0,635. Gemini 2,7 s / trang, VietOCR 7,0 s / trang trên CPU, RAM 699 MB |
+| Cần lưu ý | 2/50 trang Gemini bị chặn `RECITATION` (trả rỗng; nội dung công khai có trong dữ liệu huấn luyện), nên số của Gemini có thể đẹp hơn với thư thật. Không thấy Gemini tự điền phần bị che; trang trắng / nhiễu trả `[?]`. VietOCR luôn trả ra chữ (trang nhiễu: 370 ký tự vô nghĩa), cần ngưỡng tin cậy |
+| Tải về (đã duyệt) | PyTorch CPU 127 MB, OpenCV + các gói phụ thuộc, trọng số VietOCR 152 MB. **Ngoài dự kiến:** VietOCR tự tải mô hình nền ImageNet `vgg19_bn` 548 MB vào `~/.cache/torch` (không cần, đã tắt trong script) |
+| Gemini | 59 lượt gọi (57 trang + 2 lần gọi lại), 66.887 token vào, 8.387 token ra |
+| Phần 2 cần chủ dự án quyết | Dùng Gemini (gửi ảnh khách ra ngoài, cần đồng ý từng đơn) hay chạy cục bộ (VietOCR chưa đủ tốt, nặng); chỗ dùng: gắn chữ cho vùng OT-1, vùng không chắc → cảnh báo / hỏi khách / chuyển Staff (Test 4, Test 5) |
+
+### 15b. Phase E2a: gắn chữ cho từng vùng U4 (2026-11-19, chỉ đo, không đổi code BE / DB, chưa commit)
+
+Chủ dự án duyệt kế hoạch phần 2 theo khuyến nghị, đổi **E2-d: cho phép chuyển sang Claude khi Gemini lỗi** (chưa có `ANTHROPIC_API_KEY`, nên chưa đo và chưa chạy được). Báo cáo `docs/benchmarks/E2a_htr_regions_2026-11-19.md`.
+
+| | |
+|---|---|
+| Cách A (bỏ) | Gemini đọc từng khung đánh số trên ảnh: đúng thứ tự chữ nhưng gán nhầm khung (U4 hay cắt một từ thành hai vùng). Thử 3 trang, 10 lượt gọi, dừng |
+| Cách B (đề xuất) | Đọc cả trang (bản chép E1, không gọi thêm) + `scripts/htr_align.py` gắn từ vào vùng trên máy (quy hoạch động theo độ rộng chữ, đầu dòng); khớp kém hoặc `[?]` → UNREAD. 0,2 s / trang |
+| Kết quả | 6 trang bốc ngẫu nhiên, AI soát bằng mắt: **24/612 = 3,9 % vùng sai** (ngưỡng ≤ 5 %), dồn ở 2 trang có bố cục lạ. 85 % vùng READ. Không bịa chữ (trang trắng / nhiễu bị từ chối). **Trang bị che giữa: 21/52 và 34/67 vùng trượt chữ** trên 2 trang văn xuôi |
+| Đề xuất E2b | Chữ theo vùng chỉ là gợi ý cho khách / Staff, kèm READ / UNREAD, không tự đổi nét; UNREAD hoặc khớp kém → cảnh báo / chuyển Staff. Thư hư nặng cần sửa phần gộp mảnh chữ bị cắt và đo lại trước khi bật |
+
+### 15c. Phase E2b: gợi ý chữ cho từng vùng OT-1 (2026-11-19, migration 0027, chưa commit)
+
+| | |
+|---|---|
+| Quyết định | Gemini gói miễn phí đọc ảnh (chủ dự án chấp nhận gửi ảnh khách; lời xin đồng ý nói Google có thể lưu và dùng ảnh), Claude khi Gemini lỗi / từ chối; khách đồng ý mỗi lần; tắt mặc định (`htr_enabled`), 100 trang / ngày toàn hệ thống |
+| Làm gì | Đọc cả trang (prompt E1) → lưu bản chép theo ảnh (`htr_readings`, khoá theo ảnh + xoay + cắt) → gắn từ vào vùng bằng `htr_align` (cách B của E2a) tính khi xem, nên theo được sửa / hoàn tác; `SKETCH_OUTDATED` khi ảnh đổi sau lần vẽ |
+| Không làm | Không đổi nét, giá, chữ của vùng; trợ lý không tự gửi ảnh; không xử lý đặc biệt trang bị che (E2a: vẫn trượt chữ nhiều) |
+| Database | Migration 0027 (chỉ thêm bảng `htr_readings`), lên / xuống / lên cục bộ, đã áp Supabase, dữ liệu thật không đổi |
+| Test | `tests/test_v2_htr_hints.py` (5), bên đọc giả và `httpx.MockTransport`, không gọi LLM thật |
+| Supabase | Toàn suite trên Supabase THẬT 2026-11-19: 929 passed, 3 skipped, 0 failed (cùng lượt với Phase F) |
+| Chưa kiểm chứng | Gọi Gemini / Claude thật qua code sản phẩm; Claude trên chữ viết tay |
+
+## 16. Phase F: dòng và đoạn, giữ id và lệnh sửa khi vẽ lại (2026-11-19, không migration, chưa commit)
+
+Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **F-a** chỉ dòng và đoạn, không id ký tự; **F-b** giữ id khi vẽ lại cho cả OT-3 và OT-1; **F-c** chỉ áp lại dời / xoay / đổi cỡ / nghiêng trên cả từ; **F-d** thay chữ vùng OT-1 bằng chữ gõ để sau.
+
+| | |
+|---|---|
+| F1 | `lines` / `paragraphs` mỗi trang. Dòng tìm bằng `htr_align.units_of` (đã đo trên chữ viết tay thật ở E2a) cho mọi loại đơn; đoạn OT-3 lấy từ xuống dòng của văn bản (`TEXT`), OT-1 đoán theo khoảng cách dòng > 1,6 bước dòng hoặc thụt > 2,5 chiều cao chữ (`LAYOUT`). Chọn sửa theo `line_ids` / `paragraph_ids` (khách, trợ lý, Staff) |
+| F2 | `carry_ids`: OT-3 so chữ bằng difflib theo thứ tự đọc; OT-1 so khung cùng trang, IoU ≥ 0,5, cặp tốt nhất trước. Từ khớp giữ id, nét giữ id khi cùng số nét; dòng / đoạn giữ id theo đa số; còn lại id mới, không tái dùng |
+| F3 | Đi ngược cây revision từ bản hiện tại tới lần vẽ trước, áp lại theo thứ tự cũ các lệnh dời / xoay / đổi cỡ / nghiêng chọn theo từ / dòng / đoạn, qua cùng Geometry Engine và kiểm tra; lệnh khác bỏ với lý do (`OP_NOT_REAPPLIED`, `NOT_WHOLE_WORDS`, `GONE`, mã lỗi). Báo trong `redraw`; một lần hoàn tác về bản trước khi vẽ lại |
+| F4 | `report.affected = {strokes, words, lines}` cho mọi lệnh sửa |
+| Test | `tests/test_v2_lines_and_redraw.py` (2): OT-3 qua API + trợ lý (vùng chọn theo dòng); OT-1 vẽ lại cùng ảnh, Staff sửa theo dòng |
+| Supabase | Toàn suite trên Supabase THẬT 2026-11-19: 929 passed, 3 skipped, 0 failed |
+| Giới hạn | Đoạn OT-1 là đoán; từ có số nét đổi (đổi kiểu chữ) giữ id từ nhưng nét nhận id mới; sửa từng nét không được áp lại |

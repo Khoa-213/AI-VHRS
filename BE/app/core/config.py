@@ -135,6 +135,11 @@ class Settings(BaseSettings):
     gemini_model: str | None = None
     llm_timeout_seconds: float = 30.0
     llm_prices: str | None = None
+    # V2 Phase E2b: who reads the customer's photo of an OT-1 letter (page transcript for the region text hints). Only
+    # providers that can read images and have a key are used, in this order; the on / off switch and the daily page cap
+    # are system settings (htr_enabled, htr_daily_pages). Owner 2026-11-19: Gemini first, Claude when Gemini fails.
+    htr_provider_order: str = "gemini,anthropic"
+    htr_timeout_seconds: float = 90.0
 
     @property
     def production_key_ring(self) -> dict[str, str]:

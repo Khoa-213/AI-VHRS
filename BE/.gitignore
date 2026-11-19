@@ -143,3 +143,4 @@ benchmarks/data/
 .test_progress/
 # Report exports made from REAL Supabase data (business figures); synthetic samples bao-cao_* stay tracked
 docs/report_samples/du-lieu-that_*
+benchmarks/.venv-htr/

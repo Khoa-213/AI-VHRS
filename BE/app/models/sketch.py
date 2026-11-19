@@ -79,6 +79,7 @@ class SketchRevision(Base):
     geometry_uri: Mapped[str] = mapped_column(Text)
     geometry_hash: Mapped[str] = mapped_column(String(64))
     inputs_hash: Mapped[str | None] = mapped_column(String(64))
+    inputs_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)     # V2 Phase D (0026): form it was drawn from
     metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     validation: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
@@ -171,4 +172,23 @@ class Message(Base):
     attachments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     kind: Mapped[str] = mapped_column(String(20), default="TEXT", server_default="TEXT")     # TEXT | ORDER_CARD
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+
+
+class HtrReading(Base):
+    """V2 Phase E2b: AI transcript of one customer photo of an OT-1 order, read with consent (migration 0027)."""
+    __tablename__ = "htr_readings"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    input_id: Mapped[int | None] = mapped_column(ForeignKey("order_inputs.id"))
+    source_key: Mapped[str] = mapped_column(String(64))    # sha256(input id | file | rotation | crop)
+    status: Mapped[str] = mapped_column(String(10))                 # READ | FAILED
+    provider: Mapped[str | None] = mapped_column(String(20))
+    model: Mapped[str | None] = mapped_column(String(80))
+    transcript: Mapped[str | None] = mapped_column(Text)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    attempts: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    consent_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    consent_text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())

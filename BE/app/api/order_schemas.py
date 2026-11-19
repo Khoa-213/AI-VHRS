@@ -164,6 +164,7 @@ class InputOut(_ORM):
     alignment: str | None
     layout: dict[str, Any] | None
     canvas_data: dict[str, Any] | None
+    layout_remap: dict[str, int] | None = None     # V2 Phase D: PUT text with keep_layout; what of the old layout was kept
 
 
 class OrderDetailOut(OrderOut):
@@ -185,7 +186,11 @@ class TextInputIn(BaseModel):
         '"single"|"double", "strike": true}]}. `start`/`end` là vị trí ký tự (code point) trong nội dung đã chuẩn hoá NFC, '
         '[start, end). Lề mỗi phía 5–80 mm (mặc định 15, phía nào không gửi lấy 15); bỏ trống `vertical_align` = MIDDLE: '
         'mặc định khối chữ nằm giữa tờ giấy. PUT thay thế toàn bộ: không gửi `layout` nghĩa là xoá định dạng và về vị trí '
-        'mặc định. Không có chữ đậm.'))
+        'mặc định. Không có chữ đậm. V2 Phase D: `paragraphs` [{"index", "line_spacing"?, "alignment"?, '
+        '"space_before_mm"?}] định dạng riêng từng đoạn văn (tách theo xuống dòng, đếm từ 0).'))
+    keep_layout: bool = Field(default=False, description=(
+        "V2 Phase D: true và không gửi `layout` → bố cục đang lưu đi theo chữ mới (phần chữ không đổi giữ định dạng, đoạn "
+        "văn giữ / sửa tại chỗ giữ định dạng đoạn). Kết quả trong `layout_remap`."))
 
 
 class CanvasInputIn(BaseModel):

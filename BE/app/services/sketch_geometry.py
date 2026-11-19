@@ -6,13 +6,16 @@ The document
      "pages": [{"no": 1, "paper_size": "A4", "width_mm": 210, "height_mm": 297,
                 "strokes": [{"id": "s1", "kind": "base", "points": [[x, y], ...], "word": "w1", "provenance": "ENGINE"}],
                 "words":   [{"id": "w1", "stroke_ids": ["s1", "s2"], "bbox": [x0, y0, x1, y1],
-                             "label": null, "confidence": null, "text": null}]}]}
+                             "label": null, "confidence": null, "text": null}],
+                "lines":   [{"id": "l1", "word_ids": ["w1"], "bbox": [...], "paragraph": "p1"}],          # Phase F
+                "paragraphs": [{"id": "p1", "line_ids": ["l1"], "bbox": [...], "source": "TEXT"}]}]}
 
 * Polylines in millimetres, origin top-left, y down: the same as `vhrs-trajectory/1` (D5: polyline is the canonical form;
   a curve edit works on the polyline, nothing stores Bezier control points). `to_pages()` gives the trajectory pages the
   rest of the system (preview, official sketch, motion planning, signed snapshot) already uses, in this exact stroke order.
 * Ids are given once and never reused: an edit keeps the ids of the strokes it changes; a split gets a new id from
-  `next_id`. A new generation (the customer changed the text or the images) starts new ids, which the revision says.
+  `next_id`. A new generation (the customer changed the text or the images) keeps the ids of the words it draws again
+  and of their strokes (Phase F `carry_ids`); everything else gets ids never used before.
 * Words come from the engine: OT-3 strokes carry their word group (U7), OT-1 strokes belong to the U4 regions.
 * `provenance`: ENGINE (text engine), RECOVERED (traced from the photo), INFERRED / RESTORED (U4 labels), CANVAS (the
   customer's drawing), EDITED (changed by an edit; `edits` counts them, `edited_by` lists who: CUSTOMER / AI / STAFF,
@@ -75,12 +78,13 @@ def _bbox(points: list[list[float]]) -> list[float]:
 
 
 def from_generated(pages: list[tj.Page], engine_info: dict[str, Any], regions: list[Any] | None = None,
-                   word_texts: list[str] | None = None) -> dict[str, Any]:
+                   word_texts: list[str] | None = None, word_paragraphs: list[int] | None = None) -> dict[str, Any]:
     """Build the document from an engine run (`engine.Generated`). `regions` = U4 RegionDraft list (OT-1).
 
     `word_texts` (OT-3): the words of the order's text in reading order. The engine numbers each word's group in writing
     order, so sorting the groups gives the reading order; the words get their `text` only when the counts match exactly
-    (otherwise none do: a wrong label is worse than none, the assistant then works from positions)."""
+    (otherwise none do: a wrong label is worse than none, the assistant then works from positions).
+    `word_paragraphs` (OT-3): the paragraph of each of those words; the lines and paragraphs are built here (Phase F)."""
     n = 0
     reading: list[tuple[int, int, str]] = []            # (page, group, word id) of OT-3 words
     out_pages = []
@@ -136,12 +140,17 @@ def from_generated(pages: list[tj.Page], engine_info: dict[str, Any], regions: l
             words.append({"id": wid, "stroke_ids": ids, "bbox": _bbox(pts), **{k: v for k, v in meta.get(wid, {}).items()}})
         out_pages.append({"no": page_no, "paper_size": page.paper_size, "width_mm": page.width_mm,
                           "height_mm": page.height_mm, "strokes": strokes, "words": words})
+    para_of = None
     if word_texts is not None and reading and len(reading) == len(word_texts):
-        text_of = {w: word_texts[k] for k, (_, _, w) in enumerate(sorted(reading))}
+        ordered = [w for _, _, w in sorted(reading)]
+        text_of = dict(zip(ordered, word_texts))
         for p in out_pages:
             for w in p["words"]:
                 w["text"] = text_of.get(w["id"])
-    return {"format": FORMAT, "engine": engine_info, "pages": out_pages, "next_id": n + 1}
+        if word_paragraphs is not None and len(word_paragraphs) == len(ordered):
+            para_of = dict(zip(ordered, word_paragraphs))
+    doc = {"format": FORMAT, "engine": engine_info, "pages": out_pages, "next_id": n + 1}
+    return build_structure(doc, para_of)
 
 
 def to_pages(doc: dict[str, Any]) -> list[tj.Page]:
@@ -384,6 +393,7 @@ def apply(doc: dict[str, Any], op: str, stroke_ids: list[str], params: dict[str,
     if sum(len(st["points"]) for p in new["pages"] for st in p["strokes"]) > tj.MAX_POINTS:
         raise AppError(422, "TOO_MANY_POINTS", "Phác thảo quá nhiều điểm.")
     _refresh_words(page)
+    _refresh_structure(page)
 
     changed = sorted({st["id"] for st in sel} - set(added), key=lambda s: int(s[1:]))
     touched = set(changed) | set(added) | set(removed)
@@ -400,6 +410,7 @@ def apply(doc: dict[str, Any], op: str, stroke_ids: list[str], params: dict[str,
             moved = max(moved, max(math.dist(a, b) for a, b in zip(op_pts, np_pts)))
     report = {"op": op, "params": params, "page": page["no"], "changed": changed, "added": added, "removed": removed,
               "untouched_verified": True, "max_point_shift_mm": round(moved, 3), "limits": limits.name}
+    report["affected"] = affected(doc, new, report)
     return new, report
 
 
@@ -465,3 +476,282 @@ def word_strokes(doc: dict[str, Any], word_ids: list[str]) -> list[str]:
     if missing:
         raise AppError(404, "WORD_NOT_FOUND", "Không tìm thấy từ đã chọn.", {"word_ids": missing})
     return out
+
+
+# ---------------------------------------------------------------------------------------------------- V2 Phase F
+# Lines and paragraphs (F1), ids kept across a redraw (F2), whole-word edits re-applied after a redraw (F3) and what an edit
+# touched (F4). Owner decisions 2026-11-19: lines and paragraphs only (no glyph ids); ids kept for OT-3 and OT-1; only
+# translate / rotate / scale / slant on whole words come back after a redraw.
+#
+# Each page gets  "lines": [{"id": "l1", "word_ids": [...], "bbox": [...], "paragraph": "p1"}]
+#           and   "paragraphs": [{"id": "p1", "line_ids": [...], "bbox": [...], "source": "TEXT" | "LAYOUT"}]
+# Lines come from the word boxes with the reading-order line finder measured on real handwriting in E2a
+# (`htr_align.units_of`), for both order types. Paragraphs: OT-3 from the order's text (a new line in the text = a new
+# paragraph, "TEXT"); otherwise from the layout ("LAYOUT": a gap well above the line pitch, or a clear indent), a guess.
+# Membership is decided when the document is built; an edit that moves a word keeps it in its line.
+REAPPLY_OPS = ("translate", "rotate", "scale", "slant")
+IOU_MATCH = 0.5
+
+
+def _num_id(i: str) -> int:
+    try:
+        return int(i[1:])
+    except (ValueError, TypeError):
+        return 0
+
+
+def _merge(boxes: list[list[float]]) -> list[float]:
+    return [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
+
+
+def _structure_page(page: dict[str, Any], para_of: dict[str, int] | None, next_line: int, next_para: int) -> tuple[int, int]:
+    from types import SimpleNamespace
+
+    from app.services.stroke_ai.htr_align import units_of
+    words = [w for w in page["words"] if w.get("bbox")]
+    regs = [SimpleNamespace(region_no=k, bbox=tuple(w["bbox"]), wid=w["id"]) for k, w in enumerate(words)]
+    by_no = {r.region_no: r.wid for r in regs}
+    lines: list[list[str]] = []
+    last = None
+    for u in units_of(regs):
+        if u.line != last:
+            lines.append([])
+            last = u.line
+        lines[-1] += [by_no[n] for n in u.regions]
+    wb = {w["id"]: w["bbox"] for w in words}
+    boxes = [_merge([wb[i] for i in ids]) for ids in lines]
+    if para_of and all(i in para_of for ids in lines for i in ids):
+        source = "TEXT"
+        pidx = [para_of[ids[0]] for ids in lines]
+    else:
+        source = "LAYOUT"
+        pidx = [0] * len(lines)
+        if len(lines) > 1:
+            cys = [(b[1] + b[3]) / 2 for b in boxes]
+            gaps = [cys[i + 1] - cys[i] for i in range(len(cys) - 1)]
+            pitch = sorted(gaps)[len(gaps) // 2]
+            hs = sorted(wb[i][3] - wb[i][1] for ids in lines for i in ids)
+            h = hs[len(hs) // 2]
+            x0s = sorted(b[0] for b in boxes)
+            margin = x0s[len(x0s) // 4]
+            for i in range(1, len(lines)):
+                new = gaps[i - 1] > 1.6 * pitch or boxes[i][0] - margin > 2.5 * h
+                pidx[i] = pidx[i - 1] + (1 if new else 0)
+    page["lines"], page["paragraphs"] = [], []
+    for k, ids in enumerate(lines):
+        if k == 0 or pidx[k] != pidx[k - 1]:
+            page["paragraphs"].append({"id": f"p{next_para}", "line_ids": [], "bbox": None, "source": source})
+            next_para += 1
+        para = page["paragraphs"][-1]
+        lid = f"l{next_line}"
+        next_line += 1
+        page["lines"].append({"id": lid, "word_ids": ids, "bbox": None, "paragraph": para["id"]})
+        para["line_ids"].append(lid)
+    _refresh_structure(page)
+    return next_line, next_para
+
+
+def build_structure(doc: dict[str, Any], word_paragraphs: dict[str, int] | None = None) -> dict[str, Any]:
+    """(Re)build the lines and paragraphs of every page (ids from 1). In place; returns the document."""
+    nl = npar = 1
+    for p in doc["pages"]:
+        nl, npar = _structure_page(p, word_paragraphs, nl, npar)
+    return doc
+
+
+def ensure_structure(doc: dict[str, Any]) -> dict[str, Any]:
+    """Documents written before Phase F have no lines: build them from the layout (the strokes do not change)."""
+    if any("lines" not in p for p in doc["pages"]):
+        build_structure(doc)
+    return doc
+
+
+def _refresh_structure(page: dict[str, Any]) -> None:
+    """After an edit: drop words that are gone, recompute the boxes; a line / paragraph left empty goes."""
+    if "lines" not in page:
+        return
+    wb = {w["id"]: w["bbox"] for w in page["words"]}
+    lines = []
+    for ln in page["lines"]:
+        ln["word_ids"] = [i for i in ln["word_ids"] if i in wb]
+        if ln["word_ids"]:
+            ln["bbox"] = [_r(v) for v in _merge([wb[i] for i in ln["word_ids"]])]
+            lines.append(ln)
+    page["lines"] = lines
+    lb = {ln["id"]: ln["bbox"] for ln in lines}
+    paras = []
+    for pa in page.get("paragraphs") or []:
+        pa["line_ids"] = [i for i in pa["line_ids"] if i in lb]
+        if pa["line_ids"]:
+            pa["bbox"] = _merge([lb[i] for i in pa["line_ids"]])
+            paras.append(pa)
+    page["paragraphs"] = paras
+
+
+def group_strokes(doc: dict[str, Any], word_ids: list[str] | None = None, line_ids: list[str] | None = None,
+                  paragraph_ids: list[str] | None = None) -> list[str]:
+    """Stroke ids of whole words / lines / paragraphs (the FE's and the assistant's region-level selection)."""
+    words = list(word_ids or [])
+    if line_ids or paragraph_ids:
+        lines = {ln["id"]: ln for p in doc["pages"] for ln in p.get("lines") or []}
+        paras = {pa["id"]: pa for p in doc["pages"] for pa in p.get("paragraphs") or []}
+        missing = [i for i in paragraph_ids or [] if i not in paras]
+        if missing:
+            raise AppError(404, "PARAGRAPH_NOT_FOUND", "Không tìm thấy đoạn đã chọn.", {"paragraph_ids": missing})
+        lids = list(line_ids or []) + [i for pid in paragraph_ids or [] for i in paras[pid]["line_ids"]]
+        missing = [i for i in lids if i not in lines]
+        if missing:
+            raise AppError(404, "LINE_NOT_FOUND", "Không tìm thấy dòng đã chọn.", {"line_ids": missing})
+        words += [w for lid in lids for w in lines[lid]["word_ids"]]
+    words = list(dict.fromkeys(words))
+    return list(dict.fromkeys(word_strokes(doc, words))) if words else []
+
+
+def affected(before: dict[str, Any], after: dict[str, Any], report: dict[str, Any]) -> dict[str, list[str]]:
+    """F4: the strokes an edit touched, the words they belong to and the lines of those words (before or after)."""
+    strokes = set(report.get("changed") or []) | set(report.get("added") or []) | set(report.get("removed") or [])
+    words: set[str] = set()
+    lines: set[str] = set()
+    for doc in (before, after):
+        for p in doc["pages"]:
+            hit = {w["id"] for w in p["words"] if strokes & set(w["stroke_ids"])}
+            hit |= {st["word"] for st in p["strokes"] if st["id"] in strokes and st.get("word")}
+            words |= hit
+            lines |= {ln["id"] for ln in p.get("lines") or [] if hit & set(ln["word_ids"])}
+    return {k: sorted(v, key=_num_id) for k, v in (("strokes", strokes), ("words", words), ("lines", lines))}
+
+
+def _iou(a: list[float], b: list[float]) -> float:
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _reading_words(doc: dict[str, Any]) -> list[tuple[int, dict[str, Any]]]:
+    """(page index, word) in reading order: line by line, then any word outside a line."""
+    out = []
+    for pi, p in enumerate(doc["pages"]):
+        wmap = {w["id"]: w for w in p["words"]}
+        seen: set[str] = set()
+        for ln in p.get("lines") or []:
+            for i in ln["word_ids"]:
+                if i in wmap and i not in seen:
+                    out.append((pi, wmap[i]))
+                    seen.add(i)
+        out += [(pi, w) for w in p["words"] if w["id"] not in seen]
+    return out
+
+
+def carry_ids(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """F2: give a fresh drawing the ids of the previous one where it draws the same word. In place on `new`.
+
+    Words are matched by their text when both drawings have it (OT-3; difflib over the words in reading order, so a word
+    added or removed upstream does not shift the rest), else by position (OT-1: same page, box overlap IoU >= 0.5, best
+    first). A matched word keeps its id, and its strokes keep theirs when the count is the same; lines and paragraphs keep
+    the id most of their words had. Everything else gets ids above any id the previous drawing used (never reused)."""
+    import difflib
+    ow, nw = _reading_words(old), _reading_words(new)
+    by_text = bool(ow and nw and all(w.get("text") for _, w in ow + nw))
+    match: dict[str, str] = {}                        # new word id -> old word id
+    if by_text:
+        sm = difflib.SequenceMatcher(None, [w["text"] for _, w in ow], [w["text"] for _, w in nw], autojunk=False)
+        for blk in sm.get_matching_blocks():
+            for k in range(blk.size):
+                match[nw[blk.b + k][1]["id"]] = ow[blk.a + k][1]["id"]
+    else:
+        pairs = sorted(((_iou(a["bbox"], b["bbox"]), b["id"], a["id"]) for pa, a in ow for pb, b in nw
+                        if pa == pb and a.get("bbox") and b.get("bbox")), reverse=True)
+        used_o: set[str] = set()
+        for iou, nid, oid in pairs:
+            if iou < IOU_MATCH:
+                break
+            if nid not in match and oid not in used_o:
+                match[nid] = oid
+                used_o.add(oid)
+    o_words = {w["id"]: w for _, w in ow}
+
+    def top(key: str) -> int:
+        return max([_num_id(x["id"]) for p in old["pages"] for x in p.get(key) or []] + [0])
+
+    nxt = {"w": top("words") + 1, "l": top("lines") + 1, "p": top("paragraphs") + 1,
+           "s": max(int(old.get("next_id") or 1), top("strokes") + 1)}
+
+    def fresh(pfx: str) -> str:
+        v = f"{pfx}{nxt[pfx]}"
+        nxt[pfx] += 1
+        return v
+
+    wren: dict[str, str] = {}
+    sren: dict[str, str] = {}
+    for _, w in nw:
+        oid = match.get(w["id"])
+        wren[w["id"]] = oid if oid else fresh("w")
+        if oid and len(o_words[oid]["stroke_ids"]) == len(w["stroke_ids"]):
+            sren.update(zip(w["stroke_ids"], o_words[oid]["stroke_ids"]))
+    for p in new["pages"]:
+        for st in p["strokes"]:
+            st["id"] = sren.get(st["id"]) or fresh("s")
+            if st.get("word"):
+                st["word"] = wren.get(st["word"], st["word"])
+        for w in p["words"]:
+            w["id"] = wren[w["id"]]
+            w["stroke_ids"] = [st["id"] for st in p["strokes"] if st.get("word") == w["id"]]
+    o_line_of = {i: ln["id"] for p in old["pages"] for ln in p.get("lines") or [] for i in ln["word_ids"]}
+    o_para_of = {ln["id"]: ln.get("paragraph") for p in old["pages"] for ln in p.get("lines") or []}
+    used_l: set[str] = set()
+    used_p: set[str] = set()
+    for p in new["pages"]:
+        lren: dict[str, str] = {}
+        for ln in p.get("lines") or []:
+            ln["word_ids"] = [wren.get(i, i) for i in ln["word_ids"]]
+            votes = [o_line_of[i] for i in ln["word_ids"] if i in o_line_of]
+            best = max(sorted(set(votes)), key=votes.count) if votes else None
+            lren[ln["id"]] = best if best and best not in used_l else fresh("l")
+            used_l.add(lren[ln["id"]])
+        pren: dict[str, str] = {}
+        for pa in p.get("paragraphs") or []:
+            votes = [o_para_of[lren[i]] for i in pa["line_ids"] if o_para_of.get(lren[i])]
+            best = max(sorted(set(votes)), key=votes.count) if votes else None
+            pren[pa["id"]] = best if best and best not in used_p else fresh("p")
+            used_p.add(pren[pa["id"]])
+            pa["id"] = pren[pa["id"]]
+            pa["line_ids"] = [lren[i] for i in pa["line_ids"]]
+        for ln in p.get("lines") or []:
+            ln["id"] = lren[ln["id"]]
+            ln["paragraph"] = pren.get(ln.get("paragraph"), ln.get("paragraph"))
+    new["next_id"] = nxt["s"]
+    kept = len(match)
+    return {"matched_by": "TEXT" if by_text else "POSITION", "words_kept": kept, "words_new": len(nw) - kept,
+            "words_gone": len(o_words) - kept, "strokes_kept": len(sren)}
+
+
+def reapply(doc: dict[str, Any], operations: list[dict[str, Any]], limits: Limits) -> tuple[dict[str, Any], dict[str, Any]]:
+    """F3: run the earlier edits again on a fresh drawing (oldest first). Only translate / rotate / scale / slant chosen as
+    whole words, lines or paragraphs come back, and only when every word of the selection is still there (same id, F2);
+    each is the same Geometry Engine edit with the same checks. Returns (document, {"reapplied": [...], "dropped": [...]})."""
+    reapplied, dropped = [], []
+    for o in operations:
+        item = {k: o.get(k) for k in ("op", "word_ids", "line_ids", "paragraph_ids", "params", "author")}
+        if o.get("op") not in REAPPLY_OPS:
+            dropped.append({**item, "reason": "OP_NOT_REAPPLIED"})
+            continue
+        if o.get("stroke_ids") or not (o.get("word_ids") or o.get("line_ids") or o.get("paragraph_ids")):
+            dropped.append({**item, "reason": "NOT_WHOLE_WORDS"})
+            continue
+        try:
+            ids = group_strokes(doc, o.get("word_ids"), o.get("line_ids"), o.get("paragraph_ids"))
+            doc, rep = apply(doc, o["op"], ids, o.get("params"), limits)
+        except AppError as exc:
+            dropped.append({**item, "reason": "GONE" if exc.code.endswith("_NOT_FOUND") else exc.code})
+            continue
+        mark_edit(doc, rep, o.get("author") or "CUSTOMER")
+        reapplied.append(item)
+    return doc, {"reapplied": reapplied, "dropped": dropped}
+
+
+def reapplicable(operation: dict[str, Any] | None) -> bool:
+    o = operation or {}
+    return (o.get("op") in REAPPLY_OPS and not o.get("stroke_ids")
+            and bool(o.get("word_ids") or o.get("line_ids") or o.get("paragraph_ids")))
