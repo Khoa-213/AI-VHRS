@@ -128,6 +128,14 @@ class SnapshotService:
                            "Phác thảo chốt chưa có dòng xác thực bắt buộc (phác thảo lưu trước nâng cấp U8). Hãy lưu lại "
                            "phác thảo (sinh lại hoặc tải lại), chốt, rồi gửi khách duyệt lại báo giá.")
         approval = self.session.scalar(select(SketchApproval).where(SketchApproval.quotation_id == quotation.id))
+        # V2 Phase H (Test 8): only the exact version the customer approved is locked. The approval record (U2) names the
+        # sketch and the SHA-256 of its trajectory; a different sketch or hash (a row changed after the approval) is
+        # refused. Approvals before migration 0017 have no record and rely on the quotation check above.
+        if approval is not None and (approval.sketch_id != sketch.id or (
+                approval.sketch_content_hash is not None and approval.sketch_content_hash != sketch.content_hash)):
+            raise AppError(409, "SKETCH_NOT_APPROVED",
+                           "Phác thảo chốt không đúng bản khách đã duyệt (khác phiên bản hoặc mã băm). Không khoá gói sản xuất.",
+                           {"approved_sketch_id": approval.sketch_id, "final_sketch_id": sketch.id})
         package_id = str(uuid.uuid4())
         payload = {
             "schema": ps.SCHEMA, "package_id": package_id, "issued_at": _iso(_now()),

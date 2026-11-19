@@ -1,6 +1,6 @@
 # AI-VHRS V2: Đơn hàng hợp nhất, phác thảo chuẩn (canonical sketch) và chỉnh sửa bằng AI
 
-Trạng thái: **Phase A xong; chủ dự án chốt D1–D6 (mục 9.0); Phase B (lõi) xong 2026-11-17, mục 11; Phase C (trợ lý trên đơn) xong 2026-11-18, mục 12. Phase D trở đi chưa làm.**
+Trạng thái: **Phase A xong; chủ dự án chốt D1–D6 (mục 9.0); Phase B (lõi) xong 2026-11-17, mục 11; Phase C (trợ lý trên đơn) xong 2026-11-18, mục 12; Phase H (Staff sửa bằng cùng engine) xong 2026-11-19, mục 13. Phase D, E, F, I chưa làm.**
 Một việc độc lập đã làm và test ngay (mục 2.3): bản xem trước studio và phác thảo của Staff giờ ra **cùng một nét**.
 
 Tài liệu này nối tiếp `docs/UPGRADE_AI_ROBOT_PLAN.md` (U1–U9). Quy ước trạng thái: **ĐÃ CÓ** = code + test chạy; **THIẾT KẾ** = mới
@@ -246,4 +246,19 @@ Staff nhận v1 đúng nét đó (hash bằng nhau) → báo giá → duyệt �
 | Sửa thêm | `studio_ai` (trần 10 tin / phút dùng chung) giờ đếm **sau** bước kiểm vai trò ở cả `POST /studio/{id}/messages` và route mới: trước đây vai trò bị từ chối vẫn tiêu lượt, nên `test_permission_matrix` thấy `429` thay vì `403` (có thể là nguyên nhân lỗi "chưa rõ" của test này trên Supabase ngày 2026-11-16) |
 | Test | `tests/test_v2_order_assistant.py` (9): lát cắt (trợ lý dời đúng từ khách chọn, chỉ nét đó đổi, revision AI có provider / model, khách hoàn tác); từ chối ngoài vùng chọn / ngoài giới hạn / công cụ lạ / lệnh lạ không tạo revision; revision cũ bị từ chối trước khi gọi AI; tin nhắn trùng gọi AI một lần; lượt song song bị từ chối (route thường và stream); quá thời gian → chuyển nhà cung cấp, hết → FAILED; đồng ý, chủ đơn, đơn đã gửi; trợ lý sửa chữ → phác thảo cũ, gửi bị chặn, cờ FORGERY_RISK tới Staff; stream báo từng công cụ |
 | Chưa làm | `/studio` thành lớp tương thích gọi vào đơn (D1: giữ studio đến khi FE chuyển; chưa đổi để không phá FE đang dùng); hoàn tác nội dung / vật tư (form đơn chưa có lịch sử); trợ lý chưa đo chất lượng chọn công cụ trên cùng bộ kịch bản cho mọi nhà cung cấp (chưa gọi LLM thật cho Phase C); OT-1 chưa biết chữ của vùng (HTR) |
+
+## 13. Phase H: Staff sửa bằng cùng Geometry Engine (2026-11-19, migration 0025, chưa commit)
+
+Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **H-a** Staff dùng cùng giới hạn lệnh theo loại đơn với khách / AI; **H-b** chưa làm trợ lý AI cho Staff; **H-c** phiên bản cũ không backfill, tài liệu dựng lại khi đọc.
+
+| | |
+|---|---|
+| Làm gì | Mọi phiên bản chính thức lưu thêm tài liệu `vhrs-sketch/2` (`document.json` cạnh `trajectory.json`). v1 nhận từ khách = **đúng tài liệu của revision khách** (cùng id, cùng chữ của từ); Staff sửa nét → phiên bản mới giữ id những nét không đổi; sinh lại / tải quỹ đạo tay / sửa vùng U4 → id mới. Mỗi nét có `edited_by` (CUSTOMER / AI / STAFF) để editor Staff thấy nét khách / trợ lý đã sửa (D2). Snapshot chỉ khoá đúng phiên bản + mã băm khách đã duyệt |
+| Database | Migration 0025 (chỉ thêm): `sketches.document_uri`, `sketches.geometry_hash`. Phiên bản cũ để NULL (không sửa dòng / file cũ) |
+| File | `sketches.py` (`_persist` ghi tài liệu và kiểm `geometry_hash(document) = pages_geometry_hash(quỹ đạo)`, sai → `500 GEOMETRY_MISMATCH` không lưu; `document_of`, `edit_strokes`, `_regions_from_doc` dùng chung với `adopt_customer_revision`), `sketch_geometry.py` (`mark_edit`, `edit_summary`), `sketch_work.py` (sửa của khách / AI ghi `edited_by`; `order_word_texts` dùng chung), `production_snapshot.py` (kiểm bản duyệt), `staff_schemas.py`, `workshop.py`, `migrations/versions/0025_sketch_documents.py` |
+| API | `POST /workshop/orders/{id}/sketches/{version}/edit` (mới); `GET /workshop/orders/{id}/sketches/{version}` thêm `document`, `edit_summary` (FE mục 7t) |
+| Test 8 | Khi phát hành snapshot: bản ghi duyệt (U2, bảng chỉ thêm) phải trỏ đúng phác thảo chốt và cùng `content_hash`, lệch → `409 SKETCH_NOT_APPROVED`, không tạo gói, không tạo job. Sau khi khách duyệt, Staff không sửa được nữa (`ORDER_NOT_ACCEPTED`). File quỹ đạo khi tải gói vẫn được so với hash đã ký (U1, có sẵn) |
+| Test | `tests/test_v2_staff_editor.py` (7): v1 giữ tài liệu khách (id, dấu CUSTOMER, chữ của từ, hash khớp quỹ đạo); Staff dời một từ → v2 chỉ nét đó đổi, id giữ, dấu STAFF, v1 không đổi, sửa trên v1 → `SKETCH_VERSION_CONFLICT`, ngoài giới hạn / nét lạ / lệnh lạ / thiếu ghi chú / khách gọi → từ chối không tạo phiên bản; phiên bản trước 0025 có tài liệu dựng lại, sửa được, không bị backfill, file quỹ đạo bị đổi → `GEOMETRY_TAMPERED`; file tài liệu bị đổi → `GEOMETRY_TAMPERED`; OT-1 vùng U4 theo sau (vùng sửa → `STAFF`); lát cắt tới snapshot khoá đúng v2 Staff sửa; xếp lịch từ chối phác thảo chốt khác bản duyệt |
+| Kết quả test | Cục bộ (Postgres 18) 914 passed, 3 skipped. Supabase THẬT 914 passed, 3 skipped, 0 failed, 1 error teardown (kết nối khoá suite bị đóng sau khoảng 5 giờ, đã sửa `conftest.py`); dữ liệu thật không đổi |
+| Chưa làm | Trợ lý AI cho Staff (H-b); hoàn tác trong editor Staff (Staff mở lại phiên bản cũ rồi sửa tiếp, hoặc chốt phiên bản cũ); đọc lại file quỹ đạo ngay lúc phát hành snapshot (hiện so ở mỗi lần tải gói, U1) |
 

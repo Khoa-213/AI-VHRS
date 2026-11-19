@@ -6,6 +6,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 # U1: a throw-away signing key for this test session, unless the environment already has one (never a real key in tests)
 if not os.environ.get("PRODUCTION_SIGNING_KEY"):
@@ -127,8 +128,14 @@ def _db_clean():
         yield
         _cleanup()
     finally:
-        lock.execute(text("select pg_advisory_unlock(:k)"), {"k": _SUITE_LOCK_KEY})
-        lock.close()
+        # 2026-11-19: Supabase closed this connection after ~5 h idle and the unlock raised a teardown ERROR on the last
+        # test of an otherwise green run. A dead connection has already released its session lock, so ignore that.
+        try:
+            lock.execute(text("select pg_advisory_unlock(:k)"), {"k": _SUITE_LOCK_KEY})
+        except OperationalError:
+            pass
+        finally:
+            lock.close()
 
 
 @pytest.fixture(scope="session", autouse=True)
