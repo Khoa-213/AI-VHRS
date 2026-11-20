@@ -69,7 +69,7 @@ def latest_readings(session: Session, order_id: int) -> dict[str, HtrReading]:
 
 
 def hints_for(session: Session, order: Order, doc: dict[str, Any], *, outdated: bool) -> dict[str, Any] | None:
-    """{"state", "pages": [{no, status, provider}], "words": {word id: {"text", "status"}}} for an OT-1 document."""
+    """{"state", "pages": [{no, status, provider, check}], "words": {word id: {"text", "status"}}} for an OT-1 document."""
     if order.order_type != OrderType.OT1_COPY_RESTORE:
         return None
     if outdated:            # the photos changed after this drawing: page n may no longer be photo n
@@ -81,12 +81,13 @@ def hints_for(session: Session, order: Order, doc: dict[str, Any], *, outdated: 
         src = sources[i] if i < len(sources) else None
         rd = readings.get(source_key(src)) if src is not None else None
         status = rd.status if rd is not None else "NOT_READ"
-        pages.append({"no": p["no"], "status": status, "provider": rd.provider if rd is not None else None})
+        pages.append({"no": p["no"], "status": status, "provider": rd.provider if rd is not None else None, "check": None})
         if status != "READ":
             continue
         regs = [SimpleNamespace(region_no=k, bbox=tuple(w["bbox"]), wid=w["id"])
                 for k, w in enumerate(p["words"], start=1) if w.get("bbox")]
         res = htr_align.match(regs, rd.transcript or "")
+        pages[-1]["check"] = res.get("refused")          # TOO_MANY_WORDS: the reading has words with no ink, no hint at all
         for r in regs:
             v = res["regions"][r.region_no]
             words[r.wid] = {"text": v["text"] if v["status"] == "READ" else None, "status": v["status"]}

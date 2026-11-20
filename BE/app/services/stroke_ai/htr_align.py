@@ -27,6 +27,9 @@ SKIP_UNIT, SKIP_TINY_UNIT, SKIP_WORD, SHARE_UNIT = 1.2, 0.3, 1.6, 0.9
 GAP_WEIGHT = 1.2
 LINE_BREAK = 1.0            # a line of the transcript starts on a line of ink (and, when the reader kept the lines, back)
 UNREAD_ABOVE = 0.9          # a word costing more than this is not trusted
+# V2 Phase I (Test 5): a reading with far more words than there is ink is not matched at all. On the 48 public pages of E2a
+# with a reading the most was 1.22 words per unit; invented text tried was 1.67 - 2.5.
+MAX_WORDS_PER_UNIT = 1.5
 
 
 @dataclass
@@ -164,7 +167,8 @@ def units_of(regions) -> list[Unit]:
 
 
 def match(regions, text: str) -> dict:
-    """Return {"regions": {region_no: {"text", "word", "status": READ|UNREAD}}, "words": [...], "cost": page cost}."""
+    """Return {"regions": {region_no: {"text", "word", "status": READ|UNREAD}}, "words": [...], "cost": page cost,
+    "refused": None | "TOO_MANY_WORDS"}."""
     units = units_of(regions)
     words, starts = [], []
     for tl in (text or "").splitlines():
@@ -173,7 +177,9 @@ def match(regions, text: str) -> dict:
         starts += [True] + [False] * (len(ws) - 1) if ws else []
     out = {r.region_no: {"text": None, "word": None, "status": "UNREAD"} for r in regions}
     if not units or not words:
-        return {"regions": out, "words": words, "cost": None}
+        return {"regions": out, "words": words, "cost": None, "refused": None}
+    if sum(not placeholder(w) for w in words) > MAX_WORDS_PER_UNIT * len(units):
+        return {"regions": out, "words": words, "cost": None, "refused": "TOO_MANY_WORDS"}
     hs = sorted(u.y1 - u.y0 for u in units)
     ref_h = max(hs[len(hs) // 2], 0.5)
     lw = sum(letters(w) for w in words)
@@ -264,4 +270,4 @@ def match(regions, text: str) -> dict:
                 for rn in u.regions:
                     out[rn] = {"text": text_ if status == "READ" else None, "word": j, "status": status,
                                "cost": round(sc, 3), "guess": text_}
-    return {"regions": out, "words": words, "cost": round(cost[n][m], 3)}
+    return {"regions": out, "words": words, "cost": round(cost[n][m], 3), "refused": None}

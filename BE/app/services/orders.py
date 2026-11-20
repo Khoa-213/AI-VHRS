@@ -143,14 +143,15 @@ class OrderService:
         self.layout_remap: dict[str, int] | None = None    # V2 Phase D: what the last set_text(keep_layout) kept
 
     # ---- helpers ----
-    def _get(self, order_id: int) -> Order:
-        order = self.orders.get_owned(order_id, self.customer.id)
+    def _get(self, order_id: int, *, lock: bool = False) -> Order:
+        order = self.orders.get_owned(order_id, self.customer.id, lock=lock)
         if order is None:
             raise AppError(404, "ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.")
         return order
 
     def _get_editable(self, order_id: int) -> Order:
-        order = self._get(order_id)
+        # V2 Phase I (Test 6): lock the row, so two submits (or a submit and a content change) cannot both pass the checks
+        order = self._get(order_id, lock=True)
         if order.order_status not in EDITABLE:
             raise AppError(409, "ORDER_NOT_EDITABLE", "Đơn đã gửi, không thể chỉnh sửa lúc này.")
         set_actor(self.session, self.customer.id)
