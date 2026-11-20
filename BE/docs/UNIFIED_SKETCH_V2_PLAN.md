@@ -325,7 +325,7 @@ Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **F-a** chỉ dòng và 
 | Supabase | Toàn suite trên Supabase THẬT 2026-11-19: 929 passed, 3 skipped, 0 failed |
 | Giới hạn | Đoạn OT-1 là đoán; từ có số nét đổi (đổi kiểu chữ) giữ id từ nhưng nét nhận id mới; sửa từng nét không được áp lại |
 
-## 17. Phase I: nghiệm thu V2 (2026-11-20, không migration, chưa commit)
+## 17. Phase I: nghiệm thu V2 (2026-11-20, không migration, commit `fcefc44`)
 
 Chủ dự án duyệt 2026-11-20 theo khuyến nghị: **I-a** đọc thật Gemini + Claude trên ảnh công khai; **I-b** tăng tốc test để sau; **I-c** sau Phase I lập kế hoạch OT-2.
 
