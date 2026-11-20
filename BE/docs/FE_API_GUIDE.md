@@ -1010,7 +1010,7 @@ Chỉ đơn **OT-1** (chép / phục dựng từ ảnh), đơn đang nháp. Khá
 - `GET /orders/{id}/sketch/read-text` → `{enabled, available, providers: ["gemini", "anthropic"], consent_text, daily_cap, used_today, pages: [{page_no, input_id, status: READ | FAILED | NOT_READ, provider, read_at}]}`. Ẩn nút khi `available = false`.
 - **Xin đồng ý mỗi lần**: hiện nguyên văn `consent_text` (nêu tên bên nhận ảnh; với Gemini gói miễn phí có câu "Google có thể lưu và dùng ảnh này để cải thiện dịch vụ của họ"), có nút đồng ý và nút bỏ qua. Không có sẵn dấu tick.
 - `POST /orders/{id}/sketch/read-text` `{"consent": true}` → như GET, thêm `read_now: [{input_id, status, provider}]`. **Chậm** (mỗi trang tới vài chục giây; hiện tiến trình). Ảnh đã đọc thì không gửi lại (`read_now` rỗng); trang `FAILED` được thử lại ở lần bấm sau. Giới hạn 10 lần / phút.
-- Gợi ý đi kèm phác thảo: `GET /orders/{id}/sketch` (và mọi phản hồi phác thảo: generate, edit, undo, redo) có `text_hints = {state, pages: [{no, status, provider}], words: {word id: {text, status: READ | UNREAD}}}`. `state`: `NOT_READ` (chưa đọc), `READY`, `PARTIAL` (có trang chưa đọc / lỗi), `FAILED`, `SKETCH_OUTDATED` (ảnh / nội dung đổi sau lần vẽ: vẽ lại rồi mới có gợi ý). Đơn OT-3: `text_hints = null`.
+- Gợi ý đi kèm phác thảo: `GET /orders/{id}/sketch` (và mọi phản hồi phác thảo: generate, edit, undo, redo) có `text_hints = {state, pages: [{no, status, provider, check}], words: {word id: {text, status: READ | UNREAD}}}`. `check = "TOO_MANY_WORDS"` (V2 Phase I): bản đọc của trang có nhiều chữ hơn hẳn số vùng mực (có chữ không có trên giấy), nên cả trang **không có gợi ý nào**; FE nên báo "không đọc chắc được trang này". Bình thường `check = null`. `state`: `NOT_READ` (chưa đọc), `READY`, `PARTIAL` (có trang chưa đọc / lỗi), `FAILED`, `SKETCH_OUTDATED` (ảnh / nội dung đổi sau lần vẽ: vẽ lại rồi mới có gợi ý). Đơn OT-3: `text_hints = null`.
 - Hiển thị: chữ gợi ý cạnh / trên khung vùng, khác kiểu với chữ thật (ví dụ chữ nghiêng, màu nhạt, nhãn "AI đọc, có thể sai"); vùng `UNREAD` để trống hoặc dấu "?". Gợi ý tính lại theo phác thảo đang xem nên dời / sửa / hoàn tác vẫn đúng vùng.
 - **Trợ lý** (mục 7s): `get_sketch` có `text_hint` / `text_hint_unread` cho từng chữ và `text_hints.state`; trợ lý gọi tên chữ theo gợi ý và nói rõ là gợi ý, **không tự gửi ảnh** (chỉ khách bấm nút).
 - **Staff** (mục 6): vùng của bản v1 nhận từ khách có `metrics.htr = {text, status}`; giữ qua các lần Staff sửa nét. `text` của vùng vẫn do Staff / khách nhập như trước.
@@ -1055,6 +1055,17 @@ Chỉ đơn **OT-1** (chép / phục dựng từ ảnh), đơn đang nháp. Khá
   - `get_sketch` có `lines` / `paragraphs` theo trang.
   - `edit_strokes` nhận `line_ids` / `paragraph_ids`.
   - Sau `generate_sketch`, vùng chọn cũ của khách bị bỏ: FE nên xoá vùng chọn trên canvas sau khi vẽ lại.
+
+## 7x. Nghiệm thu V2 (Phase I, không migration, 2026-11-20)
+
+Không thêm API. Ba thay đổi hành vi FE nên biết:
+- `text_hints.pages[].check` (mục 7v): `TOO_MANY_WORDS` thì trang đó không có gợi ý.
+- Trợ lý: khi một lệnh sửa không lưu được do lỗi hệ thống, công cụ trả `SAVE_FAILED` cho trợ lý và lượt chat vẫn trả lời bình
+  thường (trước đây cả lượt trả 500). Phác thảo giữ nguyên; FE không cần xử lý riêng.
+- Gửi đơn hai lần (bấm đúp, hai tab): lần sau nhận `409 ORDER_NOT_EDITABLE` hoặc `409 ORDER_NOT_DRAFT`; coi như đơn đã gửi,
+  tải lại đơn. Xếp lịch song song trùng technician / robot: bên thua luôn nhận `409 SLOT_CONFLICT` (trước đây hiếm khi 500).
+
+Báo cáo nghiệm thu 10 test: `docs/benchmarks/V2_acceptance_2026-11-20.md`.
 
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 

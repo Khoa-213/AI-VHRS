@@ -75,7 +75,7 @@ def _hinted(w):
 # ---------------------------------------------------------------------------------------------------------- vertical slice
 def test_the_customer_agrees_the_photo_is_read_once_and_the_hints_follow_the_sketch(client, cust, wcat, store, htr_env):
     oid, w = _ot1(client, cust, wcat, store)
-    assert w["text_hints"] == {"state": "NOT_READ", "pages": [{"no": 1, "status": "NOT_READ", "provider": None}], "words": {}}
+    assert w["text_hints"] == {"state": "NOT_READ", "pages": [{"no": 1, "status": "NOT_READ", "provider": None, "check": None}], "words": {}}
     st = client.get(f"{API}/orders/{oid}{RT}", headers=cust).json()
     assert st["enabled"] and st["available"] and st["providers"] == ["gemini"]
     assert "Google (Gemini)" in st["consent_text"] and "cải thiện dịch vụ" in st["consent_text"]

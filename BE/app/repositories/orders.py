@@ -18,9 +18,10 @@ class OrderRepository:
         self.s.refresh(order)
         return order
 
-    def get_owned(self, order_id: int, customer_id: int) -> Order | None:
+    def get_owned(self, order_id: int, customer_id: int, *, lock: bool = False) -> Order | None:
         """Record-level authorization: an order that belongs to someone else is simply 'not found'."""
-        return self.s.scalar(select(Order).where(Order.id == order_id, Order.customer_id == customer_id))
+        q = select(Order).where(Order.id == order_id, Order.customer_id == customer_id)
+        return self.s.scalar(q.with_for_update() if lock else q)
 
     def search_owned(self, customer_id: int, *, statuses: list[OrderStatus] | None, offset: int,
                      limit: int) -> tuple[list[Order], int]:

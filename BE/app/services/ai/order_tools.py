@@ -14,6 +14,7 @@ Same rules as the studio tools (tools.py):
 from __future__ import annotations
 
 import json
+import logging
 import unicodedata
 from decimal import Decimal
 from typing import Any, Callable
@@ -23,6 +24,8 @@ from app.domain import text_layout
 from app.models.order import Order, OrderInputKind, OrderType
 from app.repositories.orders import OrderRepository
 from app.services import audit
+
+log = logging.getLogger(__name__)
 from app.services import htr_hints
 from app.services import sketch_geometry as geo
 from app.services.ai.llm import ToolSpec
@@ -164,6 +167,11 @@ class OrderTools:
         except (TypeError, ValueError, KeyError) as exc:
             sp.rollback()
             return {"ok": False, "error": "INVALID_ARGS", "message": str(exc)[:200]}, None, False
+        except Exception:                       # V2 Phase I (Test 10): storage / DB failed while saving: nothing half-saved
+            log.exception("assistant tool %s failed", name)
+            sp.rollback()
+            return {"ok": False, "error": "SAVE_FAILED",
+                    "message": "Không lưu được thay đổi do lỗi hệ thống; phác thảo vẫn như trước. Hãy báo khách thử lại sau."}, None, False
 
     # ------------------------------------------------------------------ read
     def _text_row(self, order: Order):

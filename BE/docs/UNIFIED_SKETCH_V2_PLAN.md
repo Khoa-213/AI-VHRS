@@ -324,3 +324,16 @@ Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **F-a** chỉ dòng và 
 | Test | `tests/test_v2_lines_and_redraw.py` (2): OT-3 qua API + trợ lý (vùng chọn theo dòng); OT-1 vẽ lại cùng ảnh, Staff sửa theo dòng |
 | Supabase | Toàn suite trên Supabase THẬT 2026-11-19: 929 passed, 3 skipped, 0 failed |
 | Giới hạn | Đoạn OT-1 là đoán; từ có số nét đổi (đổi kiểu chữ) giữ id từ nhưng nét nhận id mới; sửa từng nét không được áp lại |
+
+## 17. Phase I: nghiệm thu V2 (2026-11-20, không migration, commit `fcefc44`)
+
+Chủ dự án duyệt 2026-11-20 theo khuyến nghị: **I-a** đọc thật Gemini + Claude trên ảnh công khai; **I-b** tăng tốc test để sau; **I-c** sau Phase I lập kế hoạch OT-2.
+
+| | |
+|---|---|
+| Test mới | `tests/test_v2_acceptance.py` (9): Test 10 lưu revision lỗi (file / database sau khi đã ghi file) và công cụ trợ lý lưu lỗi; Test 6 gửi đơn hai lần kể cả song song; Test 5 bản đọc bịa; Test 4 ảnh mực phai từ gợi ý tới snapshot và kiểm tra chuyển động |
+| Sửa | Khoá dòng đơn khi khách sửa / gửi đơn DRAFT (hai lần gửi song song từng cùng qua); công cụ trợ lý lưu lỗi → `SAVE_FAILED` thay vì hỏng cả lượt; `htr_align` từ chối trang có số chữ > 1,5 × số vùng mực (`TOO_MANY_WORDS`); xếp lịch: deadlock khi hai lịch trùng chèn cùng lúc → thử lại một lần trong savepoint, ra `409 SLOT_CONFLICT` |
+| I2 | `docs/benchmarks/I2_htr_product_2026-11-20.md`: Gemini thật qua code sản phẩm, 5 trang công khai, CER 0,018, 505 / 539 vùng có gợi ý. Claude chưa đo: không có `ANTHROPIC_API_KEY` |
+| Báo cáo | `docs/benchmarks/V2_acceptance_2026-11-20.md` (10 test → test tự động, phần chưa kiểm chứng) |
+| Supabase | Lượt liền: 933 passed, 3 skipped, 5 failed, cả 5 do Supabase đóng kết nối giữa chừng, chạy lại riêng đều qua; không lỗi logic; chưa có lượt 0 failed; dữ liệu thật không đổi |
+| Giới hạn | Bản đọc bịa có số chữ / độ dài gần đúng vẫn được gắn (bộ gắn chỉ có hình học); nhánh thử lại khi deadlock chưa thấy chạy trong các lượt test (deadlock hiếm) |
