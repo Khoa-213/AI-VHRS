@@ -67,11 +67,11 @@ Hướng B, nếu vượt cổng ở O1, thành phase riêng sau O3 (chỉ thay 
 
 ## 8. Tiến độ
 
-- **O1(a) xong (2026-11-20), chưa commit:** `docs/benchmarks/O1a_glyph_harvest_2026-11-20.md`. Trên 50 trang công khai chỉ
+- **O1(a) xong (2026-11-20), commit `02d45a5`:** `docs/benchmarks/O1a_glyph_harvest_2026-11-20.md`. Trên 50 trang công khai chỉ
   6,4 % từ tách được thành chữ cái (59 % từ viết liền), nên không thu được bộ glyph từ trang tự do; phiếu mẫu (Q1) là bắt
   buộc. Glyph nhận diện đúng người viết gấp ~2,2 lần ngẫu nhiên (24 / 211). Đọc được và robot viết được chưa đo (không đủ
   chữ để viết lại), chuyển sang O2 trên phiếu mẫu thật.
-- **O1(b) khảo sát xong (2026-11-20), chưa tải gì, chưa commit:** `docs/benchmarks/O1b_model_survey_2026-11-20.md`. Hai mô
+- **O1(b) khảo sát xong (2026-11-20), chưa tải gì, commit `02d45a5`:** `docs/benchmarks/O1b_model_survey_2026-11-20.md`. Hai mô
   hình sinh nét bút có mã MIT (SDT, DiffInk), không có sẵn tiếng Việt; dữ liệu tiếng Việt dạng nét HANDS-VNOnDB chỉ cho
   nghiên cứu, không thương mại, nên mô hình huấn luyện trên đó không vào sản phẩm thu tiền khi chưa được tác giả cho phép.
   Khuyến nghị: làm O2 trước, thử SDT (B1) khi có glyph thật từ phiếu mẫu.
@@ -142,7 +142,7 @@ lõi của bộ phục dựng U3 (tách thành hàm dùng chung, kết quả OT-
 | O2-c | API bộ nét có mở khi OT-2 còn tắt không | Mở (chỉ lưu nét của chính người đó, có xác nhận quyền); đơn OT-2 vẫn bị chặn tới khi chủ dự án bật |
 | O2-d | Nội dung phiếu như bảng trên (3 trang) | Duyệt; chữ viết liền để sau (cần mô hình, O1(b)) |
 
-**Tiến độ O2 (2026-11-20, chưa commit):** code xong. Migration 0028 đã áp lên Supabase, có 8 test mới
+**Tiến độ O2 (2026-11-20, commit `02d45a5`):** code xong. Migration 0028 đã áp lên Supabase, có 8 test mới
 (`tests/test_ot2_style_sheet.py`), FE mục 7y.
 
 Khác kế hoạch:
@@ -217,7 +217,7 @@ Không đổi DB (không migration).
 | O3-e | Đo "đọc được": cho Gemini đọc ảnh render từ bộ nét của chủ dự án / thành viên (khoá free tier, Google có thể dùng ảnh) hay chỉ chấm bằng mắt | Chỉ bản render (không phải ảnh phiếu), với sự đồng ý của người viết; nếu không đồng ý thì chỉ chấm bằng mắt |
 | O3-f | Thứ tự | Code + test tổng hợp ngay; số đo thật khi có ảnh phiếu; OT-2 vẫn tắt tới O4 |
 
-**Tiến độ O3 (2026-11-21, chưa commit):** code xong, không đổi DB, 7 test mới (`tests/test_ot2_compose.py`), FE mục 7y.
+**Tiến độ O3 (2026-11-21, commit `02d45a5`):** code xong, không đổi DB, 7 test mới (`tests/test_ot2_compose.py`), FE mục 7y.
 Cục bộ cả suite qua. Supabase THẬT 2026-11-21: 953 passed, 3 skipped, 0 failed (2 giờ 31 phút); dữ liệu thật không đổi. Số đo trên phiếu thật (độ dễ đọc, tỉ lệ chữ hoa, khoảng cách chữ) còn chờ ảnh phiếu của chủ dự án và 1 thành viên.
 
 Khác kế hoạch / cần biết:
