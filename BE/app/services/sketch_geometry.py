@@ -64,7 +64,7 @@ FREE_LIMITS = Limits("FREE", 10.0, 45.0, (0.5, 2.0), 30.0, (0.0, 2.0), 10.0, 5.0
 
 
 def limits_for(order_type: str) -> Limits:
-    return TEXT_LIMITS if order_type == "OT3_TEMPLATE" else FREE_LIMITS
+    return TEXT_LIMITS if order_type in ("OT3_TEMPLATE", "OT2_LEARNED_STYLE") else FREE_LIMITS     # OT-2: composed text
 
 
 # ---------------------------------------------------------------------------------------------------------- document

@@ -144,8 +144,6 @@ class OrderTools:
         hide = set()
         if t != OrderType.OT3_TEMPLATE:
             hide |= {"list_templates", "update_text", "set_layout"}
-        if t == OrderType.OT2_LEARNED_STYLE:                 # no automatic sketch yet (R&D, owner decision on OT-2)
-            hide |= {"generate_sketch"}
         return [s for s in SPECS if s.name not in hide]
 
     def run(self, name: str, args: dict[str, Any]) -> tuple[dict[str, Any], int | None, bool]:

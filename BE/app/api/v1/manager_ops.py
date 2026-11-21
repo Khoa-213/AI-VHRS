@@ -4,15 +4,18 @@ FR-30 (PricingConfig with versions), FR-39 (robots), FR-41 (papers / pens / inks
 FR-42 (templates active/inactive, approve handwriting styles). Rows are switched off, never deleted. Admin has no
 access here (BR-02: Manager runs production, prices and materials; Admin only administers the system).
 """
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+from pydantic import BaseModel
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (CompatIn, CompatOut, InkIn, InkOut, InkPatch, PaperIn, PaperOut, PaperPatch, PenIn,
                                  PenOut, PenPatch, ProfileIn, ProfileOut, ProfilePatch, ProfileVerifyIn, SpecsIn, PricingOut, PricingSaveIn, RobotIn, RobotOut, RobotPatch, StockIn,
                                  StyleOut, TemplateAdminOut, TemplateIn, TemplatePatch)
 from app.api.staff_schemas import ReasonIn
+from app.api.v1.orders import optional_storage
+from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
 from app.models.ops import RobotStatus
 from app.models.order import StyleStatus
@@ -183,9 +186,32 @@ def styles(svc: Svc, status_: StyleStatus | None = Query(default=StyleStatus.PEN
     return [StyleOut.model_validate(s) for s in svc.styles(status_)]
 
 
-@router.post("/styles/{style_id}/approve", response_model=StyleOut, summary="Duyệt bộ nét (cần khách đã xác nhận quyền sử dụng)")
-def approve_style(style_id: int, svc: Svc) -> StyleOut:
-    return StyleOut.model_validate(svc.approve_style(style_id))
+@router.get("/styles/{style_id}", summary="OT-2 O2: bộ nét kèm từng ô của phiếu mẫu (trạng thái, nét đã dò, đã loại)")
+def style_detail(style_id: int, svc: Svc) -> dict[str, Any]:
+    return svc.style_detail(style_id)
+
+
+@router.get("/styles/{style_id}/cells/{cell_id}.png", response_class=Response, summary="OT-2 O2: ảnh chụp một ô của phiếu")
+def style_cell_image(style_id: int, cell_id: str, svc: Svc,
+                     storage: Annotated[ObjectStorage | None, Depends(optional_storage)]) -> Response:
+    return Response(svc.style_cell_image(style_id, cell_id, storage), media_type="image/png")
+
+
+class SampleIn(BaseModel):
+    rejected: bool
+
+
+@router.put("/styles/{style_id}/samples/{sample_id}", summary="OT-2 O2: loại / lấy lại một mẫu trước khi duyệt",
+            description="`sample_id` là mã ô (`p1c07`) hoặc dấu của ô chữ mang dấu (`p3c32:acute`).")
+def style_sample(style_id: int, sample_id: str, body: SampleIn, svc: Svc) -> dict[str, Any]:
+    return svc.set_sample(style_id, sample_id, body.rejected)
+
+
+@router.post("/styles/{style_id}/approve", response_model=StyleOut, summary="Duyệt bộ nét (cần khách đã xác nhận quyền sử dụng)",
+             description="OT-2 O2: bộ nét từ phiếu mẫu được ghi thành bộ glyph (`glyph_set_uri`, `coverage_pct`).")
+def approve_style(style_id: int, svc: Svc,
+                  storage: Annotated[ObjectStorage | None, Depends(optional_storage)]) -> StyleOut:
+    return StyleOut.model_validate(svc.approve_style(style_id, storage))
 
 
 @router.post("/styles/{style_id}/reject", response_model=StyleOut, summary="Từ chối bộ nét (kèm lý do)")

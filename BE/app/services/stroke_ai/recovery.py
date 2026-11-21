@@ -446,27 +446,11 @@ def _reading_order(strokes: list[np.ndarray], comp_of: list[int]) -> list[tuple[
 # ---------------------------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------------------------
-def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_box: dict[str, Any] | None = None,
-                 margin_mm: float = 10.0) -> tuple[Page, RecoveryStats]:
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise AppError(422, "INVALID_IMAGE", "Không đọc được ảnh. Vui lòng tải lại file jpg/png.")
-    img = _apply_orientation(img, rotation_deg, crop_box)
-    scale = MAX_SIDE_PX / max(img.shape)
-    if scale < 1:
-        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    h, w = img.shape
+def trace(ink: np.ndarray) -> tuple[list[np.ndarray], list[int], float]:
+    """Binary ink (uint8, ink > 0) -> (pen paths in pixels, skeleton component of each path, pen width in pixels).
 
-    ink = _remove_specks(_binarise(img))
-    ink, angle = _deskew(ink)
-    flat = _flatten(img)                                    # U4: ink darkness per region, same rotation as `ink`
-    if angle:
-        rot = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
-        flat = cv2.warpAffine(flat, rot, (w, h), flags=cv2.INTER_LINEAR, borderValue=255)
-    ink = _remove_specks(ink)
-    if not ink.any():
-        raise AppError(422, "NO_STROKES_FOUND", "Không tìm thấy nét chữ trong ảnh. Hãy kiểm tra độ tương phản.")
-
+    Steps 2-5 of the module docstring. Shared by the page recovery (OT-1) and the OT-2 sample sheet reader (one box)."""
+    h, w = ink.shape
     sk = _drop_corner_pixels(zhang_suen(ink))
     sk_len = int(sk.sum())
     width_px = max(float((ink > 0).sum()) / max(sk_len, 1), 1.0)      # ink area / skeleton length
@@ -494,7 +478,31 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
                 break
         comp_of.append(comp)
 
-    strokes_px = [_orient(_simplify(_smooth(p), 0.7)) for p in raw]
+    return [_orient(_simplify(_smooth(p), 0.7)) for p in raw], comp_of, width_px
+
+
+def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_box: dict[str, Any] | None = None,
+                 margin_mm: float = 10.0) -> tuple[Page, RecoveryStats]:
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise AppError(422, "INVALID_IMAGE", "Không đọc được ảnh. Vui lòng tải lại file jpg/png.")
+    img = _apply_orientation(img, rotation_deg, crop_box)
+    scale = MAX_SIDE_PX / max(img.shape)
+    if scale < 1:
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    h, w = img.shape
+
+    ink = _remove_specks(_binarise(img))
+    ink, angle = _deskew(ink)
+    flat = _flatten(img)                                    # U4: ink darkness per region, same rotation as `ink`
+    if angle:
+        rot = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+        flat = cv2.warpAffine(flat, rot, (w, h), flags=cv2.INTER_LINEAR, borderValue=255)
+    ink = _remove_specks(ink)
+    if not ink.any():
+        raise AppError(422, "NO_STROKES_FOUND", "Không tìm thấy nét chữ trong ảnh. Hãy kiểm tra độ tương phản.")
+
+    strokes_px, comp_of, width_px = trace(ink)
     order = _reading_order(strokes_px, comp_of)
 
     # similarity: redraw at the measured pen width, IoU with the cleaned ink
