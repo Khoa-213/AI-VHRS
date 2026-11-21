@@ -16,6 +16,8 @@ import type { InputMode } from '../../types'
 import { fmt } from '../../utils/format'
 import { ApiError } from '../../services/api'
 import { draftPathFor, drawPathFor } from './draft'
+import SketchStep from './sketch/SketchStep'
+import { syncAppliedForSubmit } from '../../services/sketch'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
 import { openAuth } from '../../store/authDialog'
@@ -28,7 +30,8 @@ import './order-entry.css'
 import './co-home.css'
 
 const MODES: InputMode[] = ['text', 'upload', 'draw']
-const STEPS = ['co.step.0', 'co.step.1', 'co.step.2']
+const STEPS = ['co.step.0', 'co.step.1', 'co.step.sk', 'co.step.2']
+const REVIEW = 3
 const ALIGNMENTS: Alignment[] = ['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY']
 const MAX_QTY = 10000
 
@@ -93,6 +96,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const loaded = useRef(false)
   const lastSaved = useRef<string>('')
   const wanted = useRef<OrderType>(typeOf(mode))
+  const sentQty = useRef<number | null>(null)
+  const sentNote = useRef<string | null>(null)
   wanted.current = typeOf(mode)
 
   const adopt = useCallback((o: Order) => {
@@ -141,6 +146,28 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   // ---------- loading an existing draft ----------
 
+  /** Puts a server copy of the draft into the form, without saving it back. */
+  const fill = useCallback((o: Order) => {
+    adopt(o)
+    const tx = o.inputs.find((i) => i.kind === 'TEXT_CONTENT')
+    setText(tx?.text ?? '')
+    setTemplateId(tx?.templateId ?? null)
+    setAlignment(tx?.alignment ?? null)
+    setFontSize(tx?.fontSizeMm ? String(tx.fontSizeMm) : '')
+    setPaperId(o.paperId); setPenId(o.penId); setInkId(o.inkId)
+    setSuggest(o.workshopSuggest); setQty(o.quantity); setNote(o.note ?? '')
+    if (loaded.current) lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}`
+    sentQty.current = o.quantity
+    sentNote.current = o.note ?? ''
+  }, [adopt])
+
+  /** The sketch step or the assistant changed the draft on the server: load it again. */
+  const reloadForm = useCallback(() => {
+    const id = orderRef.current?.id
+    if (!id) return
+    getOrder(id).then(fill).catch((e) => setErr(orderErrorKey(e)))
+  }, [fill])
+
   useEffect(() => {
     if (given === (orderRef.current?.id ?? null)) return
     orderRef.current = null
@@ -164,27 +191,21 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
           navigate(orderPath(o.id, 'review'), { replace: true })
           return
         }
-        adopt(o)
+        fill(o)
         const tx = o.inputs.find((i) => i.kind === 'TEXT_CONTENT')
-        setText(tx?.text ?? '')
-        setTemplateId(tx?.templateId ?? null)
-        setAlignment(tx?.alignment ?? null)
-        setFontSize(tx?.fontSizeMm ? String(tx.fontSizeMm) : '')
-        setPaperId(o.paperId); setPenId(o.penId); setInkId(o.inkId)
-        setSuggest(o.workshopSuggest); setQty(o.quantity); setNote(o.note ?? '')
         setMode(initialMode() ?? (o.type === 'OT1_COPY_RESTORE' ? 'upload' : !tx && o.inputs.some((i) => i.kind === 'CANVAS') ? 'draw' : 'text'))
         // Go to the first step that still needs something.
         const hasContent = o.inputs.length > 0
         const hasMaterials = o.workshopSuggest || (o.paperId && o.penId && o.inkId)
         const s = hasContent ? (hasMaterials ? 2 : 1) : 0
         setStep(s)
-        setMaxStep(s)
+        setMaxStep(hasContent && hasMaterials ? REVIEW : s)
       })
       .catch((e) => {
         setErr(orderErrorKey(e))
       })
       .finally(() => setLoading(false))
-  }, [given, adopt])
+  }, [given, adopt, fill])
 
   // First template is the default, so typing text is enough to start a draft.
   useEffect(() => {
@@ -262,8 +283,6 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   const dQty = useDebounced(qty, 500)
   const dNote = useDebounced(note, 700)
-  const sentQty = useRef<number | null>(null)
-  const sentNote = useRef<string | null>(null)
   useEffect(() => {
     if (loading || qty !== dQty || note !== dNote) return
     const o = orderRef.current
@@ -401,7 +420,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const valid = (i: number) => {
     if (i === 0) return mode === 'text' ? text.trim().length > 0 && templateId !== null : mode === 'upload' ? photos.length > 0 : strokes > 0
     if (i === 1) return materialsOk && qty >= 1
-    return true
+    return true // the sketch step is optional; the backend refuses an outdated sketch at submit
   }
   const ok = valid(step) && !busy && uploading === 0
   const hints = [
@@ -409,6 +428,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
       ? (!text.trim() ? 'co.hint0.textEmpty' : 'co.hint0.textStyle')
       : mode === 'upload' ? 'co.hint0.upload' : 'co.hint0.draw'),
     t(!materialsOk ? (!paperId ? 'co.hint1.paper' : !penId ? 'co.hint1.pen' : 'co.hint1.ink') : 'co.hint1.qty'),
+    t('co.ready.2'),
+    '',
   ]
 
   const goTo = (i: number) => {
@@ -423,12 +444,14 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     try {
       await idle() // everything typed so far is saved first
       const o = await ensure()
+      await syncAppliedForSubmit(o.id) // the workshop takes the sketch on the canvas, not an unapplied proposal
       const sent = o.status === 'NEED_INFO' ? await provideInfo(o.id) : await submitOrder(o.id)
       navigate(orderPath(sent.id, 'review'))
     } catch (e) {
       const fields = incompleteFields(e)
       if (fields.includes('inputs')) goTo(0)
       else if (fields.includes('materials')) goTo(1)
+      else if (e instanceof ApiError && e.code === 'SKETCH_OUTDATED') goTo(2)
       fail(e)
     } finally {
       setBusy(false)
@@ -437,7 +460,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   const next = () => {
     if (!ok) return
-    if (step < 2) goTo(step + 1)
+    if (step < REVIEW) goTo(step + 1)
     else void submit()
   }
 
@@ -551,7 +574,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
           </div>
         )}
 
-        <div className="co-shell">
+        <div className={`co-shell${step === 2 ? ' co-shell--wide' : ''}`}>
           <div className="co-main">
             <div className="co-steps">
               {STEPS.map((key, i) => {
@@ -870,6 +893,20 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
               {step === 2 && (
                 <>
                   <div className="co-intro">
+                    <h2 className="co-h2">{t('sk.title')}</h2>
+                    <p className="co-lede">{t('sk.lede')}</p>
+                  </div>
+                  {order ? (
+                    <SketchStep orderId={order.id} ink={ink?.hex} onInputsRestored={reloadForm} onOrderChanged={reloadForm} />
+                  ) : (
+                    <p className="co-hint">{t('co.loading')}</p>
+                  )}
+                </>
+              )}
+
+              {step === REVIEW && (
+                <>
+                  <div className="co-intro">
                     <h2 className="co-h2">{t('co.s3.title')}</h2>
                     <p className="co-lede">{t('co.s3.lede')}</p>
                   </div>
@@ -905,10 +942,10 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
               <div className="co-next-wrap">
                 <span className={`co-need${ok ? ' ok' : ''}`} role="status">
                   <i aria-hidden="true" />
-                  {ok ? (step < 2 ? t(`co.ready.${step}`) : saveLabel) : <><b>{t('co.needLabel')}:</b> {hints[step]}</>}
+                  {ok ? (step < REVIEW ? t(`co.ready.${step}`) : saveLabel) : <><b>{t('co.needLabel')}:</b> {hints[step]}</>}
                 </span>
                 <button className="co-btn co-btn--solid co-next" disabled={!ok} onClick={next}>
-                  {step === 2 ? t(rewrite ? 'co.resubmit' : busy ? 'co.sending' : 'co.submit') : t('co.continue')}
+                  {step === REVIEW ? t(rewrite ? 'co.resubmit' : busy ? 'co.sending' : 'co.submit') : t('co.continue')}
                 </button>
               </div>
             </div>
