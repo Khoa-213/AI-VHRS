@@ -109,7 +109,7 @@ Yêu cầu đã làm · file tạo/sửa · test đã chạy + kết quả (số
 - Chạy lệnh trong `BE/` (uvicorn, pytest, alembic, seed). Từ thư mục gốc repo sẽ lỗi `No module named 'app'`.
 - venv: `BE/.venv` (Linux: `source .venv/bin/activate`; Windows: `.venv/Scripts/python.exe`). Python 3.14 local, 3.11 khi deploy: tránh cú pháp/thư viện chỉ có ở bản mới.
 - Heredoc có dấu nháy trên Windows/Git Bash dễ lỗi: dùng công cụ ghi file thay vì `cat <<`.
-- Test nặng (Tokyo pooler, ~1 giây/lệnh gọi) → chạy nền, kiên nhẫn; đừng chạy lại cả suite vì một lỗi nhỏ: sửa rồi chạy riêng test đó, cuối cùng mới chạy toàn bộ.
+- Test nặng (Supabase pooler; DB chuyển từ Tokyo sang Singapore ngày 2026-11-19, số "~1 giây/lệnh gọi" đo khi còn ở Tokyo) → chạy nền, kiên nhẫn; đừng chạy lại cả suite vì một lỗi nhỏ: sửa rồi chạy riêng test đó, cuối cùng mới chạy toàn bộ.
 - Xem route thật: `python -c "from app.main import app; print(sorted(app.openapi()['paths']))"` (không cần DB).
 
 ### S17 · Khi test fail
@@ -234,3 +234,14 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 ### 2026-11-17 · Test fail "ngẫu nhiên" ở cuối lượt Supabase = hai phiên pytest chồng nhau
 **Bối cảnh:** lượt chạy tiếp toàn suite (11:08–11:34) fail 6 test U6/U8 ở cuối với ba lỗi khác nhau (422 `PATCH /orders`, `KeyError: 'id'` khi tạo đơn, 409 `CONFLICT`). Chạy riêng thì pass. Cùng buổi sáng AI chạy `test_api_phone_otp.py` trên Supabase ở phiên khác; bước dọn `pytest_*` lúc bắt đầu / kết thúc phiên đó xoá dữ liệu test của phiên kia.
 **Bài học:** nhiều lỗi khác loại dồn vào một đoạn ngắn, chạy riêng lại pass → nghi dữ liệu bị xoá giữa chừng trước khi nghi code. Trước khi chạy pytest trên Supabase, hỏi xem có lượt nào đang chạy không. `tests/conftest.py` giờ giữ khoá advisory (`0x56485253`) nên phiên thứ hai dừng ngay; đừng gỡ khoá này. Helper `_ot3` giờ in nội dung lỗi (`r.text`) khi `PATCH` không trả 200.
+
+**2026-11-19 (Phase H, Supabase):** một ERROR ở teardown của test cuối cùng, trong khi mọi test đều pass. Nguyên nhân: kết nối giữ khoá advisory nằm yên khoảng 5 giờ, Supabase đóng nó, nên `pg_advisory_unlock` báo lỗi. **Bài học:** gặp ERROR teardown ở test cuối, xem traceback có phải `_db_clean` không trước khi nghi code. Lệnh mở khoá giờ bỏ qua `OperationalError` (kết nối chết thì khoá đã tự nhả).
+
+**2026-11-19 (Phase D, Supabase):** 9 test trợ lý hỏng với `ImportError: cannot import name 'HtrReading'` trong lượt toàn suite dài 3 giờ. Nguyên nhân: AI viết code E2b (model mới, module mới) **trong lúc lượt chạy đang chạy**. Python đã nạp `app/models/sketch.py` bản cũ lúc bắt đầu; `order_tools` import muộn `htr_hints` bản mới, và bản mới đòi `HtrReading`. Kết quả là một lượt chạy lẫn hai phiên bản code: không phải mốc của bản nào.
+**Bài học:** khi đang có lượt pytest chạy, không sửa file trong `app/` hay `tests/`. Nếu phải làm tiếp, làm trong worktree khác hoặc chỉ viết nháp ở scratchpad, rồi chép vào sau khi lượt chạy xong. Nếu đã lỡ sửa, ghi rõ trong mốc rằng lượt chạy không sạch và chạy lại.
+
+**2026-11-20 (Phase I, Supabase):** chủ dự án cho dừng lượt toàn suite giữa chừng rồi chạy tiếp. Cách chạy tiếp mà không chạy lại từ đầu: lấy danh sách test đã có kết quả từ log `-v` (dòng `PASSED/FAILED/ERROR/SKIPPED`), trừ khỏi `pytest --collect-only -q`, thêm lại các test hỏng, lưu vào file rồi chạy `pytest @file` (pytest 9 đọc tham số từ file). Lượt bị dừng không in traceback (chỉ in ở cuối), nên test hỏng trong lượt đó phải chạy lại mới biết nguyên nhân. Trong lượt chạy tiếp, 2 test hỏng vì Supabase đóng kết nối giữa chừng (`server closed the connection unexpectedly`) dù có `pool_pre_ping`; chạy lại thì qua.
+**Bài học:** ghi rõ khi kết quả ghép từ hai lượt và khi có test chỉ qua sau khi chạy lại; đó không phải "một lượt toàn suite 0 failed". Lỗi `server closed the connection` không phải lỗi code, nhưng vẫn phải chạy lại test đó để chắc.
+
+**2026-11-20 (OT-2 O2, cục bộ):** một test mới lùi `handwriting_styles.updated_at` bằng SQL để giả "90 ngày trước" nhưng bảng có trigger `fn_set_updated_at` ghi đè `updated_at = now()` mỗi lần UPDATE. Chạy riêng test vẫn qua (đồng hồ DB chậm hơn Python vài mili giây), chạy cả suite thì hỏng.
+**Bài học:** trước khi lùi cột thời gian trong test, xem bảng có trigger không (`grep fn_set_updated_at database/AI-VHRS_database_full.sql`); thay vào đó dời đồng hồ của code đang test (`monkeypatch.setattr(module, "_now", ...)`). Một test chỉ qua khi chạy riêng là dấu hiệu phụ thuộc thời gian / thứ tự.

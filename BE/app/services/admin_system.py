@@ -91,6 +91,9 @@ SPECS: dict[str, Spec] = {
     "ai_max_tool_calls": Spec(_int(1, 10), 6, "Số thao tác tối đa của trợ lý AI trong một lượt"),
     "ai_daily_cost_cap_cents": Spec(_int(0, 10_000_000), 0,
                                     "Trần chi phí AI mỗi ngày (cent USD, 0 = không đặt; chỉ áp dụng khi đã cấu hình giá LLM_PRICES)"),
+    # V2 Phase E2b: AI reads the customer's OT-1 photos (with consent each time) for the word-region text hints
+    "htr_enabled": Spec(_bool, False, "Bật đọc chữ trên ảnh thư (OT-1) bằng AI để gợi ý chữ cho từng vùng"),
+    "htr_daily_pages": Spec(_int(0, 100_000), 100, "Số trang ảnh AI đọc tối đa mỗi ngày (toàn hệ thống)"),
 }
 TOGGLEABLE_INTEGRATIONS = ("GHN",)        # the only flag of integrations_enabled the code reads
 

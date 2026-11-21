@@ -230,6 +230,7 @@ stateDiagram-v2
 |---|---|
 | `OT3_TEMPLATE` (viết theo mẫu) | `PUT /orders/{id}/inputs/text {text_content, template_id, font_size_mm? (4–100 mm), alignment?, layout?}` (`layout` = cỡ chữ/kiểu chữ theo đoạn, mục 5.1b, và lề / căn dọc trên trang, mục 5.1c; **mặc định khối chữ nằm giữa tờ giấy**); vẽ tay: `PUT /orders/{id}/inputs/canvas {canvas_data:{strokes:[{points:[{x,y,p}]}]}}` (x,y theo **mm**) |
 | `OT1_COPY_RESTORE` (sao chép) | **Upload ảnh 3 bước** (bên dưới) |
+| `OT2_LEARNED_STYLE` (nét chữ đã học, **đang tắt**, mục 7y) | `PUT /orders/{id}/inputs/text {text_content, handwriting_style_id, font_size_mm?, alignment?, layout?}` (bộ nét `APPROVED` của chính khách, không thì `422 INVALID_STYLE`); hoặc tải ảnh mẫu chữ `kind=HANDWRITING_SAMPLE` (Staff vẽ tay). Gửi đơn cần `confirm_right_to_use: true` |
 
 **5.1b Cỡ chữ và kiểu chữ theo đoạn (đơn viết theo mẫu, FR-08).** Ngoài `font_size_mm` chung, khách có thể đổi **cỡ chữ**, **nghiêng**, **gạch chân** (đơn/đôi), **gạch ngang** cho từng đoạn và chỉnh **giãn dòng**. **Không có chữ đậm.** Kiểu chữ **không đổi giá** (báo giá vẫn theo số ký tự × độ phức tạp, và độ phức tạp được tính như khi chưa có kiểu chữ).
 - `GET /catalog/text-styles` (không cần đăng nhập) → giới hạn để dựng thanh công cụ: `min_font_size_mm: 4`, `max_font_size_mm: 100`, `default_font_size_mm: 8`, `line_spacing {min 0.8, max 2.5, default 1}`, `styles`, `underline: ["single","double"]`, `max_spans: 200`.
@@ -911,7 +912,7 @@ Studio là **lớp bản nháp đứng trước đơn hàng**: khách soạn, ch
 Kế hoạch V2 (`docs/UNIFIED_SKETCH_V2_PLAN.md`, chủ dự án đã chốt D1–D6): **đơn DRAFT là nơi khách soạn, xem và sửa phác thảo**; studio (mục 7q) sẽ thành lớp tương thích rồi bỏ dần. Phase B mới có phần hình học + API dưới đây; **trợ lý AI chưa gắn vào đơn** (Phase C: vẫn ở studio), nên lúc này FE gọi các lệnh sửa trực tiếp (nút / kéo thả). FE có thể bắt đầu làm màn "Tạo đơn = editor phác thảo" với các API này.
 
 Luồng (CUSTOMER, chủ đơn, đơn `DRAFT` hoặc `NEED_INFO`):
-1. Nhập nội dung / ảnh / vật tư như cũ (mục 5) → `POST /orders/{id}/sketch/generate` → `201 WorkingSketchOut` (engine giống hệt của xưởng; OT-2 → `422 AI_TYPE_UNSUPPORTED`).
+1. Nhập nội dung / ảnh / vật tư như cũ (mục 5) → `POST /orders/{id}/sketch/generate` → `201 WorkingSketchOut` (engine giống hệt của xưởng; OT-2 có bộ nét đã duyệt → viết bằng bộ nét, mục 7y; OT-2 chỉ có ảnh mẫu chữ → `422 AI_TYPE_UNSUPPORTED`).
 2. Hiển thị `document` (vector, vẽ lên canvas để chọn) và/hoặc ảnh `GET /orders/{id}/sketch/preview?page=1` (JPEG đúng màu mực, mặt giấy, có dấu AI).
 3. Khách chọn nét (click) hoặc cả từ (khung `words[].bbox`), chọn lệnh → `POST /orders/{id}/sketch/edit`.
 4. `POST /orders/{id}/sketch/undo`, `/redo`; `GET /orders/{id}/sketch/revisions` (lịch sử: `author`, `operation`, `note`); `GET /orders/{id}/sketch?revision_id=` xem một bản cũ (Before / After: tải hai bản rồi so trên FE).
@@ -963,6 +964,166 @@ GET  /workshop/orders/{id}/assistant          (Staff / Manager) cờ cảnh báo
 - Trợ lý **không** gửi đơn, thanh toán, huỷ đơn, không đọc ảnh (chỉ số đo chất lượng). Yêu cầu làm giả chữ ký / giấy tờ → trợ lý gắn cờ `FORGERY_RISK`, Staff thấy trong `GET /workshop/orders/{id}/assistant` (`flags`, `messages[].tools`).
 - OT-2: chưa có công cụ tạo phác thảo (đang nghiên cứu mô hình); các công cụ đơn / vật tư vẫn dùng được.
 
+## 7t. Staff sửa nét bằng Geometry Engine (V2 Phase H, migration 0025, 2026-11-19)
+
+Editor phác thảo của Staff dùng **cùng lệnh và cùng giới hạn** với editor của khách (mục 7r): `translate`, `rotate`, `scale`, `slant`, `curvature`, `smooth`, `extend`, `trim`, `join`, `split`, `delete`; OT-3 giới hạn chặt (dời ≤ 3 mm mỗi lệnh...), OT-1 / OT-2 rộng hơn. Cần hơn thế thì vẫn sinh lại hoặc tải quỹ đạo tay như cũ.
+
+```
+GET  /workshop/orders/{id}/sketches/{version}        → SketchDetailOut + document + edit_summary
+POST /workshop/orders/{id}/sketches/{version}/edit   {op, stroke_ids?, word_ids?, params, note} → 201 StaffStrokeEditOut
+```
+
+- `document` = tài liệu `vhrs-sketch/2` của phiên bản (như `GET /orders/{id}/sketch` của khách): `pages[].strokes[] = {id, kind, points, word, provenance, edited_by?}`, `pages[].words[] = {id, stroke_ids, bbox, label?, text?}`. FE chọn nét / từ theo `id`.
+- `edited_by` của nét = ai đã sửa nét đó, theo thứ tự (`CUSTOMER`, `AI`, `STAFF`). v1 nhận từ khách (D2) giữ **đúng id và dấu** của bản khách gửi: FE tô màu khác cho nét khách / trợ lý đã sửa để Staff kiểm. `edit_summary = {strokes, edited, CUSTOMER, AI, STAFF}` (số nét).
+- `document.derived: true`: phiên bản lưu trước migration 0025, tài liệu được dựng lại từ file quỹ đạo khi đọc (id theo thứ tự nét, không có dấu ai sửa). Sửa được như thường; phiên bản mới sinh ra có tài liệu riêng.
+- `edit` chỉ trên **phiên bản mới nhất** (khác → `409 SKETCH_VERSION_CONFLICT` kèm `latest_version`), đơn phải `ACCEPTED`. Kết quả là **phiên bản mới** (chưa chốt), phiên bản cũ không đổi; nét ngoài vùng chọn được kiểm từng byte; id nét không sửa được giữ nguyên. `note` bắt buộc (ghi vào engine + audit `SKETCH_GEOMETRY_EDIT`). `report = {op, page, changed, added, removed, untouched_verified, max_point_shift_mm, limits}`.
+- OT-1: vùng U4 đi theo (nhãn giữ nguyên; vùng có nét bị sửa thành `source = STAFF`).
+- Lỗi: như mục 7r (`EDIT_OUT_OF_RANGE`, `EDIT_OUTSIDE_PAPER`, `STROKE_NOT_FOUND`, `WORD_NOT_FOUND`, `EMPTY_SELECTION`, `INVALID_EDIT`, `JOIN_TOO_FAR`, ...) + `GEOMETRY_TAMPERED` (file tài liệu / quỹ đạo trong kho không khớp mã băm).
+- Sau khi khách duyệt báo giá, đơn không còn `ACCEPTED` nên không sửa được nữa. Gói sản xuất (snapshot) chỉ khoá **đúng phiên bản và mã băm khách đã duyệt** (`409 SKETCH_NOT_APPROVED` nếu lệch, khi Manager xếp lịch).
+
+## 7u. Chỉnh cả văn bản trên đơn: định dạng đoạn văn, giữ định dạng khi sửa chữ, vẽ lại, hoàn tác form (V2 Phase D, migration 0026, 2026-11-19)
+
+Đơn OT-3 đã có từ trước: cỡ / nghiêng / gạch chân / gạch ngang theo đoạn chữ (`layout.spans`), giãn dòng, lề, căn dọc, căn ngang, màu mực (đổi mực không cần vẽ lại). Phase D thêm:
+
+**Định dạng theo đoạn văn** (`layout.paragraphs`, trong `PUT /orders/{id}/inputs/text`):
+```json
+"layout": {"version": 1, "line_spacing": 1.2,
+           "paragraphs": [{"index": 1, "line_spacing": 1.5, "alignment": "RIGHT", "space_before_mm": 6}]}
+```
+- Đoạn văn = phần chữ giữa hai dấu xuống dòng (`\n`), `index` đếm từ 0. Mỗi đoạn tối đa một mục; mục phải đổi ít nhất một thứ.
+- `line_spacing` 0,8–2,5 (thay giãn dòng chung cho đoạn đó); `alignment` LEFT / CENTER / RIGHT / JUSTIFY (thay căn ngang của ô chữ); `space_before_mm` 0–50 (khoảng trống phía trên đoạn; ở đầu trang thì bỏ). Không có font riêng theo đoạn (một đơn một mẫu chữ). Không đổi giá. Giới hạn trong `GET /catalog/text-styles` → `paragraphs`.
+- Sai → `422 INVALID_LAYOUT` (`details` chỉ mục lỗi).
+
+**Sửa chữ mà giữ định dạng**: `PUT .../inputs/text` với `keep_layout: true` và **không gửi `layout`** → bố cục đang lưu đi theo chữ mới: phần chữ không đổi giữ cỡ / kiểu, đoạn văn giữ nguyên hoặc sửa tại chỗ giữ định dạng đoạn; phần chữ mới là chữ thường. Phản hồi có `layout_remap = {spans_kept, spans_dropped, paragraphs_kept, paragraphs_dropped}` để FE báo khách. Không gửi `keep_layout` → như cũ (PUT thay toàn bộ, không gửi `layout` = xoá định dạng). Trợ lý `update_text` luôn giữ định dạng như vậy.
+
+**Vẽ lại khi đã sửa nét**: `POST /orders/{id}/sketch/generate` khi phác thảo hiện tại có nét khách / trợ lý đã chỉnh → `409 SKETCH_HAS_EDITS`, `details = {edited_strokes, by: {CUSTOMER, AI, STAFF}, current_revision_id}`. FE hỏi khách ("N nét đã chỉnh sẽ được thay bằng nét mới; vẫn hoàn tác được"), đồng ý thì gửi lại body `{"discard_edits": true}`. Phác thảo chưa sửa nét thì vẽ lại không cần cờ (body có thể bỏ trống như cũ).
+
+**Hoàn tác / làm lại kéo theo form**: mỗi lần vẽ, BE lưu nội dung form đã dùng (chữ, mẫu, cỡ, căn, bố cục, canvas, giấy / bút / mực). `POST .../sketch/undo` hoặc `/redo` sang một revision của **lần vẽ khác** → form cũng trở về đúng lúc vẽ revision đó, phản hồi `inputs_restored: true` (FE tải lại `GET /orders/{id}`; giá ước tính đã tính lại). Hoàn tác giữa các lần sửa nét trong cùng một lần vẽ không đụng form.
+- Form đã sửa sau lần vẽ gần nhất mà chưa vẽ lại → hoàn tác sẽ làm mất phần sửa đó: `409 UNDRAWN_INPUT_CHANGES`; khách đồng ý thì gửi body `{"discard_input_changes": true}`.
+- Ảnh (OT-1) không được khôi phục theo. Revision tạo trước migration 0026 không có bản form: hoàn tác chỉ đổi phác thảo như trước (`inputs_restored: false`, có thể `inputs_changed: true`).
+
+**Trợ lý** (mục 7s) có thêm công cụ `set_layout` (giãn dòng, lề, căn dọc, định dạng một đoạn văn, cỡ / kiểu một đoạn chữ tìm theo nội dung), cùng kiểm tra với form; `generate_sketch` và `undo_sketch` / `redo_sketch` nhận `SKETCH_HAS_EDITS` / `UNDRAWN_INPUT_CHANGES` như FE và phải hỏi khách trước khi gửi cờ bỏ.
+
+## 7v. Gợi ý chữ cho từng vùng OT-1: AI đọc ảnh thư (V2 Phase E2b, migration 0027, 2026-11-19)
+
+Chỉ đơn **OT-1** (chép / phục dựng từ ảnh), đơn đang nháp. Khách bấm "Đọc chữ trên ảnh"; ảnh được gửi cho AI đọc (Gemini, Gemini lỗi thì Claude nếu có khoá), rồi BE gắn chữ vào từng vùng chữ của phác thảo. **Gợi ý có thể sai**: không đổi nét, không đổi giá, không thành chữ của vùng (`text` vẫn null), không phải điều khách duyệt. Mặc định **tắt** (Admin `htr_enabled`).
+
+- `GET /orders/{id}/sketch/read-text` → `{enabled, available, providers: ["gemini", "anthropic"], consent_text, daily_cap, used_today, pages: [{page_no, input_id, status: READ | FAILED | NOT_READ, provider, read_at}]}`. Ẩn nút khi `available = false`.
+- **Xin đồng ý mỗi lần**: hiện nguyên văn `consent_text` (nêu tên bên nhận ảnh; với Gemini gói miễn phí có câu "Google có thể lưu và dùng ảnh này để cải thiện dịch vụ của họ"), có nút đồng ý và nút bỏ qua. Không có sẵn dấu tick.
+- `POST /orders/{id}/sketch/read-text` `{"consent": true}` → như GET, thêm `read_now: [{input_id, status, provider}]`. **Chậm** (mỗi trang tới vài chục giây; hiện tiến trình). Ảnh đã đọc thì không gửi lại (`read_now` rỗng); trang `FAILED` được thử lại ở lần bấm sau. Giới hạn 10 lần / phút.
+- Gợi ý đi kèm phác thảo: `GET /orders/{id}/sketch` (và mọi phản hồi phác thảo: generate, edit, undo, redo) có `text_hints = {state, pages: [{no, status, provider, check}], words: {word id: {text, status: READ | UNREAD}}}`. `check = "TOO_MANY_WORDS"` (V2 Phase I): bản đọc của trang có nhiều chữ hơn hẳn số vùng mực (có chữ không có trên giấy), nên cả trang **không có gợi ý nào**; FE nên báo "không đọc chắc được trang này". Bình thường `check = null`. `state`: `NOT_READ` (chưa đọc), `READY`, `PARTIAL` (có trang chưa đọc / lỗi), `FAILED`, `SKETCH_OUTDATED` (ảnh / nội dung đổi sau lần vẽ: vẽ lại rồi mới có gợi ý). Đơn OT-3: `text_hints = null`.
+- Hiển thị: chữ gợi ý cạnh / trên khung vùng, khác kiểu với chữ thật (ví dụ chữ nghiêng, màu nhạt, nhãn "AI đọc, có thể sai"); vùng `UNREAD` để trống hoặc dấu "?". Gợi ý tính lại theo phác thảo đang xem nên dời / sửa / hoàn tác vẫn đúng vùng.
+- **Trợ lý** (mục 7s): `get_sketch` có `text_hint` / `text_hint_unread` cho từng chữ và `text_hints.state`; trợ lý gọi tên chữ theo gợi ý và nói rõ là gợi ý, **không tự gửi ảnh** (chỉ khách bấm nút).
+- **Staff** (mục 6): vùng của bản v1 nhận từ khách có `metrics.htr = {text, status}`; giữ qua các lần Staff sửa nét. `text` của vùng vẫn do Staff / khách nhập như trước.
+- Lỗi: `HTR_DISABLED` (409), `HTR_UNAVAILABLE` (503, chưa có khoá), `HTR_CONSENT_REQUIRED` (400, `details.consent_text`), `HTR_DAILY_CAP` (429, `details = {daily_cap, used_today, pages_needed}`), `HTR_NOT_OT1` (422), `NO_ORIGINAL_IMAGE` (422), `ORDER_NOT_EDITABLE` (409).
+- **Admin** (`PUT /admin/settings/{key}`, mục 7l): `htr_enabled` (mặc định `false`), `htr_daily_pages` (100 trang / ngày toàn hệ thống). Thứ tự bên đọc: biến môi trường `HTR_PROVIDER_ORDER` (mặc định `gemini,anthropic`), dùng lại `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`.
+
+## 7w. Dòng và đoạn trong phác thảo, giữ id và lệnh sửa khi vẽ lại (V2 Phase F, không migration, 2026-11-19)
+
+Áp cho phác thảo làm việc của khách (mục 7r), trợ lý (7s) và Staff sửa nét (7t).
+
+- **Tài liệu `vhrs-sketch/2`**: mỗi trang thêm
+  - `lines: [{id: "l1", word_ids, bbox, paragraph: "p1"}]`, theo thứ tự đọc;
+  - `paragraphs: [{id: "p1", line_ids, bbox, source}]`.
+  - `source = "TEXT"`: đơn OT-3, mỗi lần xuống dòng trong nội dung là một đoạn.
+  - `source = "LAYOUT"`: đơn OT-1, đoán theo khoảng cách dòng và thụt đầu dòng; có thể sai.
+  - Không có id cho từng ký tự.
+  - Phác thảo lưu trước Phase F được BE tự thêm dòng / đoạn khi đọc.
+- **Chọn cả dòng / đoạn**: `POST /orders/{id}/sketch/edit` nhận thêm `line_ids` và `paragraph_ids`, dùng như `word_ids`. Có thể kết hợp với `stroke_ids` / `word_ids`.
+  - Staff dùng cùng hai trường trên `POST /workshop/orders/{id}/sketches/{v}/edit`.
+  - Trợ lý: tin nhắn gửi kèm `selection.line_ids` / `selection.paragraph_ids`.
+  - Lỗi: `LINE_NOT_FOUND` / `PARAGRAPH_NOT_FOUND` (404).
+- **Phạm vi lệnh sửa** (`report.affected = {strokes, words, lines}`): các nét, từ và dòng lệnh vừa chạm tới. FE dùng để tô sáng và để vẽ lại riêng phần đó.
+- **Vẽ lại giữ id** (`POST /orders/{id}/sketch/generate`):
+  - Từ được vẽ lại giữ id cũ, và id các nét của nó nếu số nét không đổi. Dòng và đoạn giữ id theo đa số từ.
+  - OT-3 so theo chữ; OT-1 so theo vị trí khung.
+  - Từ mới nhận id chưa từng dùng.
+  - Phản hồi có `redraw`. Lần vẽ đầu tiên thì `redraw = null`. Các trường:
+    - `ids = {matched_by: TEXT | POSITION, words_kept, words_new, words_gone, strokes_kept}`;
+    - `reapplied: [{op, word_ids, line_ids, paragraph_ids, params, author}]`;
+    - `dropped: [... + reason]`.
+- **Lệnh sửa được áp lại sau khi vẽ lại**:
+  - Chỉ áp lại dời / xoay / đổi cỡ / nghiêng (`translate`, `rotate`, `scale`, `slant`) trên **cả từ / dòng / đoạn**, và chỉ khi các từ đó còn (cùng id).
+  - Các lệnh khác bị bỏ, kèm `reason`:
+    - `OP_NOT_REAPPLIED`: độ cong, làm mượt, kéo dài, cắt, nối, tách, xoá;
+    - `NOT_WHOLE_WORDS`: lệnh chọn từng nét;
+    - `GONE`: từ không còn;
+    - hoặc mã lỗi của lệnh, ví dụ `EDIT_OUTSIDE_PAPER`.
+  - Báo cho khách "Đã giữ n chỉnh sửa, bỏ m".
+  - Lỗi 409 `SKETCH_HAS_EDITS` có thêm `details.edits` và `details.reapplicable_edits` để hỏi khách trước.
+  - Hoàn tác một lần sẽ về bản trước khi vẽ lại.
+- **Trợ lý**:
+  - `get_sketch` có `lines` / `paragraphs` theo trang.
+  - `edit_strokes` nhận `line_ids` / `paragraph_ids`.
+  - Sau `generate_sketch`, vùng chọn cũ của khách bị bỏ: FE nên xoá vùng chọn trên canvas sau khi vẽ lại.
+
+## 7x. Nghiệm thu V2 (Phase I, không migration, 2026-11-20)
+
+Không thêm API. Ba thay đổi hành vi FE nên biết:
+- `text_hints.pages[].check` (mục 7v): `TOO_MANY_WORDS` thì trang đó không có gợi ý.
+- Trợ lý: khi một lệnh sửa không lưu được do lỗi hệ thống, công cụ trả `SAVE_FAILED` cho trợ lý và lượt chat vẫn trả lời bình
+  thường (trước đây cả lượt trả 500). Phác thảo giữ nguyên; FE không cần xử lý riêng.
+- Gửi đơn hai lần (bấm đúp, hai tab): lần sau nhận `409 ORDER_NOT_EDITABLE` hoặc `409 ORDER_NOT_DRAFT`; coi như đơn đã gửi,
+  tải lại đơn. Xếp lịch song song trùng technician / robot: bên thua luôn nhận `409 SLOT_CONFLICT` (trước đây hiếm khi 500).
+
+Báo cáo nghiệm thu 10 test: `docs/benchmarks/V2_acceptance_2026-11-20.md`.
+
+## 7y. OT-2 bộ nét từ phiếu mẫu (Phase O2, migration 0028, 2026-11-20)
+
+Khách tạo **bộ nét** (nét chữ của chính mình) bằng một **phiếu mẫu in sẵn** 3 trang A4, mỗi chữ một ô. Server đọc ảnh phiếu
+(không gửi ảnh cho AI bên ngoài). Đơn OT-2 vẫn bị chặn tới khi chủ dự án bật loại đơn này; API bộ nét mở sẵn để làm trước.
+Bộ nét được Manager duyệt (FR-42). Viết nội dung bằng bộ nét: O3 (2026-11-21), cuối mục này.
+
+Khách (`CUSTOMER`), tiền tố `/api/v1/styles`:
+
+| Gọi | Ghi chú |
+|---|---|
+| `POST /styles` `{name, right_to_use_confirmed, keep_consent}` | `right_to_use_confirmed` phải `true` (BR-23), không thì `422 RIGHT_TO_USE_REQUIRED`. Trả bộ nét `DRAFT`. Tối đa 5 bộ đang `DRAFT` (`TOO_MANY_DRAFT_STYLES`) |
+| `GET /styles/sheet.pdf` | PDF phiếu `SHEET_V1` để in |
+| `POST /styles/{id}/pages/{page_no}/upload-url` `{mime_type: image/jpeg\|image/png, size_bytes}` | Trả `{upload_id, upload_url, method, expires_in}`; PUT ảnh lên `upload_url` |
+| `POST /styles/{id}/pages/{page_no}/confirm` `{upload_id, mime_type}` | Server đọc trang (1–2 giây), trả `{page_no, cells: [{cell, char, status}]}`. Tải lại cùng trang thì thay trang cũ |
+| `GET /styles`, `GET /styles/{id}` | `{id, name, status, coverage_pct, missing, issues, review_note, pages_total, pages: [{page_no, uploaded_at, cells: {OK, EMPTY, OVERFLOW, NOISY, MARKS_UNCLEAR}}], ...}` |
+| `POST /styles/{id}/submit` | Cần đủ 3 trang (`422 SHEET_PAGES_MISSING`, `details.missing_pages`); → `PENDING_REVIEW` |
+| `DELETE /styles/{id}` | Xoá bộ nét và ảnh phiếu (204) |
+
+Trạng thái ô: `OK`; `EMPTY` (ô trống); `OVERFLOW` (nét chạm / tràn viền ô); `NOISY`; `MARKS_UNCLEAR` (ô chữ có dấu nhưng
+không tách được dấu khỏi chữ, thường do dấu dính vào chữ). FE nên hiện danh sách `issues` và `missing` (ký tự chưa có mẫu dùng
+được, kể cả tên dấu: `acute`, `grave`, `hook`, `tilde`, `dot_below`, `breve`, `circumflex`), gợi ý chụp / viết lại trang.
+
+Lỗi khi đọc ảnh: `SHEET_CORNERS_NOT_FOUND` (không thấy 4 ô vuông đen ở góc: chụp lại thẳng, đủ góc),
+`SHEET_PAGE_UNREADABLE`, `SHEET_PAGE_MISMATCH` (ảnh là trang khác), `SHEET_PAGE_INVALID`, `INVALID_FILE`,
+`STYLE_NOT_DRAFT` (409, đã gửi duyệt). Ảnh bị từ chối không được giữ lại.
+
+Manager, tiền tố `/api/v1/manager`:
+- `GET /styles?status=PENDING_REVIEW` (đã có).
+- `GET /styles/{id}`: như trên, kèm `cells` (mọi ô: `cell`, `char`, `status`, `strokes` theo đơn vị x-height,
+  `pen_width_mm`, `marks`, `rejected`, `page_no`).
+- `GET /styles/{id}/cells/{cell}.png`: ảnh chụp ô. Trả `410 PHOTO_PURGED` nếu ảnh đã bị xoá theo NFR-12.
+- `PUT /styles/{id}/samples/{sample_id}` `{rejected}`: loại hoặc lấy lại một mẫu. `sample_id` là `p1c07`, hoặc
+  `p3c32:acute` cho dấu.
+- `POST /styles/{id}/approve`: ghi bộ glyph (`glyph_set_uri`, `coverage_pct`).
+- `POST /styles/{id}/reject` `{reason}`: lý do hiện cho khách ở `review_note`.
+Bộ nét đã duyệt hiện ở `GET /catalog/my-styles` (đã có).
+
+Ảnh phiếu của bộ nét không chọn lưu (`keep_consent = false`) bị xoá sau `image_retention_days` (90) kể từ lần cập nhật cuối,
+trừ khi đang chờ duyệt (job `photo_purge`); nét đã dò vẫn giữ.
+
+**O3: đơn OT-2 viết bằng bộ nét (2026-11-21, không đổi DB).** Loại đơn OT-2 **vẫn tắt** (`order_types_enabled`) tới khi chủ
+dự án bật; FE có thể làm trước theo đây.
+- Khách chọn bộ nét `APPROVED` của mình (`GET /catalog/my-styles`) và gửi `handwriting_style_id` trong
+  `PUT /orders/{id}/inputs/text` (cùng `text_content`, `font_size_mm`, `alignment`, `layout` như OT-3). Đổi bộ nét làm phác
+  thảo làm việc cũ thành "cần vẽ lại" như mọi thay đổi đầu vào.
+- `POST /orders/{id}/sketch/generate` vẽ bằng nét của khách: engine `learned-style-compose`, `engine.style_id`,
+  `engine.glyph_set_sha256`, `engine.letters = "separate"` (chữ rời, chưa nối chữ). Mỗi lần một chữ lặp lại dùng một mẫu khác
+  của người viết; cùng nội dung luôn ra cùng nét. Sửa nét D3, trợ lý, gửi xưởng, báo giá, duyệt, snapshot như OT-3.
+- Chữ có dấu ghép từ chữ gốc và dấu của chính người viết. Ký tự bộ nét không có (kể cả ký tự ngoài phiếu như `@ # % /`) →
+  `422 UNSUPPORTED_CHARS`, `details = [{index, char}]`: FE tô các ký tự đó, gợi ý sửa nội dung hoặc viết lại phiếu. **Không bao
+  giờ thay bằng font khác.**
+- Bộ nét đã xoá / không còn duyệt / mất file → `409 STYLE_UNAVAILABLE` (`details.style_id`): bảo khách chọn bộ nét khác.
+  Phác thảo đã duyệt và đã khoá thì không bị ảnh hưởng.
+- Đơn OT-2 chỉ có ảnh mẫu chữ tự do (không chọn bộ nét) → `422 AI_TYPE_UNSUPPORTED` như trước; Staff tải phác thảo thủ công
+  hoặc từ chối.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |
@@ -988,7 +1149,15 @@ GET  /workshop/orders/{id}/assistant          (Staff / Manager) cờ cảnh báo
 | `INK_NOT_FOR_PEN`, `PROFILE_EXISTS`, `PROFILE_NOT_MEASURED`, `LINE_WIDTH_REQUIRED` | 422 / 409 | Hồ sơ hiệu chuẩn: mực không thuộc bút, tổ hợp đã có hồ sơ, xác nhận khi chưa đo, xoá độ rộng nét (U6) | hiện thông báo; với `PROFILE_EXISTS` mở hồ sơ có sẵn |
 | `SKETCH_NOT_GENERATED` | 404 | Đơn chưa có phác thảo làm việc (V2) | hiện nút "Tạo phác thảo" |
 | `STALE_REVISION` | 409 | Phác thảo đã đổi ở nơi khác trước lệnh sửa này hoặc trước tin nhắn trợ lý (V2) | tải lại `GET /orders/{id}/sketch`, sửa / nhắn lại |
+| `SKETCH_NOT_APPROVED` | 409 | Phác thảo chốt khác phiên bản / mã băm khách đã duyệt (V2 Phase H, khi xếp lịch) | Staff kiểm phác thảo chốt; lập báo giá mới cho khách duyệt lại |
 | `AI_TURN_IN_PROGRESS` | 409 | Trợ lý đang xử lý tin nhắn khác của đơn (V2 Phase C) | khoá ô nhập đến khi có trả lời |
+| `SKETCH_HAS_EDITS` | 409 | Vẽ lại phác thảo đang có nét đã chỉnh (V2 Phase D) | hỏi khách (Phase F: `details.reapplicable_edits` / `details.edits` lệnh sẽ được giữ), đồng ý thì gửi `discard_edits: true` |
+| `LINE_NOT_FOUND` / `PARAGRAPH_NOT_FOUND` | 404 | Chọn dòng / đoạn không có trong phác thảo đang xem (V2 Phase F) | tải lại phác thảo |
+| `UNDRAWN_INPUT_CHANGES` | 409 | Hoàn tác / làm lại sẽ đưa form về bản cũ, mất phần sửa chưa vẽ (V2 Phase D) | hỏi khách, đồng ý thì gửi `discard_input_changes: true` |
+| `STYLE_UNAVAILABLE` | 409 | Bộ nét của đơn OT-2 đã bị xoá / không còn duyệt / mất file (O3) | bảo khách chọn bộ nét khác |
+| `HTR_CONSENT_REQUIRED` | 400 | Đọc chữ trên ảnh khi khách chưa đồng ý gửi ảnh (V2 E2b) | hiện `details.consent_text`, đồng ý thì gửi `consent: true` |
+| `HTR_DISABLED` / `HTR_UNAVAILABLE` | 409 / 503 | Tính năng đọc chữ đang tắt / chưa có khoá (V2 E2b) | ẩn nút "Đọc chữ trên ảnh" |
+| `HTR_DAILY_CAP` | 429 | Hết số trang đọc trong ngày (V2 E2b) | báo thử lại ngày mai; đơn vẫn gửi được |
 | `SKETCH_OUTDATED` | 409 | Gửi đơn khi phác thảo vẽ từ nội dung cũ (V2) | "Tạo lại phác thảo" rồi gửi |
 | `EDIT_OUT_OF_RANGE` | 422 | Tham số sửa vượt giới hạn của loại đơn (V2) | giới hạn thanh trượt theo `limits` |
 | `EDIT_OUTSIDE_PAPER` | 422 | Nét sau khi sửa ra ngoài mép giấy (V2) | báo, giữ bản cũ |

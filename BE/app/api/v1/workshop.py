@@ -20,7 +20,8 @@ from app.api.photo_schemas import WorkshopPhotoOut
 from app.api.schemas import ErrorOut, Page
 from app.api.staff_schemas import (AcceptIn, AdjustIn, FileLinkOut, OptionSummary, QuotationCreateIn, QuotationOut, RejectIn,
                                    RequestInfoIn, SketchDetailOut, SketchGenerateIn, SketchManualIn, SketchOut,
-                                   SketchPatchIn, WorkshopInputOut, WorkshopOrderDetail, WorkshopOrderRow,
+                                   SketchPatchIn, StaffStrokeEditIn, StaffStrokeEditOut, WorkshopInputOut,
+                                   WorkshopOrderDetail, WorkshopOrderRow,
                                    RegionEditIn, SketchCompareOut, SketchRegionOut)
 from app.api.v1.orders import optional_storage
 from app.integrations.storage import ObjectStorage
@@ -29,6 +30,7 @@ from app.models.order import Order, OrderStatus
 from app.models.sketch import Quotation, Sketch
 from app.core.errors import AppError
 from app.services import audit, material_profiles
+from app.services import sketch_geometry as geo
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.repositories.ops import JobRepository
 from app.services.acceptance import workshop_photos
@@ -201,7 +203,24 @@ def get_sketch(order_id: int, version: int, svc: Sketches) -> SketchDetailOut:
     row, data, previews = svc.detail(order_id, version)
     out = SketchDetailOut.model_validate({**sketch_out(row, previews, None, svc).model_dump(), "trajectory": data})
     out.regions = [SketchRegionOut.model_validate(r) for r in svc.regions_of(row)]
+    out.document = svc.document_of(row)
+    out.edit_summary = geo.edit_summary(out.document)
     return out
+
+
+@router.post("/orders/{order_id}/sketches/{version}/edit", dependencies=STAFF_ONLY, response_model=StaffStrokeEditOut,
+             status_code=status.HTTP_201_CREATED,
+             summary="V2 H Sửa nét bằng Geometry Engine (cùng lệnh / giới hạn với khách) → phiên bản mới, nét ngoài vùng chọn giữ nguyên",
+             responses={409: {"description": "SKETCH_VERSION_CONFLICT / ORDER_NOT_ACCEPTED / GEOMETRY_TAMPERED"},
+                        404: {"description": "STROKE_NOT_FOUND / WORD_NOT_FOUND / LINE_NOT_FOUND / PARAGRAPH_NOT_FOUND / "
+                                             "SKETCH_NOT_FOUND"},
+                        422: {"description": "EDIT_OUT_OF_RANGE / EDIT_OUTSIDE_PAPER / EMPTY_SELECTION / INVALID_EDIT ..."}})
+def edit_sketch_strokes(order_id: int, version: int, body: StaffStrokeEditIn, svc: Sketches) -> StaffStrokeEditOut:
+    row, report = svc.edit_strokes(order_id, version, op=body.op, stroke_ids=body.stroke_ids, word_ids=body.word_ids,
+                                   params=body.params, note=body.note.strip(), line_ids=body.line_ids,
+                                   paragraph_ids=body.paragraph_ids)
+    return StaffStrokeEditOut.model_validate({**sketch_out(row, svc.preview_urls(row), None, svc).model_dump(),
+                                              "report": report})
 
 
 @router.get("/orders/{order_id}/sketches/{version}/regions", response_model=list[SketchRegionOut],

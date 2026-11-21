@@ -14,13 +14,14 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account
-from app.models.order import ComplexityLevel, Order, OrderInputKind, OrderStatus, OrderType
+from app.models.order import ComplexityLevel, Order, OrderInputKind, OrderStatus, OrderType, StyleStatus
 from app.models.sketch import Sketch, SketchRegion, SketchRevision
 from app.models.studio import StudioDraft, StudioRevision
 from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import SketchRepository
 from app.services import audit, material_profiles, sketch_compare
+from app.services import sketch_geometry as geo
 from app.services.certificates import CertificateService
 from app.services.stroke_ai import engine, physical_mark, regions as rg, render_image, trajectory as tj, watermark
 from app.services.workshop_access import WorkshopAccess
@@ -64,8 +65,12 @@ class SketchService:
 
     def _persist(self, order: Order, pages: list[tj.Page], eng: dict[str, Any], metrics: tj.Metrics,
                  similarity: float | None, complexity: str | None, note: str | None,
-                 regions: list[rg.RegionDraft] | None = None) -> Sketch:
+                 regions: list[rg.RegionDraft] | None = None, doc: dict[str, Any] | None = None) -> Sketch:
         store = self._storage()
+        # V2 Phase H: every version keeps its vhrs-sketch/2 document. Given (customer v1, Staff geometry edit) = the same ids;
+        # otherwise derived from these pages (generation / upload / region edit: new ids). Built before the U8 line is added
+        if doc is None:
+            doc = geo.from_generated(pages, eng, regions)
         # U8: the physical watermark line is regenerated on every save (an upload / edit can neither drop nor fake it)
         wm = None
         if physical_mark.required(order.order_type.value, order.physical_watermark):
@@ -93,14 +98,19 @@ class SketchService:
             store.write(image_paths[-1], watermark.apply_bytes(img, order.code, fmt="jpg"), "image/jpeg")
         raw = tj.dumps(tj.to_dict(pages, eng))
         path = f"{base}/trajectory.json"
+        g_hash = geo.geometry_hash(doc)
+        if g_hash != geo.pages_geometry_hash(pages):              # the two files must draw exactly the same strokes
+            raise AppError(500, "GEOMETRY_MISMATCH", "Tài liệu phác thảo không khớp quỹ đạo; đã huỷ lưu.")
         store.write(path, raw, "application/json")
+        doc_path = f"{base}/document.json"
+        store.write(doc_path, geo.dumps(doc), "application/json")
         row = self.sketches.add(Sketch(
             order_id=order.id, version=version, created_by=self.actor.id, trajectory_uri=path,
             preview_url=pages[0].preview_path, image_urls=image_paths, similarity_score=similarity,
             suggested_complexity=ComplexityLevel(complexity) if complexity else None,
             estimated_writing_sec=metrics.estimated_writing_sec, total_stroke_mm=metrics.total_stroke_mm,
             pen_lift_count=metrics.pen_lift_count, approach_note=(note or None), content_hash=tj.content_hash(raw),
-            render_profile_id=profile.id if profile else None, watermark=wm))
+            render_profile_id=profile.id if profile else None, watermark=wm, document_uri=doc_path, geometry_hash=g_hash))
         for r in regions or []:                                       # U4
             self.session.add(SketchRegion(
                 sketch_id=row.id, page_no=r.page_no, region_no=r.region_no, x0=r.bbox[0], y0=r.bbox[1], x1=r.bbox[2],
@@ -121,35 +131,33 @@ class SketchService:
         gen = run_engine(self.session, self._storage(), order, paper_size=self._paper_size(order, paper_size), seed=seed)
         if order.order_type == OrderType.OT1_COPY_RESTORE:
             self._customer_region_edits(order, gen, v_max)
+        from app.services.sketch_work import order_word_texts
+        doc = geo.from_generated(gen.pages, gen.engine,
+                                 gen.regions if order.order_type == OrderType.OT1_COPY_RESTORE else None,
+                                 order_word_texts(self.session, order))
         row = self._persist(order, gen.pages, gen.engine, gen.metrics, gen.similarity, gen.complexity, approach_note,
-                            gen.regions)
+                            gen.regions, doc)
         return row, gen.warnings
 
     def adopt_customer_revision(self, order: Order) -> Sketch | None:
         """V2, D2: when the Staff take the order, official version v1 is EXACTLY the customer's working sketch (the strokes
         of `orders.current_sketch_revision_id`), not a new generation. Only the U8 verification line is added (as on every
         official save). OT-1 word regions keep their labels / confidence / text. Returns None when the customer made none."""
-        from app.services import sketch_geometry as geo
         from app.services.sketch_work import load_geometry
         if order.current_sketch_revision_id is None or self.sketches.next_version(order.id) != 1:
             return None
         rev = self.session.get(SketchRevision, order.current_sketch_revision_id)
         doc = load_geometry(self._storage(), rev)
         pages = geo.to_pages(doc)
-        regions: list[rg.RegionDraft] = []
-        for page_no, p in enumerate(doc["pages"], start=1):
-            pos = {st["id"]: i for i, st in enumerate(p["strokes"])}
-            for n, w in enumerate(p["words"], start=1):
-                idx = sorted(pos[s] for s in w["stroke_ids"])
-                if w.get("label") and idx == list(range(idx[0], idx[-1] + 1)):      # OT-1 words only, contiguous
-                    regions.append(rg.RegionDraft(page_no=page_no, region_no=w.get("region_no") or n, stroke_start=idx[0],
-                                                  stroke_end=idx[-1] + 1, bbox=tuple(w["bbox"]), label=w["label"],
-                                                  confidence=w.get("confidence"), text=w.get("text"), source="CUSTOMER"))
+        from app.services.htr_hints import hints_for          # E2b: the AI text hints go with v1 (metrics.htr)
+        hints = hints_for(self.session, order, doc, outdated=False)    # sending checked the sketch is not outdated
+        regions = _regions_from_doc(doc, lambda page_no, region_no, w: ("CUSTOMER", None),
+                                    hints=(hints or {}).get("words"))
         eng = {"name": "customer-working-sketch", "version": engine.ENGINE_VERSION, "source_revision_id": rev.id,
                "source_revision_seq": rev.seq, "geometry_hash": rev.geometry_hash, "base_engine": doc.get("engine")}
         metrics = tj.compute_metrics(pages, self._pen(order)[0])
         row = self._persist(order, pages, eng, metrics, None, (rev.metrics or {}).get("suggested_complexity"),
-                            f"Phác thảo khách gửi (bản làm việc r{rev.seq})", regions or None)
+                            f"Phác thảo khách gửi (bản làm việc r{rev.seq})", regions or None, doc)
         row.source_revision_id = rev.id
         self.session.flush()
         return row
@@ -224,6 +232,82 @@ class SketchService:
         data = json.loads(raw)
         return row, data, [self._storage().create_download_url(p["preview_path"], 600)
                            for p in data.get("pages", []) if p.get("preview_path")]
+
+    # ---- V2 Phase H: the version's document and Staff geometry edits ----
+    def document_of(self, row: Sketch) -> dict[str, Any]:
+        """The `vhrs-sketch/2` document of an official version. Saved since 0025: read and checked against its hash.
+        Older versions (H-c, no backfill): derived from the trajectory file (checked against `content_hash`) and its U4
+        regions, with `derived: true`; nothing is written for them."""
+        store = self._storage()
+        if row.document_uri:
+            raw = store.read(row.document_uri)
+            if raw is None:
+                raise AppError(409, "FILE_MISSING", "Không đọc được file tài liệu phác thảo từ kho lưu trữ.")
+            doc = json.loads(raw)
+            if geo.geometry_hash(doc) != row.geometry_hash:
+                raise AppError(409, "GEOMETRY_TAMPERED", "File tài liệu phác thảo không khớp mã băm đã lưu; không dùng được.")
+            return geo.ensure_structure(doc)                 # Phase F: lines / paragraphs for documents saved before them
+        raw = store.read(row.trajectory_uri)
+        if raw is None:
+            raise AppError(409, "FILE_MISSING", "Không đọc được file quỹ đạo từ kho lưu trữ.")
+        if row.content_hash and tj.content_hash(raw) != row.content_hash:
+            raise AppError(409, "GEOMETRY_TAMPERED", "File quỹ đạo không khớp mã băm đã lưu; không dùng được.")
+        data = json.loads(raw)
+        regions = self.regions_of(row)
+        doc = geo.from_generated(tj.parse(data), {"name": "derived-from-trajectory", "sketch_version": row.version,
+                                                  "base_engine": data.get("engine")}, regions or None)
+        doc["derived"] = True
+        return doc
+
+    def edit_strokes(self, order_id: int, version: int, *, op: str, stroke_ids: list[str] | None,
+                     word_ids: list[str] | None, params: dict[str, Any] | None, note: str,
+                     line_ids: list[str] | None = None, paragraph_ids: list[str] | None = None) -> tuple[Sketch, dict[str, Any]]:
+        """V2 Phase H: one Geometry Engine edit by the Staff on the LATEST version -> a new version (never in place). Same
+        limits per order type as the customer / assistant (H-a); strokes outside the selection are verified unchanged;
+        ids the edit did not touch are kept, so a later compare / the customer's markers still line up."""
+        order = self._editable_order(order_id)
+        row = self._get(order, version)
+        latest = self.sketches.next_version(order.id) - 1
+        if row.version != latest:                                    # two Staff editing: optimistic check
+            raise AppError(409, "SKETCH_VERSION_CONFLICT",
+                           f"Phác thảo đã có phiên bản mới hơn (v{latest}); hãy mở phiên bản mới nhất rồi sửa.",
+                           {"latest_version": latest})
+        doc = self.document_of(row)
+        doc.pop("derived", None)
+        ids = list(stroke_ids or []) + geo.group_strokes(doc, word_ids, line_ids, paragraph_ids)
+        new, report = geo.apply(doc, op, ids, params, geo.limits_for(order.order_type.value))
+        geo.mark_edit(new, report, "STAFF")
+        operation = {"op": op, "stroke_ids": stroke_ids or [], "word_ids": word_ids or [], "params": params or {},
+                     **({"line_ids": line_ids} if line_ids else {}), **({"paragraph_ids": paragraph_ids} if paragraph_ids else {})}
+        eng = {"name": "staff-geometry-edit", "version": engine.ENGINE_VERSION, "from_version": row.version,
+               "operation": operation, "note": note, "base_engine": doc.get("engine")}
+        new["engine"] = eng
+        old_regions = {(r.page_no, r.region_no): r for r in self.regions_of(row)}
+        touched = set(report["changed"]) | set(report["added"]) | set(report["removed"])
+
+        def source_of(page_no: int, region_no: int, w: dict[str, Any]) -> tuple[str, int | None]:
+            if touched & set(w["stroke_ids"]):
+                return "STAFF", self.actor.id
+            old = old_regions.get((page_no, region_no))
+            return (old.source, old.edited_by) if old else ("STAFF", self.actor.id)
+
+        carried = {}                                       # E2b: the AI text hint stays with its region across edits
+        for page_no, p in enumerate(new["pages"], start=1):
+            for n, w in enumerate(p["words"], start=1):
+                old = old_regions.get((page_no, w.get("region_no") or n))
+                if old is not None and (old.metrics or {}).get("htr"):
+                    carried[w["id"]] = old.metrics["htr"]
+        regions = _regions_from_doc(new, source_of, hints=carried) if old_regions else None
+        pages = geo.to_pages(new)
+        metrics = tj.compute_metrics(pages, self._pen(order)[0])
+        new_row = self._persist(order, pages, eng, metrics, None,
+                                row.suggested_complexity.value if row.suggested_complexity else None, row.approach_note,
+                                regions, new)
+        audit.record(self.session, actor_id=self.actor.id, action="SKETCH_GEOMETRY_EDIT", entity_type="sketch",
+                     entity_id=new_row.id, old={"version": row.version},
+                     new={"version": new_row.version, **operation, "changed": report["changed"],
+                          "removed": report["removed"], "added": report["added"], "note": note}, ip=self.ip)
+        return new_row, report
 
     def compare(self, order_id: int, from_version: int, to_version: int) -> dict[str, Any]:
         """U2: what changed between two versions (metrics, strokes per page with an overlay image, regions)."""
@@ -339,6 +423,26 @@ class SketchService:
                          entity_id=row.id, new={"order_id": order.id, "version": version}, ip=self.ip)
         return row
 
+def _regions_from_doc(doc: dict[str, Any], source_of, hints: dict[str, dict[str, Any]] | None = None) -> list[rg.RegionDraft]:
+    """U4 region rows of a document's labelled words (OT-1), with their stroke range in `geo.to_pages(doc)`. A word whose
+    strokes are no longer contiguous is left out (a region is a stroke range). `source_of(page_no, region_no, word)` ->
+    (source, edited_by). `hints` (E2b, word id -> {text, status}) is kept in `metrics.htr` (a hint, never `text`)."""
+    regions: list[rg.RegionDraft] = []
+    for page_no, p in enumerate(doc["pages"], start=1):
+        pos = {st["id"]: i for i, st in enumerate(p["strokes"])}
+        for n, w in enumerate(p["words"], start=1):
+            idx = sorted(pos[s] for s in w["stroke_ids"])
+            if w.get("label") and idx == list(range(idx[0], idx[-1] + 1)):          # OT-1 words only, contiguous
+                region_no = w.get("region_no") or n
+                source, edited_by = source_of(page_no, region_no, w)
+                regions.append(rg.RegionDraft(page_no=page_no, region_no=region_no, stroke_start=idx[0],
+                                              stroke_end=idx[-1] + 1, bbox=tuple(w["bbox"]), label=w["label"],
+                                              confidence=w.get("confidence"), text=w.get("text"), source=source,
+                                              edited_by=edited_by,
+                                              metrics={"htr": hints[w["id"]]} if hints and w["id"] in hints else None))
+    return regions
+
+
 def run_engine(session: Session, store: ObjectStorage, order: Order, *, paper_size: str, seed: int | None) -> engine.Generated:
     """The AI pipeline on an order's inputs (OT-1 photos / OT-3 text + drawing). Shared by the Staff's official sketch and the
     customer's working sketch (V2), so both run exactly the same code. Raises AppError with the engine's own codes."""
@@ -347,10 +451,9 @@ def run_engine(session: Session, store: ObjectStorage, order: Order, *, paper_si
     v_max, category = (float(pen.v_max_mm_s) if pen else DEFAULT_V_MAX), (pen.category if pen else None)
     size = paper_size
     inputs = orders.inputs(order.id)
+    style = None
     if order.order_type == OrderType.OT2_LEARNED_STYLE:
-        raise AppError(422, "AI_TYPE_UNSUPPORTED",
-                       "Loại Sáng tạo theo nét chữ đã học chưa hỗ trợ sinh phác thảo tự động (R&D, LI-10). "
-                       "Hãy tải phác thảo thủ công hoặc từ chối đơn.")
+        style = learned_style(session, store, order, inputs)    # OT-2 Phase O3: only with an approved style (O3-a)
     if order.order_type == OrderType.OT1_COPY_RESTORE:
         images = [r for r in inputs if r.kind == OrderInputKind.ORIGINAL_IMAGE]
         if any(r.mime_type == "application/pdf" for r in images):
@@ -379,4 +482,36 @@ def run_engine(session: Session, store: ObjectStorage, order: Order, *, paper_si
             alignment=first.alignment if first else None, paper_size=size,
             seed=seed, v_max_mm_s=v_max, pen_category=category,
             chars=order.char_count or 0, font_loader=store.read,
-            layout=first.layout if first else None)             # the first text row starts the joined text: offsets hold
+            layout=first.layout if first else None,             # the first text row starts the joined text: offsets hold
+            style=style)
+
+
+def learned_style(session: Session, store: ObjectStorage, order: Order, inputs) -> dict[str, Any]:
+    """OT-2 Phase O3: the approved style the order's text row names, with its glyph set read from storage.
+
+    O3-a: an OT-2 order without a chosen style (only a free-form sample photo) is still drawn by hand by the Staff
+    (422 AI_TYPE_UNSUPPORTED). A style that is no longer approved, belongs to someone else or whose glyph file is gone is
+    409 STYLE_UNAVAILABLE: the order never silently switches to another source (Q2)."""
+    import hashlib
+
+    from app.models.order import HandwritingStyle
+    row = next((r for r in inputs if r.kind == OrderInputKind.TEXT_CONTENT and r.handwriting_style_id), None)
+    if row is None:
+        raise AppError(422, "AI_TYPE_UNSUPPORTED",
+                       "Đơn viết theo nét chữ đã học chỉ sinh phác thảo tự động khi khách chọn bộ nét đã duyệt. "
+                       "Đơn chỉ có ảnh mẫu chữ: hãy tải phác thảo thủ công hoặc từ chối đơn.")
+    style = session.get(HandwritingStyle, row.handwriting_style_id)
+    data = None
+    if (style is not None and style.status == StyleStatus.APPROVED and style.owner_id == order.customer_id
+            and style.glyph_set_uri):
+        data = store.read(style.glyph_set_uri)
+    if data is None:
+        raise AppError(409, "STYLE_UNAVAILABLE",
+                       "Bộ nét chữ của đơn không còn dùng được (đã xoá, chưa duyệt hoặc mất file). "
+                       "Hãy chọn bộ nét khác.", {"style_id": row.handwriting_style_id})
+    try:
+        glyph_set = json.loads(data)
+    except ValueError as exc:
+        raise AppError(409, "STYLE_UNAVAILABLE", "Bộ nét chữ của đơn không đọc được.",
+                       {"style_id": style.id}) from exc
+    return {"id": style.id, "sha256": hashlib.sha256(data).hexdigest(), "glyph_set": glyph_set}

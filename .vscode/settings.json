@@ -1,3 +1,7 @@
 {
-    "python.terminal.useEnvFile": true
+    "python.terminal.useEnvFile": true,
+    "material-icon-theme.files.associations": {
+        ".env.supabase-sg": "tune",
+        ".env.supabase-test": "tune"
+    }
 }

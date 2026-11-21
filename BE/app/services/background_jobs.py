@@ -11,7 +11,9 @@ Jobs:
 * email_retry        notification e-mails that failed (sent_at NULL), from EMAIL_RETRY_MIN_AGE to EMAIL_RETRY_MAX_AGE old.
 * photo_purge        BR-23 / NFR-12: customer uploads (original images, handwriting samples) of orders COMPLETED or CANCELLED
                      more than `image_retention_days` (90) ago are deleted from storage, unless the sample belongs to a handwriting style
-                     the customer agreed to keep. DRY RUN (count only) unless `system_settings.photo_purge_enabled` is true.
+                     the customer agreed to keep. OT-2 O2: also the photos of sample-sheet pages of styles not kept
+                     (`keep_consent` false), untouched that long and not waiting for review (the traced strokes stay).
+                     DRY RUN (count only) unless `system_settings.photo_purge_enabled` is true.
 
 `order_ids` limits every job to those orders (tests run against the shared database and must never touch real orders).
 """
@@ -32,7 +34,8 @@ from app.integrations.storage import ObjectStorage
 from app.models.account import Account, AuditLog
 from app.models.notification import Notification, NotificationChannel
 from app.models.ops import Payment, PaymentStatus, PaymentType
-from app.models.order import HandwritingStyle, Order, OrderInput, OrderInputKind, OrderStatus
+from app.models.order import (HandwritingStyle, HandwritingStylePage, Order, OrderInput, OrderInputKind, OrderStatus,
+                              StyleStatus)
 from app.models.sketch import Quotation, QuotationStatus
 from app.repositories.catalog import CatalogRepository
 from app.services import audit, gateway_checkout as checkout, notifications
@@ -173,8 +176,42 @@ def email_retry(session: Session, *, order_ids: list[int] | None = None, **_: An
     return {"tried": len(rows), "sent": sent or 0}
 
 
+def _style_pages_due(session: Session, cutoff: datetime, style_ids: list[int] | None) -> list[int]:
+    """OT-2 O2: photos of sample-sheet pages of styles the customer did not ask to keep, untouched for `image_retention_days`
+    and not waiting for review. The traced strokes (read_result) and an approved glyph set stay; only the photo goes."""
+    q = (select(HandwritingStylePage.id).join(HandwritingStyle, HandwritingStyle.id == HandwritingStylePage.style_id)
+         .where(HandwritingStyle.keep_consent.is_(False), HandwritingStyle.updated_at < cutoff,
+                HandwritingStyle.status != StyleStatus.PENDING_REVIEW,
+                HandwritingStylePage.read_result["photo_deleted_at"].astext.is_(None)))
+    if style_ids is not None:
+        q = q.where(HandwritingStylePage.style_id.in_(style_ids or [-1]))
+    return list(session.scalars(q.order_by(HandwritingStylePage.id).limit(BATCH)))
+
+
+def _purge_style_pages(session: Session, ids: list[int], storage: ObjectStorage) -> tuple[int, int]:
+    deleted = failed = 0
+    for pid in ids:
+        row = session.get(HandwritingStylePage, pid, with_for_update=True)
+        if row is None or row.read_result.get("photo_deleted_at"):
+            session.rollback()
+            continue
+        try:
+            storage.delete(row.file_url)
+        except Exception:                                   # noqa: BLE001 - try again next run
+            log.exception("purge: could not delete style page %s", pid)
+            session.rollback()
+            failed += 1
+            continue
+        row.read_result = {**row.read_result, "photo_deleted_at": _now().isoformat()}
+        audit.record(session, actor_id=None, action="STYLE_PHOTO_PURGE", entity_type="handwriting_style",
+                     entity_id=row.style_id, old={"page_no": row.page_no}, reason="NFR-12: xoá ảnh phiếu mẫu sau 90 ngày")
+        session.commit()
+        deleted += 1
+    return deleted, failed
+
+
 def photo_purge(session: Session, *, order_ids: list[int] | None = None, storage: ObjectStorage | None = None,
-                enabled: bool | None = None, **_: Any) -> dict[str, Any]:
+                enabled: bool | None = None, style_ids: list[int] | None = None, **_: Any) -> dict[str, Any]:
     if enabled is None:                                     # only tests pass it: the shared setting stays untouched
         enabled = CatalogRepository(session).setting("photo_purge_enabled", False) is True
     days = PURGE_AFTER_DAYS if PURGE_AFTER_DAYS == 0 else _int_setting(session, "image_retention_days", PURGE_AFTER_DAYS)
@@ -187,9 +224,12 @@ def photo_purge(session: Session, *, order_ids: list[int] | None = None, storage
                 OrderInput.file_url.is_not(None), OrderInput.deleted_at.is_(None), finished,
                 ~and_(OrderInput.kind == OrderInputKind.HANDWRITING_SAMPLE, kept)))
     ids = list(session.scalars(_scoped(q, OrderInput.order_id, order_ids).order_by(OrderInput.id).limit(BATCH)))
+    # a run scoped to orders (tests) never touches style photos unless it also names the styles
+    style_pages = None if (order_ids is not None and style_ids is None) else _style_pages_due(session, cutoff, style_ids)
     if not enabled or storage is None:
         session.rollback()
-        return {"dry_run": True, "would_delete": len(ids), "storage": storage is not None}
+        out = {"dry_run": True, "would_delete": len(ids), "storage": storage is not None}
+        return out if style_pages is None else {**out, "style_pages_would_delete": len(style_pages)}
     deleted, failed = 0, 0
     for iid in ids:
         row = session.get(OrderInput, iid, with_for_update=True)
@@ -208,7 +248,11 @@ def photo_purge(session: Session, *, order_ids: list[int] | None = None, storage
                      old={"input_id": iid, "kind": row.kind.value}, reason="BR-23: xoá ảnh của khách sau 90 ngày")
         session.commit()
         deleted += 1
-    return {"dry_run": False, "deleted": deleted, "failed": failed}
+    out = {"dry_run": False, "deleted": deleted, "failed": failed}
+    if style_pages is None:
+        return out
+    s_deleted, s_failed = _purge_style_pages(session, style_pages, storage)
+    return {**out, "style_pages_deleted": s_deleted, "style_pages_failed": s_failed}
 
 
 JOBS: dict[str, Callable[..., dict[str, Any]]] = {

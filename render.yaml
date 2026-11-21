@@ -6,7 +6,7 @@ services:
     rootDir: BE
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    region: singapore          # closest Render region to the Supabase Tokyo database
+    region: singapore          # same region as the Supabase database (Singapore, ap-southeast-1, since 2026-11-19)
     plan: starter              # free plan sleeps and has no pre-deploy command: do not use for webhooks
     branch: main                 # change to main once the backend is merged
     autoDeploy: true

@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0024 (alembic head), generated 2026-11-18 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0028 (alembic head), generated 2026-11-20 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0024);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0024;
+--      baseline schema and every migration up to 0028);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0028;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -409,7 +409,8 @@ CREATE TYPE public.style_status AS ENUM (
     'PENDING_REVIEW',
     'APPROVED',
     'REJECTED',
-    'DELETED'
+    'DELETED',
+    'DRAFT'
 );
 
 --
@@ -929,6 +930,44 @@ ALTER TABLE public.calibrations ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY
 );
 
 --
+-- Name: handwriting_style_pages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.handwriting_style_pages (
+    id bigint NOT NULL,
+    style_id bigint NOT NULL,
+    page_no smallint NOT NULL,
+    file_url text NOT NULL,
+    mime_type character varying(50) NOT NULL,
+    read_result jsonb NOT NULL,
+    uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT handwriting_style_pages_page_no_check CHECK (((page_no >= 1) AND (page_no <= 20)))
+);
+
+--
+-- Name: TABLE handwriting_style_pages; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.handwriting_style_pages IS 'OT-2 Phase O2: photographed pages of a handwriting sample sheet and what was read from each box';
+
+--
+-- Name: handwriting_style_pages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.handwriting_style_pages_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: handwriting_style_pages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.handwriting_style_pages_id_seq OWNED BY public.handwriting_style_pages.id;
+
+--
 -- Name: handwriting_styles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -947,6 +986,10 @@ CREATE TABLE public.handwriting_styles (
     delete_after timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    sheet_version character varying(20),
+    review_note text,
+    rejected_samples jsonb DEFAULT '[]'::jsonb NOT NULL,
+    submitted_at timestamp with time zone,
     CONSTRAINT handwriting_styles_coverage_pct_check CHECK (((coverage_pct >= (0)::numeric) AND (coverage_pct <= (100)::numeric)))
 );
 
@@ -962,6 +1005,52 @@ ALTER TABLE public.handwriting_styles ALTER COLUMN id ADD GENERATED ALWAYS AS ID
     NO MAXVALUE
     CACHE 1
 );
+
+--
+-- Name: htr_readings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.htr_readings (
+    id bigint NOT NULL,
+    order_id bigint NOT NULL,
+    input_id bigint,
+    source_key character(64) NOT NULL,
+    status character varying(10) NOT NULL,
+    provider character varying(20),
+    model character varying(80),
+    transcript text,
+    input_tokens integer,
+    output_tokens integer,
+    attempts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    consent_by bigint,
+    consent_text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_htr_read_has_text CHECK ((((status)::text <> 'READ'::text) OR ((transcript IS NOT NULL) AND (provider IS NOT NULL)))),
+    CONSTRAINT htr_readings_status_check CHECK (((status)::text = ANY ((ARRAY['READ'::character varying, 'FAILED'::character varying])::text[])))
+);
+
+--
+-- Name: TABLE htr_readings; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.htr_readings IS 'V2 Phase E2b: AI transcript of a customer photo (OT-1) read with the customer''s consent; region text hints are computed from it';
+
+--
+-- Name: htr_readings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.htr_readings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: htr_readings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.htr_readings_id_seq OWNED BY public.htr_readings.id;
 
 --
 -- Name: incidents; Type: TABLE; Schema: public; Owner: -
@@ -2200,10 +2289,17 @@ CREATE TABLE public.sketch_revisions (
     metrics jsonb,
     validation jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    inputs_snapshot jsonb,
     CONSTRAINT chk_sketch_rev_tool CHECK ((((author)::text <> 'AI'::text) OR (tool_name IS NOT NULL))),
     CONSTRAINT sketch_revisions_author_check CHECK (((author)::text = ANY ((ARRAY['ENGINE'::character varying, 'CUSTOMER'::character varying, 'AI'::character varying, 'STAFF'::character varying])::text[]))),
     CONSTRAINT sketch_revisions_seq_check CHECK ((seq >= 1))
 );
+
+--
+-- Name: COLUMN sketch_revisions.inputs_snapshot; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sketch_revisions.inputs_snapshot IS 'V2 Phase D: order text / layout / canvas / materials this revision was drawn from (NULL = before 0026)';
 
 --
 -- Name: sketch_revisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -2246,12 +2342,26 @@ CREATE TABLE public.sketches (
     render_profile_id bigint,
     watermark jsonb,
     source_revision_id bigint,
+    document_uri text,
+    geometry_hash character varying(64),
     CONSTRAINT sketches_estimated_writing_sec_check CHECK ((estimated_writing_sec >= 0)),
     CONSTRAINT sketches_pen_lift_count_check CHECK ((pen_lift_count >= 0)),
     CONSTRAINT sketches_similarity_score_check CHECK (((similarity_score >= (0)::numeric) AND (similarity_score <= (100)::numeric))),
     CONSTRAINT sketches_total_stroke_mm_check CHECK ((total_stroke_mm >= (0)::numeric)),
     CONSTRAINT sketches_version_check CHECK ((version >= 1))
 );
+
+--
+-- Name: COLUMN sketches.document_uri; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sketches.document_uri IS 'V2 Phase H: vhrs-sketch/2 document of this version (NULL = saved before 0025, derived from the trajectory)';
+
+--
+-- Name: COLUMN sketches.geometry_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sketches.geometry_hash IS 'V2 Phase H: sketch_geometry.geometry_hash of the document (strokes without the U8 line)';
 
 --
 -- Name: sketches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -2462,6 +2572,18 @@ ALTER TABLE ONLY public.ai_sessions ALTER COLUMN id SET DEFAULT nextval('public.
 ALTER TABLE ONLY public.ai_tool_calls ALTER COLUMN id SET DEFAULT nextval('public.ai_tool_calls_id_seq'::regclass);
 
 --
+-- Name: handwriting_style_pages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.handwriting_style_pages ALTER COLUMN id SET DEFAULT nextval('public.handwriting_style_pages_id_seq'::regclass);
+
+--
+-- Name: htr_readings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings ALTER COLUMN id SET DEFAULT nextval('public.htr_readings_id_seq'::regclass);
+
+--
 -- Name: material_profiles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2606,11 +2728,25 @@ ALTER TABLE ONLY public.production_jobs
     ADD CONSTRAINT ex_job_technician_overlap EXCLUDE USING gist (technician_id WITH =, tstzrange(slot_start, slot_end) WITH &&) WHERE ((status = ANY (ARRAY['SCHEDULED'::public.job_status, 'PREPARING'::public.job_status, 'WRITING'::public.job_status, 'PAUSED'::public.job_status])));
 
 --
+-- Name: handwriting_style_pages handwriting_style_pages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.handwriting_style_pages
+    ADD CONSTRAINT handwriting_style_pages_pkey PRIMARY KEY (id);
+
+--
 -- Name: handwriting_styles handwriting_styles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.handwriting_styles
     ADD CONSTRAINT handwriting_styles_pkey PRIMARY KEY (id);
+
+--
+-- Name: htr_readings htr_readings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings
+    ADD CONSTRAINT htr_readings_pkey PRIMARY KEY (id);
 
 --
 -- Name: incidents incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3026,6 +3162,13 @@ ALTER TABLE ONLY public.templates
     ADD CONSTRAINT templates_pkey PRIMARY KEY (id);
 
 --
+-- Name: handwriting_style_pages uq_style_page; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.handwriting_style_pages
+    ADD CONSTRAINT uq_style_page UNIQUE (style_id, page_no);
+
+--
 -- Name: sketch_regions ux_sketch_region; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3091,6 +3234,18 @@ CREATE INDEX ix_auth_sessions_expiry ON public.auth_sessions USING btree (expire
 --
 
 CREATE INDEX ix_calibrations_job ON public.calibrations USING btree (job_id, created_at DESC);
+
+--
+-- Name: ix_htr_readings_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_htr_readings_created ON public.htr_readings USING btree (created_at);
+
+--
+-- Name: ix_htr_readings_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_htr_readings_order ON public.htr_readings USING btree (order_id, source_key);
 
 --
 -- Name: ix_incidents_open; Type: INDEX; Schema: public; Owner: -
@@ -3759,6 +3914,13 @@ ALTER TABLE ONLY public.studio_drafts
     ADD CONSTRAINT fk_studio_drafts_current_revision FOREIGN KEY (current_revision_id) REFERENCES public.studio_revisions(id) ON DELETE SET NULL;
 
 --
+-- Name: handwriting_style_pages handwriting_style_pages_style_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.handwriting_style_pages
+    ADD CONSTRAINT handwriting_style_pages_style_id_fkey FOREIGN KEY (style_id) REFERENCES public.handwriting_styles(id) ON DELETE CASCADE;
+
+--
 -- Name: handwriting_styles handwriting_styles_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3778,6 +3940,27 @@ ALTER TABLE ONLY public.handwriting_styles
 
 ALTER TABLE ONLY public.handwriting_styles
     ADD CONSTRAINT handwriting_styles_source_order_id_fkey FOREIGN KEY (source_order_id) REFERENCES public.orders(id) ON DELETE SET NULL;
+
+--
+-- Name: htr_readings htr_readings_consent_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings
+    ADD CONSTRAINT htr_readings_consent_by_fkey FOREIGN KEY (consent_by) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+--
+-- Name: htr_readings htr_readings_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings
+    ADD CONSTRAINT htr_readings_input_id_fkey FOREIGN KEY (input_id) REFERENCES public.order_inputs(id) ON DELETE SET NULL;
+
+--
+-- Name: htr_readings htr_readings_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.htr_readings
+    ADD CONSTRAINT htr_readings_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
 
 --
 -- Name: incidents incidents_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -4523,6 +4706,12 @@ ALTER TABLE public.auth_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calibrations ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: handwriting_style_pages; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.handwriting_style_pages ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: handwriting_styles; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4725,7 +4914,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0024');
+INSERT INTO alembic_version (version_num) VALUES ('0028');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

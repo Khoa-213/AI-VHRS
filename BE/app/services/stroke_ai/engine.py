@@ -2,8 +2,8 @@
 
 OT-1 (copy / restore)  -> recovery.recover_page per original image
 OT-3 (template)        -> text_to_stroke.compose_text (+ the customer's canvas drawing)
-OT-2 (learned style)   -> not supported: it needs the R&D style-learning model (LI-10); Staff upload a
-                          hand-made trajectory instead.
+OT-2 (learned style)   -> the same composer with the writer's approved glyph set (style_source.StyleSource, Phase O3);
+                          an OT-2 order without an approved style is not drawn automatically (Staff draw it by hand).
 """
 import hashlib
 import json
@@ -15,7 +15,7 @@ import unicodedata
 
 from app.domain import text_layout
 from app.models.order import OrderType
-from app.services.stroke_ai import outline_font, path_order, recovery, styled_text, text_to_stroke
+from app.services.stroke_ai import outline_font, path_order, recovery, style_source, styled_text, text_to_stroke
 from app.services.stroke_ai import regions as regions_mod
 from app.services.stroke_ai.trajectory import Metrics, Page, compute_metrics
 
@@ -122,11 +122,15 @@ def _order_ot1(pages: list[Page], regions: list) -> dict[str, Any]:
 def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None, font_size_mm: float | None,
                  alignment: str | None, paper_size: str, seed: int | None, v_max_mm_s: float, pen_category: str | None,
                  chars: int, font_loader: Callable[[str], bytes | None] | None = None,
-                 layout: dict[str, Any] | None = None) -> Generated:
-    """`layout` (domain/text_layout.py) carries sizes and styles of parts of the text and the placement on the page (margins,
+                 layout: dict[str, Any] | None = None, style: dict[str, Any] | None = None) -> Generated:
+    """`style` (OT-2, Phase O3): {"id", "sha256", "glyph_set"} of the writer's approved style; it replaces the template font
+    (`font_uri` is then ignored and the complexity is judged as OT-2).
+    `layout` (domain/text_layout.py) carries sizes and styles of parts of the text and the placement on the page (margins,
     vertical alignment); without it the text is plain, 15 mm margins, from the top.
     `seed` None (the normal case) = `content_seed` of the content; an explicit seed is a deliberate variant (Staff)."""
     size = float(font_size_mm) if font_size_mm else text_to_stroke.DEFAULT_FONT_SIZE_MM
+    if style is not None:
+        font_uri = f"style:{style['id']}:{style['sha256'][:16]}"     # the seed follows the exact glyph set
     seed_source = "explicit" if seed is not None else "content"
     if seed is None:
         seed = content_seed(text, canvas, font_uri=font_uri, font_size_mm=size, alignment=alignment or "LEFT",
@@ -140,13 +144,23 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
             raise AppError(422, "TEMPLATE_REQUIRED", "Đơn chưa chọn mẫu chữ.")
         if layout:
             try:
-                parsed = text_layout.parse(layout, len(unicodedata.normalize("NFC", text)))
+                parsed = text_layout.parse(layout, unicodedata.normalize("NFC", text))
             except text_layout.TextLayoutError as exc:
                 raise AppError(422, "INVALID_LAYOUT", exc.message, exc.details) from exc
             styled = None if parsed.is_plain else parsed
             placement = parsed
         outline = font_uri.startswith(outline_font.OUTLINE_PREFIX)
-        if outline:
+        fresh = None
+        if style is not None:
+            try:
+                style_source.StyleSource(style["glyph_set"], seed)
+            except style_source.StyleError as exc:
+                raise AppError(409, "STYLE_UNAVAILABLE", "Bộ nét của đơn không đọc được; hãy chọn bộ nét khác.") from exc
+
+            def fresh():                                     # each composition takes the samples in the same order
+                return style_source.StyleSource(style["glyph_set"], seed)
+            source, name = None, None
+        elif outline:
             if font_loader is None:
                 raise AppError(409, "FONT_FILE_MISSING", "Không đọc được file font của mẫu chữ từ kho lưu trữ.")
             source = outline_font.load_source(font_uri[len(outline_font.OUTLINE_PREFIX):], font_loader)
@@ -154,10 +168,12 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
         else:
             source, name = None, text_to_stroke.font_name_from_uri(font_uri)
         where = {"margins": placement.page_margins, "vertical_align": placement.page_vertical_align}
-        plain_pages = text_to_stroke.compose_text(text, font_name=name, source=source, paper_size=paper_size,
+        plain_pages = text_to_stroke.compose_text(text, font_name=name, source=fresh() if fresh else source,
+                                                  paper_size=paper_size,
                                                   font_size_mm=size, alignment=alignment or "LEFT", seed=seed, **where)
         if styled:
-            pages = styled_text.compose_styled(text, styled, font_name=name, source=source, paper_size=paper_size,
+            pages = styled_text.compose_styled(text, styled, font_name=name, source=fresh() if fresh else source,
+                                               paper_size=paper_size,
                                                font_size_mm=size, alignment=alignment or "LEFT", seed=seed, **where)
         else:
             pages = plain_pages
@@ -172,11 +188,16 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
         raise AppError(422, "NO_CONTENT", "Đơn chưa có nội dung chữ hoặc hình vẽ để sinh phác thảo.")
     _, order_summary = path_order.optimise_pages(pages)                         # U7: words stay whole
     metrics = compute_metrics(pages, v_max_mm_s)
-    kind = ("outline-centerline-compose" if font_uri and font_uri.startswith(outline_font.OUTLINE_PREFIX)
+    kind = ("learned-style-compose" if style is not None
+            else "outline-centerline-compose" if font_uri and font_uri.startswith(outline_font.OUTLINE_PREFIX)
             else "hershey-vi-compose")
     engine = {"name": kind if text else "canvas-passthrough", "version": ENGINE_VERSION,
               "font_uri": font_uri, "font_size_mm": size, "alignment": alignment or "LEFT", "seed": seed,
               "seed_source": seed_source}
+    if style is not None:
+        probe = style_source.StyleSource(style["glyph_set"], seed)
+        engine.update({"font_uri": None, "style_id": style["id"], "glyph_set_sha256": style["sha256"],
+                       "style_scale": probe.scale_source, "letters": "separate"})
     if text and text.strip():
         m = placement.page_margins
         engine["margins_mm"] = {"top": m.top, "bottom": m.bottom, "left": m.left, "right": m.right}
@@ -184,9 +205,12 @@ def generate_ot3(text: str | None, canvas: dict | None, *, font_uri: str | None,
     engine["path_order"] = order_summary
     if styled:                                              # complexity (and so the price) deliberately ignores styles
         engine["layout"] = {"spans": len(styled.spans), "line_spacing": styled.line_spacing}
+        if styled.paragraphs:                               # V2 Phase D
+            engine["layout"]["paragraphs"] = len(styled.paragraphs)
     if kind == "outline-centerline-compose" and text:
         engine["stroke_order"] = "reconstructed"          # a person would not write the letters in this order
     judged = compute_metrics(plain_pages, v_max_mm_s) if plain_pages is not None and plain_pages is not pages else metrics
-    complexity = suggest_complexity(order_type=OrderType.OT3_TEMPLATE, pen_category=pen_category, metrics=judged,
+    complexity = suggest_complexity(order_type=OrderType.OT2_LEARNED_STYLE if style is not None else OrderType.OT3_TEMPLATE,
+                                    pen_category=pen_category, metrics=judged,
                                     chars=chars, has_canvas=bool(canvas_strokes), similarity=None, font_size_mm=size)
     return Generated(pages, engine, metrics, None, complexity)

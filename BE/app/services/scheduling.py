@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
@@ -173,6 +173,26 @@ class SchedulingService:
         return out
 
     # ------------------------------------------------------------------ scheduling
+    def _add_job(self, row: ProductionJob) -> ProductionJob:
+        """Insert a job in a savepoint. Two concurrent bookings that collide on an exclusion constraint can deadlock while
+        Postgres checks each other's row (V2 Phase I: one got a 500); the loser retries once, which then waits for the other
+        and gets the plain overlap error (IntegrityError -> 409 SLOT_CONFLICT)."""
+        fields = {c.key: getattr(row, c.key) for c in ProductionJob.__table__.columns if getattr(row, c.key) is not None}
+        for attempt in (1, 2):
+            sp = self.session.begin_nested()
+            try:
+                job = self.jobs.add(row if attempt == 1 else ProductionJob(**fields))
+                sp.commit()
+                return job
+            except OperationalError as exc:
+                sp.rollback()
+                if attempt == 2 or getattr(exc.orig, "sqlstate", None) != "40P01":      # 40P01 = deadlock_detected
+                    raise
+            except IntegrityError:
+                sp.rollback()
+                raise
+        raise AssertionError("unreachable")
+
     def schedule(self, order_id: int, *, robot_id: int, technician_id: int, slot_start: datetime,
                  note: str | None = None, _replacing: ProductionJob | None = None) -> ProductionJob:
         order = self._schedulable_order(order_id, lock=True)
@@ -215,7 +235,7 @@ class SchedulingService:
         snapshot = SnapshotService(self.session).issue(order, actor_id=self.manager.id)
         tech_name, robot_code = tech.full_name, robot.code       # read now: after a failed flush the session cannot load anything
         try:
-            job = self.jobs.add(ProductionJob(
+            job = self._add_job(ProductionJob(
                 order_id=order.id, sketch_id=sketch.id, robot_id=robot.id, technician_id=tech.id,
                 scheduled_by=self.manager.id, status=JobStatus.SCHEDULED, is_rewrite=rewrite, slot_start=slot_start,
                 slot_end=slot_end, estimated_duration_min=minutes, package_uri=sketch.trajectory_uri,

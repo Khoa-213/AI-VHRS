@@ -205,7 +205,7 @@ class StudioService:
             c["layout"] = ch["layout"]
         if text_mode and c.get("layout") and ({"text", "layout"} & ch.keys()):
             try:
-                parsed = text_layout.parse(c["layout"], len(c["text"]))
+                parsed = text_layout.parse(c["layout"], c["text"])
                 c["layout"] = text_layout.to_json(parsed.with_defaults())
             except text_layout.TextLayoutError as exc:
                 if "layout" in ch:                          # the layout itself was sent: the customer must fix it

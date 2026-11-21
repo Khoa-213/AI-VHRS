@@ -42,6 +42,8 @@ _ERR = {404: {"model": ErrorOut, "description": "ORDER_NOT_FOUND"},
 class Selection(BaseModel):
     stroke_ids: list[str] = Field(default_factory=list, max_length=500)
     word_ids: list[str] = Field(default_factory=list, max_length=500)
+    line_ids: list[str] = Field(default_factory=list, max_length=200, description="V2 Phase F")
+    paragraph_ids: list[str] = Field(default_factory=list, max_length=100, description="V2 Phase F")
 
 
 class OrderMessageIn(BaseModel):

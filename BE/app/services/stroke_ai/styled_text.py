@@ -59,6 +59,8 @@ class _Line:
     last: bool
     size: float               # tallest character, mm
     height: float = 0.0
+    alignment: str = "LEFT"
+    space_before: float = 0.0  # mm above the line (first line of a paragraph with `space_before_mm`)
 
 
 @dataclass
@@ -153,33 +155,41 @@ def compose_styled(text: str, layout: TextLayout, *, font_name: str | None = Non
 
     lines: list[_Line] = []
 
-    def make_line(ws: list[_Word], last: bool) -> _Line:
+    def make_line(ws: list[_Word], last: bool, pi: int, first: bool) -> _Line:
+        para = layout.paragraph(pi)                      # V2 Phase D: this paragraph's own spacing / alignment / space
+        spacing = para.line_spacing if para and para.line_spacing is not None else layout.line_spacing
         size = max([i.k * tts.CAP_UNITS for w in ws for i in w.items] or [font_size_mm])
-        return _Line(ws, last, size, tts.LINE_PITCH_FACTOR * size * layout.line_spacing)
+        return _Line(ws, last, size, tts.LINE_PITCH_FACTOR * size * spacing,
+                     para.alignment if para and para.alignment else alignment,
+                     para.space_before_mm if para and first else 0.0)
 
-    for p_words in paragraphs:
+    for pi, p_words in enumerate(paragraphs):
         expanded: list[_Word] = []
         for w in p_words:
             expanded.extend(split_long(w) if w.width() > avail else [w])
         cur: list[_Word] = []
         cur_w = 0.0
+        first = True
         for w in expanded:
             gap = space_u * w.gap_k if cur else 0.0
             if cur and cur_w + gap + w.width() > avail:
-                lines.append(make_line(cur, False))
-                cur, cur_w, gap = [], 0.0, 0.0
+                lines.append(make_line(cur, False, pi, first))
+                cur, cur_w, gap, first = [], 0.0, 0.0, False
             cur.append(w)
             cur_w += gap + w.width()
-        lines.append(make_line(cur, True))             # an empty paragraph keeps its blank line
+        lines.append(make_line(cur, True, pi, first))   # an empty paragraph keeps its blank line
 
-    # ---- pages: lines of different heights fill a page until the next does not fit
+    # ---- pages: lines of different heights fill a page until the next does not fit; space above a paragraph is dropped
+    # at the top of a page
     page_of: list[tuple[int, float]] = []
     page_no, used = 0, 0.0
     for line in lines:
         if line.height > page_avail + EPS:
             raise AppError(422, "FONT_TOO_LARGE", "Cỡ chữ quá lớn so với khổ giấy.")
-        if used + line.height > page_avail + EPS:
-            page_no, used = page_no + 1, 0.0
+        before = line.space_before if used > EPS else 0.0
+        if used + before + line.height > page_avail + EPS:
+            page_no, used, before = page_no + 1, 0.0, 0.0
+        used += before
         page_of.append((page_no, used))
         used += line.height
     n_pages = page_no + 1
@@ -198,10 +208,11 @@ def compose_styled(text: str, layout: TextLayout, *, font_name: str | None = Non
         gaps = [space_u * w.gap_k for w in line.words[1:]]
         natural = sum(w.width() for w in line.words) + sum(gaps)
         extra_gap = 0.0
-        if alignment == "JUSTIFY" and not line.last and len(line.words) > 1:
+        align = line.alignment
+        if align == "JUSTIFY" and not line.last and len(line.words) > 1:
             extra_gap = (avail - natural) / (len(line.words) - 1)
             natural = avail
-        start = {"LEFT": 0.0, "JUSTIFY": 0.0, "CENTER": (avail - natural) / 2, "RIGHT": avail - natural}.get(alignment, 0.0)
+        start = {"LEFT": 0.0, "JUSTIFY": 0.0, "CENTER": (avail - natural) / 2, "RIGHT": avail - natural}.get(align, 0.0)
 
         cursor = start
         under: dict[str, list[_Run]] = {"single": [], "double": []}
