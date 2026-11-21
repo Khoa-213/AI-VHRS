@@ -62,6 +62,7 @@ class OrderInputKind(str, enum.Enum):
 
 
 class StyleStatus(str, enum.Enum):
+    DRAFT = "DRAFT"                      # OT-2 O2 (migration 0028): pages being uploaded, not sent for review
     PENDING_REVIEW = "PENDING_REVIEW"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
@@ -162,6 +163,24 @@ class HandwritingStyle(Base):
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+    # OT-2 Phase O2 (migration 0028)
+    sheet_version: Mapped[str | None] = mapped_column(String(20))
+    review_note: Mapped[str | None] = mapped_column(Text)
+    rejected_samples: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+
+
+class HandwritingStylePage(Base):
+    """OT-2 Phase O2: one photographed page of a style's sample sheet and what was read from its boxes."""
+    __tablename__ = "handwriting_style_pages"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    style_id: Mapped[int] = mapped_column(ForeignKey("handwriting_styles.id", ondelete="CASCADE"))
+    page_no: Mapped[int] = mapped_column(SmallInteger)
+    file_url: Mapped[str] = mapped_column(Text)
+    mime_type: Mapped[str] = mapped_column(String(50))
+    read_result: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
 
 
 class OrderInput(Base):

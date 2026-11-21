@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.integrations.storage import ObjectStorage
 from app.models.account import Account
-from app.models.order import ComplexityLevel, Order, OrderInputKind, OrderStatus, OrderType
+from app.models.order import ComplexityLevel, Order, OrderInputKind, OrderStatus, OrderType, StyleStatus
 from app.models.sketch import Sketch, SketchRegion, SketchRevision
 from app.models.studio import StudioDraft, StudioRevision
 from app.repositories.catalog import CatalogRepository
@@ -451,10 +451,9 @@ def run_engine(session: Session, store: ObjectStorage, order: Order, *, paper_si
     v_max, category = (float(pen.v_max_mm_s) if pen else DEFAULT_V_MAX), (pen.category if pen else None)
     size = paper_size
     inputs = orders.inputs(order.id)
+    style = None
     if order.order_type == OrderType.OT2_LEARNED_STYLE:
-        raise AppError(422, "AI_TYPE_UNSUPPORTED",
-                       "Loại Sáng tạo theo nét chữ đã học chưa hỗ trợ sinh phác thảo tự động (R&D, LI-10). "
-                       "Hãy tải phác thảo thủ công hoặc từ chối đơn.")
+        style = learned_style(session, store, order, inputs)    # OT-2 Phase O3: only with an approved style (O3-a)
     if order.order_type == OrderType.OT1_COPY_RESTORE:
         images = [r for r in inputs if r.kind == OrderInputKind.ORIGINAL_IMAGE]
         if any(r.mime_type == "application/pdf" for r in images):
@@ -483,4 +482,36 @@ def run_engine(session: Session, store: ObjectStorage, order: Order, *, paper_si
             alignment=first.alignment if first else None, paper_size=size,
             seed=seed, v_max_mm_s=v_max, pen_category=category,
             chars=order.char_count or 0, font_loader=store.read,
-            layout=first.layout if first else None)             # the first text row starts the joined text: offsets hold
+            layout=first.layout if first else None,             # the first text row starts the joined text: offsets hold
+            style=style)
+
+
+def learned_style(session: Session, store: ObjectStorage, order: Order, inputs) -> dict[str, Any]:
+    """OT-2 Phase O3: the approved style the order's text row names, with its glyph set read from storage.
+
+    O3-a: an OT-2 order without a chosen style (only a free-form sample photo) is still drawn by hand by the Staff
+    (422 AI_TYPE_UNSUPPORTED). A style that is no longer approved, belongs to someone else or whose glyph file is gone is
+    409 STYLE_UNAVAILABLE: the order never silently switches to another source (Q2)."""
+    import hashlib
+
+    from app.models.order import HandwritingStyle
+    row = next((r for r in inputs if r.kind == OrderInputKind.TEXT_CONTENT and r.handwriting_style_id), None)
+    if row is None:
+        raise AppError(422, "AI_TYPE_UNSUPPORTED",
+                       "Đơn viết theo nét chữ đã học chỉ sinh phác thảo tự động khi khách chọn bộ nét đã duyệt. "
+                       "Đơn chỉ có ảnh mẫu chữ: hãy tải phác thảo thủ công hoặc từ chối đơn.")
+    style = session.get(HandwritingStyle, row.handwriting_style_id)
+    data = None
+    if (style is not None and style.status == StyleStatus.APPROVED and style.owner_id == order.customer_id
+            and style.glyph_set_uri):
+        data = store.read(style.glyph_set_uri)
+    if data is None:
+        raise AppError(409, "STYLE_UNAVAILABLE",
+                       "Bộ nét chữ của đơn không còn dùng được (đã xoá, chưa duyệt hoặc mất file). "
+                       "Hãy chọn bộ nét khác.", {"style_id": row.handwriting_style_id})
+    try:
+        glyph_set = json.loads(data)
+    except ValueError as exc:
+        raise AppError(409, "STYLE_UNAVAILABLE", "Bộ nét chữ của đơn không đọc được.",
+                       {"style_id": style.id}) from exc
+    return {"id": style.id, "sha256": hashlib.sha256(data).hexdigest(), "glyph_set": glyph_set}

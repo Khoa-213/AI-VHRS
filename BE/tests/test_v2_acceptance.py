@@ -24,7 +24,7 @@ from app.services.stroke_ai import htr_align
 from app.services.stroke_ai import trajectory as tj
 from app.services.ai.llm import Reply
 from tests.test_api_orders import API, _sql, _upload
-from tests.test_api_workshop import W, _err, _ot3, cust, staff, store, wcat  # noqa: F401
+from tests.test_api_workshop import W, _err, _ot3, cust, policy, staff, store, wcat  # noqa: F401
 from tests.test_motion_geometry import BOX, CFG, probes
 from tests.test_u4_regions import _scan
 from tests.test_u5_studio import Script, _call, providers  # noqa: F401

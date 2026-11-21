@@ -20,6 +20,7 @@ from app.models.catalog import InkColor, PaperPenCompat, PaperType, PenType, Pri
 from app.models.ops import ACTIVE_JOB_STATUSES, Robot, RobotStatus
 from app.models.order import HandwritingStyle, StyleStatus
 from app.repositories.catalog import CatalogRepository
+from app.services import handwriting_styles as styles_svc
 from app.repositories.ops import JobRepository, RobotRepository
 from app.domain import material_specs
 from app.services import audit
@@ -187,18 +188,46 @@ class ManagerCatalogService:
             raise AppError(409, "STYLE_NOT_PENDING", "Bộ nét không ở trạng thái chờ duyệt.")
         return row
 
-    def approve_style(self, style_id: int) -> HandwritingStyle:
+    def style_detail(self, style_id: int) -> dict[str, Any]:
+        """OT-2 O2: a style with every box of its sample sheet (status, traced strokes, rejected or not)."""
+        row = self.session.get(HandwritingStyle, style_id)
+        if row is None or row.status in (StyleStatus.DRAFT, StyleStatus.DELETED):
+            raise AppError(404, "STYLE_NOT_FOUND", "Không tìm thấy bộ nét.")
+        return styles_svc.describe(self.session, row, with_strokes=True)
+
+    def set_sample(self, style_id: int, sample_id: str, rejected: bool) -> dict[str, Any]:
+        """OT-2 O2: drop (or take back) one sample before approving; `sample_id` is a box ("p1c07") or a mark of a carrier box
+        ("p3c32:acute")."""
+        row = self._style(style_id)
+        before = list(row.rejected_samples or [])
+        styles_svc.toggle_sample(self.session, row, sample_id, rejected)
+        self.session.flush()
+        self._audit("STYLE_SAMPLE_REJECT" if rejected else "STYLE_SAMPLE_RESTORE", "handwriting_style", row.id,
+                    {"rejected_samples": before}, {"rejected_samples": row.rejected_samples})
+        return styles_svc.describe(self.session, row, with_strokes=True)
+
+    def style_cell_image(self, style_id: int, cell_id: str, storage) -> bytes:
+        row = self.session.get(HandwritingStyle, style_id)
+        if row is None or row.status in (StyleStatus.DRAFT, StyleStatus.DELETED):
+            raise AppError(404, "STYLE_NOT_FOUND", "Không tìm thấy bộ nét.")
+        return styles_svc.cell_image(self.session, storage, row, cell_id)
+
+    def approve_style(self, style_id: int, storage=None) -> HandwritingStyle:
         row = self._style(style_id)
         if not row.right_to_use_confirmed:                           # FR-07 / BR-23
             raise AppError(409, "RIGHT_TO_USE_NOT_CONFIRMED", "Khách chưa xác nhận quyền sử dụng nét chữ này.")
+        gs = styles_svc.write_glyph_set(self.session, row, storage)     # OT-2 O2: sheet styles get their glyph set
         row.status, row.approved_by, row.approved_at = StyleStatus.APPROVED, self.manager.id, datetime.now(timezone.utc)
+        row.updated_at = row.approved_at
         self.session.flush()
-        self._audit("STYLE_APPROVE", "handwriting_style", row.id, {"status": "PENDING_REVIEW"}, {"status": "APPROVED"})
+        self._audit("STYLE_APPROVE", "handwriting_style", row.id, {"status": "PENDING_REVIEW"},
+                    {"status": "APPROVED", **({"coverage_pct": gs["coverage_pct"], "missing": gs["missing"]} if gs else {})})
         return row
 
     def reject_style(self, style_id: int, reason: str) -> HandwritingStyle:
         row = self._style(style_id)
         row.status, row.approved_by, row.approved_at = StyleStatus.REJECTED, self.manager.id, datetime.now(timezone.utc)
+        row.review_note, row.updated_at = reason, row.approved_at
         self.session.flush()
         self._audit("STYLE_REJECT", "handwriting_style", row.id, {"status": "PENDING_REVIEW"}, {"status": "REJECTED"},
                     reason=reason)

@@ -44,6 +44,8 @@ from app.services import audit
 from app.services import sketch_geometry as geo
 from app.services.stroke_ai import render_image, trajectory as tj, watermark
 
+TEXT_TYPES = (OrderType.OT3_TEMPLATE, OrderType.OT2_LEARNED_STYLE)    # orders whose sketch is composed text (words)
+
 AUTHORS = ("ENGINE", "CUSTOMER", "AI", "STAFF")
 DEFAULT_V_MAX = 30.0
 
@@ -58,6 +60,8 @@ def inputs_hash(session: Session, order: Order) -> str:
             rows.append({"k": "text", "t": unicodedata.normalize("NFC", r.text_content or ""), "tpl": r.template_id,
                          "size": str(r.font_size_mm) if r.font_size_mm is not None else None, "align": r.alignment,
                          "layout": r.layout})
+            if r.handwriting_style_id is not None:      # OT-2 (Phase O3); absent otherwise so older hashes still match
+                rows[-1]["style"] = r.handwriting_style_id
         elif r.kind == OrderInputKind.CANVAS:
             rows.append({"k": "canvas", "c": r.canvas_data})
         elif r.kind == OrderInputKind.ORIGINAL_IMAGE and r.quality_result is not None:
@@ -96,8 +100,8 @@ def load_geometry(storage: ObjectStorage, rev: SketchRevision) -> dict[str, Any]
 
 
 def order_word_texts(session: Session, order: Order) -> list[str] | None:
-    """OT-3 words of the text in reading order (labels for the assistant: "dời chữ 'gửi'"). A drawing has no words."""
-    if order.order_type != OrderType.OT3_TEMPLATE:
+    """OT-3 / OT-2 words of the text in reading order (labels for the assistant: "dời chữ 'gửi'"). A drawing has no words."""
+    if order.order_type not in TEXT_TYPES:
         return None
     row = next((r for r in OrderRepository(session).inputs(order.id) if r.kind == OrderInputKind.TEXT_CONTENT), None)
     if row is None or not row.text_content:
@@ -108,7 +112,7 @@ def order_word_texts(session: Session, order: Order) -> list[str] | None:
 def order_word_paragraphs(session: Session, order: Order) -> list[int] | None:
     """Phase F: the paragraph of each word of `order_word_texts` (a new line in the text starts a paragraph, as in the
     text composer)."""
-    if order.order_type != OrderType.OT3_TEMPLATE:
+    if order.order_type not in TEXT_TYPES:
         return None
     row = next((r for r in OrderRepository(session).inputs(order.id) if r.kind == OrderInputKind.TEXT_CONTENT), None)
     if row is None or not row.text_content:
@@ -205,9 +209,6 @@ class SketchWorkService:
         """Draw the working sketch from the order's inputs (a new revision; the previous ones stay for undo)."""
         from app.services.sketches import run_engine
         order = self.order(order_id, write=True)
-        if order.order_type == OrderType.OT2_LEARNED_STYLE:
-            raise AppError(422, "AI_TYPE_UNSUPPORTED",
-                           "Loại sáng tác theo nét chữ đã học chưa sinh được phác thảo tự động (đang nghiên cứu).")
         current = self._rev(order, order.current_sketch_revision_id)
         old = load_geometry(self._store(), current) if current is not None else None
         ops = self._edits_since_drawing(current)
