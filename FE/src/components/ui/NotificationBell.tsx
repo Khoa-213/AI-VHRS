@@ -68,6 +68,13 @@ export default function NotificationBell({ variant }: { variant: 'site' | 'landi
 
   const when = (iso: string) => new Date(iso).toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   const unread = state.unread
+  // Group only new-order arrivals in the same minute. Keep the exact order ids in the destination.
+  const grouped = new Map<string, AppNotification[]>()
+  for (const n of state.items) {
+    const key = user?.role === 'staff' && n.msgCode === 'NEW_ORDER' && n.orderId != null
+      ? `new-${Math.floor(Date.parse(n.createdAt) / 60000)}-${n.isRead}` : `one-${n.id}`
+    grouped.set(key, [...(grouped.get(key) ?? []), n])
+  }
 
   const choose = (n: AppNotification) => {
     void readNotification(n.id)
@@ -102,19 +109,29 @@ export default function NotificationBell({ variant }: { variant: 'site' | 'landi
           {!!state.error && !state.items.length && <p className="nbell-empty" role="alert">{t('nt.error')}</p>}
           {state.loaded && !state.error && !state.items.length && <p className="nbell-empty">{t('nt.empty')}</p>}
           <ul>
-            {state.items.map((n) => (
+            {[...grouped.values()].map((group) => {
+              const n = group[0]
+              const ids = [...new Set(group.map((item) => item.orderId).filter((id): id is number => id != null))]
+              const batch = ids.length > 1
+              return (
               <li key={n.id} className={n.isRead ? '' : 'unread'}>
-                <button type="button" onClick={() => choose(n)}>
+                <button type="button" onClick={() => {
+                  if (!batch) return choose(n)
+                  group.forEach((item) => void readNotification(item.id))
+                  setOpen(false)
+                  navigate(`/staff/review?ids=${ids.join(',')}`)
+                }}>
                   <span className="nbell-ico">{ICONS[n.type] ?? <Info size={18} aria-hidden />}</span>
                   <span className="nbell-txt">
-                    <b>{n.title}</b>
-                    <span>{n.body}</span>
-                    <small>{n.orderId != null ? `${t('nt.order', { id: n.orderId })} · ` : ''}{when(n.createdAt)}</small>
+                    <b>{batch ? t('staff.queue.newOrders', { n: ids.length }) : n.title}</b>
+                    <span>{batch ? t('staff.queue.openBatch') : n.body}</span>
+                    <small>{!batch && n.orderId != null ? `${t('nt.order', { id: n.orderId })} · ` : ''}{when(n.createdAt)}</small>
                   </span>
                   {!n.isRead && <span className="nbell-dot" aria-label={t('nt.unread')} />}
                 </button>
               </li>
-            ))}
+              )
+            })}
           </ul>
           {state.nextBeforeId != null && (
             <button

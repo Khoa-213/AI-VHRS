@@ -11,6 +11,7 @@ import { fmt } from '../../utils/format'
 import OrderDetail from './OrderDetail'
 import { useUser } from '../../store/store'
 import { isManagerRole } from './RequireStaff'
+import StaffQueue from './StaffQueue'
 
 type Scope = 'mine' | 'pool' | 'all'
 type GroupId = 'intake' | 'sketch' | 'customer' | 'production' | 'closed'
@@ -46,7 +47,13 @@ const sentAt = (o: WorkOrder) => Date.parse(o.submittedAt ?? o.createdAt)
 const waitsOnUs = (o: WorkOrder) => o.status === 'SUBMITTED' || o.status === 'ACCEPTED' || (o.status === 'CONFIRMED' && UNSCHEDULED.includes(o.production))
 
 /** Orders on the left, grouped by the next step; the selected one on the right: intake, sketch, quotation and chat all happen here. */
-export default function Workbench({ id, fulfillment = false }: { id?: number; fulfillment?: boolean }) {
+export default function Workbench(props: { id?: number; fulfillment?: boolean }) {
+  const user = useUser()
+  if (!props.fulfillment && !isManagerRole(user?.apiRole)) return <StaffQueue id={props.id} />
+  return <WorkshopWorkbench {...props} />
+}
+
+function WorkshopWorkbench({ id, fulfillment = false }: { id?: number; fulfillment?: boolean }) {
   const t = useT()
   const user = useUser()
   const manager = isManagerRole(user?.apiRole)

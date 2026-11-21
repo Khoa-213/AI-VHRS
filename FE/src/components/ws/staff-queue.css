@@ -1,0 +1,21 @@
+/* Extend the existing Staff cards and frame for intake. */
+.ws.ws-staff .k-whole-link{position:relative}
+.ws.ws-staff .k-whole-link .more::after{content:'';position:absolute;inset:0;border-radius:inherit}
+.ws.ws-staff .k-whole-link:focus-within{outline:2px solid var(--ink);outline-offset:3px}
+.ws.ws-staff .k-whole-link:hover{border-color:var(--ink3)}
+.ws.ws-staff .k-whole-link .num{flex-wrap:wrap}
+.ws.ws-staff .k-whole-link .num b{font-size:clamp(22px,2vw,32px);line-height:1.25;overflow-wrap:anywhere}
+.ws.ws-staff .k-whole-link .num>span{flex-basis:100%;white-space:normal}
+.ws.ws-staff .staff-intake-list .ol-sec ul{display:flex;flex-direction:column;align-items:stretch;gap:0}
+.ws.ws-staff .staff-intake-list .ol-row{display:grid;grid-template-columns:150px minmax(0,1fr) auto;align-items:center;gap:10px 24px;margin-bottom:6px;padding:14px 16px}
+.ws.ws-staff .staff-intake-list .ol-row-top{gap:20px}
+.ws.ws-staff .staff-intake-list .ol-row-meta{font-size:13px;color:var(--ink2)}
+.ws.ws-staff .staff-intake-list .ol-top{grid-template-columns:minmax(230px,1fr) minmax(200px,2fr)}
+.ws.ws-staff .staff-queue-pages{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.ws.ws-staff .staff-queue-pages>div{display:flex;gap:8px}
+.ws.ws-staff .staff-queue-pages .ol-more{display:inline-flex;width:auto;margin:0;padding:8px}
+.ws.ws-staff .staff-queue-pages button:disabled{opacity:.4;cursor:default}
+.ws.ws-staff .staff-intake-success{border-color:var(--ink3)}
+.ws.ws-staff #staff-sketch{scroll-margin-top:100px}
+@media(max-width:760px){.ws.ws-staff .staff-intake-list .ol-top{grid-template-columns:1fr}.ws.ws-staff .staff-intake-list .ol-row{grid-template-columns:1fr auto}.ws.ws-staff .staff-intake-list .ol-row-meta{grid-column:1 / -1;white-space:normal}.ws.ws-staff .staff-intake-list .ol-age{grid-column:2;grid-row:1}}
+@media(min-width:761px) and (max-width:980px){.ws.ws-staff .staff-header .nbell{position:static}.ws.ws-staff .staff-header .nbell-pop{left:auto;right:16px;top:calc(100% + 8px);width:min(420px,calc(100vw - 32px))}}

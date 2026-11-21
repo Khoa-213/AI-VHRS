@@ -6,6 +6,7 @@ import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
 import { workshopRefunds } from '../../services/refunds'
 import { managerAlerts } from '../../services/managerOps'
+import { useOnNotification } from '../../store/notifications'
 
 import { listTechJobs } from '../../services/technician'
 
@@ -22,6 +23,7 @@ import './workshop.css'
 import './staff-ui.css'
 import './staff-theme.css'
 import './staff-depth.css'
+import './staff-queue.css'
 import './manager-ui.css'
 import './tech-ui.css'
 
@@ -76,6 +78,12 @@ function useCounts(area: Area) {
     [area],
     area === 'admin' ? undefined : 60000,
   )
+  useOnNotification(() => void api.reload())
+  useEffect(() => {
+    const reload = () => void api.reload()
+    window.addEventListener('staff-queue-changed', reload)
+    return () => window.removeEventListener('staff-queue-changed', reload)
+  }, [api.reload])
   return api.data ?? { intake: 0, approvals: 0, schedule: 0, refunds: 0, alerts: 0, qc: 0 }
 
 }

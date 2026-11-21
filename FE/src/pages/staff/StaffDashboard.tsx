@@ -8,7 +8,8 @@ import { useAsync } from '../../hooks/useAsync'
 import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { errText, orderErrorKey, type OrderStatus } from '../../services/orders'
-import { allWork, type WorkOrder } from '../../services/workshop'
+import { allWork, queueCounts, type WorkOrder } from '../../services/workshop'
+import { useOnNotification } from '../../store/notifications'
 import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
 
@@ -56,6 +57,8 @@ export default function StaffDashboard() {
   const user = useUser()
   const [period, setPeriod] = useState<7 | 30>(7)
   const list = useAsync(() => allWork(), [], 30000)
+  const intake = useAsync(queueCounts, [], 30000)
+  useOnNotification(() => { void list.reload(); void intake.reload() })
   const orders = list.data ?? []
   const mineId = user?.id
   const count = (...s: OrderStatus[]) => orders.filter((o) => s.includes(o.status)).length
@@ -71,17 +74,19 @@ export default function StaffDashboard() {
   const ticks = days.map((date, i) => ({ date, i })).filter(({ i }) => i % Math.ceil(period / 7) === 0 || i === period - 1)
   const points = counts.map((value, i) => `${40 + i * 640 / (period - 1)},${194 - value / ceiling * 148}`)
   const line = `M${points.join(' L')}`
-  const todo = orders.filter((o) => o.status === 'SUBMITTED' || o.status === 'ACCEPTED').slice(0, 5)
+  const todo = orders.filter((o) => o.status === 'SUBMITTED' || o.status === 'ACCEPTED')
+    .sort((a, b) => Date.parse(a.submittedAt ?? a.createdAt) - Date.parse(b.submittedAt ?? b.createdAt) || a.id - b.id).slice(0, 5)
   const sketch = orders.filter((o) => o.status === 'ACCEPTED').slice(0, 4)
   const icon = (I: typeof SquaresFour) => <I size={20} aria-hidden />
 
   return (
     <Shell area="staff" active="dashboard" title={t('rail.dashboard')} tools={<Link to="/staff/review" className="staff-primary-link">{t('rail.review')}<ArrowRight size={17} aria-hidden /></Link>}>
       {!!list.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(list.error))}</p>}
+      {!!intake.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(intake.error))}</p>}
       {list.loading && !list.data && <p className="sub" role="status">{t('co.loading')}</p>}
 
       <div className="row4 staff-kpis">
-        <Kpi actionIcon={<ArrowRight size={16} aria-hidden />} icon={icon(ClipboardText)} tone="a" title={t('wk.kpi.intake')} value={count('SUBMITTED')} to="/staff/review" />
+        <Kpi wholeLink actionIcon={<ArrowRight size={16} aria-hidden />} icon={icon(ClipboardText)} tone="a" title={t('wk.kpi.intake')} value={intake.data ? t('staff.queue.intakeTotal', { n: intake.data.pool + (intake.data.mine.SUBMITTED ?? 0) }) : '…'} note={intake.data ? t('staff.queue.intakeSplit', { pool: intake.data.pool, mine: intake.data.mine.SUBMITTED ?? 0 }) : undefined} to="/staff/review?scope=pool" />
         <Kpi actionIcon={<ArrowRight size={16} aria-hidden />} icon={icon(PencilSimple)} tone="p" title={t('wk.kpi.sketch')} value={count('ACCEPTED')} to="/staff/review" />
         <Kpi actionIcon={<ArrowRight size={16} aria-hidden />} icon={icon(CalendarCheck)} tone="b" title={t('wk.kpi.production')} value={count('CONFIRMED')} to="/staff/review" />
         <Kpi actionIcon={<ArrowRight size={16} aria-hidden />} icon={icon(Truck)} tone="t" title={t('sp.filter.ready')} value={count('READY_TO_DELIVER')} to="/staff/fulfillment" />

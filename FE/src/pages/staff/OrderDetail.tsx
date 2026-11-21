@@ -28,7 +28,7 @@ const PHOTO_STATES = ['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMEN
 const AFTER_QUOTE = ['AWAITING_PRIVACY', 'QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED']
 
 /** One order for the workshop: what the customer sent, intake decisions, sketch, quotation, payments, jobs and chat. */
-export default function OrderDetail({ id, onChanged }: { id: number; onChanged: () => void }) {
+export default function OrderDetail({ id, onChanged, returnTo = '/staff/review' }: { id: number; onChanged: () => void; returnTo?: string }) {
   const t = useT()
   const locale = useLocale()
   const user = useUser()
@@ -46,20 +46,33 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
   const [note, setNote] = useState('')
   const [reason, setReason] = useState<RejectReason>('OTHER')
   const [staffId, setStaffId] = useState<number | null>(null)
+  const [accepted, setAccepted] = useState(false)
+  const [claimedElsewhere, setClaimedElsewhere] = useState(false)
+  const [showSketch, setShowSketch] = useState(false)
 
-  const run = async (job: Job) => {
+  const run = async (job: Job, intake = false) => {
     if (busy) return
     setBusy(true)
     setErr('')
     try {
       await job()
+      if (intake) setAccepted(true)
       setPanel('')
       setNote('')
       await q.reload()
       onChanged()
+      if (intake) requestAnimationFrame(() => document.querySelector('.staff-intake-success')?.scrollIntoView({ block: 'start' }))
     } catch (e) {
-      setErr(orderErrorKey(e))
-      if ((e as { code?: string }).code === 'STATE_CONFLICT') await q.reload()
+      const code = (e as { code?: string }).code
+      if (intake && ['ALREADY_ASSIGNED', 'ORDER_NOT_FOUND', 'STATE_CONFLICT'].includes(code ?? '')) {
+        setClaimedElsewhere(true)
+        setErr('staff.queue.claimedElsewhere')
+        await q.reload()
+        onChanged()
+      } else {
+        setErr(orderErrorKey(e))
+        if (code === 'STATE_CONFLICT') { await q.reload(); onChanged() }
+      }
     } finally {
       setBusy(false)
     }
@@ -105,6 +118,14 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         <span className="vh-chip" style={{ color: STATUS_COLOR[order.status] }}>{t(`os.${order.status}`)}</span>
       </header>
 
+      {!manager && accepted && order.status === 'ACCEPTED' && <section className="wk-block staff-intake-success" role="status">
+        <h3>{t('staff.queue.accepted')}</h3>
+        <div className="wk-actions">
+          <button className="vh-btn vh-btn--primary vh-btn--md" onClick={() => { setShowSketch(true); requestAnimationFrame(() => document.getElementById('staff-sketch')?.scrollIntoView({ block: 'start', behavior: 'smooth' })) }}>{t('staff.queue.makeSketch')}</button>
+          <Link className="vh-btn vh-btn--ghost vh-btn--md" to={returnTo}>{t('staff.queue.back')}</Link>
+        </div>
+      </section>}
+
       {canAssign && <section className="wk-block">
         <label className="vh-label">{t('wk.reassign')}
           <select className="vh-select" value={order.assignedStaffId ?? ''} disabled={busy || staff.loading} onChange={(e) => { if (e.target.value) void run(() => assignStaff(id, Number(e.target.value))) }}>
@@ -141,6 +162,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
       {order.status !== 'SUBMITTED' && order.status !== 'NEED_INFO' && <ChangeRequests order={order} />}
 
       {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
+      {claimedElsewhere && <Link to={returnTo} className="vh-btn vh-btn--ghost vh-btn--md">{t('staff.queue.back')}</Link>}
 
       {order.status === 'SUBMITTED' && (
         <section className="wk-block" aria-label={t('wk.intake')}>
@@ -158,9 +180,9 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
               <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy || chosen === null} onClick={() => void run(() => assignStaff(id, chosen!))}>{t('wk.assign')}</button>
             </div>
           )}
-          {canDecide && panel === '' && (
+          {canDecide && !claimedElsewhere && panel === '' && (
             <div className="wk-actions">
-              <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy} onClick={() => void run(() => acceptOrder(id))}>{t('wk.accept')}</button>
+              <button className="vh-btn vh-btn--primary vh-btn--md" disabled={busy} onClick={() => void run(() => acceptOrder(id), true)}>{t('wk.accept')}</button>
               <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => setPanel('info')}>{t('wk.askInfo')}</button>
               <button className="vh-btn vh-btn--ghost vh-btn--md" disabled={busy} onClick={() => setPanel('reject')}>{t('wk.reject')}</button>
             </div>
@@ -199,11 +221,11 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
 
       {order.status === 'NEED_INFO' && <p className="sd-sub">{t('wk.waitingInfo')}</p>}
 
-      {order.status === 'ACCEPTED' && (
-        <>
+      {order.status === 'ACCEPTED' && (!accepted || showSketch) && (
+        <div id="staff-sketch">
           <SketchPanel order={order} onChanged={() => { void q.reload(); onChanged() }} />
           <QuotationPanel order={order} onChanged={() => { void q.reload(); onChanged() }} />
-        </>
+        </div>
       )}
 
       {AFTER_QUOTE.includes(order.status) && <QuotationPanel order={order} readOnly onChanged={() => { void q.reload(); onChanged() }} />}
