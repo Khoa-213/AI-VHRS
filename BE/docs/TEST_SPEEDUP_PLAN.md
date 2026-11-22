@@ -1,6 +1,6 @@
 # Kế hoạch tăng tốc test (I-b)
 
-Trạng thái: **chủ dự án duyệt T1 + T2 ngày 2026-11-21** (Q1: T1 + T2; Q2: đổi luật như mục T2, theo khuyến nghị; Q3: T3 để sau). **T1 và T2 xong** (2026-11-21, chưa commit). Tiến độ ở mục 5.
+Trạng thái: **chủ dự án duyệt T1 + T2 ngày 2026-11-21** (Q1: T1 + T2; Q2: đổi luật như mục T2, theo khuyến nghị; Q3: T3 để sau). **T1 và T2 xong** (2026-11-21, commit `c0b3077`). Tiến độ ở mục 5.
 
 ## 1. Hiện trạng (đo 2026-11-21, máy dev ở Việt Nam → Supabase Singapore)
 
@@ -65,8 +65,8 @@ Các dòng ước tính được tính bằng số lượt × 61 ms. Tổng củ
 
 ## 5. Tiến độ
 
-- **T1 xong (2026-11-21, chưa commit).** Bớt lượt gọi DB (`app/db/session.py`, `app/api/deps.py`, `app/repositories/sessions.py`), pool nhỏ (`db_pool_size` 3, `db_max_overflow` 2 trong `app/core/config.py`), 6 file test dùng `fresh_email` / `fresh_code`. Toàn suite Supabase (nối tiếp như cũ): **953 passed, 3 skipped, 0 failed, 7.255 s (2 giờ 0 phút 55 giây)**, trước T1 9.061 s: **−20 %**. Dữ liệu thật không đổi, 0 dữ liệu test sót.
-- **T2 xong (2026-11-21, chưa commit).** `scripts/run_tests_sharded.py` (3 nhóm, pool 3 + 1 mỗi nhóm), `tests/conftest.py` (tiền tố theo nhóm, khoá của bộ chạy, giữ `order_types_enabled` ở bộ chạy).
+- **T1 xong (2026-11-21, commit `c0b3077`).** Bớt lượt gọi DB (`app/db/session.py`, `app/api/deps.py`, `app/repositories/sessions.py`), pool nhỏ (`db_pool_size` 3, `db_max_overflow` 2 trong `app/core/config.py`), 6 file test dùng `fresh_email` / `fresh_code`. Toàn suite Supabase (nối tiếp như cũ): **953 passed, 3 skipped, 0 failed, 7.255 s (2 giờ 0 phút 55 giây)**, trước T1 9.061 s: **−20 %**. Dữ liệu thật không đổi, 0 dữ liệu test sót.
+- **T2 xong (2026-11-21, commit `c0b3077`).** `scripts/run_tests_sharded.py` (3 nhóm, pool 3 + 1 mỗi nhóm), `tests/conftest.py` (tiền tố theo nhóm, khoá của bộ chạy, giữ `order_types_enabled` ở bộ chạy).
   - Lượt T2a (65,9 phút): 951 passed, 1 failed, 1 lỗi dọn. `test_api_materials.py` đếm danh sách gợi ý giới hạn 60 → chuyển sang nối tiếp; tài khoản nhóm bị đơn của nhóm khác trỏ tới (FK) → sửa cách dọn.
   - Lượt T2b (56,4 phút): 950 passed, 2 failed, 1 lỗi. Hai test đồng thời gặp `EMAXCONNSESSION` (Supabase session pooler hết chỗ) → 13 test đồng thời / đếm toàn hệ thống đưa vào `SERIAL_TESTS` (nhóm bỏ qua bằng `--deselect`, phần nối tiếp chạy); cách gỡ liên kết đơn khác nhóm vi phạm `chk_orders_staff_after_accept` → đổi thành: savepoint, xoá được thì xoá, không thì giữ tài khoản, ghi `.test_progress/cross_shard.log`, phần nối tiếp (dọn toàn bộ `pytest_`) xoá sau.
   - **Lượt sạch 1, T2c: 953 passed, 3 skipped, 0 failed, 0 errors, 65,1 phút** (song song 37,9 phút).

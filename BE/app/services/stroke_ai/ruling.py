@@ -15,6 +15,9 @@ Works after S1 (sheet straightened) and deskew, on the binary ink and the flatte
     pixels within `TOUCH_PX` of letter ink (the foot of a letter standing on the line).
   * kept too (R3, `DARKER`): band ink clearly darker than the line's own darkness there (its lightest pixel along the run):
     pen ink lying on a light ruled line. A stand-in for S3 (ink colour model) that needs no colour.
+    Only within `DARKER_NEAR_PENS` of writing off the line; a longer stroke lying wholly on a line (the stem of an L / a
+    T on a light vertical grid line, owner's notebook letter 2026-11-22) is kept whole when it touches that zone, is at
+    most `DARKER_SHORT_PENS` long and is `DARKER_SHORT_GAIN` darker than the line just around it.
 Not separated yet: an underline or a long dash written with the pen, as dark as the ruling, is removed like a ruled line.
 """
 from __future__ import annotations
@@ -35,6 +38,8 @@ MAX_THICK_PENS = 1.6     # the core of a ruled line is at most this many pen wid
 TOUCH_PX = 2             # band pixels this close to letter ink (across the line) stay: letters standing on the line
 DARKER_NEAR_PENS = 3.0   # DARKER ink kept only this close (pen widths) to writing off the line (shaded ruling, R3)
 DARKER = 30              # band ink this much darker (0-255) than the line itself there is pen ink, kept
+DARKER_SHORT_PENS = 15.0 # a darker piece on a line touching that zone and no longer than this (pen widths) is kept whole
+DARKER_SHORT_GAIN = 90   # ... and darker by this much (0-255) than the line around it (light grid, dark pen)
 RUN_PENS = 4.0           # halo ink of a line is cleared when it runs along the line at least this many pen widths
 
 
@@ -177,7 +182,29 @@ def remove_ruling(ink: np.ndarray, flat: np.ndarray) -> tuple[np.ndarray, Ruling
         if DARKER_NEAR_PENS:
             # only next to writing off the line: a faded / shaded stretch of the ruling itself is uneven too
             r = int(np.ceil(DARKER_NEAR_PENS * pen))
-            darker &= cv2.dilate(rest, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+            near = darker & cv2.dilate(rest, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+            if DARKER_SHORT_PENS:
+                # a whole stroke lying ON a line (the stem of an L or a T on a vertical grid line) reaches past that
+                # zone: keep a darker piece that touches it and is no longer than a letter (a shaded stretch of the
+                # ruling is darker for far longer)
+                n, lab, st, _ = cv2.connectedComponentsWithStats(darker, connectivity=8)
+                ok = np.maximum(st[:, cv2.CC_STAT_WIDTH], st[:, cv2.CC_STAT_HEIGHT]) <= DARKER_SHORT_PENS * pen
+                touch = np.zeros(n, bool)
+                touch[np.unique(lab[near > 0])] = True
+                ok &= touch
+                if ok[1:].any():
+                    # ... AND darker than the line just around it (lightest pixel of a run twice that long): pen ink on
+                    # a light line. A shaded stretch of the ruling breaks into short darker bits too, but the line
+                    # around them is as dark (shade changes slowly).
+                    run = int(2 * DARKER_SHORT_PENS * pen) | 1
+                    local = np.maximum(_response(dark, run, True, base), _response(dark, run, False, base))
+                    gain = dark.astype(np.float64) - local
+                    m = lab > 0
+                    mean = np.bincount(lab[m], gain[m], n) / np.maximum(np.bincount(lab[m], minlength=n), 1)
+                    ok &= mean > DARKER_SHORT_GAIN
+                ok[0] = False
+                near |= (ok[lab] * 255).astype(np.uint8)
+            darker = near
         bridge |= darker
     removed = (hb | vb) & ~bridge
     return rest | bridge, Ruling(removed, bridge, nh, nv, base)
