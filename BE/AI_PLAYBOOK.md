@@ -65,7 +65,7 @@ Test chạy bằng `TestClient` nhưng nói chuyện với DB Supabase thật, t
 ### S07 · Thiết kế test trên DB dùng chung
 - Mọi dữ liệu test mang tiền tố `pytest_` (email `pytest_*@example.com`, mã `pytest_*`) để `conftest._cleanup` xoá. **Thêm bảng mới ⇒ cập nhật `_cleanup`.** Bảng tham chiếu `orders` **không cascade** (ví dụ `payments`, `production_jobs`) phải xoá **trước** `orders`; robot/pricing test xoá sau job.
 - Test nào đổi cấu hình toàn cục (bảng giá active, `system_settings`) phải có fixture **khôi phục** (xem `pricing_guard`); `_cleanup` còn tự kích hoạt lại phiên bản thật.
-- **Không chạy 2 phiên pytest song song** trên cùng DB (cleanup đầu/cuối phiên xoá dữ liệu của nhau).
+- **Không chạy 2 phiên pytest song song** trên cùng DB (cleanup đầu/cuối phiên xoá dữ liệu của nhau). **Ngoại lệ duy nhất (chủ dự án duyệt 2026-11-21, T2):** `scripts/run_tests_sharded.py` chạy các nhóm (shard) cùng lúc; mỗi nhóm có tiền tố riêng `pytest_s<k>_` và chỉ dọn tiền tố của mình, bộ chạy giữ khoá suite suốt lượt nên `pytest` thường không chen vào được (và ngược lại). Toàn suite Supabase: dùng bộ chạy này (~65 phút) thay `python -m pytest -q` (~2 giờ).
 - Mỗi test tạo robot/kỹ thuật viên riêng để không đụng robot/người thật và không xung đột nhau.
 - Mỗi tính năng cần: unit (luật thuần) + API + phân quyền + chuyển trạng thái + validation + idempotency/đồng thời (dùng nhiều `TestClient` trong `ThreadPoolExecutor`).
 - Giả lập thời gian bằng cách sửa cột trong DB (ví dụ `valid_until` về quá khứ), không `sleep`.
@@ -245,3 +245,11 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 
 **2026-11-20 (OT-2 O2, cục bộ):** một test mới lùi `handwriting_styles.updated_at` bằng SQL để giả "90 ngày trước" nhưng bảng có trigger `fn_set_updated_at` ghi đè `updated_at = now()` mỗi lần UPDATE. Chạy riêng test vẫn qua (đồng hồ DB chậm hơn Python vài mili giây), chạy cả suite thì hỏng.
 **Bài học:** trước khi lùi cột thời gian trong test, xem bảng có trigger không (`grep fn_set_updated_at database/AI-VHRS_database_full.sql`); thay vào đó dời đồng hồ của code đang test (`monkeypatch.setattr(module, "_now", ...)`). Một test chỉ qua khi chạy riêng là dấu hiệu phụ thuộc thời gian / thứ tự.
+
+### 2026-11-21 · Kết quả thị giác máy đổi theo thứ tự chạy = bộ sinh số ngẫu nhiên chung của OpenCV
+**Bối cảnh:** OT-1 v2 R2, cùng ảnh thư thật cho 651 nét khi chạy riêng và 689 nét khi chạy sau ảnh phong bì trong cùng tiến trình. `cv2.grabCut` khởi tạo mô hình màu bằng k-means trên bộ sinh số ngẫu nhiên toàn cục của OpenCV, ảnh chạy trước làm đổi trạng thái của nó.
+**Bài học:** hàm OpenCV có ngẫu nhiên (`grabCut`, `kmeans`, …) phải gọi `cv2.setRNGSeed(<hằng số>)` ngay trước đó, nếu không benchmark và test không tái lập được. Khi số đo một ảnh lệch giữa hai lượt mà code không đổi, thử chạy ảnh đó một mình trong tiến trình mới trước khi nghi code.
+
+### 2026-11-22 · Đo hình dạng một mảnh SAU khi cắt nó theo vùng thì kết luận sai
+**Bối cảnh:** OT-1 v2 R3, luật "mảnh mực ngoài mặt nạ dày hơn 2,5 bề rộng nét là khe rách lộ mặt bàn" đo trên mảnh đã bị cắt về vùng sát mép. Khe chỉ lọt một nửa vào vùng đó nên trông mỏng như nét bút và được giữ lại; test tổng hợp bắt được, benchmark thì không.
+**Bài học:** đo độ dày / độ dài / hình dạng của mảnh trên vùng rộng hơn vùng sẽ giữ (ở đây gấp đôi), rồi mới cắt kết quả về vùng giữ. Khi một luật hình dạng chạy sau một phép cắt, viết test có vật nằm vắt qua ranh giới cắt.

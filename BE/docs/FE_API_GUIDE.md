@@ -433,6 +433,8 @@ POST .../sketches/{version}/regions/{region_id}/edit {action, note, strokes?, la
 `note` bắt buộc (lý do sửa). Kết quả là **phiên bản mới**, mọi nét của vùng khác giữ nguyên từng byte, số vùng giữ nguyên; phải chốt lại phiên bản mới. Lỗi: `409 SKETCH_VERSION_CONFLICT` (chỉ sửa được phiên bản mới nhất, `details.latest_version`), `409 INFERRED_NOT_ALLOWED` (đơn FAITHFUL: không được viết bù; cũng chặn khi **chốt** phiên bản có vùng INFERRED, `details.regions`), `404 REGION_NOT_FOUND`, `422 INVALID_REGION_STROKES / INVALID_REGION_TEXT / NO_CONTENT`.
 `SketchOut` có `image_urls[]` (**JPG cho khách**, mỗi trang một ảnh), `preview_urls[]` (PNG kỹ thuật có chấm xanh đầu nét, chỉ để Staff xem), **`trajectory_url`** (link ký 10 phút tới file quỹ đạo JSON mà robot chạy; Staff xem/tải cùng ảnh) và `similarity_score` (độ giống bản gốc, OT-1), `suggested_complexity`, `estimated_writing_sec`, `warnings[]`. Lỗi AI thường gặp: `NO_STROKES_FOUND`, `IMAGE_TOO_NOISY`, `UNSUPPORTED_CHARS` (kèm danh sách ký tự), `TEXT_TOO_LONG`, `AI_TYPE_UNSUPPORTED` (OT-2 không có AI).
 
+**OT-1 phục dựng v2 (R4, 2026-11-22, `docs/OT1_RECOVERY_V2_PLAN.md`):** khi Admin đặt `ot1_recovery_engine = "v2"` (mặc định vẫn `"v1"`), phác thảo OT-1 sinh bằng bộ v2: tìm tờ giấy trong ảnh và nắn thẳng, bỏ dòng kẻ in sẵn, nếp gấp, bóng mép giấy. API và kiểu dữ liệu **không đổi**; khác ở: `trajectory.engine.name = "ot1-recovery-v2"`, `version = "2"`, `similarity_method = "ink-f1-v2"` (v1: `"ink-iou-v1"`); `similarity_score` là F1 có dung sai giữa nét vẽ lại và **mực đã làm sạch** (thường 96–99, **không** cho biết nhiễu đã được bỏ hết hay chưa; đừng hiện như "độ chính xác"); `trajectory.engine.pages[i]` có thêm `paper` (`null` hoặc `{method: quad|box, pieces, share}`), `placement` (`sheet` | `fit`) và `noise_removed = {counts: {RULING, FOLD, EDGE}, pieces: [{reason, bbox_mm: [x0,y0,x1,y1], px}]}` (tối đa 100 mảnh lớn nhất, toạ độ mm cùng hệ với nét). FE editor của Staff có thể vẽ các khung này (màu nhạt, theo `reason`) để Staff thấy chỗ đã bỏ và vẽ lại nếu lỡ bỏ nhầm chữ (ví dụ gạch chân viết bằng bút bị coi là dòng kẻ). `engine.regions.method = "word-local-ink-f1-v2"`; `metrics.fit` của vùng đo cùng cách. **Độ khó gợi ý (`suggested_complexity`) với v2 không dựa vào độ giống** (chủ dự án chọn 2026-11-22), chỉ dựa vào số lần nhấc bút / ký tự và loại bút; `trajectory.engine.complexity_basis = "pen-lifts-and-pen-type"`. Khi có khoá này, FE của Staff hiện ghi chú cạnh độ khó gợi ý: "Gợi ý chưa xét độ hư hại của ảnh; hãy tự đánh giá trang này".
+
 **Báo giá** (cần phác thảo đã chốt – BR-22):
 ```
 POST /workshop/orders/{id}/quotations {complexity?, char_count?, options?:[{paper_type_id,pen_type_id,ink_color_id}] (≤3), eta?, revision_reason?}
@@ -833,6 +835,8 @@ Admin: `POST /admin/jobs/run {confirm: true, only?: ["quotation_expiry"|"deposit
 
 Khoá sửa được và khoảng hợp lệ: `quotation_valid_days` 1–60, `deposit_deadline_days` 1–30, `accept_reminder_days` 1–30 (nhỏ hơn `auto_accept_days`), `auto_accept_days` 2–60, `eta_cancel_threshold_days` 1–60, `max_upload_mb` 1–20, `max_pages_per_order` 1–50, `order_types_enabled` (chỉ `OT1_COPY_RESTORE`, `OT3_TEMPLATE`; OT-2 vẫn khoá), `fallback_shipping_fees` (đủ 3 khoá `FLAT_BOX_A5`, `FLAT_BOX_A4`, `TUBE`, 0–1.000.000đ), `image_retention_days` 30–3650, `photo_purge_enabled` (true = **xoá thật** ảnh khách quá hạn; UI nên hỏi xác nhận).
 
+**OT-1 v2 (R4, 2026-11-22):** khoá `ot1_recovery_engine` = `"v1"` (mặc định) | `"v2"`, giá trị khác → `422 INVALID_SETTING`. Chọn bộ phục dựng ảnh cho phác thảo OT-1 (Staff sinh phác thảo, phác thảo làm việc của khách, xem trước trong studio). Đổi tham số này **không** vẽ lại phác thảo đã có; chỉ các lần sinh sau mới dùng bộ mới. FE Admin hiện như một lựa chọn 2 giá trị.
+
 ## 7m. Manager: dashboard sản xuất và báo cáo – Phase 5b (UC-45, UC-46, FR-50)
 
 - `GET /manager/dashboard` → `{date, orders_by_status{STATUS: n}, jobs_today[{job_id, order_id, order_code, robot_id, robot_code, technician_id, status, slot_start, slot_end, is_rewrite}], jobs_next_7_days, late_orders[{order_id, code, status, eta, days_late, assigned_staff_id}], due_in_2_days[...], low_stock[{kind: PAPER|PEN|INK, id, name, stock_qty}], pending{unclaimed_orders, price_adjustments, orders_to_schedule, open_incidents, refunds_to_confirm}}`. Giấy "sắp hết" khi < 10 tờ, bút/mực khi hết hẳn.
@@ -905,7 +909,7 @@ Studio là **lớp bản nháp đứng trước đơn hàng**: khách soạn, ch
 
 **Staff / Manager:** `GET /workshop/orders/{order_id}/studio` → `{draft_id, mode, flags:[{kind, note, by, at}], submitted_at, submitted_revision_id, revisions:[{seq, author, tool_name, note, created_at}], ai_consented_at, messages:[{role, content, status, provider, tools, created_at}]}`; đơn không tạo từ studio → `404 STUDIO_DRAFT_NOT_FOUND`. Nên hiện cờ `FORGERY_RISK` nổi bật ở màn tiếp nhận đơn.
 
-**Admin** (`PUT /admin/settings/{key}`, mục 7l): `ai_assistant_enabled` (bật/tắt), `ai_daily_messages_per_customer` (30), `ai_daily_model_calls` (400, toàn hệ thống), `ai_max_tool_calls` (6), `ai_daily_cost_cap_cents` (0 = không đặt; chỉ áp dụng khi đã cấu hình giá `LLM_PRICES`). Khoá API của nhà cung cấp chỉ nằm trong biến môi trường (`DEPLOY.md`).
+**Admin** (`PUT /admin/settings/{key}`, mục 7l): `ai_assistant_enabled` (bật/tắt), `ai_daily_messages_per_customer` (100), `ai_daily_model_calls` (2000, toàn hệ thống), `ai_max_tool_calls` (12, khoảng 1–20), `ai_daily_cost_cap_cents` (0 = không đặt; chỉ áp dụng khi đã cấu hình giá `LLM_PRICES`). Khoá API của nhà cung cấp chỉ nằm trong biến môi trường (`DEPLOY.md`).
 
 ## 7r. Phác thảo làm việc của đơn + sửa nét (V2 Phase B, migration 0023, 2026-11-17)
 
@@ -941,28 +945,65 @@ Luồng (CUSTOMER, chủ đơn, đơn `DRAFT` hoặc `NEED_INFO`):
 
 **Nội dung đổi sau khi đã vẽ** (chữ, mẫu, cỡ, bố cục, ảnh, khổ giấy): `inputs_changed: true` → FE nhắc "Tạo lại phác thảo"; gửi đơn khi chưa tạo lại → `409 SKETCH_OUTDATED`. Đổi bút / mực / số bản không cần vẽ lại.
 
-## 7s. Trợ lý AI trên đơn (V2 Phase C, migration 0024, 2026-11-18)
+## 7s. Trợ lý AI trên đơn: chatbox đề xuất, khách áp dụng (V2 Phase C 0024; đề xuất 0029, 2026-11-22)
 
-Trợ lý AI giờ làm việc **trên đơn DRAFT / NEED_INFO** (D1), cùng chỗ với editor phác thảo (mục 7r): khách chọn nét / từ trên canvas, gõ yêu cầu ("dời chữ này sang phải 1 mm", "nắn nét này thẳng lại", "đổi sang bút gel đen"), trợ lý sửa **bằng đúng các lệnh của Geometry Engine** (không bao giờ tự đưa toạ độ). Trần lượt, đồng ý gửi dữ liệu và nhà cung cấp dùng chung với studio (mục 7q: `GET /studio/assistant/status`). Studio vẫn chạy như cũ đến khi FE chuyển xong rồi mới bỏ (D1).
+Trợ lý AI làm việc **trên chính đơn DRAFT / NEED_INFO** (D1) và đi cùng khách **suốt luồng Create Order**: soạn nội dung, chọn mẫu chữ, giấy / bút / mực, số bản, xem giá ước tính, tạo và chỉnh phác thảo. Trần lượt, đồng ý gửi dữ liệu và nhà cung cấp dùng chung với studio (`GET /studio/assistant/status`).
+
+**Từ migration 0029 trợ lý KHÔNG tự đổi đơn.** Mỗi lượt có thay đổi trả về một **đề xuất** (`proposal`): phần thay đổi, giá ước tính mới, phác thảo mới (nếu có). Đơn chỉ đổi khi khách bấm **"Áp dụng vào đơn"**. Đề xuất lưu ở BE (không lưu `localStorage`), mở lại trang / đổi máy vẫn còn.
+
+### Cách FE nên dựng (yêu cầu của chủ dự án 2026-11-22)
+1. **Chatbox cố định ở mọi bước của Create Order** (Nội dung, Vật tư, Phác thảo, Xem lại), không chỉ ở bước phác thảo, không phải một nút "Tạo phác thảo". Trợ lý cần đơn đã có id: khi khách gửi tin nhắn đầu mà đơn chưa có, FE tạo đơn nháp trước (như lúc khách gõ chữ: `POST /orders`, rồi `PUT /orders/{id}/inputs/text` nếu đã có chữ).
+2. **Mỗi tin trả lời có `proposal` → một thẻ đề xuất** trong chat: ảnh phác thảo (nếu `sketch_revision_id`), danh sách `changes` (vd "Nội dung: … → …", "Số bản: 1 → 3", "Giấy: A → B"), giá ước tính mới, hai nút **Áp dụng vào đơn** / **Bỏ qua**. Canvas và form **không đổi** cho tới khi khách bấm Áp dụng.
+3. Bấm Áp dụng → `POST .../proposals/{pid}/apply` → tải lại form (`GET /orders/{id}`) và phác thảo (`GET /orders/{id}/sketch`). Bỏ qua → `POST .../reject`.
+4. Thẻ có `applicable: false` → khoá nút Áp dụng, hiện lý do theo `blocked_reason` (`ORDER_CHANGED`: "Đơn đã đổi sau đề xuất này, hãy nhắn trợ lý đề xuất lại"; `APPLIED`; `REJECTED`; `ORDER_NOT_EDITABLE`).
+5. Không dùng trang `/studio` (bản nháp studio cũ) cho luồng này; không dùng `localStorage` để nhớ bản đã áp dụng; không cần tự undo / redo để "kéo" BE về bản đã chọn trước khi gửi đơn.
 
 ```
-GET  /orders/{id}/assistant/messages          → {consented_at, flags, messages: MessageOut[]}
-POST /orders/{id}/assistant/messages          {text, ai_consent, base_revision_id?, selection?, client_ref?} → OrderTurnOut
-POST /orders/{id}/assistant/messages/stream   (cùng body) → text/event-stream
-GET  /workshop/orders/{id}/assistant          (Staff / Manager) cờ cảnh báo + hội thoại của đơn
+GET  /orders/{id}/assistant/messages                   → {consented_at, flags, messages: OrderMessageOut[], proposals: ProposalOut[]}
+POST /orders/{id}/assistant/messages                   {text, ai_consent, base_revision_id?, selection?, client_ref?,
+                                                        base_proposal_id?, from_order?} → OrderTurnOut
+POST /orders/{id}/assistant/messages/stream            (cùng body) → text/event-stream
+GET  /orders/{id}/assistant/proposals                  → ProposalOut[] (cũ trước)
+POST /orders/{id}/assistant/proposals/{pid}/apply      → {proposal, current_sketch_revision_id, estimate}
+POST /orders/{id}/assistant/proposals/{pid}/reject     → ProposalOut
+GET  /workshop/orders/{id}/assistant                   (Staff / Manager) cờ cảnh báo + hội thoại của đơn
 ```
 
+**ProposalOut**
+```
+{ id, message_id, parent_proposal_id, status: PENDING | APPLIED | REJECTED,
+  applicable: bool, blocked_reason: null | APPLIED | REJECTED | ORDER_NOT_EDITABLE | ORDER_CHANGED,
+  changes: [{field, before, after}],          // theo thứ tự các bước tạo đơn
+  estimate: {price_min, price_max, currency: "VND", is_estimate: true} | null,   // giá ước tính SAU khi áp dụng
+  sketch_revision_id: int | null,             // phác thảo đơn sẽ hiển thị sau khi áp dụng (null = phác thảo không đổi)
+  created_at, decided_at }
+```
+- `field`: `text`, `template_id`, `handwriting_style_id`, `font_size_mm`, `alignment`, `layout` (before / after là object bố cục), `paper_type_id`, `pen_type_id`, `ink_color_id`, `workshop_suggest_materials`, `quantity`, `physical_watermark`, `restoration_mode`, `customer_note`, `sketch` (id revision trước / sau). Vật tư và mẫu chữ có dạng `{id, name}`.
+- Ảnh phác thảo của đề xuất (trước khi áp dụng): `GET /orders/{id}/sketch/preview?revision_id={sketch_revision_id}&page=1` (JPEG, Bearer). Dữ liệu nét: `GET /orders/{id}/sketch?revision_id=...`.
+
+**Tin nhắn**
 - `ai_consent: true` bắt buộc ở tin nhắn đầu tiên của đơn (câu FE: "Tin nhắn, nội dung đơn và số đo phác thảo sẽ được gửi tới nhà cung cấp AI bên ngoài; ảnh của bạn không bị gửi").
-- `base_revision_id` = revision phác thảo khách đang nhìn (từ `GET /orders/{id}/sketch`). Đã đổi (tab khác) → `409 STALE_REVISION` **trước khi gọi AI** (không tốn lượt), tải lại rồi gửi lại.
-- `selection = {stroke_ids: [], word_ids: []}`: vùng khách đang chọn. Có selection thì trợ lý **chỉ được sửa trong vùng đó** (ngoài vùng → công cụ bị từ chối `OUTSIDE_SELECTION`, trợ lý báo lại). Không chọn gì thì trợ lý tìm từ theo chữ: với OT-3 mỗi từ trong `document.words[]` có `text` (vd "gửi"); OT-1 theo vùng / vị trí.
-- `client_ref`: id FE tự sinh cho mỗi tin nhắn (UUID). Gửi lại cùng id (mạng chập, bấm hai lần) → `200` với `replayed: true` và câu trả lời đã lưu, **không** gọi AI lần hai.
-- Một lượt mỗi đơn: tin nhắn thứ hai khi lượt trước chưa xong → `409 AI_TURN_IN_PROGRESS` (FE khoá ô nhập khi đang chờ).
-- `OrderTurnOut = {user, reply, replayed, sketch_revision_id}`; `reply.tool_calls[] = {name, ok, revision_id}` với `revision_id` là revision phác thảo trợ lý tạo. `sketch_revision_id` khác bản FE đang có → tải lại `GET /orders/{id}/sketch` (và preview). Mọi nhà cung cấp lỗi / quá thời gian → `200` với `reply.status = FAILED` và lời nhắn cho khách; phác thảo không đổi.
-- Stream: sự kiện như mục 7q (`user_saved`, `provider`, `tool {name, ok, revision_id, error}`, `failover`, `reply` = `OrderTurnOut`, `error`, `done`). Sau mỗi `tool` có `revision_id` FE có thể tải lại phác thảo ngay.
-- Mỗi sửa nét của trợ lý là một revision `author = AI` (`tool_name = edit_strokes`, `provider`, `model`) trong `GET /orders/{id}/sketch/revisions`; khách hoàn tác bằng `POST /orders/{id}/sketch/undo` như sửa tay.
-- Trợ lý **có thể** sửa nội dung chữ / mẫu / cỡ / căn lề (OT-3), vật tư, số bản, ghi chú, dòng xác thực, chế độ phục dựng (OT-1), tạo lại phác thảo. **Sửa nội dung / vật tư không hoàn tác bằng undo** (form đơn không có lịch sử; kết quả công cụ ghi giá trị cũ, trợ lý nói lại được). Nội dung đổi sau khi đã có phác thảo → `inputs_changed: true` (mục 7r), FE nhắc tạo lại.
-- Trợ lý **không** gửi đơn, thanh toán, huỷ đơn, không đọc ảnh (chỉ số đo chất lượng). Yêu cầu làm giả chữ ký / giấy tờ → trợ lý gắn cờ `FORGERY_RISK`, Staff thấy trong `GET /workshop/orders/{id}/assistant` (`flags`, `messages[].tools`).
-- OT-2: chưa có công cụ tạo phác thảo (đang nghiên cứu mô hình); các công cụ đơn / vật tư vẫn dùng được.
+- Giới hạn (nâng 2026-11-22 để khách không bị chặn giữa chừng): tin nhắn tối đa **8000 ký tự** (dán cả bức thư được; `422 MESSAGE_TOO_LONG`), **30 tin / phút / IP** (`429 RATE_LIMITED` kèm `retry_after_seconds`; studio cũ vẫn 10), mặc định **100 tin / khách / ngày** (`429 AI_DAILY_LIMIT`; số còn lại ở `GET /studio/assistant/status`), tối đa **12 thao tác / lượt** (đủ cho chọn vật tư + sửa chữ + bố cục + vẽ + kiểm tra trong một đề xuất). Admin vẫn hạ được các trần ngày / lượt.
+- `base_revision_id` = revision phác thảo khách đang nhìn (từ `GET /orders/{id}/sketch`). Đã đổi (tab khác) → `409 STALE_REVISION` **trước khi gọi AI**; tải lại rồi gửi lại. Không có phác thảo thì bỏ trống.
+- `selection = {stroke_ids, word_ids, line_ids, paragraph_ids}`: vùng khách đang chọn trên canvas. Có selection thì trợ lý **chỉ được sửa trong vùng đó** (ngoài vùng → công cụ bị từ chối `OUTSIDE_SELECTION`). Không chọn gì thì trợ lý tìm từ theo chữ (OT-3 mỗi từ có `text`).
+- **Nhắn tiếp trên đề xuất chưa áp dụng:** mặc định lượt mới **làm tiếp đề xuất PENDING mới nhất còn áp dụng được** (khách nói "và đổi mực xanh" thì đề xuất mới gồm cả phần cũ, `parent_proposal_id` = đề xuất cũ). Muốn làm tiếp một đề xuất cụ thể: `base_proposal_id`. Muốn bắt đầu lại từ đơn hiện tại: `from_order: true`. `base_proposal_id` đã áp dụng / bỏ qua → `409 PROPOSAL_NOT_PENDING`; đơn đã đổi → `409 PROPOSAL_STALE` (đều trước khi gọi AI).
+- `client_ref`: id FE tự sinh cho mỗi tin nhắn (UUID). Gửi lại cùng id → `200` với `replayed: true`, câu trả lời và đề xuất đã lưu, **không** gọi AI lần hai.
+- Một lượt mỗi đơn: tin nhắn thứ hai khi lượt trước chưa xong → `409 AI_TURN_IN_PROGRESS` (khoá ô nhập khi đang chờ). Áp dụng đề xuất trong lúc trợ lý đang trả lời cũng bị `409 AI_TURN_IN_PROGRESS`.
+- `OrderTurnOut = {user, reply, replayed, sketch_revision_id, proposal}`. `proposal` null = trợ lý chỉ trả lời / đọc đơn. `reply.proposal` giống `proposal` (để vẽ thẻ ngay trong tin). `sketch_revision_id` là revision **hiện tại của đơn** (không đổi sau lượt chat). `reply.tool_calls[] = {name, ok, revision_id}` chỉ để hiện tiến trình.
+- Mọi nhà cung cấp lỗi / quá thời gian → `200` với `reply.status = FAILED`, `proposal = null`, đơn không đổi (kể cả khi trợ lý đã chạy vài công cụ trước khi lỗi).
+- Stream: `user_saved`, `provider`, `tool {name, ok, revision_id, error}`, `failover`, **`proposal {id, sketch_revision_id, fields}`**, rồi `reply` (= `OrderTurnOut`) hoặc `error`; cuối cùng `done`. Revision trong sự kiện `tool` là bản nháp của đề xuất, **không** tải nó lên canvas.
+
+**Áp dụng / bỏ qua**
+- Áp dụng ghi nội dung / vật tư / tuỳ chọn / phác thảo của đề xuất vào đơn và tính lại giá theo bảng giá hiện hành (`estimate` trong kết quả). Bấm lại đề xuất đã áp dụng → `200` như lần trước.
+- Chỉ áp dụng được khi đơn **còn đúng trạng thái lúc trợ lý đề xuất** (form, vật tư, số bản, ghi chú, phác thảo hiện tại). Khách sửa form / sửa nét / áp dụng đề xuất khác sau đó → `409 PROPOSAL_STALE {reason: ORDER_CHANGED}`, không đổi gì; FE mời khách nhắn lại. Vật tư / mẫu chữ trong đề xuất vừa ngừng bán → `409 PROPOSAL_STALE {reason: MATERIAL_UNAVAILABLE | TEMPLATE_UNAVAILABLE}`.
+- Áp dụng xong, các đề xuất PENDING khác thành `applicable: false` (`ORDER_CHANGED`).
+- Bỏ qua: `status = REJECTED` (bấm lại vẫn `200`); bỏ qua đề xuất đã áp dụng → `409 PROPOSAL_NOT_PENDING`. Đơn đã gửi → áp dụng `409 ORDER_NOT_EDITABLE`.
+- Phác thảo áp dụng là một revision bình thường: **Hoàn tác** (`POST /orders/{id}/sketch/undo`) đưa phác thảo và nội dung đã vẽ cùng nó về như trước (mục 7r, `inputs_restored`).
+- Lịch sử phác thảo (`GET /orders/{id}/sketch/revisions`, `revision` của `GET /orders/{id}/sketch`) có thêm `proposal_id`, `proposal_status`. Revision có `proposal_status` khác `APPLIED` là bản nháp của đề xuất chưa áp dụng: **không** hiện trong dòng lịch sử / undo của canvas (redo của BE cũng bỏ qua chúng).
+
+**Giới hạn**
+- Trợ lý **không** áp dụng đề xuất, gửi đơn, thanh toán, huỷ đơn, không đọc ảnh (chỉ số đo chất lượng), không đổi loại đơn và không sửa ảnh / canvas vẽ tay. Yêu cầu làm giả chữ ký / giấy tờ → trợ lý gắn cờ `FORGERY_RISK` (gắn ngay, không cần áp dụng), Staff thấy trong `GET /workshop/orders/{id}/assistant`.
+- Sửa nội dung chữ / mẫu / bố cục chỉ có ở đơn OT-3 (với OT-1 / OT-2 các công cụ đó bị ẩn).
 
 ## 7t. Staff sửa nét bằng Geometry Engine (V2 Phase H, migration 0025, 2026-11-19)
 

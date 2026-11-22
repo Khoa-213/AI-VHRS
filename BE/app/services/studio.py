@@ -452,7 +452,8 @@ class StudioService:
             if data is None:
                 raise AppError(409, "FILE_MISSING", "Không đọc được ảnh gốc từ kho lưu trữ.")
             sources.append(engine.ImageSource(data, img.get("rotation_deg") or 0, img.get("crop_box")))
-        gen = engine.generate_ot1(sources, paper_size=size, v_max_mm_s=v_max, pen_category=category, chars=chars)
+        gen = engine.generate_ot1(sources, paper_size=size, v_max_mm_s=v_max, pen_category=category, chars=chars,
+                                  recovery_engine=self.catalog.setting("ot1_recovery_engine", "v1"))   # OT-1 v2, R4
         if c.get("region_edits"):
             gen.regions, _, _ = rg.apply_edits(gen.pages, gen.regions, c["region_edits"],
                                                assisted=c.get("restoration_mode") == "ASSISTED", strict=True)

@@ -15,7 +15,6 @@ from app.core.net import resolve_client_ip
 from app.core.errors import AppError
 from app.db.session import get_session
 from app.models.account import Account, AccountStatus
-from app.repositories.accounts import AccountRepository
 from app.repositories.sessions import SessionRepository
 
 # tokenUrl powers the "Authorize" form in Swagger UI (username = email).
@@ -55,10 +54,9 @@ def current_principal(request: Request, session: SessionDep, token: Annotated[st
         sid = uuid.UUID(str(payload.get("sid")))
     except ValueError as exc:
         raise AppError(401, "NOT_AUTHENTICATED", "Phiên đăng nhập không còn hiệu lực.") from exc
-    acc = AccountRepository(session).get(int(payload["sub"]))
-    # Re-read from DB each request so logout, lock and role changes take effect immediately.
+    # Re-read from DB each request so logout, lock and role changes take effect immediately (account + session: one query).
+    acc = SessionRepository(session).active_account(sid, int(payload["sub"]))
     if (acc is None or acc.status != AccountStatus.ACTIVE
-            or SessionRepository(session).get_active(sid, acc.id) is None
             or (acc.locked_until and acc.locked_until > datetime.now(timezone.utc))):
         raise AppError(401, "NOT_AUTHENTICATED", "Phiên đăng nhập không còn hiệu lực.")
     return Principal(account=acc, session_id=sid)

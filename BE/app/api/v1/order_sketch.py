@@ -53,6 +53,11 @@ class SketchRevisionOut(BaseModel):
     metrics: dict[str, Any] | None
     validation: dict[str, Any] | None = Field(description="engine warnings, or the edit report {changed, added, removed, ...}")
     created_at: datetime
+    proposal_id: int | None = Field(default=None, description=(
+        "0029: made by the assistant for this proposal (the first one that relies on it); null = a normal revision"))
+    proposal_status: str | None = Field(default=None, description=(
+        "0029: PENDING | APPLIED | REJECTED. Not APPLIED = an AI proposal the customer has not taken: show it in the chat, "
+        "not in the sketch history (redo skips it)"))
 
 
 class WorkingSketchOut(BaseModel):
@@ -118,13 +123,29 @@ class SketchEditIn(BaseModel):
     note: str | None = Field(default=None, max_length=300)
 
 
+def _rev_out(rev, by_rev: dict[int, Any]) -> SketchRevisionOut:
+    out = SketchRevisionOut.model_validate(rev, from_attributes=True)
+    p = by_rev.get(rev.id)
+    if p is not None:
+        applied = p.status == "APPLIED" or rev.id not in by_rev.get("hidden", set())
+        out.proposal_id, out.proposal_status = p.id, "APPLIED" if applied else p.status
+    return out
+
+
+def _proposal_map(svc: SketchWorkService, order_id: int) -> dict[Any, Any]:
+    from app.services.ai.proposals import hidden_revision_ids, revision_proposals
+    m: dict[Any, Any] = dict(revision_proposals(svc.session, order_id))
+    m["hidden"] = hidden_revision_ids(svc.session, order_id)
+    return m
+
+
 def _out(svc: SketchWorkService, order_id: int, *, revision_id: int | None = None, warnings: list[str] | None = None,
          report: dict[str, Any] | None = None, inputs_restored: bool = False,
          redraw: dict[str, Any] | None = None) -> WorkingSketchOut:
     data = svc.view(order_id, revision_id)
     lim = geo.limits_for(data["order"].order_type.value)
     hints = htr_hints.hints_for(svc.session, data["order"], data["document"], outdated=data["inputs_changed"])
-    return WorkingSketchOut(revision=SketchRevisionOut.model_validate(data["revision"], from_attributes=True),
+    return WorkingSketchOut(revision=_rev_out(data["revision"], _proposal_map(svc, data["order"].id)),
                             is_current=data["is_current"], can_undo=data["can_undo"], can_redo=data["can_redo"],
                             inputs_changed=data["inputs_changed"], limits=lim.__dict__, document=data["document"],
                             warnings=warnings or [], report=report, inputs_restored=inputs_restored, text_hints=hints,
@@ -171,8 +192,9 @@ def redo(order_id: int, svc: Svc, body: MoveIn | None = None) -> WorkingSketchOu
 @router.get("/orders/{order_id}/sketch/revisions", response_model=list[SketchRevisionOut], responses=_ERR,
             summary="V2 Lịch sử phác thảo làm việc")
 def revisions(order_id: int, svc: Svc) -> list[SketchRevisionOut]:
-    _, rows = svc.revisions(order_id)
-    return [SketchRevisionOut.model_validate(r, from_attributes=True) for r in rows]
+    order, rows = svc.revisions(order_id)
+    by_rev = _proposal_map(svc, order.id)
+    return [_rev_out(r, by_rev) for r in rows]
 
 
 @router.get("/orders/{order_id}/sketch/preview", response_class=Response, responses={200: {"content": {"image/jpeg": {}}}, **_ERR},

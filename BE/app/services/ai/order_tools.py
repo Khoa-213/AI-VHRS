@@ -10,6 +10,8 @@ Same rules as the studio tools (tools.py):
   it like any edit. Content / material changes are not revisions (the order form has no history): the result says what the
   value was before, and the sketch reports `inputs_changed` until it is drawn again.
 * Nothing here submits, pays, cancels or reaches another order: those are not tools.
+* Migration 0029: what a turn changes with these tools is turned into a proposal by AssistantService.send_order and the order
+  is put back; the customer applies the proposal (services/ai/proposals.py).
 """
 from __future__ import annotations
 
@@ -33,7 +35,7 @@ from app.services.ai.tools import FLAG_KINDS, _obj, list_materials, list_templat
 from app.services.orders import OrderService
 from app.services.sketch_work import SketchWorkService
 
-_TEXT_FOR_MODEL = 3000
+_TEXT_FOR_MODEL = 20000           # the whole text (orders take 20000): update_text sends the full text back, never a cut one
 _WORDS_FOR_MODEL = 200            # words listed by get_sketch (ids, text, box); more -> truncated, the model is told
 _STROKES_FOR_MODEL = 60           # strokes of the selection described individually
 SELECTION_KEYS = ("stroke_ids", "word_ids", "line_ids", "paragraph_ids")
@@ -126,6 +128,7 @@ class OrderTools:
         self.selection = {k: list((selection or {}).get(k) or []) for k in SELECTION_KEYS}
         self.provider: str | None = None
         self.model: str | None = None
+        self.proposal_base: int | None = None      # 0029: the pending proposal this turn continues (already on the order)
         self._run: dict[str, Callable[[dict[str, Any]], tuple[dict[str, Any], int | None]]] = {
             "get_order": self._get_order, "list_materials": self._list_materials, "list_templates": self._list_templates,
             "update_text": self._update_text, "set_layout": self._set_layout, "choose_materials": self._choose_materials,
@@ -209,6 +212,9 @@ class OrderTools:
                         "has_drawing": any(x.kind == OrderInputKind.CANVAS for x in inputs)})
         out["sketch"] = self._sketch_brief(order)
         out["selection"] = self.selection if self._has_selection() else None
+        if self.proposal_base is not None:
+            out["proposal_base"] = {"id": self.proposal_base,
+                                    "note": "Đơn đang thấy đã gồm đề xuất này của bạn; khách chưa áp dụng."}
         return out
 
     def _sketch_brief(self, order: Order) -> dict[str, Any] | None:

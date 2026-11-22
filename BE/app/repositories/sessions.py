@@ -2,10 +2,10 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.models.account import AuthSession
+from app.models.account import Account, AuthSession
 
 
 class SessionRepository:
@@ -24,6 +24,18 @@ class SessionRepository:
         if row.expires_at <= datetime.now(timezone.utc):
             return None
         return row
+
+    def active_account(self, session_id: uuid.UUID, account_id: int) -> Account | None:
+        """The account of an active (not revoked, not expired) login session, read with its session in ONE query
+        (one round trip per authenticated request instead of two)."""
+        row = self.s.execute(select(Account, AuthSession).join(AuthSession, AuthSession.account_id == Account.id)
+                             .where(Account.id == account_id, AuthSession.id == session_id)).first()
+        if row is None:
+            return None
+        acc, auth = row
+        if auth.revoked_at is not None or auth.expires_at <= datetime.now(timezone.utc):
+            return None
+        return acc
 
     def revoke(self, session_id: uuid.UUID) -> None:
         self.s.execute(update(AuthSession)

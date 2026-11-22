@@ -446,10 +446,11 @@ def _reading_order(strokes: list[np.ndarray], comp_of: list[int]) -> list[tuple[
 # ---------------------------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------------------------
-def trace(ink: np.ndarray) -> tuple[list[np.ndarray], list[int], float]:
+def trace(ink: np.ndarray, smooth_window: int = 5, simplify_eps: float = 0.7) -> tuple[list[np.ndarray], list[int], float]:
     """Binary ink (uint8, ink > 0) -> (pen paths in pixels, skeleton component of each path, pen width in pixels).
 
-    Steps 2-5 of the module docstring. Shared by the page recovery (OT-1) and the OT-2 sample sheet reader (one box)."""
+    Steps 2-5 of the module docstring. Shared by the page recovery (OT-1) and the OT-2 sample sheet reader (one box).
+    `smooth_window` / `simplify_eps`: the final polish (OT-1 v2 uses a lighter one; the defaults are v1's, unchanged)."""
     h, w = ink.shape
     sk = _drop_corner_pixels(zhang_suen(ink))
     sk_len = int(sk.sum())
@@ -478,7 +479,7 @@ def trace(ink: np.ndarray) -> tuple[list[np.ndarray], list[int], float]:
                 break
         comp_of.append(comp)
 
-    return [_orient(_simplify(_smooth(p), 0.7)) for p in raw], comp_of, width_px
+    return [_orient(_simplify(_smooth(p, smooth_window) if smooth_window > 1 else p, simplify_eps)) for p in raw], comp_of, width_px
 
 
 def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_box: dict[str, Any] | None = None,

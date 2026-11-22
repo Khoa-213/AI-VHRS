@@ -14,7 +14,7 @@ from sqlalchemy import text
 from app.db.session import get_engine
 from app.integrations.google_auth import GoogleIdentity, TokenInfoVerifier, get_google_verifier
 from app.main import app
-from tests.conftest import make_account
+from tests.conftest import make_account, fresh_email
 from tests.test_api_orders import API, _sql
 
 CLIENT = "123-abc.apps.googleusercontent.com"
@@ -94,7 +94,7 @@ def _post(client):
 
 
 def test_first_google_login_creates_a_customer_and_returns_working_tokens(client, google):
-    email = f"pytest_{uuid.uuid4().hex[:10]}@example.com"
+    email = fresh_email()
     google(email, "Lê Thị Mai")
     r = _post(client)
     assert r.status_code == 200, r.text
@@ -141,7 +141,7 @@ def test_disabled_or_locked_accounts_are_refused(client, google):
 
 
 def test_logout_revokes_a_google_session(client, google):
-    google(f"pytest_{uuid.uuid4().hex[:10]}@example.com")
+    google(fresh_email())
     d = _post(client).json()
     h = {"Authorization": f"Bearer {d['access_token']}"}
     assert client.post(f"{API}/auth/logout", headers=h).status_code in (200, 204)
