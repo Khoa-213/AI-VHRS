@@ -1,5 +1,5 @@
 import { openAuth } from '../../store/authDialog'
-import { Check, ClockCounterClockwise, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
+import { ArrowLeft, Check, ClockCounterClockwise, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
 import { useRef, useState } from 'react'
 import SiteFooter from '../../components/layout/SiteFooter'
 import Header from '../landing/components/Header'
@@ -77,6 +77,7 @@ export default function Account({ section }: { section: Section }) {
   return (
     <Frame>
       <div className="ac">
+        {user.role === 'staff' && <Link to="/staff" className="ac-workspace-back"><ArrowLeft size={18} aria-hidden />{t('nav.staffDash')}</Link>}
         <header className="ac-head">
           {profile.avatar
             ? <img src={profile.avatar} alt="" className="ac-avatar" />

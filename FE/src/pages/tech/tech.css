@@ -163,7 +163,7 @@
 .ws .rb-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
 .ws .rb-top h2{margin:0}
 .ws .rb-badges{display:flex;flex-wrap:wrap;gap:8px}
-.ws .rb-estop{margin:0;display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:12px;background:var(--red3);color:#fff;font-size:14px}
+.ws .rb-estop{margin:0;display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:12px;background:var(--red3);color:var(--red1);font-size:14px}
 .ws .rb-estop b{font-size:18px;letter-spacing:.02em}
 @media (prefers-reduced-motion:no-preference){.ws .rb-estop{animation:rb-blink 1s steps(1,end) infinite}}
 @keyframes rb-blink{50%{box-shadow:0 0 0 6px var(--red1),0 0 0 9px var(--red3)}}
@@ -174,19 +174,19 @@
 .ws .rb-prog{display:flex;flex-direction:column;gap:8px}
 .ws .rb-prog-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .ws .rb-prog-h b{font-size:34px;line-height:1;letter-spacing:-.02em}
-.ws .rb-prog .bar{height:12px;background:#fff}
+.ws .rb-prog .bar{height:12px;background:var(--card)}
 .ws .rb-tele{margin:0;display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.ws .rb-tele>div{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:10px;background:#fff;min-width:0}
+.ws .rb-tele>div{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:10px;background:var(--card);min-width:0}
 .ws .rb-tele dt{font-size:11px;color:var(--ink3)}
 .ws .rb-tele dd{margin:0;font-weight:700;overflow-wrap:anywhere}
 .ws .rb-joints{margin:0;overflow-wrap:anywhere}
-.ws .rb-auth .vh-input{background:#fff}
+.ws .rb-auth .vh-input{background:var(--card)}
 .ws .rb-run{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.ws .rb-big{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:64px;padding:8px;border:0;border-radius:14px;background:#fff;color:var(--ink);font:inherit;font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
+.ws .rb-big{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:64px;padding:8px;border:0;border-radius:14px;background:var(--card);color:var(--ink);font:inherit;font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
 .ws .rb-big:hover:not(:disabled){background:var(--bg)}
 .ws .rb-big:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.ws .rb-big.rb-go:not(:disabled){background:var(--acc);color:#fff}
-.ws .rb-big.rb-stop:not(:disabled){background:var(--red3);color:#fff}
+.ws .rb-big.rb-go:not(:disabled){background:var(--acc);color:var(--on-accent)}
+.ws .rb-big.rb-stop:not(:disabled){background:var(--red3);color:var(--red1)}
 .ws .rb-big.rb-wide{grid-column:1/-1;min-height:48px}
 .ws .rb-big:disabled{opacity:.45;cursor:not-allowed}
 .ws .rb-adv summary{cursor:pointer;font-size:13px}
@@ -199,7 +199,7 @@
 .ws .rb-step.ok{border-left-color:var(--green3)}
 .ws .rb-step.bad{border-left-color:var(--acc)}
 .ws .rb-step-h{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
-.ws .rb-num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#fff;font-size:12px;font-weight:800}
+.ws .rb-num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--card);font-size:12px;font-weight:800}
 .ws .rb-step .sd-btn{white-space:normal;height:auto;min-height:38px}
 .ws .rb-res{grid-column:1/-1;margin:0;font-size:12px;color:var(--ink2);overflow-wrap:anywhere}
 .ws .rb-gates{display:flex;flex-wrap:wrap;gap:6px}
@@ -216,3 +216,20 @@
 /* The job's progress bar, shown in the sticky header once its panel has scrolled away. */
 .ws .tech-pinned-progress{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700}
 .ws .tech-pinned-progress .bar{flex:1}
+
+/* Service G quality evaluation inside the photo panel. Tokens only. */
+.ws .tq{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--field)}
+.ws .tq h3{margin:0;font-size:15px}
+.ws .tq-photos{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:10px}
+.ws .tq-photos>li{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);min-width:0}
+.ws .tq-photo-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.ws .tq-act{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.ws .tq-act .vh-label{flex:0 1 96px}
+.ws .tq-act .vh-input{width:100%;min-height:40px}
+.ws .tq .chip{display:inline-flex;align-items:center;gap:4px}
+.ws .tq-history summary{cursor:pointer;font-size:13px;font-weight:600}
+.ws .tq-history .tech-event-list{margin-top:12px}
+.ws .tq-metrics{margin:8px 0}
+.ws .tq-warn{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ws .rb-gates span{display:inline-flex;align-items:center;gap:4px}
+.ws .tech-drift{margin:6px 0 0;padding-left:18px;font-weight:400;overflow-wrap:anywhere}

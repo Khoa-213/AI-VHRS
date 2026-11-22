@@ -127,6 +127,12 @@ export interface JobPackage {
   paper: { name: string; size: string; gsm: number } | null
   pen: { name: string; f_target_n: number; f_min_n: number; f_max_n: number; f_hard_n: number; v_max_mm_s: number } | null
   preview_url: string | null
+  order_type?: string; quantity?: number; is_rewrite?: boolean; estimated_duration_min?: number
+  ink_name?: string | null; ink_hex?: string | null; approach_note?: string | null
+  /** U1 signed production snapshot; null for a legacy job that only has the hash check. */
+  snapshot?: { snapshot_id: number; package_id: string; key_id: string; signature_algorithm: string } | null
+  /** Catalog edits since the materials were locked (Vietnamese text from the backend); the job keeps the locked values. */
+  material_drift?: string[]
 }
 export interface TrajectoryPage { paper: { width_mm: number; height_mm: number }; strokes: { points: number[][] }[] }
 export interface VerifiedPackage { info: JobPackage; bytes: ArrayBuffer; pages: TrajectoryPage[]; hash: string }
@@ -214,6 +220,22 @@ export const setPhotoQc = (id: number, photoId: number, qc_result: QcResult, qc_
 export const removePhoto = (id: number, photoId: number) => techApi(`/technician/jobs/${id}/photos/${photoId}`, { method: 'DELETE' })
 export const submitPhotos = (id: number) => jobAction(id, 'photos/submit')
 export const failJobQc = (id: number, note: string) => jobAction(id, 'qc-fail', { note: note.trim() })
+/**
+ * Service G result for one photo (`QualityOut` in `BE/app/api/v1/quality.py`). `verdict` is PASS, NEEDS_REVIEW or FAIL as the
+ * backend decided with thresholds it marks unvalidated; the UI shows it, never derives its own. `advisory` is Vietnamese text.
+ */
+export interface QualityEvaluation {
+  id: number; photo_id: number; job_id: number; page: number; method: string; verdict: string
+  /** coverage_pct, extra_ink_pct, chamfer_mm, hd95_mm, hausdorff_mm, tol_mm, warnings, thresholds (`quality_eval.py`). */
+  metrics: Record<string, unknown>
+  overlay_url: string | null; created_at: string; advisory: string
+}
+/** `POST /technician/jobs/{id}/photos/{photoId}/evaluate`: compare the photo with the approved sketch page (default page 1). */
+export const evaluatePhoto = (id: number, photoId: number, page = 1) =>
+  techApi<QualityEvaluation>(`/technician/jobs/${id}/photos/${photoId}/evaluate`, { method: 'POST', body: { page } })
+/** `GET /technician/jobs/{id}/quality`: every evaluation of the job, newest first. */
+export const jobQuality = (id: number) => techApi<QualityEvaluation[]>(`/technician/jobs/${id}/quality`)
+
 export const photosReady = (photos: ProductPhoto[]) => photos.length >= 2 && photos.length <= 10 && ['OVERALL', 'CLOSE_UP'].every((k) => photos.some((p) => p.kind === k)) && photos.every((p) => p.qc_result === 'PASS')
 
 export function jobPermissions(job: TechJobDetail, hash?: string) {

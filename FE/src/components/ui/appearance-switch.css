@@ -1,0 +1,5 @@
+.appearance-switch{display:inline-flex;flex:none;align-items:center;gap:3px;padding:4px;border:1px solid var(--line-strong);border-radius:999px;background:var(--tray)}
+.appearance-switch button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 11px;border:0;border-radius:999px;background:transparent;color:var(--t4);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.appearance-switch button[aria-pressed='true']{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.appearance-switch button:hover:not([aria-pressed='true']){background:var(--tray-hover);color:var(--t1)}
+.appearance-switch button:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px}

@@ -3,6 +3,7 @@ import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
 import { failJobQc, jobPhotos, photosReady, registerPhoto, removePhoto, requestPhotoUpload, setPhotoQc, submitPhotos, uploadPhotoBinary, type PhotoKind, type ProductPhoto, type QcResult, type TechJobDetail } from '../../services/technician'
 import JobFeedback from './JobFeedback'
+import JobQuality from './JobQuality'
 import type { TechRun } from './flow'
 
 async function validateImage(file: File) {
@@ -62,6 +63,7 @@ export default function JobPhotos({ job, disabled, run, revision }: { job: TechJ
     </form>}
     <div className="tech-photo-grid">{photos.map((p) => <PhotoEditor key={p.id} photo={p} jobId={job.id} editable={editable} disabled={blocked} run={run} refresh={q.reload} />)}</div>
     {q.data && !q.error && !photos.length && <p className="sub">{t('td.flow.noPhotos')}</p>}
+    {photos.length > 0 && <JobQuality jobId={job.id} photos={photos} disabled={disabled} revision={revision} />}
     {editable && <>
       <p className="wk-warn">{t('td.flow.photoGate')}</p>
       <button type="button" className="sd-btn" disabled={blocked || !!pending || !photosReady(photos)} onClick={() => void run(() => submitPhotos(job.id), t('td.flow.confirmSubmitPhotos'))}>{t('td.flow.submitPhotos')}</button>
