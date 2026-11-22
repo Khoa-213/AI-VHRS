@@ -1,28 +1,32 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { ArrowClockwise, ArrowCounterClockwise, ArrowUp, X } from '@phosphor-icons/react'
 import { useT } from '../../../i18n'
 import { ApiError } from '../../../services/api'
 import {
-  aiConversation, aiStatus, applyProposal, openProposals, redoSketch, redrawSketch, rejectProposal, selectionSize, sendAiMessage, staleReason, undoSketch,
+  aiConversation, aiStatus, applyProposal, redoSketch, redrawSketch, selectionSize, sendAiMessage, staleReason, undoSketch,
   type AiEvent, type AiMessage, type AiSelection, type AiStatus, type EnsureOrder, type ReloadOrder, type SketchInfo } from '../../../services/orderAi'
 import { errText, orderErrorKey } from '../../../services/orders'
 import ProposalCard from './ProposalCard'
+import RichText from './RichText'
 
 const TOOLS = new Set([
   'get_order', 'list_materials', 'list_templates', 'update_text', 'set_layout', 'choose_materials', 'set_options',
   'check_order', 'generate_sketch', 'get_sketch', 'edit_strokes', 'undo_sketch', 'redo_sketch', 'flag_for_staff',
 ])
-/** Proposal pictures are loaded for the newest proposals only, so an old conversation does not fetch dozens of previews. */
-const PICTURES = 3
+/** The backend's limit for one message. */
+const MAX_MESSAGE = 8000
+/** The message box grows with the text up to this height, then scrolls. */
+const MAX_INPUT_PX = 160
 
 const newRef = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`)
 
 /**
- * The assistant of a draft order, at every step of Create Order. The customer types what to write or change; the assistant
- * answers with a proposal (what changes, the new price, the new sketch) and the order changes only when the customer applies it.
- * A message sent while a proposal is waiting adds to that proposal (the backend's default), unless the customer starts again
- * from the order. While a proposal waits, `onPending` tells the page to hold the form still.
+ * The assistant of a draft order, in the right column of Create Order at every step. The customer says what to write or
+ * change; the backend answers with a proposal, which is applied at once (the customer asked for no Apply step), so the
+ * sketch box beside the form shows the new sketch as soon as the answer arrives. Undo / redo in the header go back.
+ * Every message starts from the order as it is (`from_order`), so a proposal left over from earlier is never built on.
  */
-export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, selection, onClearSelection, onChanged, onBusy, onPending }: {
+export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, selection, onClearSelection, onChanged, onBusy, summary }: {
   orderId: number | null
   /** The draft on the server; it is created when the first message is sent. */
   ensureOrder: EnsureOrder
@@ -32,12 +36,12 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
   /** What the customer picked on the sketch (sent with the next message). */
   selection: AiSelection
   onClearSelection: () => void
-  /** After a proposal is applied or the sketch is drawn again: load the order and the sketch again. */
+  /** After an answer is applied or the sketch moves: load the order and the sketch again. */
   onChanged: ReloadOrder
   /** True while the assistant is working, so the rest of the form stays still. */
   onBusy: (busy: boolean) => void
-  /** True while a proposal waits for the customer: the form stays locked until it is applied or skipped. */
-  onPending: (pending: boolean) => void
+  /** The order's estimated price, shown under the title (the chat takes the estimate box's place). */
+  summary?: ReactNode
 }) {
   const t = useT()
   const [status, setStatus] = useState<AiStatus | null>(null)
@@ -48,7 +52,6 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string[]>([])
   const [pending, setPending] = useState<string | null>(null)
-  const [fromOrder, setFromOrder] = useState(false)
   type Ask = 'undo' | 'redo' | 'redraw'
   const [ask, setAsk] = useState<Ask | null>(null)
   const [err, setErr] = useState('')
@@ -93,23 +96,21 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' })
   }, [messages.length, progress.length, pending])
 
-  const waiting = openProposals(messages)
-  const hasWaiting = waiting.length > 0
-  useEffect(() => {
-    onPending(hasWaiting)
-  }, [hasWaiting, onPending])
-  useEffect(() => () => onPending(false), [onPending])
-  // "Start again" only means something while a proposal waits.
-  const again = fromOrder && hasWaiting
+  // The message box is one line and grows with what is typed.
+  useLayoutEffect(() => {
+    const el = input.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, MAX_INPUT_PX)}px`
+  }, [text])
 
-  /** The server decides what can still be applied (another proposal or a change of the form makes the others stale), so ask again. */
   const refresh = async (id: number) => {
     try {
       const c = await aiConversation(id)
       setMessages(c.messages)
       setConsented(c.consented)
     } catch {
-      // The cards keep what they had; the next action loads them again.
+      // The messages keep what they had; the next action loads them again.
     }
   }
 
@@ -131,63 +132,53 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
       ? t('oa.failover')
       : t(e.ok ? 'oa.toolOk' : 'oa.toolFail', { tool: t(TOOLS.has(e.name) ? `oa.tool.${e.name}` : 'oa.tool.other') })
 
-  const send = async () => {
-    const msg = text.trim()
+  const send = async (said?: string) => {
+    const msg = (said ?? text).trim()
     if (!msg || busy || (!consented && !agree)) return
     setPending(msg)
     setProgress([])
     await work(async () => {
+      let id: number | null = orderId
       try {
-        const id = await ensureOrder()
+        id = await ensureOrder()
         const turn = await sendAiMessage(id, {
           text: msg,
           ai_consent: true,
           ...(sketch ? { base_revision_id: sketch.revisionId } : {}),
           ...(selectionSize(selection) ? { selection } : {}),
-          ...(again ? { from_order: true } : {}),
+          from_order: true,
           client_ref: newRef(),
         }, (e) => setProgress((p) => [...p, describe(e)]))
         loadedFor.current = id
         setMessages((m) => [...m, turn.user, turn.reply])
         setConsented(true)
         setText('')
-        setFromOrder(false)
         onClearSelection()
+        // The answer goes straight onto the order: the sketch box shows it now, Undo goes back.
+        const p = turn.proposal
+        if (p && p.status === 'PENDING' && p.applicable) {
+          setProgress((x) => [...x, t('oa.applying')])
+          try {
+            await applyProposal(id, p.id)
+          } catch (e) {
+            const why = staleReason(e)
+            fail(e, why ? `oa.stale.${why}` : undefined)
+          }
+        }
         await refresh(id)
         await onChanged()
         aiStatus().then(setStatus).catch(() => undefined)
       } catch (e) {
         fail(e)
         if (e instanceof ApiError && e.code === 'STALE_REVISION') await onChanged().catch(() => undefined)
-        // A proposal that went stale in the meantime: show the cards as the server now sees them.
-        if (e instanceof ApiError && e.code.startsWith('PROPOSAL_') && orderId !== null) await refresh(orderId)
+        if (id !== null) await refresh(id)
       }
     })
     setPending(null)
     setProgress([])
   }
 
-  const decide = (kind: 'apply' | 'reject', id: number) => {
-    if (orderId === null) return
-    void work(async () => {
-      try {
-        if (kind === 'apply') await applyProposal(orderId, id)
-        else await rejectProposal(orderId, id)
-        setFromOrder(false)
-        await refresh(orderId)
-        if (kind === 'apply') await onChanged()
-      } catch (e) {
-        const why = staleReason(e)
-        fail(e, why ? `oa.stale.${why}` : undefined)
-        await refresh(orderId)
-      }
-    })
-  }
-
-  /**
-   * Undo, redo or draw again (offered only while no proposal waits). Undo and redo also bring the form back to what it was when
-   * that sketch was drawn, so the order is reloaded. When something would be lost the customer is asked first.
-   */
+  /** Undo, redo or draw again. Undo and redo also bring the form back to that drawing, so the order is reloaded. */
   const move = (kind: Ask, discard = false) => {
     if (orderId === null) return
     void work(async () => {
@@ -211,19 +202,25 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
   const canWrite = !unavailable && !outOfTurns && (!needConsent || agree)
   const picked = selectionSize(selection)
 
-  // The newest proposals with a sketch show their picture; so does every proposal that still waits.
-  const withSketch = messages.filter((m) => m.proposal?.preview != null).map((m) => m.proposal!.id)
-  const pictured = new Set([...withSketch.slice(-PICTURES), ...waiting.map((p) => p.id)])
-
   return (
     <section className="oa" aria-label={t('oa.title')}>
       <header className="oa-head">
         <b>{t('oa.title')}</b>
-        {!!status?.limit && <span className="oa-quota vh-mono">{t('oa.quota', { left: status.left ?? 0, limit: status.limit })}</span>}
+        {sketch && orderId !== null && (
+          <div className="oa-tools">
+            <button type="button" className="oa-tool" disabled={busy || !sketch.canUndo} title={t('oa.undoHint')} onClick={() => move('undo')}>
+              <ArrowCounterClockwise aria-hidden="true" weight="bold" />{t('oa.undo')}
+            </button>
+            <button type="button" className="oa-tool" disabled={busy || !sketch.canRedo} title={t('oa.redo')} onClick={() => move('redo')}>
+              <ArrowClockwise aria-hidden="true" weight="bold" />{t('oa.redo')}
+            </button>
+          </div>
+        )}
       </header>
+      {summary}
 
       <div className="oa-list" ref={list} role="log" aria-live="polite" aria-label={t('oa.title')}>
-        <p className="oa-msg oa-msg--bot">{t('oa.hello')}</p>
+        <div className="oa-msg oa-msg--bot"><p>{t('oa.hello')}</p></div>
         {!messages.length && !pending && !unavailable && (
           <div className="oa-try">
             {[1, 2].map((n) => (
@@ -239,17 +236,8 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
           const body = m.status === 'FAILED' && !m.content ? t('oa.failed') : m.content
           return (
             <div key={m.id} className="oa-turn">
-              {body && <p className={`oa-msg oa-msg--bot${m.status === 'FAILED' ? ' failed' : ''}`}>{body}</p>}
-              {m.proposal && orderId !== null && (
-                <ProposalCard
-                  proposal={m.proposal}
-                  busy={busy}
-                  showPicture={pictured.has(m.proposal.id)}
-                  continued={m.proposal.parentId !== null}
-                  onApply={() => decide('apply', m.proposal!.id)}
-                  onReject={() => decide('reject', m.proposal!.id)}
-                />
-              )}
+              {body && <div className={`oa-msg oa-msg--bot${m.status === 'FAILED' ? ' failed' : ''}`}><RichText text={body} /></div>}
+              {m.proposal && <ProposalCard proposal={m.proposal} />}
             </div>
           )
         })}
@@ -257,49 +245,32 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
         {pending && (
           <>
             <p className="oa-msg oa-msg--me">{pending}</p>
-            <div className="oa-card oa-card--wait" aria-live="polite">
-              {progress.length
-                ? progress.map((x, i) => <span key={i} className="oa-fine">{x}</span>)
-                : <span className="oa-fine">{t('oa.thinking')}</span>}
+            <div className="oa-wait" aria-live="polite">
+              <span className="oa-typing" aria-hidden="true"><i /><i /><i /></span>
+              <span className="oa-fine">{progress[progress.length - 1] ?? t('oa.thinking')}</span>
             </div>
           </>
         )}
       </div>
 
       <div className="oa-foot">
-        {!hasWaiting && !sketch && canDraw && orderId !== null && (
-          <div className="co-notice oa-stale-row" role="status">
+        {!sketch && canDraw && orderId !== null && (
+          <div className="oa-note" role="status">
             <span>{t('oa.noSketch')}</span>
-            <button type="button" className="co-btn co-btn--solid co-btn--sm" disabled={busy} onClick={() => move('redraw')}>{t('oa.draw')}</button>
+            <button type="button" className="oa-link" disabled={busy} onClick={() => move('redraw')}>{t('oa.draw')}</button>
           </div>
         )}
-        {!hasWaiting && sketch?.inputsChanged && (
-          <div className="co-notice oa-stale-row" role="status">
+        {sketch?.inputsChanged && (
+          <div className="oa-note" role="status">
             <span>{t('oa.outdated')}</span>
-            <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={busy || orderId === null} onClick={() => move('redraw')}>{t('oa.redraw')}</button>
+            <button type="button" className="oa-link" disabled={busy || orderId === null} onClick={() => move('redraw')}>{t('oa.redraw')}</button>
           </div>
         )}
         {ask && (
-          <div className="co-notice oa-stale-row" role="alert">
+          <div className="oa-note oa-note--warn" role="alert">
             <span>{t(`oa.ask.${ask}`)}</span>
-            <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={busy} onClick={() => move(ask, true)}>{t(`oa.askYes.${ask}`)}</button>
-            <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={busy} onClick={() => setAsk(null)}>{t('oa.cancel')}</button>
-          </div>
-        )}
-        {!hasWaiting && sketch && (sketch.canUndo || sketch.canRedo) && (
-          <div className="oa-history">
-            <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={busy || !sketch.canUndo} onClick={() => move('undo')}>{t('oa.undo')}</button>
-            <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={busy || !sketch.canRedo} onClick={() => move('redo')}>{t('oa.redo')}</button>
-            <span className="oa-fine">{t('oa.historyHint')}</span>
-          </div>
-        )}
-
-        {hasWaiting && (
-          <div className="co-notice oa-stale-row" role="status">
-            <span>{t(again ? 'oa.fromOrderOn' : 'oa.addsTo')}</span>
-            <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={busy} onClick={() => setFromOrder((v) => !v)}>
-              {t(again ? 'oa.addToProposal' : 'oa.startAgain')}
-            </button>
+            <button type="button" className="oa-link" disabled={busy} onClick={() => move(ask, true)}>{t(`oa.askYes.${ask}`)}</button>
+            <button type="button" className="oa-link" disabled={busy} onClick={() => setAsk(null)}>{t('oa.cancel')}</button>
           </div>
         )}
 
@@ -313,33 +284,41 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
                 <span><b>{t('oa.consentTitle')}.</b> {t('oa.consent')}</span>
               </label>
             )}
-            {picked > 0 && (
-              <div className="oa-picked" role="status">
-                <span>{t('oa.picked', { n: picked })}</span>
-                <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={busy} onClick={onClearSelection}>{t('oa.clearPick')}</button>
+            <div className={`oa-composer${busy ? ' busy' : ''}`}>
+              {picked > 0 && (
+                <div className="oa-chips">
+                  <span className="oa-chip" role="status">
+                    {t('oa.picked', { n: picked })}
+                    <button type="button" aria-label={t('oa.clearPick')} title={t('oa.clearPick')} disabled={busy} onClick={onClearSelection}><X aria-hidden="true" weight="bold" /></button>
+                  </span>
+                </div>
+              )}
+              <div className="oa-input">
+                <textarea
+                  ref={input}
+                  rows={1}
+                  maxLength={MAX_MESSAGE}
+                  value={text}
+                  disabled={busy || outOfTurns}
+                  aria-label={t('oa.inputLabel')}
+                  placeholder={t(outOfTurns ? 'oa.noTurns' : picked ? 'oa.placeholderPicked' : 'oa.placeholder')}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      void send()
+                    }
+                  }}
+                />
+                <button type="button" className="oa-send" aria-label={t(busy ? 'oa.sending' : 'oa.send')} title={t(busy ? 'oa.sending' : 'oa.send')}
+                  disabled={busy || !text.trim() || !canWrite} onClick={() => void send()}>
+                  <ArrowUp aria-hidden="true" weight="bold" />
+                </button>
               </div>
-            )}
-            <div className="oa-input">
-              <textarea
-                ref={input}
-                className="co-text"
-                rows={2}
-                maxLength={2000}
-                value={text}
-                disabled={busy || outOfTurns}
-                aria-label={t('oa.inputLabel')}
-                placeholder={t(outOfTurns ? 'oa.noTurns' : picked ? 'oa.placeholderPicked' : hasWaiting && !again ? 'oa.placeholderMore' : 'oa.placeholder')}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void send()
-                  }
-                }}
-              />
-              <button type="button" className="co-btn co-btn--solid" disabled={busy || !text.trim() || !canWrite} onClick={() => void send()}>
-                {t(busy ? 'oa.sending' : 'oa.send')}
-              </button>
+            </div>
+            <div className="oa-meta">
+              <span>{t('oa.enterHint')}</span>
+              {!!status?.limit && <span className="vh-mono">{t('oa.quota', { left: status.left ?? 0, limit: status.limit })}</span>}
             </div>
           </>
         )}

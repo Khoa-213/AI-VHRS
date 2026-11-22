@@ -23,7 +23,7 @@ const now = '2026-11-21T00:00:00Z'
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 const REPLY_TEXT = 'Happy birthday, Mom!'
 
-// ---- the fake backend: the assistant PROPOSES, the order changes only on apply (BE migration 0029) ----
+// ---- the fake backend: the assistant PROPOSES (BE migration 0029); the FE applies each proposal at once ----
 const state = { fail: { generate: false, apply: false, turn: false, limit: false }, sketchGone: false, available: true, created: false, order: null, sketch: null, msgs: [], consented: false, left: 30, turn: 0, nextMsg: 1, proposals: {}, bodies: [] }
 const log = []
 const newOrder = () => ({
@@ -116,7 +116,7 @@ function answer(method, path, postData) {
     const failed = state.fail.turn
     const proposal = state.turn === 2 || failed ? null : makeProposal(30 + state.turn, id)
     if (proposal) state.proposals[proposal.id] = proposal
-    const reply = message(id, 'ASSISTANT', failed ? '' : proposal ? 'I propose this. Have a look and apply it if you like it.' : 'The word is fine as it is.', proposal)
+    const reply = message(id, 'ASSISTANT', failed ? '' : proposal ? 'I wrote it for you:\n- **Style:** Style one\n- **Paper:** Paper A5' : 'The word is fine as it is.', proposal)
     if (failed) reply.status = 'FAILED'
     state.msgs.push(user, { ...reply, pid: proposal?.id ?? null })
     return [sse([
@@ -189,7 +189,7 @@ try {
   const wait = async (expression, label) => { for (let i = 0; i < 120; i++) { if (await evaluate(expression)) return; await sleep(100) } throw new Error(`Timed out: ${label}\n${errors.join('\n')}\n${log.slice(-12).join('\n')}\n${await evaluate('document.body.innerText')}`) }
   const button = (text) => `[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(text)})`
   const click = async (text) => { await wait(`!!(${button(text)}) && !(${button(text)}).disabled`, `button "${text}"`); await evaluate(`(${button(text)}).click()`); await sleep(100) }
-  const option = async (name) => { const find = `[...document.querySelectorAll('.co-opt')].find(b=>b.querySelector('.co-opt-name')?.textContent.trim()===${JSON.stringify(name)})`; await wait(`!!(${find}) && !(${find}).disabled`, `option "${name}"`); await evaluate(`(${find}).click()`); await sleep(100) }
+  const option = async (name) => { const find = `[...document.querySelectorAll('.co-seg--how button')].find(b=>b.textContent.trim()===${JSON.stringify(name)})`; await wait(`!!(${find}) && !(${find}).disabled`, `option "${name}"`); await evaluate(`(${find}).click()`); await sleep(100) }
   const open = async (path) => { await command('Page.navigate', { url: `http://127.0.0.1:${port}${path}` }); await wait(`!!document.querySelector('.co')`, `open ${path}`) }
   // A saved draft with content and materials opens on the review step: go back to the first one.
   const firstStep = async () => { await wait(`!!document.querySelector('.co-step')`, 'steps'); await evaluate(`document.querySelector('.co-step').click()`); await sleep(100) }
@@ -207,46 +207,49 @@ try {
   // 1. The assistant is offered and chosen; the manual text form is not shown beside it.
   await open('/create-order')
   await wait(`!!document.querySelector('.oa')`, 'assistant panel')
-  assert.ok((await text('.co-body')).includes('Use the AI assistant'), 'AI choice is offered')
+  assert.ok((await text('.co-body')).includes('AI assistant'), 'AI choice is offered')
+  assert.equal(await evaluate(`!!document.querySelector('.co-tray--3')`), false, 'the input modes are hidden while the assistant is picked')
+  assert.equal(await evaluate(`!!document.querySelector('.co-side .oa .oa-est')`), true, 'the chat sits on the right with the estimated price')
+  assert.equal(await evaluate(`!!document.querySelector('.co-rail')`), false, 'the estimate box gives way to the chat')
+  assert.equal(await evaluate(`!!document.querySelector('.co-main .co-sketch')`), true, 'the sketch takes the chat\'s old place under the form')
   assert.equal(await evaluate(`!!document.querySelector('.co-live') || !!document.querySelector('.co-sub textarea.co-text')`), false, 'the manual text form is hidden in AI mode')
   assert.equal(log.includes('POST /orders'), false, 'no draft is created before the first message')
 
-  // 2. First message: the draft is created and the assistant answers with a PROPOSAL. The order and the sketch do not change.
+  // 2. First message: the draft is created, the assistant answers with a proposal and the FE applies it at once, so the sketch
+  //    box shows the new sketch without any Apply button. The chat keeps a one-line summary of what changed.
+  const composerH = await evaluate(`document.querySelector('.oa-input textarea').getBoundingClientRect().height`)
+  assert.ok(composerH < 60, `the message box starts as one line (${composerH}px)`)
   await typeInto('.oa textarea', 'Write a short birthday greeting for my mother')
   await evaluate(`document.querySelector('.oa-consent input').click()`)
-  await click('Send')
-  await wait(`!!document.querySelector('.oa-prop .oa-card-img')`, 'proposal card with its picture')
-  const card = await text('.oa-prop')
-  assert.match(card, /Proposal/)
-  assert.match(card, /Happy birthday, Mom!/, 'the text change is listed')
-  assert.match(card, /Paper A5/, 'the material change is listed with its name')
-  assert.match(card, /10[.,]000/, 'the estimated price after applying is shown')
-  assert.ok(await evaluate(`!!(${button('Apply to the order')}) && !!(${button('Skip')})`), 'Apply and Skip are offered')
-  assert.ok(log.includes('GET /orders/77/assistant/proposals/31/preview'), 'the card loads the proposal preview, not the order sketch')
-  assert.ok(await evaluate(`!!document.querySelector('.oa-prop .oa-pager')`), 'a two-page proposal preview has a pager')
+  await clickSel('.oa-send')
+  await wait(`document.querySelector('.oa-prop')?.dataset.status === 'APPLIED'`, 'the answer is applied')
   assert.ok(log.includes('POST /orders'), 'the draft is created with the first message')
   assert.ok(log.includes('POST /orders/77/assistant/messages/stream'), 'the message goes through the stream route')
-  assert.equal(await evaluate(`!!document.querySelector('.co-preview .oa-view-img')`), false, 'the sketch beside the form does not show a proposal that is not applied')
-  assert.equal(await locked(), true, 'the form is locked while a proposal waits')
-  await evaluate(`document.querySelector('.oa-prop').scrollIntoView({ block: 'center' })`)
-  await sleep(300)
+  assert.ok(log.includes('POST /orders/77/assistant/proposals/31/apply'), 'the FE applies the proposal itself')
+  assert.equal(state.bodies[0].from_order, true, 'every message starts from the order as it is')
+  await wait(`!!document.querySelector('.co-sketch .oa-view-img')`, 'the new sketch shows in the sketch box at once')
+  assert.ok(await evaluate(`!!document.querySelector('.co-sketch .oa-pager')`), 'a two-page sketch has a pager')
+  assert.equal(await evaluate(`!!(${button('Apply to the order')}) || !!(${button('Skip')})`), false, 'there is no Apply or Skip button')
+  assert.equal(await evaluate(`!!document.querySelector('.oa .oa-card-img')`), false, 'the chat does not repeat the sketch picture')
+  const card = await text('.oa-prop summary')
+  assert.match(card, /Applied/)
+  assert.match(card, /4 changes/)
+  assert.match(card, /10[.,]000/, 'the estimated price after the answer is shown')
+  await evaluate(`document.querySelector('.oa-prop summary').click()`)
+  assert.match(await text('.oa-prop'), /Happy birthday, Mom!/, 'the changes open from the summary')
+  assert.match(await text('.oa-prop'), /Paper A5/, 'a material change is listed with its name')
+  assert.ok(await evaluate(`!!document.querySelector('.oa-msg--bot strong') && !!document.querySelector('.oa-msg--bot li')`), 'bold and list items are rendered')
+  assert.equal((await text('.oa-list')).includes('**'), false, 'no raw Markdown is shown')
+  assert.equal(await locked(), false, 'the form is free after the answer')
+  assert.equal(await evaluate(`document.querySelector('.co-next').disabled`), false, 'the order can continue with what the assistant wrote')
+  await sleep(1200)
+  assert.equal(log.filter((l) => l.startsWith('PUT /orders/77/inputs/text')).length, 0, 'what the answer wrote is not saved again by the form')
+  await evaluate('scrollTo(0, 220)')
+  await sleep(200)
   await shot('order-ai-proposal-1440.png')
-  assert.match(await text('.co-lock-note'), /proposal is waiting/)
-  assert.equal(await evaluate(`document.querySelector('.co-next').disabled`), true, 'nothing to continue with: the order has no content yet')
   await noOverflow('after the first turn')
 
-  // 3. Apply: the order, the form and the sketch beside it change; the form is free again.
-  await click('Apply to the order')
-  await wait(`document.querySelector('.oa-prop')?.dataset.status === 'APPLIED'`, 'applied')
-  assert.ok(log.includes('POST /orders/77/assistant/proposals/31/apply'), 'apply goes to the proposal route')
-  await wait(`!!document.querySelector('.co-preview .oa-view-img')`, 'the applied sketch in the preview box')
-  assert.equal(await locked(), false, 'the form is free after apply')
-  assert.equal(await evaluate(`document.querySelector('.co-next').disabled`), false, 'the order can continue with the applied content')
-  assert.ok(await evaluate(`!!document.querySelector('.oa-pager')`), 'a two-page sketch has a pager')
-  await sleep(1200)
-  assert.equal(log.filter((l) => l.startsWith('PUT /orders/77/inputs/text')).length, 0, 'what apply wrote is not saved again by the form')
-
-  // 3b. Undo and redo of what was applied (the applied proposal is a normal sketch revision).
+  // 3. Undo and redo of what the answer changed (an applied proposal is a normal sketch revision).
   assert.ok(await evaluate(`!!(${button('Undo')}) && !(${button('Undo')}).disabled && (${button('Redo')}).disabled`), 'Undo is offered, Redo is not yet')
   await click('Undo')
   await wait(`!(${button('Redo')}).disabled`, 'redo after undo')
@@ -256,7 +259,7 @@ try {
   await wait(`!(${button('Undo')}).disabled`, 'undo after redo')
   assert.ok(log.includes('POST /orders/77/sketch/redo'))
 
-  // 4. Pick a word on the sketch: the next message carries the selection, then it is cleared.
+  // 4. Pick a word on the sketch: the next message carries the selection (a chip in the composer), then it is cleared.
   await click('Pick parts of the sketch')
   await wait(`!!document.querySelector('dialog.oa-pick[open]')`, 'picker dialog')
   await svgClick('.oa-pick rect[aria-label="Happy"]')
@@ -265,71 +268,54 @@ try {
   await wait(`document.querySelector('.oa-pick rect[aria-label="Happy"]')?.getAttribute('aria-pressed') === 'true'`, 'word picked')
   await click('Done')
   await wait(`!document.querySelector('dialog.oa-pick[open]')`, 'picker closed')
-  assert.match(await text('.oa-picked'), /1 picked on the sketch/)
+  assert.match(await text('.oa-chip'), /1 picked on the sketch/)
   await typeInto('.oa textarea', 'Is the first word fine?')
-  await click('Send')
+  await clickSel('.oa-send')
   await wait(`document.querySelectorAll('.oa-msg--bot').length >= 3`, 'second answer')
   assert.deepEqual(state.bodies[1].selection?.word_ids, ['w11'], 'the picked word is sent as the selection')
   assert.equal(state.bodies[1].base_revision_id, 11, 'the message names the revision the customer sees')
-  assert.equal(await evaluate(`!!document.querySelector('.oa-picked')`), false, 'the pick is cleared after the turn')
-  assert.equal(await evaluate(`document.querySelectorAll('.oa-prop').length`), 1, 'an answer without a proposal has no card')
+  assert.equal(await evaluate(`!!document.querySelector('.oa-chip')`), false, 'the pick is cleared after the turn')
+  assert.equal(await evaluate(`document.querySelectorAll('.oa-prop').length`), 1, 'an answer without a proposal has no summary')
 
-  // 5. "No AI": the manual form opens with the text the proposal wrote.
-  await option('No AI, I will do it myself')
+  // 5. "By myself": the manual form opens with the text the assistant wrote.
+  await option('By myself')
   await wait(`!!document.querySelector('textarea.co-text')`, 'manual text form')
   assert.equal(await evaluate(`document.querySelector('textarea.co-text').value`), REPLY_TEXT)
   assert.equal(await evaluate(`!!document.querySelector('.oa')`), false)
-  await option('Use the AI assistant')
+  await option('AI assistant')
   await wait(`!!document.querySelector('.oa .oa-prop')`, 'conversation comes back')
 
-  // 6. A new proposal: the chat stays at every step, the form stays locked, the order cannot be sent.
+  // 6. Another answer is applied too; the chat stays at every step and the order can go on.
   await typeInto('.oa textarea', 'Make it a little shorter')
-  await click('Send')
-  await wait(`document.querySelectorAll('.oa-prop[data-status="PENDING"]').length === 1`, 'second proposal')
-  assert.equal(await locked(), true)
-  assert.match(await text('.oa-foot'), /adds to the proposal above/)
+  await clickSel('.oa-send')
+  await wait(`document.querySelectorAll('.oa-prop[data-status="APPLIED"]').length === 2`, 'second answer applied')
+  assert.equal(await locked(), false)
   await clickSel('.co-next')
   await wait(`document.querySelector('.co-step.cur')?.textContent.includes('2')`, 'step 2')
   assert.equal(await evaluate(`!!document.querySelector('.oa')`), true, 'the chat stays at the materials step')
-  assert.equal(await locked(), true, 'the materials step is locked while a proposal waits')
   await clickSel('.co-next')
   await wait(`document.querySelector('.co-step.cur')?.textContent.includes('3')`, 'step 3')
   assert.equal(await evaluate(`!!document.querySelector('.oa')`), true, 'the chat stays at the review step')
-  assert.equal(await evaluate(`document.querySelector('.co-next').disabled`), true, 'the order is not sent while a proposal waits')
-  assert.match(await text('.co-need'), /Apply or skip/)
+  assert.equal(await evaluate(`document.querySelector('.co-next').disabled`), false, 'the order can be sent')
   await clickSel('.co-back')
   await clickSel('.co-back')
+  assert.ok(state.bodies.every((b) => b.from_order === true), 'no message builds on a proposal left over from earlier')
 
-  // 7. Start again from the order: the next message asks for it, and a skipped proposal frees the form.
-  await click('Start again from the order')
-  assert.match(await text('.oa-foot'), /starts again from the order/)
-  await typeInto('.oa textarea', 'Start over with a longer greeting')
-  await click('Send')
-  await wait(`document.querySelectorAll('.oa-prop').length === 3`, 'third proposal')
-  assert.equal(state.bodies.at(-1).from_order, true, 'start again sends from_order')
-  assert.equal(state.bodies[2].from_order, undefined, 'a normal message does not send from_order')
-  for (let n = 0; n < 2; n++) {
-    await evaluate(`(${button('Skip')}).click()`)
-    await sleep(300)
-  }
-  await wait(`document.querySelectorAll('.oa-prop[data-status="PENDING"]').length === 0`, 'both skipped')
-  assert.equal(log.filter((l) => /proposals\/\d+\/reject$/.test(l)).length, 2)
-  assert.equal(await locked(), false, 'the form is free after the proposals are skipped')
-
-  // 7b. Failures the customer can meet. Each one shows a translated message and leaves the form usable.
+  // 7. Failures the customer can meet. Each one shows a translated message and leaves the form usable.
   state.fail.limit = true
   await typeInto('.oa textarea', 'One more try')
-  await click('Send')
+  await clickSel('.oa-send')
   await wait(`!!document.querySelector('.oa .lg-error')`, 'daily limit message')
   assert.match(await text('.oa .lg-error'), /used all your assistant messages for today/)
   assert.equal(await evaluate(`document.querySelector('.oa textarea').value`), 'One more try', 'the typed message is kept after a refusal')
   state.fail.limit = false
 
   state.fail.turn = true
-  await click('Send')
+  const before = await evaluate(`document.querySelectorAll('.oa-prop').length`)
+  await clickSel('.oa-send')
   await wait(`!!document.querySelector('.oa-msg--bot.failed')`, 'provider failure')
   assert.match(await text('.oa-msg--bot.failed'), /could not answer right now/)
-  assert.equal(await evaluate(`document.querySelectorAll('.oa-prop[data-status="PENDING"]').length`), 0, 'a failed turn makes no proposal')
+  assert.equal(await evaluate(`document.querySelectorAll('.oa-prop').length`), before, 'a failed turn changes nothing')
   assert.equal(await locked(), false, 'the form stays free after a failed turn')
   state.fail.turn = false
 
@@ -344,38 +330,34 @@ try {
   assert.match(await text('.oa .lg-error'), /File storage is not available/)
   state.fail.generate = false
   await click('Draw the sketch')
-  await wait(`!!document.querySelector('.co-preview .oa-view-img')`, 'sketch after storage is back')
+  await wait(`!!document.querySelector('.co-sketch .oa-view-img')`, 'sketch after storage is back')
   assert.equal(await evaluate(`!!document.querySelector('.oa .lg-error')`), false, 'the error clears on the next try')
 
-  // 8. A proposal waits again, then Vietnamese and Japanese, desktop and phone.
-  await typeInto('.oa textarea', 'One more idea')
-  await click('Send')
-  await wait(`document.querySelectorAll('.oa-prop[data-status="PENDING"]').length === 1`, 'pending proposal')
-  // The order changed after the proposal (another tab): Apply says why, stays off, and the form is free again.
+  // 8. The order changed while the assistant answered (another tab): applying is refused, the chat says why and marks the
+  //    answer as not applied, and the form stays free.
   state.fail.apply = true
-  await click('Apply to the order')
-  await wait(`!!document.querySelector('.oa .lg-error') || !!document.querySelector('.oa-blocked')`, 'stale answer')
-  assert.match(await text('.oa'), /order changed after this proposal/i)
-  assert.equal(await evaluate(`(${button('Apply to the order')}).disabled`), true, 'Apply is off once the proposal is stale')
-  assert.equal(await locked(), false, 'a stale proposal does not keep the form locked')
+  await typeInto('.oa textarea', 'One more idea')
+  await clickSel('.oa-send')
+  await wait(`!!document.querySelector('.oa .lg-error')`, 'stale answer')
+  assert.match(await text('.oa .lg-error'), /order changed after this proposal/i)
+  await wait(`!!document.querySelector('.oa-prop[data-status="PENDING"]')`, 'the answer is marked as not applied')
+  assert.match(await text('.oa-prop[data-status="PENDING"] summary'), /Not applied/)
+  assert.equal(await locked(), false, 'a refused answer does not lock the form')
   state.fail.apply = false
-  for (const [lang, ai, proposal, applyText] of [['vi', 'Dùng trợ lý AI', 'Đề xuất', 'Áp dụng vào đơn'], ['ja', 'AIアシスタントを使う', '提案', '注文に適用']]) {
+
+  // Vietnamese and Japanese, desktop and phone.
+  for (const [lang, ai, applied] of [['vi', 'Trợ lý AI', 'Đã áp dụng'], ['ja', 'AIアシスタント', '適用済み']]) {
     await evaluate(`localStorage.setItem('aivhrs-lang',${JSON.stringify(lang)})`)
     for (const width of [1440, 390]) {
       await command('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: width < 600 })
       await open('/create-order/draft/77')
       await firstStep()
-      await wait(`!!document.querySelector('.oa .oa-prop')`, `${lang} ${width} proposal card`)
+      await wait(`!!document.querySelector('.oa .oa-prop')`, `${lang} ${width} answer summary`)
       assert.ok((await text('.co-body')).includes(ai), `${lang}: ${ai}`)
-      assert.ok((await text('.oa')).includes(proposal), `${lang}: ${proposal}`)
-      assert.ok(await evaluate(`!!(${button(applyText)})`), `${lang}: ${applyText}`)
+      assert.ok((await text('.oa')).includes(applied), `${lang}: ${applied}`)
       await noOverflow(`${lang} ${width}`)
-      if (lang === 'vi' && width === 1440) {
-        const shot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
-        const file = join(scratch, 'order-ai-vi-1440.png')
-        await writeFile(file, Buffer.from(shot.data, 'base64'))
-        console.log('Screenshot: ' + file)
-      }
+      if (lang === 'vi' && width === 1440) await shot('order-ai-vi-1440.png')
+      if (lang === 'vi' && width === 390) await shot('order-ai-vi-390.png')
     }
   }
 
@@ -388,10 +370,12 @@ try {
   await wait(`!!document.querySelector('textarea.co-text')`, 'manual form when the assistant is off')
   assert.equal(await evaluate(`!!document.querySelector('.oa')`), false)
   assert.match(await text('.co-body'), /The assistant is not available right now/)
-  assert.equal(await evaluate(`document.querySelector('.co-opt[role=radio]').disabled`), true, 'the AI choice is disabled')
+  assert.equal(await evaluate(`document.querySelector('.co-seg--how .co-how-ai').disabled`), true, 'the AI choice is disabled')
+  assert.equal(await evaluate(`!!document.querySelector('.co-tray--3')`), true, 'the input modes are shown without the assistant')
+  assert.equal(await evaluate(`!!document.querySelector('.co-rail') && !document.querySelector('.co-sketch')`), true, 'without the assistant the estimate box is back')
 
   assert.deepEqual(errors, [])
-  console.log('PASS: AI choice, first turn (draft, proposal card, order and sketch unchanged), apply, undo and redo, pick on the sketch (selection sent and cleared), no AI, chat at every step, form locked and order not sendable while a proposal waits, start again (from_order), skip, errors (daily limit, provider failed, storage down then back, stale proposal), vi/ja at 1440 and 390, assistant off. All API calls intercepted.')
+  console.log('PASS: AI choice, layout (chat with price on the right, sketch on the left), first turn (draft, proposal applied at once, sketch box updated, no Apply/Skip, compact summary, Markdown), one-line composer, undo and redo, pick on the sketch (chip, selection sent and cleared), by myself, chat at every step, from_order on every message, errors (daily limit, provider failed, storage down then back, apply refused), vi/ja at 1440 and 390, assistant off. All API calls intercepted.')
 } finally {
   ws?.close(); browser?.kill(); server.closeAllConnections(); server.close()
 }
