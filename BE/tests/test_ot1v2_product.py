@@ -46,7 +46,7 @@ def test_v2_records_what_it_removed_and_its_own_similarity():
     assert g.engine["similarity_method"] == "ink-f1-v2" and g.engine["regions"]["method"] == "word-local-ink-f1-v2"
     noise = g.engine["pages"][0]["noise_removed"]
     assert noise["counts"]["RULING"] >= len(LINE_YS) - 1                  # the ruled lines (in pieces between letters)
-    assert noise["pieces"] and all(p["reason"] in ("RULING", "FOLD", "EDGE") for p in noise["pieces"])
+    assert noise["pieces"] and all(p["reason"] in ("RULING", "FOLD", "EDGE", "BLOB", "COLOUR") for p in noise["pieces"])
     assert len(noise["pieces"]) <= R2.NOISE_MAX_PIECES
     x0, y0, x1, y1 = noise["pieces"][0]["bbox_mm"]
     assert 0 <= x0 < x1 <= 210 and 0 <= y0 <= y1 <= 297                  # page millimetres (A4)

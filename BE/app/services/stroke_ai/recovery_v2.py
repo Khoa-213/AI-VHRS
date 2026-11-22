@@ -51,10 +51,19 @@ RULING = True             # S4 on (switch off to measure R1 alone)
 SMOOTH_WINDOW = 3         # S8: polish of the traced paths. v1's (window 5, Douglas-Peucker 0.7 px) pulled the path off
 SIMPLIFY_EPS = 0.4        # the stroke's centre: F1 +4 points, fewer sharp turns, 40 % more points (R3 report)
 MAX_SIDE_PX = 2000        # S8: working resolution (v1: 1,600); 1,600 -> 2,000 gave F1 +2.3 on the benchmark
+FINE_PEN_PX = 7.0         # S8b: thin writing is traced on a copy enlarged until the pen line is about this wide,
+FINE_MAX = 3.0            # at most this many times,
+FINE_MAX_SIDE = 2400      # and no larger than this (px); below FINE_MIN the copy is not worth it
+FINE_MIN = 1.25
+FINE_CLOSE = 0.5          # (1.0 closed the small bowls again, test) gaps up to about one original pixel across a stroke are closed on the enlarged copy
 FOLDS = True              # S5 on (switch off to measure without it)
 EDGE_AGAIN = True         # S1's band rule again after S4 / S5 (outline joined to the writing only by ruling)
 RIM_MAX_PENS = 2.5        # rim pieces thicker than this many pen widths are the table seen through a tear gap
 RIM_PAPER_TOL = 0.12      # rim ink counts only where the surroundings are not darker than the paper by more than this
+COLOUR_DE = 25.0          # S3: an ink piece whose colour (Lab a, b) is this far from the pen's is print (logo, margin line)
+COLOUR_MAX_SHARE = 0.15   # ... unless such pieces hold more than this share of the ink (a second pen: all kept)
+BLOB_PENS = 5.0           # a dark area this many pen widths thick is not written with the pen (a punch hole)
+BLOB_INSIDE = 0.5         # ... and an ink piece goes when at least this share of it lies on such an area
 
 
 def _sheet_ink(gray: np.ndarray, mask: np.ndarray, band: np.ndarray,
@@ -149,7 +158,7 @@ NOISE_MAX_PIECES = 100          # noise_removed lists at most this many pieces (
 
 
 def noise_summary(removed: dict[str, np.ndarray], mm_per_px: float, offset_mm: tuple[float, float]) -> dict:
-    """R4: the ink pieces the noise stages took out, for the Staff: per reason (RULING, FOLD, EDGE) the number of pieces, and
+    """R4: the ink pieces the noise stages took out, for the Staff: per reason (RULING, FOLD, EDGE, BLOB, COLOUR) the number of pieces, and
     the largest pieces with their box in page millimetres (same frame as the strokes)."""
     ox, oy = offset_mm
     counts: dict[str, int] = {}
@@ -177,6 +186,84 @@ def _anchored(ink: np.ndarray, anchor: np.ndarray) -> np.ndarray:
     good[np.unique(lab[(ink > 0) & (anchor > 0)])] = True
     good[0] = False
     return (good[lab] * 255).astype(np.uint8)
+
+
+def _off_colour(ink: np.ndarray, bgr: np.ndarray) -> np.ndarray:
+    """S3 (2026-11-22): ink pieces whose colour is far from the pen's. The pen's colour is the median (Lab a, b) over all
+    ink pixels; a piece (connected component) is judged by its own median. On the owner's notebook letter the red margin
+    marks, the pink logo and the shadow along the sheet's edge are 25-60 away, every letter under 20. Returns the pieces
+    to remove (empty when they hold more than `COLOUR_MAX_SHARE` of the ink: two pens, nothing is print)."""
+    out = np.zeros_like(ink)
+    if not COLOUR_DE or not ink.any():
+        return out
+    lab = cv2.cvtColor(cv2.GaussianBlur(bgr, (3, 3), 0), cv2.COLOR_BGR2LAB)
+    n, comp = cv2.connectedComponents(ink, connectivity=8)
+    m = comp > 0
+    idx = comp[m]
+    a, b = lab[..., 1][m].astype(np.float32), lab[..., 2][m].astype(np.float32)
+    pen_a, pen_b = float(np.median(a)), float(np.median(b))
+    order = np.argsort(idx, kind="stable")
+    idx_s, cuts = idx[order], np.flatnonzero(np.diff(idx[order])) + 1
+    far = np.zeros(n, bool)
+    size = np.zeros(n, np.int64)
+    for ids, ga, gb in zip(np.split(idx_s, cuts), np.split(a[order], cuts), np.split(b[order], cuts)):
+        size[ids[0]] = len(ids)
+        far[ids[0]] = float(np.hypot(np.median(ga) - pen_a, np.median(gb) - pen_b)) > COLOUR_DE
+    if not far.any() or size[far].sum() > COLOUR_MAX_SHARE * size.sum():
+        return out
+    return (far[comp] * 255).astype(np.uint8)
+
+
+def _blobs(ink: np.ndarray, bgr: np.ndarray, pen: float) -> np.ndarray:
+    """Ink on a dark area far thicker than the pen (`BLOB_PENS`): a punch hole, a dark sticker, a thumb over the corner.
+    Found on the photo itself (darker than half the paper's grey, still there after an opening of that size): the
+    local binarisation keeps only the outline of such an area, which would be traced as a ring. Returns the ink pieces
+    lying mostly on one (`BLOB_INSIDE`)."""
+    out = np.zeros_like(ink)
+    if not BLOB_PENS or not ink.any():
+        return out
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    k = int(np.ceil(BLOB_PENS * max(pen, 1.0))) | 1
+    area = cv2.morphologyEx(((gray < 0.5 * float(np.median(gray))) * 255).astype(np.uint8), cv2.MORPH_OPEN,
+                            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    if not area.any():
+        return out
+    r = 2 * int(np.ceil(max(pen, 1.0))) + 1
+    area = cv2.dilate(area, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+    n, comp = cv2.connectedComponents(ink, connectivity=8)
+    m = ink > 0
+    inside = np.bincount(comp[m], (area[m] > 0).astype(np.float64), n) / np.maximum(np.bincount(comp[m], minlength=n), 1)
+    bad = inside >= BLOB_INSIDE        # a word merely touching the area (the table seen through a tear) stays
+    bad[0] = False
+    return (bad[comp] * 255).astype(np.uint8)
+
+
+def _fine_factor(pen: float, side: int) -> float:
+    f = min(FINE_MAX, FINE_PEN_PX / max(pen, 1.0), FINE_MAX_SIDE / max(side, 1))
+    return f if f >= FINE_MIN else 1.0
+
+
+def _fine_ink(ink: np.ndarray, gray: np.ndarray, f: float, noise: np.ndarray | None = None) -> np.ndarray:
+    """The cleaned `ink` redrawn `f` times larger: the enlarged grey sheet binarised like the page was (v1's flattening
+    and two thresholds), kept within one (original) pixel of the cleaned ink and off the pixels the noise stages removed. A cleaned piece the enlarged copy does not see at all is kept as it
+    was, enlarged."""
+    h, w = ink.shape
+    size = (int(round(w * f)), int(round(h * f)))
+    near = cv2.dilate(ink, np.ones((3, 3), np.uint8))
+    if noise is not None:
+        near &= ~noise                                      # what the stages took out next to a letter stays out
+    near = cv2.resize(near, size, interpolation=cv2.INTER_NEAREST)
+    out = v1._binarise(cv2.resize(gray, size, interpolation=cv2.INTER_CUBIC)) & near
+    if FINE_CLOSE:
+        # a stroke crossing a removed line: the line's pixels stay out, which leaves a hairline gap across the stroke
+        k = 2 * int(round(FINE_CLOSE * f)) + 1
+        out = cv2.morphologyEx(out, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    big = cv2.resize(ink, size, interpolation=cv2.INTER_NEAREST)
+    n, comp = cv2.connectedComponents(big, connectivity=8)
+    seen = np.zeros(n, bool)
+    seen[np.unique(comp[out > 0])] = True
+    seen[0] = True
+    return out | ((~seen[comp]) * 255).astype(np.uint8)
 
 
 def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_box: dict[str, Any] | None = None,
@@ -236,6 +323,8 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
     if angle:
         rot = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
         flat = cv2.warpAffine(flat, rot, (w, h), flags=cv2.INTER_LINEAR, borderValue=255)
+        img = cv2.warpAffine(img, rot, (w, h), flags=cv2.INTER_LINEAR, borderValue=(255, 255, 255))
+        gray = cv2.warpAffine(gray, rot, (w, h), flags=cv2.INTER_LINEAR, borderValue=int(np.median(gray)))
         if anchor is not None:
             anchor = cv2.warpAffine(anchor, rot, (w, h), flags=cv2.INTER_NEAREST)
     removed: dict[str, np.ndarray] = {}                     # R4: what each stage took out (for `noise_removed`)
@@ -244,18 +333,33 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
         ink, ruling = ruling_mod.remove_ruling(ink, flat)
         removed["RULING"] = ruling.removed
     if FOLDS:                                               # S5: creases / long straight lines at any angle
-        ink, removed["FOLD"], _ = folds_mod.remove_folds(ink, ruling_mod._pen_px(ink))
+        ink, removed["FOLD"], _ = folds_mod.remove_folds(ink, ruling_mod._pen_px(ink), 255 - flat)
     if anchor is not None and EDGE_AGAIN:
         # the band rule of S1 again, now that ruling and creases are gone: outline shadow joined to the writing only through
         # a ruled line (the owner's letter, R3) is a piece of its own and is dropped
         before = ink
         ink = _anchored(ink, anchor)
         removed["EDGE"] = before & ~ink
+    removed["BLOB"] = _blobs(ink, img, ruling_mod._pen_px(ink))  # punch holes and other pieces far thicker than the pen
+    ink = ink & ~removed["BLOB"]
+    removed["COLOUR"] = _off_colour(ink, img)             # S3: print in another colour than the pen (logo, margin marks)
+    ink = ink & ~removed["COLOUR"]
     ink = v1._remove_specks(ink)
     if not ink.any():
         raise AppError(422, "NO_STROKES_FOUND", "Không tìm thấy nét chữ trong ảnh. Hãy kiểm tra độ tương phản.")
 
-    strokes_px, comp_of, width_px = v1.trace(ink, SMOOTH_WINDOW, SIMPLIFY_EPS)
+    fine = _fine_factor(ruling_mod._pen_px(ink), max(h, w))
+    if fine > 1:
+        noise = np.zeros_like(ink)
+        for mask in removed.values():
+            noise |= mask
+        # S8b: a pen line 2-3 px wide (a small photo) closes the bowls of o / a / b and merges neighbouring strokes when
+        # binarised, and its skeleton is a staircase. The cleaned ink stays the judge of WHERE ink is; its shape is taken
+        # from an enlarged copy of the sheet
+        strokes_px, comp_of, width_px = v1.trace(_fine_ink(ink, gray, fine, noise), SMOOTH_WINDOW, SIMPLIFY_EPS)
+        strokes_px, width_px = [(np.asarray(p, float) + 0.5) / fine - 0.5 for p in strokes_px], width_px / fine   # pixel centres
+    else:
+        strokes_px, comp_of, width_px = v1.trace(ink, SMOOTH_WINDOW, SIMPLIFY_EPS)
     if width_px / sc < LOW_RES_PEN_PX:                     # S0: pen width in pixels of the photo as uploaded
         warnings.append("LOW_RESOLUTION")
     order = v1._reading_order(strokes_px, comp_of)

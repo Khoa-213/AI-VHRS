@@ -107,6 +107,9 @@ def paper_mask(bgr: np.ndarray) -> np.ndarray | None:
     return mask
 
 
+CUT_OFF_SHARE = 0.05     # more of the outline than this on the photo's border: the sheet runs out of the photo
+
+
 def find_paper(bgr: np.ndarray) -> PaperFind | None:
     mask = paper_mask(bgr)
     if mask is None:
@@ -116,7 +119,15 @@ def find_paper(bgr: np.ndarray) -> PaperFind | None:
     if len(contours) == 1:
         c = contours[0]
         approx = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
-        if len(approx) == 4 and cv2.isContourConvex(approx) and cv2.contourArea(approx) >= 0.85 * cv2.contourArea(c):
+        # a sheet cut off by the edge of the photo is no rectangle to straighten: its four "corners" are where the photo
+        # ends, and warping them to a rectangle slanted the writing and cut words off (owner's photo, 2026-11-22)
+        ih, iw = mask.shape
+        pts = c.reshape(-1, 2)
+        m = 1.5 * FRAME_SHARE * min(ih, iw)                 # the photo's outer frame is always background (FRAME_SHARE)
+        on_edge = (pts[:, 0] <= m) | (pts[:, 1] <= m) | (pts[:, 0] >= iw - 1 - m) | (pts[:, 1] >= ih - 1 - m)
+        cut_off = float(on_edge.mean()) > CUT_OFF_SHARE
+        if (not cut_off and len(approx) == 4 and cv2.isContourConvex(approx)
+                and cv2.contourArea(approx) >= 0.85 * cv2.contourArea(c)):
             H, size, inner = _rect_homography(_order(approx), MARGIN)
             return PaperFind(mask, H, size, 1, "quad", inner, share)
     # torn / irregular outline: no rotation (a minimum-area rectangle of ragged pieces cut the top of the owner's letter);
