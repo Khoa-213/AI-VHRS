@@ -1,10 +1,11 @@
-"""Upgrade U5: studio drafts, their revisions, and the AI assistant's log (schema: migration 0021; orders: 0024)."""
+"""Upgrade U5: studio drafts, their revisions, and the AI assistant's log (schema: migration 0021; orders: 0024;
+proposals on orders: 0029)."""
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, SmallInteger, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -84,3 +85,23 @@ class AiToolCall(Base):
     sketch_revision_id: Mapped[int | None] = mapped_column(BigInteger)                # sketch_revisions (orders, 0024)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+
+
+class AiProposal(Base):
+    """A change the order assistant proposes (migration 0029). The order changes only when the customer applies it."""
+    __tablename__ = "ai_proposals"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
+    session_id: Mapped[int] = mapped_column(ForeignKey("ai_sessions.id"))
+    message_id: Mapped[int] = mapped_column(ForeignKey("ai_messages.id"))
+    parent_proposal_id: Mapped[int | None] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(10), default="PENDING")      # PENDING | APPLIED | REJECTED
+    base_state_hash: Mapped[str] = mapped_column(String(64))
+    before_state: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    after_state: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    changes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    estimate: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    sketch_revision_id: Mapped[int | None] = mapped_column(BigInteger)
+    sketch_revision_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger), default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

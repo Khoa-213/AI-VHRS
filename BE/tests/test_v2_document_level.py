@@ -297,7 +297,12 @@ def test_the_assistant_sets_the_layout_through_the_same_checks(client, cust, wca
     assert r.status_code == 200, r.text
     assert "set_layout" in p.seen[0]["tools"]
     providers["list"] = [q]
-    assert _say(client, cust, oid, "Đổi Kính thành Thân, thêm chữ hàng, rồi vẽ lại").status_code == 200
+    r2 = _say(client, cust, oid, "Đổi Kính thành Thân, thêm chữ hàng, rồi vẽ lại")
+    assert r2.status_code == 200
+    # 0029: the second turn continued the first proposal; applying it writes both onto the order
+    prop = r2.json()["proposal"]
+    assert prop["parent_proposal_id"] == r.json()["proposal"]["id"]
+    assert client.post(f"{API}/orders/{oid}/assistant/proposals/{prop['id']}/apply", headers=cust).status_code == 200
     res = [_tool_result(p, k) for k in range(4)] + [_tool_result(q, k) for k in range(3)]
     assert [x["ok"] for x in res] == [True, True, True, False, False, True, True]
     assert res[3]["error"] == "INVALID_LAYOUT" and res[4]["error"] == "TEXT_NOT_FOUND"
