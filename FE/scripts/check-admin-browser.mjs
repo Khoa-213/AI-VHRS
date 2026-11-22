@@ -1,3 +1,4 @@
+
 // Real Edge DOM smoke test, with all API/storage calls intercepted. No production credentials or data.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'

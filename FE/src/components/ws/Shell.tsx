@@ -26,6 +26,7 @@ import './staff-depth.css'
 import './staff-queue.css'
 import './manager-ui.css'
 import './tech-ui.css'
+import './staff-glass.css'
 
 export type Area = 'staff' | 'manager' | 'tech' | 'admin'
 export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit' | 'refunds' | 'reports' | 'robots' | 'reviews'
@@ -174,7 +175,7 @@ export default function Shell({
   const home = tech ? '/tech' : '/staff'
   const navLabel = t(area === 'manager' ? 'mgr.navAria' : tech ? 'rail.tech' : 'rail.staff')
   if (area === 'staff' || area === 'manager' || tech) return (
-    <div className={`ws ws-staff${area === 'manager' ? ' ws-manager' : ''}${tech ? ' ws-tech' : ''}${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
+    <div className={`ws ws-staff${area === 'staff' && user?.apiRole === 'STAFF' ? ' ws-staff-glass' : ''}${area === 'manager' ? ' ws-manager' : ''}${tech ? ' ws-tech' : ''}${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
       <SkipLink />
       <header className="staff-header">
         <div className="staff-header-brand">
@@ -199,7 +200,7 @@ export default function Shell({
         </div>
         <nav className="staff-nav" aria-label={navLabel}>
           {items.filter((it): it is Item => it !== 'gap').map((it) => (
-            <Link key={it.key} to={it.to} className={active === it.key ? 'on' : undefined} aria-current={active === it.key ? 'page' : undefined} onClick={() => setSidebarOpen(false)}>
+            <Link key={it.key} to={it.to} title={area === 'staff' && user?.apiRole === 'STAFF' ? it.label : undefined} className={active === it.key ? 'on' : undefined} aria-current={active === it.key ? 'page' : undefined} onClick={() => setSidebarOpen(false)}>
               {it.icon}<span className="staff-nav-label">{it.label}</span>{!!it.count && <span className="staff-nav-count">{it.count}</span>}
             </Link>
           ))}

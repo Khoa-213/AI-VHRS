@@ -138,6 +138,12 @@ export function refreshTokens(): Promise<boolean> {
   return refreshing
 }
 
+/** Dev only: every failed call is written to the console with its status and backend code, so a failure can be told apart from the UI. */
+function logFailure(method: string, path: string, e: ApiError) {
+  if (!import.meta.env.DEV || e.code === 'SKETCH_NOT_GENERATED') return
+  console.warn(`[api] ${method} ${path} -> ${e.status} ${e.code}`, e.message, e.details ?? '')
+}
+
 /** JSON request. Resolves to `undefined` for empty answers (204). */
 export async function api<T = unknown>(path: string, opts: Options = {}): Promise<T> {
   let res = await send(path, opts)
@@ -150,7 +156,11 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
       onExpired?.()
     }
   }
-  if (!res.ok) throw await toError(res)
+  if (!res.ok) {
+    const e = await toError(res)
+    logFailure(opts.method ?? 'GET', path, e)
+    throw e
+  }
   if (res.status === 204) return undefined as T
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
@@ -167,7 +177,11 @@ export async function apiFile(path: string): Promise<{ blob: Blob; name: string 
       onExpired?.()
     }
   }
-  if (!res.ok) throw await toError(res)
+  if (!res.ok) {
+    const e = await toError(res)
+    logFailure('GET', path, e)
+    throw e
+  }
   const cd = res.headers.get('Content-Disposition') ?? ''
   const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)
   const plain = /filename="?([^";]+)"?/i.exec(cd)

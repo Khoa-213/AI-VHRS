@@ -209,3 +209,12 @@
 /* Sidebar still scrolls (wheel, touch, keyboard) when zoomed, but hides the scrollbar track. */
 .ws.ws-staff .staff-sidebar{scrollbar-width:none;-ms-overflow-style:none}
 .ws.ws-staff .staff-sidebar::-webkit-scrollbar{display:none;width:0;height:0}
+.ws.ws-staff .staff-attention{display:flex;align-items:center;gap:24px;padding:24px 30px;border:1px solid var(--line);border-radius:18px;background:var(--acc-soft);color:var(--ink);text-decoration:none;transition:border-color .15s}
+.ws.ws-staff .staff-attention:hover{border-color:var(--line-strong)}
+.ws.ws-staff .staff-attention:focus-visible{outline:3px solid var(--staff-focus);outline-offset:3px}
+.ws.ws-staff .staff-attention-icon{flex-shrink:0;color:var(--warn)}
+.ws.ws-staff .staff-attention-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}
+.ws.ws-staff .staff-attention-copy strong{font-size:21px;font-weight:650;line-height:1.3}
+.ws.ws-staff .staff-attention-copy>span{color:var(--ink2);font-size:15px}
+.ws.ws-staff .staff-attention-action{flex-shrink:0;padding:14px 21px;border-radius:999px;background:var(--btn-inv-bg);color:var(--btn-inv-fg);font-size:14px;font-weight:650;text-align:center}
+@media(max-width:600px){.ws.ws-staff .staff-attention{flex-wrap:wrap;gap:14px;padding:20px}.ws.ws-staff .staff-attention-copy{flex-basis:calc(100% - 44px)}.ws.ws-staff .staff-attention-action{margin-left:44px}}
