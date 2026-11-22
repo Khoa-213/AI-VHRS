@@ -69,6 +69,11 @@ export default function JobWorkflow({ job, refresh, stale }: { job: TechJobDetai
       </div>
       {current && <>
         <code className="tech-hash">{current.hash}</code>
+        <p className="sub">{t(current.info.snapshot ? 'td.pkg.signed' : 'td.pkg.legacy')}</p>
+        {!!current.info.material_drift?.length && <div className="wk-warn" role="status">
+          <b>{t('td.pkg.drift')}</b>
+          <ul className="tech-drift">{current.info.material_drift.map((d) => <li key={d}>{d}</li>)}</ul>
+        </div>}
         {current.info.pen && <dl className="wk-rows">
           <div><dt>{t('td.flow.forceBand')}</dt><dd>{current.info.pen.f_min_n} / {current.info.pen.f_target_n} / {current.info.pen.f_max_n} N</dd></div>
           <div><dt>{t('td.flow.forceHard')}</dt><dd>{current.info.pen.f_hard_n} N</dd></div>

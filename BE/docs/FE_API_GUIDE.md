@@ -953,7 +953,7 @@ Trợ lý AI làm việc **trên chính đơn DRAFT / NEED_INFO** (D1) và đi c
 
 ### Cách FE nên dựng (yêu cầu của chủ dự án 2026-11-22)
 1. **Chatbox cố định ở mọi bước của Create Order** (Nội dung, Vật tư, Phác thảo, Xem lại), không chỉ ở bước phác thảo, không phải một nút "Tạo phác thảo". Trợ lý cần đơn đã có id: khi khách gửi tin nhắn đầu mà đơn chưa có, FE tạo đơn nháp trước (như lúc khách gõ chữ: `POST /orders`, rồi `PUT /orders/{id}/inputs/text` nếu đã có chữ).
-2. **Mỗi tin trả lời có `proposal` → một thẻ đề xuất** trong chat: ảnh phác thảo (nếu `sketch_revision_id`), danh sách `changes` (vd "Nội dung: … → …", "Số bản: 1 → 3", "Giấy: A → B"), giá ước tính mới, hai nút **Áp dụng vào đơn** / **Bỏ qua**. Canvas và form **không đổi** cho tới khi khách bấm Áp dụng.
+2. **Mỗi tin trả lời có `proposal` → một thẻ đề xuất** trong chat: **ảnh phác thảo bắt buộc hiện khi `preview` khác null** (`GET preview.preview_url?page=N`, N = 1..`preview.pages`; tải bằng `fetch` kèm Bearer rồi `URL.createObjectURL`, không đặt thẳng vào `<img src>` vì cần token), danh sách `changes` (vd "Nội dung: … → …", "Số bản: 1 → 3", "Giấy: A → B"), giá ước tính mới, hai nút **Áp dụng vào đơn** / **Bỏ qua**. Canvas và form **không đổi** cho tới khi khách bấm Áp dụng.
 3. Bấm Áp dụng → `POST .../proposals/{pid}/apply` → tải lại form (`GET /orders/{id}`) và phác thảo (`GET /orders/{id}/sketch`). Bỏ qua → `POST .../reject`.
 4. Thẻ có `applicable: false` → khoá nút Áp dụng, hiện lý do theo `blocked_reason` (`ORDER_CHANGED`: "Đơn đã đổi sau đề xuất này, hãy nhắn trợ lý đề xuất lại"; `APPLIED`; `REJECTED`; `ORDER_NOT_EDITABLE`).
 5. Không dùng trang `/studio` (bản nháp studio cũ) cho luồng này; không dùng `localStorage` để nhớ bản đã áp dụng; không cần tự undo / redo để "kéo" BE về bản đã chọn trước khi gửi đơn.
@@ -966,6 +966,7 @@ POST /orders/{id}/assistant/messages/stream            (cùng body) → text/eve
 GET  /orders/{id}/assistant/proposals                  → ProposalOut[] (cũ trước)
 POST /orders/{id}/assistant/proposals/{pid}/apply      → {proposal, current_sketch_revision_id, estimate}
 POST /orders/{id}/assistant/proposals/{pid}/reject     → ProposalOut
+GET  /orders/{id}/assistant/proposals/{pid}/preview?page=1  → image/jpeg (ảnh đơn SAU khi áp dụng, vật tư của đề xuất)
 GET  /workshop/orders/{id}/assistant                   (Staff / Manager) cờ cảnh báo + hội thoại của đơn
 ```
 
@@ -975,11 +976,14 @@ GET  /workshop/orders/{id}/assistant                   (Staff / Manager) cờ c�
   applicable: bool, blocked_reason: null | APPLIED | REJECTED | ORDER_NOT_EDITABLE | ORDER_CHANGED,
   changes: [{field, before, after}],          // theo thứ tự các bước tạo đơn
   estimate: {price_min, price_max, currency: "VND", is_estimate: true} | null,   // giá ước tính SAU khi áp dụng
-  sketch_revision_id: int | null,             // phác thảo đơn sẽ hiển thị sau khi áp dụng (null = phác thảo không đổi)
+  sketch_revision_id: int | null,             // phác thảo MỚI của đề xuất (null = giữ phác thảo hiện tại)
+  preview: { revision_id, pages, preview_url, sketch_changed: bool, sketch_outdated: bool } | null,
+                                              // ảnh để khách xem; null = đơn chưa có phác thảo nào (vd chưa có nội dung / mẫu chữ)
   created_at, decided_at }
 ```
 - `field`: `text`, `template_id`, `handwriting_style_id`, `font_size_mm`, `alignment`, `layout` (before / after là object bố cục), `paper_type_id`, `pen_type_id`, `ink_color_id`, `workshop_suggest_materials`, `quantity`, `physical_watermark`, `restoration_mode`, `customer_note`, `sketch` (id revision trước / sau). Vật tư và mẫu chữ có dạng `{id, name}`.
-- Ảnh phác thảo của đề xuất (trước khi áp dụng): `GET /orders/{id}/sketch/preview?revision_id={sketch_revision_id}&page=1` (JPEG, Bearer). Dữ liệu nét: `GET /orders/{id}/sketch?revision_id=...`.
+- **Ảnh phác thảo của đề xuất** (trước khi áp dụng): `GET {preview.preview_url}?page=N` (JPEG, Bearer, có dấu AI). Ảnh là đơn **sau khi áp dụng**: phác thảo mới nếu có, nếu không thì phác thảo hiện tại, vẽ bằng **giấy / bút / mực của đề xuất** (đề xuất chỉ đổi giấy vẫn có ảnh mới). Trang ngoài phạm vi → `404 PAGE_NOT_FOUND`; đề xuất không có phác thảo → `404 PROPOSAL_HAS_NO_SKETCH`. Dữ liệu nét: `GET /orders/{id}/sketch?revision_id={preview.revision_id}`.
+- **Trợ lý luôn vẽ phác thảo khi cần** (2026-11-22): đơn mẫu chữ (OT3) có nội dung + mẫu chữ mà **chưa có phác thảo**, hoặc **nội dung đổi sau khi đã có phác thảo**, thì trong cùng lượt trợ lý gọi `generate_sketch`; nếu mô hình quên, BE tự vẽ ở cuối lượt (`reply.tool_calls` có thêm `generate_sketch`, câu trả lời có thêm dòng "Mình đã tạo phác thảo theo nội dung hiện tại…"). Vì vậy một câu hỏi như "đơn ổn chưa?" trên đơn chưa có phác thảo cũng trả về đề xuất có ảnh. Ngoại lệ: phác thảo có nét khách đã sửa (`SKETCH_HAS_EDITS`) thì không tự vẽ đè; đề xuất giữ phác thảo cũ với `preview.sketch_outdated = true` → FE ghi "Phác thảo chưa khớp nội dung mới" và trợ lý hỏi khách có vẽ lại không.
 
 **Tin nhắn**
 - `ai_consent: true` bắt buộc ở tin nhắn đầu tiên của đơn (câu FE: "Tin nhắn, nội dung đơn và số đo phác thảo sẽ được gửi tới nhà cung cấp AI bên ngoài; ảnh của bạn không bị gửi").
@@ -991,7 +995,7 @@ GET  /workshop/orders/{id}/assistant                   (Staff / Manager) cờ c�
 - Một lượt mỗi đơn: tin nhắn thứ hai khi lượt trước chưa xong → `409 AI_TURN_IN_PROGRESS` (khoá ô nhập khi đang chờ). Áp dụng đề xuất trong lúc trợ lý đang trả lời cũng bị `409 AI_TURN_IN_PROGRESS`.
 - `OrderTurnOut = {user, reply, replayed, sketch_revision_id, proposal}`. `proposal` null = trợ lý chỉ trả lời / đọc đơn. `reply.proposal` giống `proposal` (để vẽ thẻ ngay trong tin). `sketch_revision_id` là revision **hiện tại của đơn** (không đổi sau lượt chat). `reply.tool_calls[] = {name, ok, revision_id}` chỉ để hiện tiến trình.
 - Mọi nhà cung cấp lỗi / quá thời gian → `200` với `reply.status = FAILED`, `proposal = null`, đơn không đổi (kể cả khi trợ lý đã chạy vài công cụ trước khi lỗi).
-- Stream: `user_saved`, `provider`, `tool {name, ok, revision_id, error}`, `failover`, **`proposal {id, sketch_revision_id, fields}`**, rồi `reply` (= `OrderTurnOut`) hoặc `error`; cuối cùng `done`. Revision trong sự kiện `tool` là bản nháp của đề xuất, **không** tải nó lên canvas.
+- Stream: `user_saved`, `provider`, `tool {name, ok, revision_id, error, auto?}` (`auto: true` = BE tự vẽ phác thảo cuối lượt), `failover`, **`proposal {id, sketch_revision_id, fields}`**, rồi `reply` (= `OrderTurnOut`) hoặc `error`; cuối cùng `done`. Revision trong sự kiện `tool` là bản nháp của đề xuất, **không** tải nó lên canvas.
 
 **Áp dụng / bỏ qua**
 - Áp dụng ghi nội dung / vật tư / tuỳ chọn / phác thảo của đề xuất vào đơn và tính lại giá theo bảng giá hiện hành (`estimate` trong kết quả). Bấm lại đề xuất đã áp dụng → `200` như lần trước.

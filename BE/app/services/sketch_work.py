@@ -366,16 +366,20 @@ class SketchWorkService:
         return order, list(self.session.scalars(select(SketchRevision).where(SketchRevision.order_id == order.id)
                                                 .order_by(SketchRevision.seq)))
 
-    def preview(self, order_id: int, page: int, revision_id: int | None = None) -> bytes:
-        """JPEG of one page in the order's ink / pen width / paper, with the visible AI mark (U2)."""
+    def preview(self, order_id: int, page: int, revision_id: int | None = None,
+                materials: dict[str, Any] | None = None) -> bytes:
+        """JPEG of one page in the order's ink / pen width / paper, with the visible AI mark (U2). `materials`
+        ({paper_type_id, pen_type_id, ink_color_id}) draws it in other materials: an AI proposal's, before it is applied."""
         data = self.view(order_id, revision_id)
         order, doc = data["order"], data["document"]
         pages = geo.to_pages(doc)
         if not 1 <= page <= len(pages):
             raise AppError(404, "PAGE_NOT_FOUND", f"Phác thảo có {len(pages)} trang.")
-        paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
-        ink = self.catalog.ink(order.ink_color_id) if order.ink_color_id else None
-        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        m = materials if materials is not None else {"paper_type_id": order.paper_type_id, "pen_type_id": order.pen_type_id,
+                                                     "ink_color_id": order.ink_color_id}
+        paper = self.catalog.paper(m["paper_type_id"]) if m.get("paper_type_id") else None
+        ink = self.catalog.ink(m["ink_color_id"]) if m.get("ink_color_id") else None
+        pen = self.catalog.pen(m["pen_type_id"]) if m.get("pen_type_id") else None
         img = render_image.render_jpeg(pages[page - 1], ink_hex=ink.hex_code if ink else None,
                                        stroke_width_mm=float(pen.stroke_width_mm) if pen and pen.stroke_width_mm else None,
                                        paper_surface=paper.surface if paper else None)

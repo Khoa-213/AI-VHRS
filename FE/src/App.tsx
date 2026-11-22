@@ -10,6 +10,9 @@ import AuditLog from './pages/admin/AuditLog'
 import Settings from './pages/admin/Settings'
 import Refunds from './pages/staff/Refunds'
 import Approvals from './pages/staff/Approvals'
+import Reports from './pages/staff/Reports'
+import Robots from './pages/staff/Robots'
+import Reviews from './pages/staff/Reviews'
 import Catalog from './pages/staff/Catalog'
 import Pricing from './pages/staff/Pricing'
 import Schedule from './pages/staff/Schedule'
@@ -89,6 +92,9 @@ function Routes() {
   if (path === '/staff/catalog') return <RequireStaff manager><Catalog /></RequireStaff>
   if (path === '/staff/pricing') return <RequireStaff manager><Pricing /></RequireStaff>
   if (path === '/staff/approvals') return <RequireStaff manager><Approvals /></RequireStaff>
+  if (path === '/staff/reports') return <RequireStaff manager><Reports /></RequireStaff>
+  if (path === '/staff/robots') return <RequireStaff manager><Robots /></RequireStaff>
+  if (path === '/staff/reviews') return <RequireStaff manager><Reviews /></RequireStaff>
   const schedule = /^\/staff\/schedule(?:\/(\d+))?\/?$/.exec(path)
   if (schedule) {
     return (

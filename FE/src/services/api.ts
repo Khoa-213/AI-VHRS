@@ -156,6 +156,24 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+/** File download with the Bearer header (refreshes once on a 401). The name comes from `Content-Disposition` when the browser may read it. */
+export async function apiFile(path: string): Promise<{ blob: Blob; name: string | null }> {
+  let res = await send(path, {})
+  if (res.status === 401 && getTokens() !== null) {
+    if (await refreshTokens()) {
+      res = await send(path, {})
+    } else {
+      setTokens(null)
+      onExpired?.()
+    }
+  }
+  if (!res.ok) throw await toError(res)
+  const cd = res.headers.get('Content-Disposition') ?? ''
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)
+  const plain = /filename="?([^";]+)"?/i.exec(cd)
+  return { blob: await res.blob(), name: star ? decodeURIComponent(star[1]) : plain ? plain[1] : null }
+}
+
 /** Translation key for an error from the API (keys live under `auth.err.`). */
 export function authErrorKey(e: unknown): string {
   if (!(e instanceof ApiError)) return 'auth.err.unknown'

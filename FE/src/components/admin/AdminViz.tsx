@@ -285,6 +285,7 @@ export function Donut({ slices, centerLabel, caption }: { slices: Slice[]; cente
                   <i style={{ background: x.color }} aria-hidden />
                   <span>{x.label}{x.note && <em> · {x.note}</em>}</span>
                   <b>{x.value}<em> {total ? Math.round((x.value / total) * 100) : 0}%</em></b>
+                  <span className="adm-donut-share" aria-hidden><span style={{ width: `${total ? (x.value / total) * 100 : 0}%`, background: x.color }} /></span>
                 </button>
               </li>
             ))}

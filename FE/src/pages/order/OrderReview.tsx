@@ -21,6 +21,7 @@ import { useOnNotification } from '../../store/notifications'
 import PaidOrderPanel from './PaidOrderPanel'
 import PrivacyDialog from './PrivacyDialog'
 import FulfillmentStatus from './FulfillmentStatus'
+import ReviewPanel from './ReviewPanel'
 import './order.css'
 
 const HAS_QUOTE = ['QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED']
@@ -434,6 +435,8 @@ export default function OrderReview({ id }: { id: string | null }) {
               {['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING'].includes(status) && <PaidOrderPanel order={order} onChanged={q.reload} />}
 
               {['READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(status) && <FulfillmentStatus order={order} onChanged={q.reload} />}
+
+              {status === 'COMPLETED' && <ReviewPanel orderId={order.id} />}
 
               {status === 'CANCELLED' && (
                 <>

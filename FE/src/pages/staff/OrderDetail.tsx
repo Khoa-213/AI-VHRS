@@ -19,9 +19,12 @@ import ChangeRequests from './ChangeRequests'
 import { isManagerRole } from './RequireStaff'
 import FulfillmentPanel, { FULFILLMENT_STATES } from './FulfillmentPanel'
 import PaidOrderDesk, { PAID_STATES } from './PaidOrderDesk'
+import ProductPhotosPanel from './ProductPhotosPanel'
 import QuotationPanel from './QuotationPanel'
 import SketchPanel from './SketchPanel'
 
+/** Order statuses in which a job may already have product photos. */
+const PHOTO_STATES = ['CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED']
 const AFTER_QUOTE = ['AWAITING_PRIVACY', 'QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED', 'AWAITING_ACCEPTANCE', 'AWAITING_FINAL_PAYMENT', 'READY_TO_DELIVER', 'DELIVERING', 'COMPLETED']
 
 /** One order for the workshop: what the customer sent, intake decisions, sketch, quotation, payments, jobs and chat. */
@@ -116,7 +119,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
 
       {FULFILLMENT_STATES.includes(order.status) && <FulfillmentPanel order={order} onChanged={async () => { await q.reload(); onChanged() }} />}
 
-      <section className="wk-block" aria-label={t('wk.content')}>
+      <section className="wk-block wk-content" aria-label={t('wk.content')}>
         <h3>{t('wk.content')}</h3>
         <OrderPreview order={order} inkColor={mats.ink?.hex} />
         {text?.text && <p className="wk-text">{text.text}</p>}
@@ -125,7 +128,7 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
         {canvas?.canvas && <p className="sd-sub">{t('co.strokes', { n: canvas.canvas.strokes.length })}</p>}
       </section>
 
-      <section className="wk-block" aria-label={t('or.details')}>
+      <section className="wk-block wk-specs" aria-label={t('or.details')}>
         <h3>{t('or.details')}</h3>
         <dl className="wk-rows">
           {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
@@ -236,6 +239,8 @@ export default function OrderDetail({ id, onChanged }: { id: number; onChanged: 
           </dl>
         </section>
       )}
+      {PHOTO_STATES.includes(order.status) && <ProductPhotosPanel order={order} />}
+
       {manager && order.production === 'PENDING_SCHEDULE' && (
         <Link to={`/staff/schedule/${order.id}`} className="vh-btn vh-btn--primary vh-btn--md wk-link">{t('wk.goSchedule')}</Link>
       )}

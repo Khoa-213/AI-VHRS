@@ -10,6 +10,7 @@ import {
 import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
 import { isManagerRole } from './RequireStaff'
+import MaterialSuggestions from './MaterialSuggestions'
 
 const LIVE = ['DRAFT', 'PENDING_APPROVAL', 'SENT']
 
@@ -92,6 +93,11 @@ export default function QuotationPanel({ order, readOnly = false, onChanged }: {
             <div className="vh-stack" style={{ gap: 8 }}>
               <span className="vh-label">{t('wk.optionsTitle')}</span>
               <p className="sd-sub">{t('wk.optionsHint')}</p>
+              <MaterialSuggestions orderId={order.id} options={options} max={3} onPick={(o) => {
+                // Fill the first option that is still empty, otherwise add one.
+                const empty = options.findIndex((x) => !x.paper_type_id || !x.pen_type_id || !x.ink_color_id)
+                setOptions(empty >= 0 ? options.map((x, j) => (j === empty ? o : x)) : [...options, o])
+              }} />
               {options.map((o, i) => (
                 <OptionRow key={i} value={o} fixed={fixed} onChange={(v) => setOptions(options.map((x, j) => (j === i ? v : x)))} onRemove={() => setOptions(options.filter((_, j) => j !== i))} />
               ))}

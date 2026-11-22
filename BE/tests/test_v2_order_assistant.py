@@ -190,7 +190,7 @@ def test_consent_ownership_and_a_submitted_order(client, cust, wcat, store, prov
 
 
 # ---------------------------------------------------------------------------------------------------------- content tools
-def test_a_text_change_by_the_assistant_marks_the_sketch_outdated_and_a_forgery_flag_reaches_the_staff(
+def test_a_text_change_by_the_assistant_is_drawn_again_in_the_proposal_and_a_forgery_flag_reaches_the_staff(
         client, cust, staff, wcat, store, providers):
     sh, _ = staff
     oid, _ = _draft_with_sketch(client, cust, wcat, text_="Một hai ba")
@@ -207,20 +207,22 @@ def test_a_text_change_by_the_assistant_marks_the_sketch_outdated_and_a_forgery_
     assert check["estimate"]["is_estimate"]
     prop = r.json()["proposal"]
     assert prop["changes"][0] == {"field": "text", "before": "Một hai ba", "after": "Một hai ba bốn"}
+    # the model did not draw again: the turn drew it, so the proposal shows a sketch of the new text
+    assert [c["field"] for c in prop["changes"]] == ["text", "sketch"] and prop["sketch_revision_id"]
+    assert prop["preview"]["sketch_changed"] and not prop["preview"]["sketch_outdated"]
+    assert [(t["name"], t["ok"]) for t in r.json()["reply"]["tool_calls"]][-1] == ("generate_sketch", True)
     assert not client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()["inputs_changed"]   # not applied yet
     assert client.post(f"{API}/orders/{oid}/assistant/proposals/{prop['id']}/apply", headers=cust).status_code == 200
     v = client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()
-    assert v["inputs_changed"]
-    r = client.post(f"{API}/orders/{oid}/submit", headers=cust, json={"terms_accepted": True})
-    assert r.status_code == 409 and _err(r) == "SKETCH_OUTDATED"
-    # the customer draws again and sends; the Staff see the flag and the conversation
-    assert client.post(f"{API}/orders/{oid}{SK}/generate", headers=cust).status_code == 201
+    assert not v["inputs_changed"] and v["revision"]["id"] == prop["sketch_revision_id"]
+    # the customer sends; the Staff see the flag and the conversation
     assert client.post(f"{API}/orders/{oid}/submit", headers=cust, json={"terms_accepted": True}).status_code == 200
     log = client.get(f"{W}/orders/{oid}/assistant", headers=sh)
     assert log.status_code == 200, log.text
     body = log.json()
     assert body["has_conversation"] and [f["kind"] for f in body["flags"]] == ["FORGERY_RISK"]
-    assert [t["name"] for t in body["messages"][1]["tools"]] == ["update_text", "check_order", "flag_for_staff"]
+    assert [t["name"] for t in body["messages"][1]["tools"]] == ["update_text", "check_order", "flag_for_staff",
+                                                                 "generate_sketch"]
     assert client.get(f"{W}/orders/{oid}/assistant", headers=cust).status_code == 403
 
 

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 /** Summary card: a round icon, a title, a big number and a small note. */
 export function Kpi({
-  icon, tone, title, value, badge, badgeTone, note, to,
+  icon, tone, title, value, badge, badgeTone, note, to, actionIcon,
 }: {
   icon: ReactNode
   tone?: 'a' | 'b' | 'p' | 't'
@@ -13,13 +13,14 @@ export function Kpi({
   badgeTone?: 'up' | 'dn' | 'ac'
   note?: string
   to?: string
+  actionIcon?: ReactNode
 }) {
   return (
     <section className="k" aria-label={title}>
       <div className="top">
         <span className={`ico${tone ? ' ' + tone : ''}`}>{icon}</span>
         <h3>{title}</h3>
-        {to ? <a className="more" href={to} aria-label={title}><DotsThree size={18} weight="bold" aria-hidden /></a> : null}
+        {to ? <a className="more" href={to} aria-label={title}>{actionIcon ?? <DotsThree size={18} weight="bold" aria-hidden />}</a> : null}
       </div>
       <div className="num">
         <b>{value}</b>
