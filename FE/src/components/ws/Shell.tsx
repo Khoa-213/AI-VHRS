@@ -6,6 +6,7 @@ import { Link } from '../../router/router'
 import { listWork, pendingApprovals, scheduleQueue } from '../../services/workshop'
 import { workshopRefunds } from '../../services/refunds'
 import { managerAlerts } from '../../services/managerOps'
+import { useOnNotification } from '../../store/notifications'
 
 import { listTechJobs } from '../../services/technician'
 
@@ -22,8 +23,10 @@ import './workshop.css'
 import './staff-ui.css'
 import './staff-theme.css'
 import './staff-depth.css'
+import './staff-queue.css'
 import './manager-ui.css'
 import './tech-ui.css'
+import './staff-glass.css'
 
 export type Area = 'staff' | 'manager' | 'tech' | 'admin'
 export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit' | 'refunds' | 'reports' | 'robots' | 'reviews'
@@ -76,6 +79,12 @@ function useCounts(area: Area) {
     [area],
     area === 'admin' ? undefined : 60000,
   )
+  useOnNotification(() => void api.reload())
+  useEffect(() => {
+    const reload = () => void api.reload()
+    window.addEventListener('staff-queue-changed', reload)
+    return () => window.removeEventListener('staff-queue-changed', reload)
+  }, [api.reload])
   return api.data ?? { intake: 0, approvals: 0, schedule: 0, refunds: 0, alerts: 0, qc: 0 }
 
 }
@@ -166,7 +175,7 @@ export default function Shell({
   const home = tech ? '/tech' : '/staff'
   const navLabel = t(area === 'manager' ? 'mgr.navAria' : tech ? 'rail.tech' : 'rail.staff')
   if (area === 'staff' || area === 'manager' || tech) return (
-    <div className={`ws ws-staff${area === 'manager' ? ' ws-manager' : ''}${tech ? ' ws-tech' : ''}${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
+    <div className={`ws ws-staff${area === 'staff' && user?.apiRole === 'STAFF' ? ' ws-staff-glass' : ''}${area === 'manager' ? ' ws-manager' : ''}${tech ? ' ws-tech' : ''}${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
       <SkipLink />
       <header className="staff-header">
         <div className="staff-header-brand">
@@ -191,7 +200,7 @@ export default function Shell({
         </div>
         <nav className="staff-nav" aria-label={navLabel}>
           {items.filter((it): it is Item => it !== 'gap').map((it) => (
-            <Link key={it.key} to={it.to} className={active === it.key ? 'on' : undefined} aria-current={active === it.key ? 'page' : undefined} onClick={() => setSidebarOpen(false)}>
+            <Link key={it.key} to={it.to} title={area === 'staff' && user?.apiRole === 'STAFF' ? it.label : undefined} className={active === it.key ? 'on' : undefined} aria-current={active === it.key ? 'page' : undefined} onClick={() => setSidebarOpen(false)}>
               {it.icon}<span className="staff-nav-label">{it.label}</span>{!!it.count && <span className="staff-nav-count">{it.count}</span>}
             </Link>
           ))}

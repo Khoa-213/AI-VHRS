@@ -14,17 +14,17 @@
 .ds-tools::-webkit-scrollbar{display:none}
 .ds-group{display:flex;gap:2px;flex:none}
 .ds-group--end{margin-left:auto}
-.ds-chip{display:flex;align-items:baseline;gap:8px;height:40px;padding:0 16px;border:none;border-radius:2px;background:linear-gradient(135deg,transparent,var(--tray));color:var(--t3);font-family:inherit;cursor:pointer;transition:background .2s,transform .15s}
-.ds-chip:hover{background:linear-gradient(135deg,transparent,var(--tray-hover))}
+.ds-chip{display:flex;align-items:baseline;gap:8px;height:40px;padding:0 16px;border:1px solid var(--line-strong);border-radius:999px;background:transparent;color:var(--t3);font-family:inherit;cursor:pointer;transition:background .2s,transform .15s}
+.ds-chip:hover{background:var(--tray-hover)}
 .ds-chip:active{transform:scale(.97)}
-.ds-chip.on{background:linear-gradient(135deg,transparent,var(--tray-on));color:var(--t1)}
+.ds-chip.on{background:var(--tray);border-color:var(--t1);color:var(--t1);box-shadow:inset 0 0 0 1px var(--t1)}
 .ds-chip{align-items:center}
-.ds-chip-name{font-size:14px;font-weight:800}
+.ds-chip-name{font-size:14px;font-weight:600}
 .ds-chip-dim{font-size:11px;color:var(--t5)}
 .ds-chip.on .ds-chip-dim{color:var(--t3)}
 
 
-.ds-act{height:40px;padding:0 16px;border:none;border-radius:2px;background:var(--fx-04);color:var(--t1);font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:background .2s,transform .15s}
+.ds-act{height:40px;padding:0 16px;border:1px solid var(--line-strong);border-radius:999px;background:transparent;color:var(--t1);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s,transform .15s}
 .ds-act:hover:not(:disabled){background:var(--fx-08)}
 .ds-act:active:not(:disabled){transform:scale(.97)}
 .ds-act:disabled{opacity:.4;cursor:not-allowed}

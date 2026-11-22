@@ -23,6 +23,10 @@ export function usePath() {
   return useSyncExternalStore(subscribe, getPath)
 }
 
+export function useSearch() {
+  return useSyncExternalStore(subscribe, () => window.location.search)
+}
+
 export function navigate(to: string, opts: { replace?: boolean } = {}) {
   const url = new URL(to, window.location.href)
   const same = url.pathname === window.location.pathname
