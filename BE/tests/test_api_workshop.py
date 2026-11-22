@@ -18,7 +18,7 @@ from app.main import app
 from app.services import pricing as pr
 from app.services import quotations as qsvc
 from app.services.stroke_ai import trajectory as tj
-from tests.conftest import auth, login, make_account
+from tests.conftest import auth, login, make_account, fresh_code
 from tests.test_api_orders import API, _png, _sql, _upload
 
 W = f"{API}/workshop"
@@ -28,7 +28,7 @@ M = f"{API}/manager"
 # ---- fixtures ----------------------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def wcat():
-    tag = "pytest_" + uuid.uuid4().hex[:6]
+    tag = fresh_code(6)
     ids = {}
     ids["paper"] = _sql("""insert into paper_types (code,name,gsm,surface,size,unit_price,stock_qty)
                            values (:c,'Giay test A5',120,'ART','A5',9000,100) returning id""", c=tag + "_p")
@@ -372,6 +372,28 @@ def test_generate_sketch_from_uploaded_image_recovers_strokes(client, cust, staf
     assert s["similarity_score"] is not None and float(s["similarity_score"]) > 50
     d = client.get(f"{W}/orders/{oid}/sketches/1", headers=sh).json()
     assert d["trajectory"]["engine"]["name"] == "zhang-suen-skeleton" and len(d["trajectory"]["pages"][0]["strokes"]) > 3
+
+
+def test_ot1_recovery_engine_setting_v2_draws_with_recovery_v2(client, cust, staff, store, wcat, monkeypatch):
+    """OT-1 v2, R4: the Admin setting `ot1_recovery_engine` = "v2" switches the Staff's generation to recovery_v2. The setting
+    is faked here (tests never write the real system_settings); without it the default stays v1 (test above)."""
+    from app.repositories.catalog import CatalogRepository
+    real = CatalogRepository.setting
+    monkeypatch.setattr(CatalogRepository, "setting",
+                        lambda self, key, default=None: "v2" if key == "ot1_recovery_engine" else real(self, key, default))
+    sh, _ = staff
+    oid = client.post(f"{API}/orders", headers=cust, json={"order_type": "OT1_COPY_RESTORE"}).json()["id"]
+    client.patch(f"{API}/orders/{oid}", headers=cust, json={"paper_type_id": wcat["paper"], "pen_type_id": wcat["gel"],
+                                                           "ink_color_id": wcat["gel_ink"]})
+    assert _upload(client, cust, oid, store, _png())[0].status_code == 200
+    client.post(f"{API}/orders/{oid}/submit", headers=cust, json={"terms_accepted": True})
+    assert client.post(f"{W}/orders/{oid}/accept", headers=sh, json={}).status_code == 200
+    r = client.post(f"{W}/orders/{oid}/sketches/generate", headers=sh, json={})
+    assert r.status_code == 201, r.text
+    assert r.json()["suggested_complexity"] in ("SIMPLE", "MEDIUM", "COMPLEX")
+    eng = client.get(f"{W}/orders/{oid}/sketches/1", headers=sh).json()["trajectory"]["engine"]
+    assert eng["name"] == "ot1-recovery-v2" and eng["version"] == "2" and eng["similarity_method"] == "ink-f1-v2"
+    assert set(eng["pages"][0]["noise_removed"]["counts"]) >= {"RULING", "FOLD"}
 
 
 def test_ot1_generate_requires_an_image_and_rejects_pdf(client, cust, staff, store, wcat):
