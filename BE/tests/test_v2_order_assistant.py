@@ -2,7 +2,9 @@
 stale revision, tool outside its rights), and the vertical slice "the AI moves one word the customer selected".
 
 No test calls a real LLM: scripted providers are plugged into the `assistant_providers` dependency (as in test_u5_studio.py).
-The tools the scripted model calls are the real ones: OrderService, SketchWorkService and the Geometry Engine on real rows."""
+The tools the scripted model calls are the real ones: OrderService, SketchWorkService and the Geometry Engine on real rows.
+Migration 0029: a turn's changes come back as a proposal; the order changes when the customer applies it
+(tests/test_v2_ai_proposals.py covers the proposals themselves)."""
 import pytest
 from sqlalchemy import text
 
@@ -63,7 +65,14 @@ def test_the_assistant_moves_the_selected_word_and_only_it_and_the_customer_can_
     assert seen["selection"] and {s["id"] for s in seen["selection"]} == set(word["stroke_ids"])
 
     edit = turn["reply"]["tool_calls"][1]
-    assert edit["name"] == "edit_strokes" and edit["ok"] and edit["revision_id"] == turn["sketch_revision_id"]
+    prop = turn["proposal"]
+    assert edit["name"] == "edit_strokes" and edit["ok"] and edit["revision_id"] == prop["sketch_revision_id"]
+    assert turn["sketch_revision_id"] == w["revision"]["id"]                     # 0029: the order is unchanged until applied
+    assert prop["applicable"] and [c["field"] for c in prop["changes"]] == ["sketch"]
+    assert client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()["revision"]["id"] == w["revision"]["id"]
+    a = client.post(f"{API}/orders/{oid}/assistant/proposals/{prop['id']}/apply", headers=cust)
+    assert a.status_code == 200, a.text
+    assert a.json()["current_sketch_revision_id"] == edit["revision_id"]
     now = client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()
     rev = now["revision"]
     assert (rev["author"], rev["tool_name"], rev["provider"], rev["model"]) == ("AI", "edit_strokes", "anthropic", "scripted-1")
@@ -97,7 +106,7 @@ def test_edits_outside_the_selection_out_of_limits_or_unknown_tools_are_refused_
     r = _say(client, cust, oid, selection={"word_ids": [words[1]["id"]]})
     assert r.status_code == 200, r.text
     calls = r.json()["reply"]["tool_calls"]
-    assert [c["ok"] for c in calls] == [False, False, False, False]
+    assert [c["ok"] for c in calls] == [False, False, False, False] and r.json()["proposal"] is None
     errors = [t["results"][0]["result"]["error"] for t in p.seen[-1]["transcript"] if t["role"] == "tool"]
     assert errors == ["OUTSIDE_SELECTION", "EDIT_OUT_OF_RANGE", "UNKNOWN_TOOL", "INVALID_EDIT"]
     assert _sql("SELECT count(*) FROM sketch_revisions WHERE order_id = :o", o=oid) == 1
@@ -196,6 +205,10 @@ def test_a_text_change_by_the_assistant_marks_the_sketch_outdated_and_a_forgery_
     check = _tool_result(p, 1)
     assert not check["ready"] and any(x["field"] == "sketch" for x in check["problems"])
     assert check["estimate"]["is_estimate"]
+    prop = r.json()["proposal"]
+    assert prop["changes"][0] == {"field": "text", "before": "Một hai ba", "after": "Một hai ba bốn"}
+    assert not client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()["inputs_changed"]   # not applied yet
+    assert client.post(f"{API}/orders/{oid}/assistant/proposals/{prop['id']}/apply", headers=cust).status_code == 200
     v = client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()
     assert v["inputs_changed"]
     r = client.post(f"{API}/orders/{oid}/submit", headers=cust, json={"terms_accepted": True})
@@ -221,6 +234,9 @@ def test_the_stream_reports_each_tool_and_the_final_turn(client, cust, wcat, sto
                           "selection": {"stroke_ids": [sid]}})
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
     events = [line[len("event: "):] for line in r.text.splitlines() if line.startswith("event: ")]
-    assert events[0] == "user_saved" and "tool" in events and events[-2:] == ["reply", "done"]
-    now = client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()["revision"]
+    assert events[0] == "user_saved" and "tool" in events and events[-3:] == ["proposal", "reply", "done"]
+    assert client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()["revision"]["id"] == w["revision"]["id"]
+    pid = client.get(f"{API}/orders/{oid}/assistant/proposals", headers=cust).json()[-1]["sketch_revision_id"]
+    now = client.get(f"{API}/orders/{oid}{SK}", headers=cust, params={"revision_id": pid}).json()["revision"]
     assert now["author"] == "AI" and now["provider"] == "openai" and now["operation"]["op"] == "smooth"
+    assert now["proposal_status"] == "PENDING"

@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0028 (alembic head), generated 2026-11-20 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0029 (alembic head), generated 2026-11-22 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0028);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0028;
+--      baseline schema and every migration up to 0029);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0029;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -23,8 +23,8 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 18.1
--- Dumped by pg_dump version 18.1
+-- Dumped from database version 18.7 (Homebrew)
+-- Dumped by pg_dump version 18.7 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -752,6 +752,53 @@ CREATE SEQUENCE public.ai_messages_id_seq
 ALTER SEQUENCE public.ai_messages_id_seq OWNED BY public.ai_messages.id;
 
 --
+-- Name: ai_proposals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_proposals (
+    id bigint NOT NULL,
+    order_id bigint NOT NULL,
+    session_id bigint NOT NULL,
+    message_id bigint NOT NULL,
+    parent_proposal_id bigint,
+    status character varying(10) DEFAULT 'PENDING'::character varying NOT NULL,
+    base_state_hash character(64) NOT NULL,
+    before_state jsonb NOT NULL,
+    after_state jsonb NOT NULL,
+    changes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    estimate jsonb,
+    sketch_revision_id bigint,
+    sketch_revision_ids bigint[] DEFAULT '{}'::bigint[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_at timestamp with time zone,
+    CONSTRAINT chk_ai_proposals_decided CHECK ((((status)::text = 'PENDING'::text) = (decided_at IS NULL))),
+    CONSTRAINT chk_ai_proposals_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPLIED'::character varying, 'REJECTED'::character varying])::text[])))
+);
+
+--
+-- Name: TABLE ai_proposals; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ai_proposals IS 'Changes the order assistant proposes; the order changes only when the customer applies one';
+
+--
+-- Name: ai_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_proposals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: ai_proposals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_proposals_id_seq OWNED BY public.ai_proposals.id;
+
+--
 -- Name: ai_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -864,7 +911,7 @@ CREATE TABLE public.audit_logs (
     policy_version character varying(20),
     ip_address inet,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_audit_privacy CHECK ((((action)::text <> ALL (ARRAY[('PRIVACY_ACCEPT'::character varying)::text, ('PRIVACY_DECLINE'::character varying)::text])) OR (policy_version IS NOT NULL)))
+    CONSTRAINT chk_audit_privacy CHECK ((((action)::text <> ALL ((ARRAY['PRIVACY_ACCEPT'::character varying, 'PRIVACY_DECLINE'::character varying])::text[])) OR (policy_version IS NOT NULL)))
 );
 
 --
@@ -1209,7 +1256,7 @@ CREATE TABLE public.messages (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     kind character varying(20) DEFAULT 'TEXT'::character varying NOT NULL,
     CONSTRAINT chk_message_not_empty CHECK ((((kind)::text = 'ORDER_CARD'::text) OR (body IS NOT NULL) OR (jsonb_array_length(attachments) > 0))),
-    CONSTRAINT chk_messages_kind CHECK (((kind)::text = ANY (ARRAY[('TEXT'::character varying)::text, ('ORDER_CARD'::character varying)::text])))
+    CONSTRAINT chk_messages_kind CHECK (((kind)::text = ANY ((ARRAY['TEXT'::character varying, 'ORDER_CARD'::character varying])::text[])))
 );
 
 --
@@ -1285,10 +1332,10 @@ CREATE TABLE public.order_inputs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT chk_input_payload CHECK ((((kind = ANY (ARRAY['ORIGINAL_IMAGE'::public.order_input_kind, 'HANDWRITING_SAMPLE'::public.order_input_kind])) AND ((file_url IS NOT NULL) OR (deleted_at IS NOT NULL))) OR (kind = 'TEXT_CONTENT'::public.order_input_kind) OR ((kind = 'CANVAS'::public.order_input_kind) AND ((canvas_data IS NOT NULL) OR (deleted_at IS NOT NULL))))),
-    CONSTRAINT order_inputs_alignment_check CHECK (((alignment)::text = ANY (ARRAY[('LEFT'::character varying)::text, ('CENTER'::character varying)::text, ('RIGHT'::character varying)::text, ('JUSTIFY'::character varying)::text]))),
+    CONSTRAINT order_inputs_alignment_check CHECK (((alignment)::text = ANY ((ARRAY['LEFT'::character varying, 'CENTER'::character varying, 'RIGHT'::character varying, 'JUSTIFY'::character varying])::text[]))),
     CONSTRAINT order_inputs_file_size_bytes_check CHECK (((file_size_bytes > 0) AND (file_size_bytes <= 20971520))),
     CONSTRAINT order_inputs_font_size_mm_check CHECK ((font_size_mm > (0)::numeric)),
-    CONSTRAINT order_inputs_mime_type_check CHECK (((mime_type)::text = ANY (ARRAY[('image/jpeg'::character varying)::text, ('image/png'::character varying)::text, ('application/pdf'::character varying)::text]))),
+    CONSTRAINT order_inputs_mime_type_check CHECK (((mime_type)::text = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'application/pdf'::character varying])::text[]))),
     CONSTRAINT order_inputs_rotation_deg_check CHECK ((rotation_deg = ANY (ARRAY[0, 90, 180, 270])))
 );
 
@@ -1775,7 +1822,7 @@ CREATE TABLE public.quality_evaluations (
     created_by bigint NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT quality_evaluations_page_no_check CHECK ((page_no >= 1)),
-    CONSTRAINT quality_evaluations_verdict_check CHECK (((verdict)::text = ANY (ARRAY[('PASS'::character varying)::text, ('NEEDS_REVIEW'::character varying)::text, ('FAIL'::character varying)::text])))
+    CONSTRAINT quality_evaluations_verdict_check CHECK (((verdict)::text = ANY ((ARRAY['PASS'::character varying, 'NEEDS_REVIEW'::character varying, 'FAIL'::character varying])::text[])))
 );
 
 --
@@ -2012,8 +2059,8 @@ CREATE TABLE public.robot_commands (
     expires_at timestamp with time zone NOT NULL,
     delivered_at timestamp with time zone,
     finished_at timestamp with time zone,
-    CONSTRAINT chk_robot_command_kind CHECK (((kind)::text = ANY (ARRAY[('LOAD'::character varying)::text, ('PREFLIGHT'::character varying)::text, ('DRY_RUN'::character varying)::text, ('RUN'::character varying)::text, ('PAUSE'::character varying)::text, ('RESUME'::character varying)::text, ('STOP'::character varying)::text, ('PAPER_CHANGED'::character varying)::text, ('IDENTIFY'::character varying)::text, ('ALIGN_START'::character varying)::text]))),
-    CONSTRAINT chk_robot_command_status CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('DELIVERED'::character varying)::text, ('DONE'::character varying)::text, ('FAILED'::character varying)::text, ('EXPIRED'::character varying)::text, ('CANCELLED'::character varying)::text])))
+    CONSTRAINT chk_robot_command_kind CHECK (((kind)::text = ANY ((ARRAY['LOAD'::character varying, 'PREFLIGHT'::character varying, 'DRY_RUN'::character varying, 'RUN'::character varying, 'PAUSE'::character varying, 'RESUME'::character varying, 'STOP'::character varying, 'PAPER_CHANGED'::character varying, 'IDENTIFY'::character varying, 'ALIGN_START'::character varying])::text[]))),
+    CONSTRAINT chk_robot_command_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'DELIVERED'::character varying, 'DONE'::character varying, 'FAILED'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying])::text[])))
 );
 
 --
@@ -2043,8 +2090,8 @@ CREATE TABLE public.robot_runs (
     CONSTRAINT chk_run_progress CHECK (((total_strokes = 0) OR (completed_strokes <= total_strokes))),
     CONSTRAINT chk_run_real_authorized CHECK ((((mode)::text <> 'REAL'::text) OR (authorized_by IS NOT NULL) OR (NOT ((result)::text IS DISTINCT FROM 'REFUSED'::text)))),
     CONSTRAINT robot_runs_completed_strokes_check CHECK ((completed_strokes >= 0)),
-    CONSTRAINT robot_runs_mode_check CHECK (((mode)::text = ANY (ARRAY[('MOCK'::character varying)::text, ('SIM'::character varying)::text, ('REAL'::character varying)::text]))),
-    CONSTRAINT robot_runs_result_check CHECK (((result)::text = ANY (ARRAY[('DONE'::character varying)::text, ('STOPPED'::character varying)::text, ('FAULT'::character varying)::text, ('UNKNOWN'::character varying)::text, ('DRY_RUN_DONE'::character varying)::text, ('REFUSED'::character varying)::text]))),
+    CONSTRAINT robot_runs_mode_check CHECK (((mode)::text = ANY ((ARRAY['MOCK'::character varying, 'SIM'::character varying, 'REAL'::character varying])::text[]))),
+    CONSTRAINT robot_runs_result_check CHECK (((result)::text = ANY ((ARRAY['DONE'::character varying, 'STOPPED'::character varying, 'FAULT'::character varying, 'UNKNOWN'::character varying, 'DRY_RUN_DONE'::character varying, 'REFUSED'::character varying])::text[]))),
     CONSTRAINT robot_runs_total_strokes_check CHECK ((total_strokes >= 0))
 );
 
@@ -2083,8 +2130,8 @@ CREATE TABLE public.robots (
     connection_state character varying(10) DEFAULT 'UNKNOWN'::character varying NOT NULL,
     last_seen_at timestamp with time zone,
     last_mode character varying(10),
-    CONSTRAINT chk_robots_connection_state CHECK (((connection_state)::text = ANY (ARRAY[('ONLINE'::character varying)::text, ('OFFLINE'::character varying)::text, ('UNKNOWN'::character varying)::text]))),
-    CONSTRAINT chk_robots_last_mode CHECK (((last_mode IS NULL) OR ((last_mode)::text = ANY (ARRAY[('MOCK'::character varying)::text, ('SIM'::character varying)::text, ('REAL'::character varying)::text]))))
+    CONSTRAINT chk_robots_connection_state CHECK (((connection_state)::text = ANY ((ARRAY['ONLINE'::character varying, 'OFFLINE'::character varying, 'UNKNOWN'::character varying])::text[]))),
+    CONSTRAINT chk_robots_last_mode CHECK (((last_mode IS NULL) OR ((last_mode)::text = ANY ((ARRAY['MOCK'::character varying, 'SIM'::character varying, 'REAL'::character varying])::text[]))))
 );
 
 --
@@ -2135,7 +2182,7 @@ CREATE TABLE public.shipments (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT shipments_fee_check CHECK ((fee >= (0)::numeric)),
-    CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY (ARRAY[('FLAT_BOX_A5'::character varying)::text, ('FLAT_BOX_A4'::character varying)::text, ('TUBE'::character varying)::text]))),
+    CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY ((ARRAY['FLAT_BOX_A5'::character varying, 'FLAT_BOX_A4'::character varying, 'TUBE'::character varying])::text[]))),
     CONSTRAINT shipments_weight_g_check CHECK ((weight_g > 0))
 );
 
@@ -2560,6 +2607,12 @@ CREATE VIEW public.v_order_eta_postponement AS
 ALTER TABLE ONLY public.ai_messages ALTER COLUMN id SET DEFAULT nextval('public.ai_messages_id_seq'::regclass);
 
 --
+-- Name: ai_proposals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_proposals ALTER COLUMN id SET DEFAULT nextval('public.ai_proposals_id_seq'::regclass);
+
+--
 -- Name: ai_sessions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2656,6 +2709,20 @@ ALTER TABLE ONLY public.accounts
 
 ALTER TABLE ONLY public.ai_messages
     ADD CONSTRAINT ai_messages_pkey PRIMARY KEY (id);
+
+--
+-- Name: ai_proposals ai_proposals_message_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_proposals
+    ADD CONSTRAINT ai_proposals_message_id_key UNIQUE (message_id);
+
+--
+-- Name: ai_proposals ai_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_proposals
+    ADD CONSTRAINT ai_proposals_pkey PRIMARY KEY (id);
 
 --
 -- Name: ai_sessions ai_sessions_draft_id_key; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3192,6 +3259,12 @@ CREATE INDEX ix_ai_messages_created ON public.ai_messages USING btree (created_a
 --
 
 CREATE INDEX ix_ai_messages_session ON public.ai_messages USING btree (session_id, id);
+
+--
+-- Name: ix_ai_proposals_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ai_proposals_order ON public.ai_proposals USING btree (order_id, status);
 
 --
 -- Name: ix_ai_tool_calls_message; Type: INDEX; Schema: public; Owner: -
@@ -3779,6 +3852,41 @@ ALTER TABLE ONLY public.accounts
 
 ALTER TABLE ONLY public.ai_messages
     ADD CONSTRAINT ai_messages_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.ai_sessions(id) ON DELETE CASCADE;
+
+--
+-- Name: ai_proposals ai_proposals_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_proposals
+    ADD CONSTRAINT ai_proposals_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.ai_messages(id) ON DELETE CASCADE;
+
+--
+-- Name: ai_proposals ai_proposals_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_proposals
+    ADD CONSTRAINT ai_proposals_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
+
+--
+-- Name: ai_proposals ai_proposals_parent_proposal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_proposals
+    ADD CONSTRAINT ai_proposals_parent_proposal_id_fkey FOREIGN KEY (parent_proposal_id) REFERENCES public.ai_proposals(id) ON DELETE SET NULL;
+
+--
+-- Name: ai_proposals ai_proposals_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_proposals
+    ADD CONSTRAINT ai_proposals_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.ai_sessions(id) ON DELETE CASCADE;
+
+--
+-- Name: ai_proposals ai_proposals_sketch_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_proposals
+    ADD CONSTRAINT ai_proposals_sketch_revision_id_fkey FOREIGN KEY (sketch_revision_id) REFERENCES public.sketch_revisions(id) ON DELETE CASCADE;
 
 --
 -- Name: ai_sessions ai_sessions_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -4676,6 +4784,12 @@ ALTER TABLE ONLY public.templates
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: ai_proposals; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ai_proposals ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: alembic_version; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4914,7 +5028,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0028');
+INSERT INTO alembic_version (version_num) VALUES ('0029');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

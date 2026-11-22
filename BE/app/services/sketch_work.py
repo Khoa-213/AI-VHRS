@@ -21,6 +21,9 @@ V2 Phase D (owner D-b, D-c, 2026-11-19)
   redo onto a revision of another drawing puts the form back to that snapshot (`inputs_restored`), so the form and the sketch
   agree. Form changes not drawn yet would be lost: refused with `409 UNDRAWN_INPUT_CHANGES` unless `discard_input_changes`.
   Images (OT-1) are not restored (files); revisions saved before migration 0026 have no snapshot and move the sketch only.
+
+AI proposals (migration 0029): revisions the order assistant made for a proposal the customer has not applied stay in the
+history but are skipped by redo (`services/ai/proposals.py`).
 """
 from __future__ import annotations
 
@@ -169,8 +172,14 @@ class SketchWorkService:
         return rev
 
     def _redo_target(self, order: Order, rev: SketchRevision) -> SketchRevision | None:
-        return self.session.scalar(select(SketchRevision).where(
-            SketchRevision.order_id == order.id, SketchRevision.parent_id == rev.id).order_by(SketchRevision.seq.desc()).limit(1))
+        """The newest child, skipping revisions of assistant proposals the customer has not applied (migration 0029): a
+        redo never applies a proposal."""
+        from app.services.ai.proposals import hidden_revision_ids
+        q = select(SketchRevision).where(SketchRevision.order_id == order.id, SketchRevision.parent_id == rev.id)
+        hidden = hidden_revision_ids(self.session, order.id)
+        if hidden:
+            q = q.where(SketchRevision.id.not_in(hidden))
+        return self.session.scalar(q.order_by(SketchRevision.seq.desc()).limit(1))
 
     def _v_max(self, order: Order) -> float:
         pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
