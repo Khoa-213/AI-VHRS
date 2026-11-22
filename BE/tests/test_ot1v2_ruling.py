@@ -93,3 +93,19 @@ def test_v2_recovers_no_stroke_along_the_ruling():
         if np.ptp(p[:, 0]) > 200 and np.ptp(p[:, 1]) < 6:          # a stroke running along a ruled line
             long_flat += 1
     assert long_flat == 0
+
+
+def test_a_letter_stem_lying_on_a_light_grid_line_stays():
+    """The owner's notebook letter (2026-11-22): the stem of an L / a T written exactly on a light vertical grid line was
+    removed with the line (it reaches farther than DARKER's zone around the writing). A short piece much darker than the
+    line around it, touching the writing, is pen ink and stays whole; the grid line around it still goes."""
+    img = _page(line_grey=200)
+    _loops(img)
+    cv2.line(img, (1290, 0), (1290, H), 200, 2, cv2.LINE_AA)     # a light vertical grid line, right of the writing
+    cv2.line(img, (1290, 226), (1290, 280), 40, 4, cv2.LINE_AA)  # the stem of an L on it
+    cv2.line(img, (1290, 280), (1325, 280), 40, 4, cv2.LINE_AA)  # its foot, between two ruled lines
+    ink, out, ru = _run(img)
+    assert ru.n_vertical >= 1
+    stem = ink[228:270, 1285:1296] > 0
+    assert (out[228:270, 1285:1296] > 0)[stem].mean() > 0.97
+    assert (out[H - 40:H - 5, 1285:1296] > 0).sum() == 0        # the grid line itself is removed

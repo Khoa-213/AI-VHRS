@@ -1,7 +1,7 @@
-# OT-1 phục dựng v2: loại nhiễu và đo độ giống đúng (kế hoạch, chờ duyệt)
+# OT-1 phục dựng v2: loại nhiễu và đo độ giống đúng (kế hoạch đã duyệt, R0–R4 xong)
 
 Trạng thái: **chủ dự án DUYỆT Q1–Q5 theo khuyến nghị ngày 2026-11-21** (yêu cầu cùng ngày: độ giống khoảng 80 %, sửa lỗi ở
-ảnh thư có dòng kẻ, thiết kế chi tiết mô hình phục dựng loại bỏ tác nhân gây nhiễu). R0–R4 xong; v2 nằm sau tham số Admin `ot1_recovery_engine` (mặc định v1), chờ chủ dự án tự bật v2. Tiến độ ở mục 8.
+ảnh thư có dòng kẻ, thiết kế chi tiết mô hình phục dựng loại bỏ tác nhân gây nhiễu). R0–R4 xong; v2 nằm sau tham số Admin `ot1_recovery_engine`; **mặc định v2 từ 2026-11-22** (chủ dự án yêu cầu), `v1` giữ để quay lui. Tiến độ ở mục 8.
 
 ## 1. Hiện trạng và chẩn đoán (đo 2026-11-21, ảnh chủ dự án gửi, chạy ở máy, không ghi DB)
 
@@ -116,7 +116,7 @@ vị trí và kích thước** như bản gốc thay vì co vào khổ. Không t
 
 **Tương thích và quay lui.** `ENGINE_VERSION` "1" → "2"; phác thảo cũ giữ nguyên từng byte. Cờ `system_settings`
 `ot1_recovery_engine` (`v1` / `v2`, mặc định `v1` tới khi chủ dự án bật). Không đổi schema; `sketch_regions.metrics` thêm
-khoá (JSON có sẵn). API: thêm `noise_removed` (danh sách mảnh bị bỏ + lý do) cho Staff; FE có thể vẽ lớp này.
+khoá (JSON có sẵn). API: thêm `noise_removed` (danh sách mảnh bị bỏ + lý do) cho Staff (thực tế R4: nằm trong `trajectory.engine.pages[]`, không thêm trường API); FE có thể vẽ lớp này.
 
 ## 4. Đo thế nào
 
@@ -145,7 +145,7 @@ khoá (JSON có sẵn). API: thêm `noise_removed` (danh sách mảnh bị bỏ 
 | **R1 Giấy** | S0, S1, S2, S9: tìm giấy, nắn phối cảnh, mặt nạ, dải mép, kích thước thật | Test + đo lại | Không |
 | **R2 Dòng kẻ** | S3, S4, S6: mô hình màu, bỏ dòng kẻ giữ chỗ cắt, nhị phân thích nghi | Test + đo lại | Không |
 | **R3 Nhiễu còn lại** | S5, S7, S8: nếp gấp, vết bẩn, phân loại mảnh, nét thanh | Test + đo lại | Không |
-| **R4 Sản phẩm** | S10, cờ `ot1_recovery_engine`, `noise_removed` trong API, ngưỡng độ khó mới, `FE_API_GUIDE.md` | Toàn suite Supabase | Thêm 1 dòng `system_settings` (chỉ thêm) |
+| **R4 Sản phẩm** | S10, cờ `ot1_recovery_engine`, `noise_removed` trong API, ngưỡng độ khó mới, `FE_API_GUIDE.md` | Toàn suite Supabase | Thêm 1 dòng `system_settings` (chỉ thêm). Thực tế (R4): không cần, tham số có mặc định trong code, dòng chỉ có khi Admin đổi |
 | **R5 (tuỳ chọn) Mô hình học** | Chỉ khi R3 chưa đạt 80 %: mạng tách mực nhỏ (U-Net), huấn luyện ngoài sản phẩm trên benchmark tổng hợp, xuất ONNX, chạy bằng `cv2.dnn` (OpenCV đã có, không thêm pip) | Kế hoạch + duyệt riêng | Không |
 
 Mỗi phase báo số đo cho chủ dự án trước khi sang phase sau.
@@ -170,19 +170,21 @@ Mỗi phase báo số đo cho chủ dự án trước khi sang phase sau.
 
 ## 8. Tiến độ
 
-- **R0 xong (2026-11-21, chưa commit):** `scripts/benchmark_ot1v2.py`, báo cáo `docs/benchmarks/OT1v2_R0_baseline_2026-11-21.md`.
+- **R0 xong (2026-11-21, commit `a659f44`):** `scripts/benchmark_ot1v2.py`, báo cáo `docs/benchmarks/OT1v2_R0_baseline_2026-11-21.md`.
   220 ảnh tổng hợp (22 nguồn chữ thật × 10 nhóm nhiễu, có mặt nạ đúng). Mốc v1: F1 v2 **71,5 %** chung, tỷ lệ rác 29,4 %;
   nền gỗ 24,6 %, trộn 23,2 %, dòng kẻ khó 67,5 %, dòng kẻ cùng màu 75,0 %; ảnh sạch 89,3 % nhưng độ phủ chỉ 84 % (đầu nét bị cắt,
   đường tâm lệch). IoU cũ không phân biệt được ảnh sạch và ảnh toàn rác (66 % cả hai). Tiếp theo: R1 (tờ giấy).
 
-- **R1 xong (2026-11-21, chưa commit):** `app/services/stroke_ai/paper.py`, `recovery_v2.py` (chưa nối vào sản phẩm), `tests/test_ot1v2_paper.py` (7 test), báo cáo `docs/benchmarks/OT1v2_R1_paper_2026-11-21.md`.
+- **R1 xong (2026-11-21, commit `a659f44`):** `app/services/stroke_ai/paper.py`, `recovery_v2.py` (chưa nối vào sản phẩm), `tests/test_ot1v2_paper.py` (7 test), báo cáo `docs/benchmarks/OT1v2_R1_paper_2026-11-21.md`.
   F1 v2 chung **81,7 %** (v1 71,5 %), nền gỗ 24,6 → 85,5 %, trộn 23,2 → 64,6 %, rác 29,4 → 17,3 %; 7 nhóm còn lại không đổi.
   Chưa đạt: từng nhóm ≥ 75 % (mixed, ruled_hard) và rác ≤ 5 %. Đổi so với kế hoạch: LOW_RESOLUTION đo bề rộng nét (và luật này hầu như không bật, cần cách đo khác), giấy rách lấy khung bao không xoay. Tiếp theo: R2 (dòng kẻ, nếp gấp, ố).
-- **R2 xong (2026-11-21, chưa commit):** `app/services/stroke_ai/ruling.py` (S4), `tests/test_ot1v2_ruling.py` (5 test), báo cáo `docs/benchmarks/OT1v2_R2_ruling_2026-11-21.md`.
+- **R2 xong (2026-11-21, commit `a659f44`):** `app/services/stroke_ai/ruling.py` (S4), `tests/test_ot1v2_ruling.py` (5 test), báo cáo `docs/benchmarks/OT1v2_R2_ruling_2026-11-21.md`.
   F1 v2 chung **85,4 %** (R1 81,7 %), ruled_hard 67,5 → 84,7 %, ruled_same 75,0 → 87,4 %, mixed 64,6 → 69,4 %, rác 17,3 → 9,3 %. 9 / 10 nhóm ≥ 75 %; chưa đạt: mixed, rác ≤ 5 %.
   Đổi so với kế hoạch: S6 (nhị phân có trễ) thử và bỏ (loang bóng nếp gấp), S3 (màu mực) dời sang R3; ngưỡng lưới dọc 15 % chọn khi xem ảnh thư thật. Thư thật: 649 nét (v1 1.198), dòng kẻ gần hết, dòng ngày đã dò được. Sửa thêm: seed GrabCut cố định (kết quả từng ảnh không còn phụ thuộc thứ tự chạy). Tiếp theo: R3.
-- **R3 xong (2026-11-22, chưa commit):** `app/services/stroke_ai/folds.py` (S5), rim + luật dải mép áp lại trong `recovery_v2.py`, S8 (làm mượt 3 / 0,4 px, 2.000 px), `ruling.DARKER`; `tests/test_ot1v2_r3.py` (5 test); báo cáo `docs/benchmarks/OT1v2_R3_noise_2026-11-22.md`.
+- **R3 xong (2026-11-22, commit `a659f44`):** `app/services/stroke_ai/folds.py` (S5), rim + luật dải mép áp lại trong `recovery_v2.py`, S8 (làm mượt 3 / 0,4 px, 2.000 px), `ruling.DARKER`; `tests/test_ot1v2_r3.py` (5 test); báo cáo `docs/benchmarks/OT1v2_R3_noise_2026-11-22.md`.
   F1 v2 chung **92,9 %** (R2 85,4 %), mixed 69,4 → 85,6 %, cả 10 nhóm ≥ 85 %, rác chung 9,3 → 4,1 %; 217 / 220 ảnh tốt hơn > 2 điểm, 0 ảnh kém hơn. Chưa đạt: rác ≤ 5 % trên mọi nhóm (tear 10,3 %, mixed 12,5 %).
   Đổi so với kế hoạch: S7 thay bằng luật hình học (không dùng màu); đường nét nhiều hơn 40 % điểm. Thư thật: 682 nét, tiêu đề, ngày và các dòng giữa đều được dò (đính chính R2: ngày khi ấy chỉ được một phần); còn dòng kẻ trong vùng bóng gập. Thời gian máy dev ≤ 2,7 s / trang, Render chưa đo. Tiếp theo: R4 (R5 không cần theo điều kiện < 80 %).
-- **R4 xong (2026-11-22, chưa commit):** tham số Admin `ot1_recovery_engine` (v1 mặc định, không đổi DB), `engine.generate_ot1(recovery_engine)`, độ giống v2 `ink_f1` (F1 có dung sai so với mực đã làm sạch), `noise_removed` trong `trajectory.engine.pages[]`; `tests/test_ot1v2_product.py` (5) + 1 test API; báo cáo `docs/benchmarks/OT1v2_R4_product_2026-11-22.md`.
+- **R4 xong (2026-11-22, commit `a659f44`):** tham số Admin `ot1_recovery_engine` (v1 mặc định, không đổi DB), `engine.generate_ot1(recovery_engine)`, độ giống v2 `ink_f1` (F1 có dung sai so với mực đã làm sạch), `noise_removed` trong `trajectory.engine.pages[]`; `tests/test_ot1v2_product.py` (5) + 1 test API; báo cáo `docs/benchmarks/OT1v2_R4_product_2026-11-22.md`.
   Toàn suite Supabase THẬT 976 passed, 3 skipped, 0 failed (60,2 phút). **Ngưỡng độ khó không hiệu chỉnh được:** độ giống v2 96–99 % trên mọi ảnh, tương quan 0,30 với F1 thật; chủ dự án chọn (b) 2026-11-22: với v2 gợi ý K_cx không dùng độ giống (chỉ nhấc bút / ký tự, loại bút). Chưa đo thời gian trên Render.
+- **Sau R4 (2026-11-22, chưa commit):** làm mảnh bằng bảng tra (giống hệt, nhanh hơn ~1,5–2 lần ở v1); giữ thân chữ L / T nằm trùng đường lưới dọc nhạt (`ruling.DARKER_SHORT_*`). Benchmark 92,89 % (không đổi). Chi tiết: `docs/benchmarks/OT1v2_R4_product_2026-11-22.md` mục 5.
+- **Mặc định v2 (2026-11-22, chủ dự án yêu cầu, chưa commit):** `ot1_recovery_engine` mặc định `"v2"`, không đổi DB. Bỏ qua bước đo trên Render trước khi bật (giới hạn mục R4 báo cáo còn nguyên).

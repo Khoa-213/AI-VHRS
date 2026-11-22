@@ -227,6 +227,25 @@ class OrderTools:
                 "words": sum(len(p["words"]) for p in doc["pages"]), "strokes": sum(len(p["strokes"]) for p in doc["pages"]),
                 "metrics": {k: (rev.metrics or {}).get(k) for k in ("total_stroke_mm", "pen_lift_count", "estimated_writing_sec")}}
 
+    def sketch_needed(self) -> str | None:
+        """Why the order needs (a new) drawing now: NO_SKETCH (text + template but never drawn) | INPUTS_CHANGED (content
+        changed after the drawing) | None. Only template orders: the other types draw from photos / a canvas."""
+        order = self.order()
+        if order.order_type != OrderType.OT3_TEMPLATE:
+            return None
+        row = self._text_row(order)
+        if row is None or not (row.text_content or "").strip() or row.template_id is None:
+            return None
+        if order.current_sketch_revision_id is None:
+            return "NO_SKETCH"
+        return "INPUTS_CHANGED" if self.work.view(order.id)["inputs_changed"] else None
+
+    def sketch_pages(self) -> int | None:
+        order = self.order()
+        if order.current_sketch_revision_id is None:
+            return None
+        return len(self.work.view(order.id)["document"]["pages"])
+
     def _get_order(self, _: dict[str, Any]) -> tuple[dict[str, Any], None]:
         return {"order": self.summary()}, None
 

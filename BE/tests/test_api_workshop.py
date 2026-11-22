@@ -371,16 +371,17 @@ def test_generate_sketch_from_uploaded_image_recovers_strokes(client, cust, staf
     s = r.json()
     assert s["similarity_score"] is not None and float(s["similarity_score"]) > 50
     d = client.get(f"{W}/orders/{oid}/sketches/1", headers=sh).json()
-    assert d["trajectory"]["engine"]["name"] == "zhang-suen-skeleton" and len(d["trajectory"]["pages"][0]["strokes"]) > 3
+    assert d["trajectory"]["engine"]["name"] == "ot1-recovery-v2" and len(d["trajectory"]["pages"][0]["strokes"]) > 3   # default v2
 
 
-def test_ot1_recovery_engine_setting_v2_draws_with_recovery_v2(client, cust, staff, store, wcat, monkeypatch):
-    """OT-1 v2, R4: the Admin setting `ot1_recovery_engine` = "v2" switches the Staff's generation to recovery_v2. The setting
-    is faked here (tests never write the real system_settings); without it the default stays v1 (test above)."""
+def test_ot1_recovery_engine_setting_v1_rolls_back_to_the_old_recovery(client, cust, staff, store, wcat, monkeypatch):
+    """OT-1 v2: the product draws with recovery_v2 by default (test above, owner 2026-11-22); the Admin setting
+    `ot1_recovery_engine` = "v1" rolls back to the old recovery. The setting is faked here (tests never write the real
+    system_settings)."""
     from app.repositories.catalog import CatalogRepository
     real = CatalogRepository.setting
     monkeypatch.setattr(CatalogRepository, "setting",
-                        lambda self, key, default=None: "v2" if key == "ot1_recovery_engine" else real(self, key, default))
+                        lambda self, key, default=None: "v1" if key == "ot1_recovery_engine" else real(self, key, default))
     sh, _ = staff
     oid = client.post(f"{API}/orders", headers=cust, json={"order_type": "OT1_COPY_RESTORE"}).json()["id"]
     client.patch(f"{API}/orders/{oid}", headers=cust, json={"paper_type_id": wcat["paper"], "pen_type_id": wcat["gel"],
@@ -392,8 +393,8 @@ def test_ot1_recovery_engine_setting_v2_draws_with_recovery_v2(client, cust, sta
     assert r.status_code == 201, r.text
     assert r.json()["suggested_complexity"] in ("SIMPLE", "MEDIUM", "COMPLEX")
     eng = client.get(f"{W}/orders/{oid}/sketches/1", headers=sh).json()["trajectory"]["engine"]
-    assert eng["name"] == "ot1-recovery-v2" and eng["version"] == "2" and eng["similarity_method"] == "ink-f1-v2"
-    assert set(eng["pages"][0]["noise_removed"]["counts"]) >= {"RULING", "FOLD"}
+    assert eng["name"] == "zhang-suen-skeleton" and eng["similarity_method"] == "ink-iou-v1"
+    assert "noise_removed" not in eng["pages"][0]
 
 
 def test_ot1_generate_requires_an_image_and_rejects_pdf(client, cust, staff, store, wcat):

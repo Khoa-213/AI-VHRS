@@ -116,23 +116,41 @@ def _remove_specks(ink: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------------------------
 # 2. Zhang-Suen thinning (vectorised)
 # ---------------------------------------------------------------------------------------------
+def _zhang_suen_luts() -> tuple[np.ndarray, np.ndarray]:
+    """For each of the 256 neighbourhoods (bit i = neighbour p2..p9, clockwise from north), whether Zhang-Suen deletes
+    the centre in sub-step 0 / 1. The same rules as the textbook loop, looked up instead of recomputed per pixel."""
+    luts = []
+    for step in (0, 1):
+        t = np.zeros(256, bool)
+        for code in range(256):
+            p2, p3, p4, p5, p6, p7, p8, p9 = ((code >> i) & 1 for i in range(8))
+            b = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
+            seq = (p2, p3, p4, p5, p6, p7, p8, p9, p2)
+            a = sum(seq[i] == 0 and seq[i + 1] == 1 for i in range(8))
+            if step == 0:
+                cond = p2 * p4 * p6 == 0 and p4 * p6 * p8 == 0
+            else:
+                cond = p2 * p4 * p8 == 0 and p2 * p6 * p8 == 0
+            t[code] = 2 <= b <= 6 and a == 1 and cond
+        luts.append(t)
+    return luts[0], luts[1]
+
+
+_ZS_LUTS = _zhang_suen_luts()
+
+
 def zhang_suen(ink: np.ndarray) -> np.ndarray:
+    """Zhang-Suen thinning. Neighbourhoods are packed into one byte and looked up (`_ZS_LUTS`): the same result as the
+    per-pixel rules, about 3x faster on a 2000 px page (test_stroke_ai keeps the reference loop)."""
     img = np.pad((ink > 0).astype(np.uint8), 1)
     while True:
         changed = False
         for step in (0, 1):
             p = img
-            p2, p3, p4, p5 = p[:-2, 1:-1], p[:-2, 2:], p[1:-1, 2:], p[2:, 2:]
-            p6, p7, p8, p9 = p[2:, 1:-1], p[2:, :-2], p[1:-1, :-2], p[:-2, :-2]
+            code = (p[:-2, 1:-1] | (p[:-2, 2:] << 1) | (p[1:-1, 2:] << 2) | (p[2:, 2:] << 3)
+                    | (p[2:, 1:-1] << 4) | (p[2:, :-2] << 5) | (p[1:-1, :-2] << 6) | (p[:-2, :-2] << 7))
             centre = p[1:-1, 1:-1]
-            b = (p2.astype(np.int16) + p3 + p4 + p5 + p6 + p7 + p8 + p9)
-            seq = (p2, p3, p4, p5, p6, p7, p8, p9, p2)
-            a = sum(((seq[i] == 0) & (seq[i + 1] == 1)).astype(np.int16) for i in range(8))
-            if step == 0:
-                cond = ((p2 * p4 * p6) == 0) & ((p4 * p6 * p8) == 0)
-            else:
-                cond = ((p2 * p4 * p8) == 0) & ((p2 * p6 * p8) == 0)
-            mask = (centre == 1) & (b >= 2) & (b <= 6) & (a == 1) & cond
+            mask = (centre == 1) & _ZS_LUTS[step][code]
             if mask.any():
                 centre[mask] = 0
                 changed = True

@@ -20,7 +20,7 @@ from app.services.stroke_ai import regions as regions_mod
 from app.services.stroke_ai.trajectory import Metrics, Page, compute_metrics
 
 ENGINE_VERSION = "1"
-OT1_ENGINES = ("v1", "v2")             # Admin setting `ot1_recovery_engine` (OT-1 v2, R4); "v1" until the owner switches
+OT1_ENGINES = ("v1", "v2")             # Admin setting `ot1_recovery_engine` (OT-1 v2, R4); product default "v2" (owner, 2026-11-22)
 # similarity thresholds of the K_cx suggestion per similarity measure: below the first -> COMPLEX, from the second -> may be
 # SIMPLE (v1 pixel IoU: assumption, U3). None = the similarity is NOT used: the v2 similarity (paths vs cleaned ink) is
 # 96-99 % on every benchmark image and follows the true quality only weakly (r = 0.30, R4 report), so it cannot tell easy

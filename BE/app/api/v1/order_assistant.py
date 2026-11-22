@@ -19,8 +19,8 @@ import threading
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import SessionDep, client_ip, require_roles
@@ -88,8 +88,23 @@ class ProposalOut(BaseModel):
     sketch_revision_id: int | None = Field(description=(
         "revision phác thảo đơn sẽ hiển thị sau khi áp dụng (null: phác thảo không đổi). Ảnh: GET "
         "/orders/{id}/sketch/preview?revision_id=...&page=1; dữ liệu nét: GET /orders/{id}/sketch?revision_id=..."))
+    preview: "ProposalPreviewOut | None" = Field(description=(
+        "ảnh phác thảo của đơn SAU khi áp dụng, vẽ bằng giấy / bút / mực của đề xuất (null: đơn chưa có phác thảo nào)"))
     created_at: datetime
     decided_at: datetime | None
+
+
+class ProposalPreviewOut(BaseModel):
+    revision_id: int = Field(description="revision phác thảo sẽ hiển thị sau khi áp dụng")
+    pages: int = Field(description="số trang; ảnh từng trang ở preview_url với page=1..pages")
+    preview_url: str = Field(description="GET (kèm Bearer) → image/jpeg; thêm ?page=N cho trang N")
+    sketch_changed: bool = Field(description="đề xuất có phác thảo mới (true) hay giữ phác thảo hiện tại (false)")
+    sketch_outdated: bool = Field(description=(
+        "phác thảo chưa khớp nội dung đề xuất (trợ lý chưa vẽ lại được, thường vì phác thảo có nét khách đã sửa: "
+        "SKETCH_HAS_EDITS)"))
+
+
+ProposalOut.model_rebuild()
 
 
 class OrderMessageOut(MessageOut):
@@ -132,7 +147,20 @@ def proposal_out(props: ProposalService, order: Order, p, now_hash: str | None =
     ok, why = props.applicability(order, p, now_hash)
     return ProposalOut(id=p.id, message_id=p.message_id, parent_proposal_id=p.parent_proposal_id, status=p.status,
                        applicable=ok, blocked_reason=why, changes=p.changes or [], estimate=p.estimate,
-                       sketch_revision_id=p.sketch_revision_id, created_at=p.created_at, decided_at=p.decided_at)
+                       sketch_revision_id=p.sketch_revision_id, preview=_preview_out(order.id, p),
+                       created_at=p.created_at, decided_at=p.decided_at)
+
+
+def _preview_out(order_id: int, p) -> ProposalPreviewOut | None:
+    after = p.after_state or {}
+    rid = (after.get("order") or {}).get("current_sketch_revision_id")
+    pages = (after.get("derived") or {}).get("sketch_pages")
+    if rid is None or not pages:
+        return None
+    return ProposalPreviewOut(revision_id=rid, pages=int(pages),
+                              preview_url=f"/api/v1/orders/{order_id}/assistant/proposals/{p.id}/preview",
+                              sketch_changed=p.sketch_revision_id is not None,
+                              sketch_outdated=bool(after["derived"].get("sketch_outdated")))
 
 
 def message_out(m, calls, proposal: ProposalOut | None = None) -> OrderMessageOut:
@@ -276,6 +304,25 @@ def apply_proposal(order_id: int, proposal_id: int, props: Proposals) -> ApplyOu
         "currency": "VND", "is_estimate": True}
     return ApplyOut(proposal=proposal_out(props, order, p), current_sketch_revision_id=order.current_sketch_revision_id,
                     estimate=est)
+
+
+@router.get("/orders/{order_id}/assistant/proposals/{proposal_id}/preview", response_class=Response,
+            responses={200: {"content": {"image/jpeg": {}}}, **_ERR},
+            summary="Ảnh phác thảo của đề xuất (đơn sau khi áp dụng, bằng vật tư của đề xuất; có dấu AI)")
+def proposal_preview(order_id: int, proposal_id: int, props: Proposals, request: Request,
+                     storage: Annotated[ObjectStorage | None, Depends(optional_storage)],
+                     _limit: Annotated[None, Depends(rate_limit("sketch_preview", 60, 60))],
+                     page: Annotated[int, Query(ge=1, le=20)] = 1) -> Response:
+    from app.services.sketch_work import SketchWorkService
+    props._order(order_id)
+    p = props.get(order_id, proposal_id)
+    after = p.after_state["order"]
+    if after.get("current_sketch_revision_id") is None:
+        raise AppError(404, "PROPOSAL_HAS_NO_SKETCH", "Đề xuất này chưa có phác thảo.")
+    work = SketchWorkService(props.session, props.customer, storage, client_ip(request))
+    img = work.preview(order_id, page, after["current_sketch_revision_id"],
+                       materials={k: after.get(k) for k in ("paper_type_id", "pen_type_id", "ink_color_id")})
+    return Response(img, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/orders/{order_id}/assistant/proposals/{proposal_id}/reject", response_model=ProposalOut, responses=_ERR,

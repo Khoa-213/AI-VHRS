@@ -31,11 +31,13 @@ def _gen(engine_name: str | None):
                                pen_category="GEL", chars=200, **kw)
 
 
-def test_default_is_still_v1():
+def test_the_product_default_is_v2_and_the_engine_call_default_stays_v1():
+    """Owner 2026-11-22: OT-1 sketches are drawn with v2 unless Admin sets "v1". `generate_ot1` itself (used directly by
+    engine tests) keeps v1 when no engine is passed; the product always passes the setting."""
     g = _gen(None)
     assert g.engine["name"] == "zhang-suen-skeleton" and g.engine["version"] == engine.ENGINE_VERSION
     assert g.engine["similarity_method"] == "ink-iou-v1" and "noise_removed" not in g.engine["pages"][0]
-    assert SPECS["ot1_recovery_engine"].default == "v1"
+    assert SPECS["ot1_recovery_engine"].default == "v2"
 
 
 def test_v2_records_what_it_removed_and_its_own_similarity():

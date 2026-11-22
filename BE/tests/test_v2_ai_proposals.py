@@ -214,7 +214,7 @@ def test_a_turn_continues_the_pending_proposal_unless_asked_to_start_from_the_or
     r = _say(client, cust, oid, "và thêm chữ bốn", client_ref="c-2")
     p2 = r.json()["proposal"]
     assert p2["parent_proposal_id"] == p1["id"]
-    assert [c["field"] for c in p2["changes"]] == ["text", "quantity"]           # both changes, made on the same order state
+    assert [c["field"] for c in p2["changes"]] == ["text", "quantity", "sketch"]  # both changes + the new text drawn
     assert '"proposal_base"' in second.seen[0]["system"] and '"quantity": 3' in second.seen[0]["system"]
     o, t = _order(client, cust, oid)
     assert o["quantity"] == 1 and t["text_content"] == "Một hai ba"
@@ -244,3 +244,63 @@ def test_the_stream_sends_the_proposal_before_the_reply(client, cust, wcat, stor
     lines = r.text.splitlines()
     reply = json.loads(lines[lines.index("event: reply") + 1][len("data: "):])
     assert reply["proposal"]["changes"] == [{"field": "quantity", "before": 1, "after": 2}]
+
+
+# ---------------------------------------------------------------------------------------------------------- the sketch is drawn
+def test_a_draft_with_text_and_a_template_but_no_sketch_gets_one_in_the_proposal_with_a_preview(
+        client, cust, wcat, store, providers):
+    oid = _ot3(client, cust, wcat, text_="Chúc mừng sinh nhật", submit=False)          # text + template, never drawn
+    p = Script("anthropic", [_call("check_order"), Reply("Đơn còn thiếu phác thảo.", [], 1, 1)])
+    providers["list"] = [p]
+    r = _say(client, cust, oid, "Đơn của tôi ổn chưa?")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    prop = body["proposal"]
+    assert [c["field"] for c in prop["changes"]] == ["sketch"] and prop["changes"][0]["before"] is None
+    assert prop["preview"]["revision_id"] == prop["sketch_revision_id"] and prop["preview"]["pages"] >= 1
+    assert prop["preview"]["sketch_changed"] and not prop["preview"]["sketch_outdated"]
+    assert body["reply"]["content"].startswith("Đơn còn thiếu phác thảo.") and "phác thảo" in body["reply"]["content"][-90:]
+    assert [(t["name"], t["ok"]) for t in body["reply"]["tool_calls"]] == [("check_order", True), ("generate_sketch", True)]
+    assert _sql("SELECT args->>'reason' FROM ai_tool_calls WHERE message_id = :m AND name = 'generate_sketch'",
+                m=body["reply"]["id"]) == "NO_SKETCH"
+    # the image the customer sees: the order after applying, in the proposal's materials; the order is still without a sketch
+    img = client.get(prop["preview"]["preview_url"], headers=cust)
+    assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg" and img.content[:2] == b"\xff\xd8"
+    assert client.get(prop["preview"]["preview_url"], headers=cust, params={"page": 99}).status_code in (404, 422)
+    assert client.get(f"{API}/orders/{oid}{SK}", headers=cust).status_code == 404
+    assert _apply(client, cust, oid, prop["id"]).status_code == 200
+    assert client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()["revision"]["id"] == prop["sketch_revision_id"]
+    # another customer cannot see the image
+    other, _ = _user(client, "CUSTOMER")
+    assert client.get(prop["preview"]["preview_url"], headers=other).status_code in (403, 404)
+
+
+def test_the_preview_uses_the_proposed_paper_and_the_kept_sketch(client, cust, wcat, store, providers):
+    oid, r1 = _draft(client, cust, wcat)
+    providers["list"] = [Script("anthropic", [_call("choose_materials", paper_type_id=wcat["gloss"]),
+                                              Reply("Đổi sang giấy bóng.", [], 1, 1)])]
+    prop = _say(client, cust, oid, "đổi giấy bóng").json()["proposal"]
+    assert [c["field"] for c in prop["changes"]] == ["paper_type_id"]
+    assert prop["sketch_revision_id"] is None                               # the drawing is kept, only the paper changes
+    assert prop["preview"]["revision_id"] == r1 and not prop["preview"]["sketch_changed"]
+    proposed = client.get(prop["preview"]["preview_url"], headers=cust).content
+    current = client.get(f"{API}/orders/{oid}{SK}/preview", headers=cust).content
+    assert proposed[:2] == b"\xff\xd8" and proposed != current
+
+
+def test_an_edited_sketch_is_not_drawn_again_without_the_customer(client, cust, wcat, store, providers):
+    oid, r1 = _draft(client, cust, wcat)
+    w = client.get(f"{API}/orders/{oid}{SK}", headers=cust).json()
+    sid = w["document"]["pages"][0]["strokes"][0]["id"]
+    r = client.post(f"{API}/orders/{oid}{SK}/edit", headers=cust,
+                    json={"base_revision_id": r1, "op": "smooth", "stroke_ids": [sid], "params": {"passes": 2}})
+    assert r.status_code == 200, r.text
+    edited = r.json()["revision"]["id"]
+    providers["list"] = [Script("anthropic", [_call("update_text", text="Một hai ba bốn"), _call("generate_sketch"),
+                                              Reply("Phác thảo có nét bạn đã sửa; bạn có muốn vẽ lại không?", [], 1, 1)])]
+    body = _say(client, cust, oid, "thêm chữ bốn").json()
+    prop = body["proposal"]
+    assert [c["field"] for c in prop["changes"]] == ["text"] and prop["sketch_revision_id"] is None
+    assert prop["preview"]["revision_id"] == edited and prop["preview"]["sketch_outdated"]
+    assert [(t["name"], t["ok"]) for t in body["reply"]["tool_calls"]] == [("update_text", True), ("generate_sketch", False)]
+    assert not body["reply"]["content"].endswith(")")

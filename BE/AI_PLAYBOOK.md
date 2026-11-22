@@ -253,3 +253,7 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 ### 2026-11-22 · Đo hình dạng một mảnh SAU khi cắt nó theo vùng thì kết luận sai
 **Bối cảnh:** OT-1 v2 R3, luật "mảnh mực ngoài mặt nạ dày hơn 2,5 bề rộng nét là khe rách lộ mặt bàn" đo trên mảnh đã bị cắt về vùng sát mép. Khe chỉ lọt một nửa vào vùng đó nên trông mỏng như nét bút và được giữ lại; test tổng hợp bắt được, benchmark thì không.
 **Bài học:** đo độ dày / độ dài / hình dạng của mảnh trên vùng rộng hơn vùng sẽ giữ (ở đây gấp đôi), rồi mới cắt kết quả về vùng giữ. Khi một luật hình dạng chạy sau một phép cắt, viết test có vật nằm vắt qua ranh giới cắt.
+
+### 2026-11-22 · Test cho một luật mới phải KHÔNG đạt khi tắt luật đó
+**Bối cảnh:** OT-1 v2, luật giữ thân chữ L nằm trùng đường lưới dọc. Bản test đầu vẫn đạt khi tắt luật: thân chữ quá ngắn nên vùng giữ cũ (3 bề rộng nét quanh chữ) đã phủ gần hết; bản thứ hai đặt chân chữ đúng lên một dòng kẻ ngang nên không còn "chữ ngoài dòng kẻ" để chạm.
+**Bài học:** viết test xong thì tắt luật mới (đặt hằng số về 0) và chạy lại; test phải hỏng. Nếu không, ảnh thử chưa mô phỏng đúng trường hợp.
