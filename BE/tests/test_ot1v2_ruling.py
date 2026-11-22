@@ -109,3 +109,16 @@ def test_a_letter_stem_lying_on_a_light_grid_line_stays():
     stem = ink[228:270, 1285:1296] > 0
     assert (out[228:270, 1285:1296] > 0)[stem].mean() > 0.97
     assert (out[H - 40:H - 5, 1285:1296] > 0).sum() == 0        # the grid line itself is removed
+
+
+def test_a_light_grid_line_right_beside_a_stem_is_not_kept():
+    """Same letter: a grid line running 3 px beside a letter's stem was kept by the touch rule and traced as a stroke of
+    its own. With a ruling much lighter than the pen, a band pixel stays only if it is as dark as the pen."""
+    img = _page(line_grey=170)
+    _loops(img)
+    cv2.line(img, (1290, 0), (1290, H), 170, 2, cv2.LINE_AA)     # the grid line (dark enough to binarise)
+    cv2.line(img, (1285, 226), (1285, 280), 40, 4, cv2.LINE_AA)  # a stem right beside it
+    ink, out, ru = _run(img)
+    assert (ink[230:276, 1290:1293] > 0).sum() > 0               # the line was ink next to the stem
+    assert (out[230:276, 1290:1293] > 0).sum() == 0              # and is gone
+    assert (out[230:276, 1283:1288] > 0).mean() > 0.9            # the stem is whole

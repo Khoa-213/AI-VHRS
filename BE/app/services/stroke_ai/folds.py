@@ -21,6 +21,8 @@ ON_SHARE = 0.8
 SIDE_SHARE = 0.3
 MAX_GAP_PENS = 2.0       # gaps along a crease bridged by Hough
 MAX_SEGMENTS = 400
+PEN_SHARE = 0.6          # a segment at least this dark, relative to the ink's median darkness, is a pen stroke (an
+                         # underline, the flourish under a signature), not a crease: creases are lighter than the pen
 
 
 def _segment_ok(ink: np.ndarray, x1: int, y1: int, x2: int, y2: int, off: int) -> bool:
@@ -44,8 +46,24 @@ def _segment_ok(ink: np.ndarray, x1: int, y1: int, x2: int, y2: int, off: int) -
     return float(side[on].mean()) <= SIDE_SHARE
 
 
-def remove_folds(ink: np.ndarray, pen: float) -> tuple[np.ndarray, np.ndarray, int]:
-    """Returns (ink without creases, removed pixels, number of segments removed)."""
+def _darkness(dark: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> float:
+    """Median darkness along the segment (its darkest pixel across, +-1 px)."""
+    h, w = dark.shape
+    n = max(2, int(math.hypot(x2 - x1, y2 - y1)))
+    t = np.linspace(0.0, 1.0, n)
+    xs, ys = x1 + t * (x2 - x1), y1 + t * (y2 - y1)
+    nx, ny = -(y2 - y1) / n, (x2 - x1) / n
+    best = np.zeros(n, np.uint8)
+    for k in (-1, 0, 1):
+        px = np.clip(np.round(xs + k * nx).astype(int), 0, w - 1)
+        py = np.clip(np.round(ys + k * ny).astype(int), 0, h - 1)
+        best = np.maximum(best, dark[py, px])
+    return float(np.median(best))
+
+
+def remove_folds(ink: np.ndarray, pen: float, dark: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, int]:
+    """Returns (ink without creases, removed pixels, number of segments removed). `dark` (255 - flattened grey, same
+    geometry): when given, a segment as dark as the pen is left alone (`PEN_SHARE`)."""
     h, w = ink.shape
     min_len = max(40, int(MIN_LEN * min(h, w)))
     thick = int(math.ceil(max(4.0, MAX_THICK_PENS * pen)))
@@ -56,7 +74,10 @@ def remove_folds(ink: np.ndarray, pen: float) -> tuple[np.ndarray, np.ndarray, i
         return ink, empty, 0
     band = np.zeros_like(ink)
     n = 0
+    pen_dark = PEN_SHARE * float(np.median(dark[ink > 0])) if dark is not None and ink.any() else None
     for x1, y1, x2, y2 in lines.reshape(-1, 4)[:MAX_SEGMENTS]:
+        if pen_dark is not None and _darkness(dark, int(x1), int(y1), int(x2), int(y2)) >= pen_dark:
+            continue                                 # written with the pen: an underline, not a crease
         if _segment_ok(ink, int(x1), int(y1), int(x2), int(y2), thick // 2 + 2):
             cv2.line(band, (int(x1), int(y1)), (int(x2), int(y2)), 255, thick | 1)
             n += 1

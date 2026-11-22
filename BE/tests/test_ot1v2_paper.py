@@ -110,3 +110,14 @@ def test_a_narrow_strip_of_clear_writing_is_not_called_low_resolution():
                           False, (60, 40, 40), 4)
     _, stats, _ = R2.recover_page(_jpg(sheet), paper_size="A4")
     assert "LOW_RESOLUTION" not in stats.warnings
+
+
+def test_a_sheet_running_out_of_the_photo_is_not_straightened_as_a_rectangle():
+    """Owner's photo, 2026-11-22: the sheet leaves the photo on the left and at the bottom. Its outline there is the
+    photo's border, not the sheet's edge; warping those four "corners" to a rectangle slanted the writing and cut words
+    off. Such a sheet is taken as it lies (bounding box), like a torn one."""
+    photo, _ = _on_wood(_writing(600, 900))
+    cut = photo[300:, 480:]                                     # the photo's left and top borders now run through the sheet
+    found = P.find_paper(cut)
+    assert found is not None and found.method == "box"
+    assert P.find_paper(photo).method == "quad"                 # the whole sheet in view: straightened as before
