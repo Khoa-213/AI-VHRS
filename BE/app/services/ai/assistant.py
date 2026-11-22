@@ -48,9 +48,12 @@ ORDER_LOCK_KEY = 0x4149                # pg_try_advisory_xact_lock(ORDER_LOCK_KE
 
 VN = ZoneInfo("Asia/Ho_Chi_Minh")
 HISTORY_TURNS = 10                     # earlier exchanges sent back to the model (text only)
-MAX_MESSAGE = 2000
-SETTINGS_DEFAULTS = {"ai_assistant_enabled": True, "ai_daily_messages_per_customer": 30, "ai_daily_model_calls": 400,
-                     "ai_max_tool_calls": 6, "ai_daily_cost_cap_cents": 0}
+# Caps raised 2026-11-22 (owner: the assistant guides the whole Create Order, one turn = one complete proposal, the customer
+# must not be stopped mid-way): a turn that picks paper / pen / ink, changes the text and layout, draws and checks needs 7-10
+# tool calls; a customer pastes a whole letter (orders take 20000 characters). Admin can still lower them (system_settings).
+MAX_MESSAGE = 8000
+SETTINGS_DEFAULTS = {"ai_assistant_enabled": True, "ai_daily_messages_per_customer": 100, "ai_daily_model_calls": 2000,
+                     "ai_max_tool_calls": 12, "ai_daily_cost_cap_cents": 0}
 FAILED_TEXT = ("Trợ lý AI tạm thời không phản hồi được. Bạn vẫn có thể tự soạn, chọn vật tư, xem trước và gửi xưởng "
                "bằng các ô nhập trong studio. Vui lòng thử lại sau ít phút.")
 LIMIT_TEXT = "Tôi đã thực hiện đủ số thao tác cho một lượt. Bạn xem lại bản nháp rồi nhắn tiếp nếu cần sửa thêm nhé."

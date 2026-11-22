@@ -35,7 +35,7 @@ from app.services.ai.tools import FLAG_KINDS, _obj, list_materials, list_templat
 from app.services.orders import OrderService
 from app.services.sketch_work import SketchWorkService
 
-_TEXT_FOR_MODEL = 3000
+_TEXT_FOR_MODEL = 20000           # the whole text (orders take 20000): update_text sends the full text back, never a cut one
 _WORDS_FOR_MODEL = 200            # words listed by get_sketch (ids, text, box); more -> truncated, the model is told
 _STROKES_FOR_MODEL = 60           # strokes of the selection described individually
 SELECTION_KEYS = ("stroke_ids", "word_ids", "line_ids", "paragraph_ids")
