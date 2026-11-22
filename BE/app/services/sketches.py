@@ -468,7 +468,8 @@ def run_engine(session: Session, store: ObjectStorage, order: Order, *, paper_si
                 raise AppError(409, "FILE_MISSING", "Không đọc được ảnh gốc từ kho lưu trữ.")
             sources.append(engine.ImageSource(data, r.rotation_deg or 0, r.crop_box))
         return engine.generate_ot1(sources, paper_size=size, v_max_mm_s=v_max, pen_category=category,
-                                   chars=order.char_count or 0)
+                                   chars=order.char_count or 0,
+                                   recovery_engine=catalog.setting("ot1_recovery_engine", "v1"))   # OT-1 v2, R4
     else:
         text_rows = [r for r in inputs if r.kind == OrderInputKind.TEXT_CONTENT]
         canvas_rows = [r for r in inputs if r.kind == OrderInputKind.CANVAS]

@@ -47,6 +47,14 @@ def _bool(v: Any) -> bool:
     return v
 
 
+def _choice(*options: str) -> Callable[[Any], str]:
+    def check(v: Any) -> str:
+        if not isinstance(v, str) or v not in options:
+            raise SettingError(f"phải là một trong {list(options)}")
+        return v
+    return check
+
+
 def _order_types(v: Any) -> list[str]:
     allowed = {OrderType.OT1_COPY_RESTORE.value, OrderType.OT3_TEMPLATE.value}       # OT-2 stays locked (no AI for it)
     if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
@@ -86,12 +94,15 @@ SPECS: dict[str, Spec] = {
     "photo_purge_enabled": Spec(_bool, False, "Bật xoá thật ảnh khách quá hạn (BR-23)"),
     # U5: AI assistant of the studio (the provider keys stay in the environment)
     "ai_assistant_enabled": Spec(_bool, True, "Bật trợ lý AI trong studio"),
-    "ai_daily_messages_per_customer": Spec(_int(0, 1000), 30, "Số tin nhắn trợ lý AI mỗi khách mỗi ngày"),
-    "ai_daily_model_calls": Spec(_int(0, 1_000_000), 400, "Số lần gọi mô hình AI mỗi ngày (toàn hệ thống)"),
-    "ai_max_tool_calls": Spec(_int(1, 10), 6, "Số thao tác tối đa của trợ lý AI trong một lượt"),
+    "ai_daily_messages_per_customer": Spec(_int(0, 1000), 100, "Số tin nhắn trợ lý AI mỗi khách mỗi ngày"),
+    "ai_daily_model_calls": Spec(_int(0, 1_000_000), 2000, "Số lần gọi mô hình AI mỗi ngày (toàn hệ thống)"),
+    "ai_max_tool_calls": Spec(_int(1, 20), 12, "Số thao tác tối đa của trợ lý AI trong một lượt"),
     "ai_daily_cost_cap_cents": Spec(_int(0, 10_000_000), 0,
                                     "Trần chi phí AI mỗi ngày (cent USD, 0 = không đặt; chỉ áp dụng khi đã cấu hình giá LLM_PRICES)"),
     # V2 Phase E2b: AI reads the customer's OT-1 photos (with consent each time) for the word-region text hints
+    # OT-1 v2 (docs/OT1_RECOVERY_V2_PLAN.md, R4): which recovery draws OT-1 sketches; "v1" until the owner switches
+    "ot1_recovery_engine": Spec(_choice("v1", "v2"), "v1",
+                                "Bộ phục dựng ảnh OT-1 (v1: cũ; v2: tìm tờ giấy, bỏ dòng kẻ / nếp gấp / mép giấy)"),
     "htr_enabled": Spec(_bool, False, "Bật đọc chữ trên ảnh thư (OT-1) bằng AI để gợi ý chữ cho từng vùng"),
     "htr_daily_pages": Spec(_int(0, 100_000), 100, "Số trang ảnh AI đọc tối đa mỗi ngày (toàn hệ thống)"),
 }

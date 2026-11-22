@@ -15,11 +15,18 @@ import unicodedata
 
 from app.domain import text_layout
 from app.models.order import OrderType
-from app.services.stroke_ai import outline_font, path_order, recovery, style_source, styled_text, text_to_stroke
+from app.services.stroke_ai import outline_font, path_order, recovery, recovery_v2, style_source, styled_text, text_to_stroke
 from app.services.stroke_ai import regions as regions_mod
 from app.services.stroke_ai.trajectory import Metrics, Page, compute_metrics
 
 ENGINE_VERSION = "1"
+OT1_ENGINES = ("v1", "v2")             # Admin setting `ot1_recovery_engine` (OT-1 v2, R4); "v1" until the owner switches
+# similarity thresholds of the K_cx suggestion per similarity measure: below the first -> COMPLEX, from the second -> may be
+# SIMPLE (v1 pixel IoU: assumption, U3). None = the similarity is NOT used: the v2 similarity (paths vs cleaned ink) is
+# 96-99 % on every benchmark image and follows the true quality only weakly (r = 0.30, R4 report), so it cannot tell easy
+# from hard pages. Owner's decision 2026-11-22 (option b): with v2 the suggestion rests on pen lifts per character and the
+# pen type only; the engine record says so (`complexity_basis`) and the Staff judge the page themselves.
+SIMILARITY_THRESHOLDS: dict[str, tuple[float, float] | None] = {"ink-iou-v1": (70.0, 85.0), "ink-f1-v2": None}
 MAX_AI_PAGES = 5                       # OT-1 images per generation run (keeps the request within NFR-01 limits)
 EXPENSIVE_PENS = {"FOUNTAIN", "BRUSH"}  # SRS 3.2: fountain / brush pens are "complex" (FR-29)
 
@@ -55,7 +62,8 @@ class ImageSource:
 
 
 def suggest_complexity(*, order_type: OrderType, pen_category: str | None, metrics: Metrics, chars: int,
-                       has_canvas: bool, similarity: float | None, font_size_mm: float | None) -> str:
+                       has_canvas: bool, similarity: float | None, font_size_mm: float | None,
+                       similarity_method: str = "ink-iou-v1") -> str:
     """K_cx suggestion (FR-29): the SRS defines the levels in words, these thresholds are ASSUMPTIONS
     that Staff confirm and the Manager can calibrate once real orders exist."""
     if has_canvas or (pen_category in EXPENSIVE_PENS):
@@ -63,22 +71,37 @@ def suggest_complexity(*, order_type: OrderType, pen_category: str | None, metri
     lifts_per_char = metrics.pen_lift_count / max(chars, 1)
     if order_type == OrderType.OT3_TEMPLATE:
         return "MEDIUM" if (font_size_mm or 8.0) < 6.0 or lifts_per_char > 2.5 else "SIMPLE"
-    if (similarity is not None and similarity < 70.0) or lifts_per_char > 4.0:
+    limits = SIMILARITY_THRESHOLDS[similarity_method]
+    if limits is None:                                    # v2: similarity not used (see SIMILARITY_THRESHOLDS)
+        if lifts_per_char > 4.0:
+            return "COMPLEX"
+        return "SIMPLE" if lifts_per_char <= 1.5 else "MEDIUM"
+    complex_below, simple_from = limits
+    if (similarity is not None and similarity < complex_below) or lifts_per_char > 4.0:
         return "COMPLEX"
-    return "SIMPLE" if lifts_per_char <= 1.5 and (similarity or 0.0) >= 85.0 else "MEDIUM"
+    return "SIMPLE" if lifts_per_char <= 1.5 and (similarity or 0.0) >= simple_from else "MEDIUM"
 
 
 def generate_ot1(images: list[ImageSource], *, paper_size: str, v_max_mm_s: float, pen_category: str | None,
-                 chars: int) -> Generated:
+                 chars: int, recovery_engine: str = "v1") -> Generated:
+    """`recovery_engine` "v1" = recovery.py (unchanged); "v2" = recovery_v2.py (docs/OT1_RECOVERY_V2_PLAN.md): sheet found and
+    straightened, ruling / creases / edge shadow removed, tolerant-F1 similarity, `noise_removed` per page in the engine
+    record. Any other value is treated as "v1"."""
     if not images:
         raise AppError(422, "NO_ORIGINAL_IMAGE", "Đơn chưa có ảnh bản gốc để phục dựng.")
     if len(images) > MAX_AI_PAGES:
         raise AppError(422, "AI_TOO_MANY_PAGES",
                        f"Phục dựng tự động tối đa {MAX_AI_PAGES} ảnh mỗi lần; hãy tải phác thảo thủ công.")
-    pages, stats, regions = [], [], []
+    v2 = recovery_engine == "v2"
+    pages, stats, regions, geos = [], [], [], []
     for page_no, src in enumerate(images, start=1):
-        page, st = recovery.recover_page(src.data, paper_size=paper_size, rotation_deg=src.rotation_deg,
-                                         crop_box=src.crop_box)
+        if v2:
+            page, st, g = recovery_v2.recover_page(src.data, paper_size=paper_size, rotation_deg=src.rotation_deg,
+                                                   crop_box=src.crop_box)
+            geos.append(g)
+        else:
+            page, st = recovery.recover_page(src.data, paper_size=paper_size, rotation_deg=src.rotation_deg,
+                                             crop_box=src.crop_box)
         pages.append(page)
         stats.append(st)
         for r in st.regions:
@@ -88,14 +111,22 @@ def generate_ot1(images: list[ImageSource], *, paper_size: str, v_max_mm_s: floa
     order_summary = _order_ot1(pages, regions)                                   # U7
     metrics = compute_metrics(pages, v_max_mm_s)
     warnings = sorted({w for s in stats for w in s.warnings})
-    engine = {"name": "zhang-suen-skeleton", "version": ENGINE_VERSION, "similarity_method": "ink-iou-v1",
+    method = "ink-f1-v2" if v2 else "ink-iou-v1"
+    engine = {"name": "ot1-recovery-v2" if v2 else "zhang-suen-skeleton", "version": "2" if v2 else ENGINE_VERSION,
+              "similarity_method": method,
               "pages": [{"similarity": s.similarity, "mm_per_px": s.mm_per_px, "stroke_width_mm": s.stroke_width_mm,
                          "deskew_deg": s.deskew_deg} for s in stats]}
+    if v2:
+        engine["complexity_basis"] = "pen-lifts-and-pen-type"     # similarity not used for K_cx (owner, 2026-11-22)
+    for info, g in zip(engine["pages"], geos):            # v2 only: what was found / removed on each photo
+        info.update({"paper": g["paper"], "placement": g["placement"], "noise_removed": g["noise_removed"]})
     complexity = suggest_complexity(order_type=OrderType.OT1_COPY_RESTORE, pen_category=pen_category, metrics=metrics,
-                                    chars=chars, has_canvas=False, similarity=similarity, font_size_mm=None)
+                                    chars=chars, has_canvas=False, similarity=similarity, font_size_mm=None,
+                                    similarity_method=method)
     if any(r.label != "ORIGINAL" for r in regions):
         warnings.append("UNCERTAIN_REGIONS")                 # U4: Staff should review the RESTORED regions
-    engine["regions"] = {"method": "word-local-ink-iou-v1", "uncertain_below": regions_mod.UNCERTAIN_BELOW}
+    engine["regions"] = {"method": "word-local-ink-f1-v2" if v2 else "word-local-ink-iou-v1",
+                         "uncertain_below": regions_mod.UNCERTAIN_BELOW}
     engine["path_order"] = order_summary
     return Generated(pages, engine, metrics, similarity, complexity, warnings, regions)
 

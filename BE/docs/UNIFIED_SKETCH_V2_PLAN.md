@@ -1,6 +1,6 @@
 # AI-VHRS V2: Đơn hàng hợp nhất, phác thảo chuẩn (canonical sketch) và chỉnh sửa bằng AI
 
-Trạng thái: **Phase A xong; chủ dự án chốt D1–D6 (mục 9.0); Phase B (lõi) xong 2026-11-17, mục 11; Phase C (trợ lý trên đơn) xong 2026-11-18, mục 12; Phase H (Staff sửa bằng cùng engine) xong 2026-11-19, mục 13; Phase D (cấp 1 trên đơn) xong 2026-11-19, mục 14; Phase E phần 1 (đo HTR) xong 2026-11-19, mục 15, phần 2 (tích hợp) chờ chủ dự án quyết. Phase F, I chưa làm.**
+Trạng thái: **Phase A xong; chủ dự án chốt D1–D6 (mục 9.0); Phase B (lõi) xong 2026-11-17, mục 11; Phase C (trợ lý trên đơn) xong 2026-11-18, mục 12; Phase H (Staff sửa bằng cùng engine) xong 2026-11-19, mục 13; Phase D (cấp 1 trên đơn) xong 2026-11-19, mục 14; Phase E phần 1 (đo HTR) và E2a xong 2026-11-19, mục 15, 15b; E2b (gợi ý chữ theo vùng) xong 2026-11-19, mục 15c; Phase F xong 2026-11-19, mục 16; Phase I (nghiệm thu) xong 2026-11-20, mục 17. Phase A–D, E, F commit tới `aeb0672`, Phase I commit `fcefc44`. Tiếp theo của V2: OT-2 theo `docs/OT2_LEARNED_STYLE_PLAN.md`.**
 Một việc độc lập đã làm và test ngay (mục 2.3): bản xem trước studio và phác thảo của Staff giờ ra **cùng một nét**.
 
 Tài liệu này nối tiếp `docs/UPGRADE_AI_ROBOT_PLAN.md` (U1–U9). Quy ước trạng thái: **ĐÃ CÓ** = code + test chạy; **THIẾT KẾ** = mới
@@ -209,7 +209,7 @@ Staff nhận v1 đúng nét đó (hash bằng nhau) → báo giá → duyệt �
 | Test | Xem `PROJECT_STATUS.md` mục 6 |
 | Giới hạn | Vẫn là sinh lại cùng kết quả, chưa chuyển hình học; Staff đổi khổ giấy khi sinh (`paper_size`) thì vẫn khác bản xem trước (đúng ý) |
 
-## 11. Phase B: đã làm (2026-11-17, migration 0023, chưa commit)
+## 11. Phase B: đã làm (2026-11-17, migration 0023, commit `c35d791`)
 
 | | |
 |---|---|
@@ -262,7 +262,7 @@ Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **H-a** Staff dùng cùn
 | Kết quả test | Cục bộ (Postgres 18) 914 passed, 3 skipped. Supabase THẬT 914 passed, 3 skipped, 0 failed, 1 error teardown (kết nối khoá suite bị đóng sau khoảng 5 giờ, đã sửa `conftest.py`); dữ liệu thật không đổi |
 | Chưa làm | Trợ lý AI cho Staff (H-b); hoàn tác trong editor Staff (Staff mở lại phiên bản cũ rồi sửa tiếp, hoặc chốt phiên bản cũ); đọc lại file quỹ đạo ngay lúc phát hành snapshot (hiện so ở mỗi lần tải gói, U1) |
 
-## 14. Phase D: chỉnh cả văn bản trên đơn (2026-11-19, migration 0026, chưa commit)
+## 14. Phase D: chỉnh cả văn bản trên đơn (2026-11-19, migration 0026, commit `aeb0672`)
 
 Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **D-a** định dạng theo đoạn văn = giãn dòng, căn ngang, khoảng trước đoạn (không font riêng); **D-b** vẽ lại khi có nét đã sửa → báo trước, cần `discard_edits` (chưa tự áp lại lệnh sửa); **D-c** lưu form theo lần vẽ, hoàn tác / làm lại kéo theo form (migration 0026); **D-d** một màu mực mỗi đơn; **D-e** trợ lý có `set_layout`, không đổi vật tư / giá.
 
@@ -276,7 +276,7 @@ Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **D-a** định dạng t
 | Kết quả Supabase | Toàn suite 2026-11-19 14:02 → 16:55: 913 passed, 3 skipped, 9 failed; 9 test trợ lý hỏng vì `ImportError` do code E2b được sửa giữa lượt chạy, không do Phase D. Chạy lại cùng E2b + F |
 | Chưa làm | Tự áp lại lệnh sửa nét sau khi vẽ lại (D-b phương án B; làm ở Phase F); nhiều màu mực; font riêng theo đoạn; định dạng cho OT-1 / OT-2; khôi phục ảnh OT-1 khi hoàn tác; trợ lý chưa đo chất lượng chọn `set_layout` với LLM thật |
 
-## 15. Phase E phần 1: đo nhận dạng chữ viết tay (2026-11-19, không đổi code BE / DB, chưa commit)
+## 15. Phase E phần 1: đo nhận dạng chữ viết tay (2026-11-19, không đổi code BE / DB, commit `aeb0672`)
 
 Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **E-a** cài PyTorch CPU + VietOCR + trọng số `vgg_transformer` trong môi trường đo riêng `benchmarks/.venv-htr` (không vào `requirements`); **E-b** Gemini tối đa 100 lượt trên 50 ảnh công khai; **E-c** tách dòng bằng code tự viết (không PaddleOCR); **E-d** phần 2 (tích hợp) trình riêng sau khi có số đo.
 
@@ -288,7 +288,7 @@ Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **E-a** cài PyTorch CPU
 | Gemini | 59 lượt gọi (57 trang + 2 lần gọi lại), 66.887 token vào, 8.387 token ra |
 | Phần 2 cần chủ dự án quyết | Dùng Gemini (gửi ảnh khách ra ngoài, cần đồng ý từng đơn) hay chạy cục bộ (VietOCR chưa đủ tốt, nặng); chỗ dùng: gắn chữ cho vùng OT-1, vùng không chắc → cảnh báo / hỏi khách / chuyển Staff (Test 4, Test 5) |
 
-### 15b. Phase E2a: gắn chữ cho từng vùng U4 (2026-11-19, chỉ đo, không đổi code BE / DB, chưa commit)
+### 15b. Phase E2a: gắn chữ cho từng vùng U4 (2026-11-19, chỉ đo, không đổi code BE / DB, commit `aeb0672`)
 
 Chủ dự án duyệt kế hoạch phần 2 theo khuyến nghị, đổi **E2-d: cho phép chuyển sang Claude khi Gemini lỗi** (chưa có `ANTHROPIC_API_KEY`, nên chưa đo và chưa chạy được). Báo cáo `docs/benchmarks/E2a_htr_regions_2026-11-19.md`.
 
@@ -299,7 +299,7 @@ Chủ dự án duyệt kế hoạch phần 2 theo khuyến nghị, đổi **E2-d
 | Kết quả | 6 trang bốc ngẫu nhiên, AI soát bằng mắt: **24/612 = 3,9 % vùng sai** (ngưỡng ≤ 5 %), dồn ở 2 trang có bố cục lạ. 85 % vùng READ. Không bịa chữ (trang trắng / nhiễu bị từ chối). **Trang bị che giữa: 21/52 và 34/67 vùng trượt chữ** trên 2 trang văn xuôi |
 | Đề xuất E2b | Chữ theo vùng chỉ là gợi ý cho khách / Staff, kèm READ / UNREAD, không tự đổi nét; UNREAD hoặc khớp kém → cảnh báo / chuyển Staff. Thư hư nặng cần sửa phần gộp mảnh chữ bị cắt và đo lại trước khi bật |
 
-### 15c. Phase E2b: gợi ý chữ cho từng vùng OT-1 (2026-11-19, migration 0027, chưa commit)
+### 15c. Phase E2b: gợi ý chữ cho từng vùng OT-1 (2026-11-19, migration 0027, commit `aeb0672`)
 
 | | |
 |---|---|
@@ -311,7 +311,7 @@ Chủ dự án duyệt kế hoạch phần 2 theo khuyến nghị, đổi **E2-d
 | Supabase | Toàn suite trên Supabase THẬT 2026-11-19: 929 passed, 3 skipped, 0 failed (cùng lượt với Phase F) |
 | Chưa kiểm chứng | Gọi Gemini / Claude thật qua code sản phẩm; Claude trên chữ viết tay |
 
-## 16. Phase F: dòng và đoạn, giữ id và lệnh sửa khi vẽ lại (2026-11-19, không migration, chưa commit)
+## 16. Phase F: dòng và đoạn, giữ id và lệnh sửa khi vẽ lại (2026-11-19, không migration, commit `aeb0672`)
 
 Chủ dự án duyệt 2026-11-19 theo khuyến nghị: **F-a** chỉ dòng và đoạn, không id ký tự; **F-b** giữ id khi vẽ lại cho cả OT-3 và OT-1; **F-c** chỉ áp lại dời / xoay / đổi cỡ / nghiêng trên cả từ; **F-d** thay chữ vùng OT-1 bằng chữ gõ để sau.
 
