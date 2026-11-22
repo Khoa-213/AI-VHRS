@@ -100,8 +100,9 @@ SPECS: dict[str, Spec] = {
     "ai_daily_cost_cap_cents": Spec(_int(0, 10_000_000), 0,
                                     "Trần chi phí AI mỗi ngày (cent USD, 0 = không đặt; chỉ áp dụng khi đã cấu hình giá LLM_PRICES)"),
     # V2 Phase E2b: AI reads the customer's OT-1 photos (with consent each time) for the word-region text hints
-    # OT-1 v2 (docs/OT1_RECOVERY_V2_PLAN.md, R4): which recovery draws OT-1 sketches; "v1" until the owner switches
-    "ot1_recovery_engine": Spec(_choice("v1", "v2"), "v1",
+    # OT-1 v2 (docs/OT1_RECOVERY_V2_PLAN.md, R4): which recovery draws OT-1 sketches; "v2" by default since 2026-11-22
+    # (owner), "v1" = the old recovery, kept for rollback
+    "ot1_recovery_engine": Spec(_choice("v1", "v2"), "v2",
                                 "Bộ phục dựng ảnh OT-1 (v1: cũ; v2: tìm tờ giấy, bỏ dòng kẻ / nếp gấp / mép giấy)"),
     "htr_enabled": Spec(_bool, False, "Bật đọc chữ trên ảnh thư (OT-1) bằng AI để gợi ý chữ cho từng vùng"),
     "htr_daily_pages": Spec(_int(0, 100_000), 100, "Số trang ảnh AI đọc tối đa mỗi ngày (toàn hệ thống)"),
