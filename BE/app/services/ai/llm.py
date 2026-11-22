@@ -49,6 +49,11 @@ class Reply:
     finish: str | None = None
 
 
+# Room for a tool call that carries a whole order text (update_text sends the full text; Vietnamese is ~1 token per 2 characters,
+# orders take 20000 characters). Was 1024 / 2048, which cut such a call (2026-11-22).
+MAX_OUTPUT_TOKENS = 12000
+
+
 @dataclass
 class ProviderError(Exception):
     reason: str
@@ -132,7 +137,7 @@ class GeminiProvider(_HttpProvider):
 
     def complete(self, system: str, transcript: list[dict[str, Any]], tools: list[ToolSpec]) -> Reply:
         body: dict[str, Any] = {"systemInstruction": {"parts": [{"text": system}]}, "contents": self._contents(transcript),
-                                "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048}}
+                                "generationConfig": {"temperature": 0.3, "maxOutputTokens": MAX_OUTPUT_TOKENS}}
         if tools:
             body["tools"] = [{"functionDeclarations": [
                 {"name": t.name, "description": t.description, "parameters": t.parameters} for t in tools]}]
@@ -177,7 +182,7 @@ class AnthropicProvider(_HttpProvider):
         return out
 
     def complete(self, system: str, transcript: list[dict[str, Any]], tools: list[ToolSpec]) -> Reply:
-        body: dict[str, Any] = {"model": self.model, "max_tokens": 1024, "system": system,
+        body: dict[str, Any] = {"model": self.model, "max_tokens": MAX_OUTPUT_TOKENS, "system": system,
                                 "messages": self._messages(transcript), "temperature": 0.3}
         if tools:
             body["tools"] = [{"name": t.name, "description": t.description, "input_schema": t.parameters} for t in tools]
@@ -217,7 +222,7 @@ class OpenAIProvider(_HttpProvider):
 
     def complete(self, system: str, transcript: list[dict[str, Any]], tools: list[ToolSpec]) -> Reply:
         body: dict[str, Any] = {"model": self.model, "messages": self._messages(system, transcript),
-                                "max_completion_tokens": 1024}
+                                "max_completion_tokens": MAX_OUTPUT_TOKENS}
         if tools:
             body["tools"] = [{"type": "function", "function": {"name": t.name, "description": t.description,
                                                                "parameters": t.parameters}} for t in tools]

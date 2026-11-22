@@ -55,7 +55,7 @@ class Selection(BaseModel):
 
 
 class OrderMessageIn(BaseModel):
-    text: str = Field(min_length=1, max_length=2000)
+    text: str = Field(min_length=1, max_length=8000)
     ai_consent: bool = Field(default=False, description=(
         "Bắt buộc true ở tin nhắn đầu tiên của đơn: khách đồng ý gửi tin nhắn và nội dung đơn (chữ, vật tư, số đo phác thảo) "
         "cho nhà cung cấp AI bên ngoài. Ảnh không bao giờ được gửi."))
@@ -178,8 +178,8 @@ def messages(order_id: int, assistant: Assistant) -> OrderConversationOut:
              description=("Mỗi sửa nét của trợ lý là một revision `author = AI` (hoàn tác được). Khi mọi nhà cung cấp AI đều lỗi, "
                           "trả 200 với `reply.status = FAILED`. `tool_calls[].revision_id` là id revision phác thảo trợ lý tạo."))
 def send_message(order_id: int, body: OrderMessageIn, assistant: Assistant,
-                 _limit: Annotated[None, Depends(rate_limit("studio_ai", 10, 60))]) -> OrderTurnOut:
-    # the "studio_ai" bucket is shared with the studio and counted after the role check (a refused role never uses it)
+                 _limit: Annotated[None, Depends(rate_limit("order_ai", 30, 60))]) -> OrderTurnOut:
+    # own bucket "order_ai" (30 / min per IP: customers behind one school / office NAT share an IP); counted after the role check
     out = assistant.send_order(order_id, body.text, consent=body.ai_consent, base_revision_id=body.base_revision_id,
                                selection=body.selection.model_dump() if body.selection else None, client_ref=body.client_ref,
                                base_proposal_id=body.base_proposal_id, from_order=body.from_order)
@@ -194,7 +194,7 @@ def send_message(order_id: int, body: OrderMessageIn, assistant: Assistant,
                           "fields}), rồi `reply` (đúng `OrderTurnOut`) hoặc `error`; cuối "
                           "cùng `done`. Lỗi trước khi gọi mô hình vẫn trả HTTP lỗi thường."))
 def send_message_stream(order_id: int, body: OrderMessageIn, session: SessionDep, assistant: Assistant,
-                        _limit: Annotated[None, Depends(rate_limit("studio_ai", 10, 60))]) -> StreamingResponse:
+                        _limit: Annotated[None, Depends(rate_limit("order_ai", 30, 60))]) -> StreamingResponse:
     assistant.lock_order(order_id)
     if assistant.replay(order_id, body.client_ref) is None:
         assistant.precheck_order(order_id, body.text, consent=body.ai_consent, base_revision_id=body.base_revision_id,

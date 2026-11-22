@@ -248,11 +248,12 @@ def test_when_every_provider_fails_the_customer_gets_a_plain_message(client, cus
 
 def test_caps_and_the_tool_limit(client, cust, wcat, store, providers, monkeypatch):
     d = _text_draft(client, cust, wcat)
-    loop = Script("p", [_call("get_draft") for _ in range(20)])
+    cap = assistant_mod.SETTINGS_DEFAULTS["ai_max_tool_calls"]                 # 12 since 2026-11-22 (was 6)
+    loop = Script("p", [_call("get_draft") for _ in range(cap + 10)])
     providers["list"] = [loop]
     r = client.post(f"{S}/{d['id']}/messages", headers=cust, json={"text": "lặp", "ai_consent": True}).json()
-    assert len(r["reply"]["tool_calls"]) == 6 and r["reply"]["content"] == assistant_mod.LIMIT_TEXT   # 6 tools, then it stops
-    assert len(loop.seen) == 7
+    assert len(r["reply"]["tool_calls"]) == cap and r["reply"]["content"] == assistant_mod.LIMIT_TEXT   # cap tools, then it stops
+    assert len(loop.seen) == cap + 1
     real = assistant_mod.AssistantService.setting
     monkeypatch.setattr(assistant_mod.AssistantService, "setting",
                         lambda self, k: 1 if k == "ai_daily_messages_per_customer" else real(self, k))
