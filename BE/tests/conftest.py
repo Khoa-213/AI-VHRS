@@ -1,12 +1,13 @@
 """Tests run against the real (Supabase) database. Only rows whose email starts with
 'pytest_' are created and they are removed afterwards."""
+import functools
 import os
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 # U1: a throw-away signing key for this test session, unless the environment already has one (never a real key in tests)
 if not os.environ.get("PRODUCTION_SIGNING_KEY"):
@@ -21,7 +22,25 @@ from app.main import app
 
 PASSWORD = "Passw0rd!x"
 ROLE_ID = {"CUSTOMER": 1, "STAFF": 2, "TECHNICAL_STAFF": 3, "MANAGER": 4, "ADMIN": 5}
-_TEST_IDS = "(select id from accounts where email like 'pytest\\_%@example.com')"
+
+# T2 (docs/TEST_SPEEDUP_PLAN.md): scripts/run_tests_sharded.py runs shards at the same time. Each shard writes its rows with its
+# own prefix 'pytest_<shard>_' and its cleanup removes only that prefix, so shards never delete each other's data. An ordinary
+# session (no VHRS_TEST_SHARD) keeps the prefix 'pytest_' and removes every 'pytest_' row, the shards' leftovers included.
+SHARD = os.environ.get("VHRS_TEST_SHARD", "").strip()
+assert SHARD == "" or SHARD.isalnum(), "VHRS_TEST_SHARD must be letters / digits"
+PREFIX = f"pytest_{SHARD}_" if SHARD else "pytest_"
+_LIKE = PREFIX.replace("_", "\\_") + "%"          # e.g. pytest\_s1\_%  (SQL LIKE, '_' escaped)
+_TEST_IDS = f"(select id from accounts where email like '{_LIKE}@example.com')"
+
+
+def fresh_email() -> str:
+    """A fresh test account e-mail with this session's prefix."""
+    return f"{PREFIX}{uuid.uuid4().hex[:10]}@example.com"
+
+
+def fresh_code(n: int = 8) -> str:
+    """A fresh catalog / robot code with this session's prefix."""
+    return PREFIX + uuid.uuid4().hex[:n]
 
 
 _TEST_ORDERS = f"(select id from orders where customer_id in {_TEST_IDS})"
@@ -39,7 +58,7 @@ def _cleanup() -> None:
             or (entity_type = 'production_snapshot' and entity_id in (select id from production_snapshots where order_id in {_TEST_ORDERS}))
             or (entity_type = 'shipment' and entity_id in (select id from shipments where order_id in {_TEST_ORDERS}))
             or (entity_type = 'incident' and entity_id in (select id from incidents where reported_by in {_TEST_IDS}
-                 or robot_id in (select id from robots where code like 'pytest\\_%')))"""))
+                 or robot_id in (select id from robots where code like '{_LIKE}')))"""))
         # orders (cascade: inputs, sketches, quotations, messages, status_histories) before accounts;
         # test catalog rows after the orders
         # payments / production jobs do not cascade from orders; jobs must go before the test robots
@@ -55,31 +74,31 @@ def _cleanup() -> None:
         c.execute(text(f"delete from product_photos where order_id in {_TEST_ORDERS}"))
         # robot_alerts / robot_runs (migration 0008) reference jobs, robots and accounts without cascade; alerts go first
         _jobs_of_tests = (f"(select id from production_jobs where order_id in {_TEST_ORDERS} "
-                          "or robot_id in (select id from robots where code like 'pytest\\_%'))")
+                          f"or robot_id in (select id from robots where code like '{_LIKE}'))")
         c.execute(text(f"delete from robot_alerts where job_id in {_jobs_of_tests} or acknowledged_by in {_TEST_IDS} "
-                       f"or resolved_by in {_TEST_IDS} or robot_id in (select id from robots where code like 'pytest\\_%')"))
+                       f"or resolved_by in {_TEST_IDS} or robot_id in (select id from robots where code like '{_LIKE}')"))
         c.execute(text(f"delete from robot_runs where job_id in {_jobs_of_tests} or created_by in {_TEST_IDS} "
-                       f"or authorized_by in {_TEST_IDS} or robot_id in (select id from robots where code like 'pytest\\_%')"))
+                       f"or authorized_by in {_TEST_IDS} or robot_id in (select id from robots where code like '{_LIKE}')"))
         c.execute(text(f"delete from robot_commands where created_by in {_TEST_IDS} or job_id in {_jobs_of_tests} "
-                       "or robot_id in (select id from robots where code like 'pytest\_%')"))
+                       f"or robot_id in (select id from robots where code like '{_LIKE}')"))
         c.execute(text(f"delete from robot_agents where created_by in {_TEST_IDS} "
-                       "or robot_id in (select id from robots where code like 'pytest\_%')"))
+                       f"or robot_id in (select id from robots where code like '{_LIKE}')"))
         c.execute(text(f"delete from audit_logs where entity_type = 'alert_catalog' and actor_id in {_TEST_IDS}"))
         c.execute(text(f"update alert_catalog set updated_by = null where updated_by in {_TEST_IDS}"))
         c.execute(text(f"delete from production_jobs where order_id in {_TEST_ORDERS}"))
         c.execute(text(f"delete from orders where customer_id in {_TEST_IDS}"))
-        c.execute(text("delete from production_jobs where robot_id in (select id from robots where code like 'pytest\\_%')"))
+        c.execute(text(f"delete from production_jobs where robot_id in (select id from robots where code like '{_LIKE}')"))
         # incidents reference robots and accounts without cascade (job_events/calibrations went with their jobs)
         c.execute(text(f"delete from incidents where reported_by in {_TEST_IDS} "
-                       "or robot_id in (select id from robots where code like 'pytest\\_%')"))
+                       f"or robot_id in (select id from robots where code like '{_LIKE}')"))
         # U6 material profiles: of test materials / robots, or measured / verified by a test account
-        _test_profiles = ("(select id from material_profiles where robot_id in (select id from robots where code like 'pytest\\_%') "
-                          "or paper_type_id in (select id from paper_types where code like 'pytest\\_%') "
-                          "or pen_type_id in (select id from pen_types where code like 'pytest\\_%') "
+        _test_profiles = (f"(select id from material_profiles where robot_id in (select id from robots where code like '{_LIKE}') "
+                          f"or paper_type_id in (select id from paper_types where code like '{_LIKE}') "
+                          f"or pen_type_id in (select id from pen_types where code like '{_LIKE}') "
                           f"or measured_by in {_TEST_IDS} or verified_by in {_TEST_IDS})")
         c.execute(text(f"update sketches set render_profile_id = null where render_profile_id in {_test_profiles}"))
         c.execute(text(f"delete from material_profiles where id in {_test_profiles}"))
-        c.execute(text("delete from robots where code like 'pytest\\_%'"))
+        c.execute(text(f"delete from robots where code like '{_LIKE}'"))
         c.execute(text(f"delete from handwriting_styles where owner_id in {_TEST_IDS}"))
         # a test may have saved a new PricingConfig version: drop those and re-activate the last real one
         c.execute(text(f"delete from pricing_configs where created_by in {_TEST_IDS}"))
@@ -88,27 +107,54 @@ def _cleanup() -> None:
         # The test catalog is publicly visible while the suite runs, so a REAL customer may have ordered one of its
         # items. Never delete those (FK violation would abort the whole cleanup): switch them off and rename them so
         # they are no longer treated as test data. Their order stays untouched.
-        c.execute(text("update pen_types set code='orphan_'||code, is_active=false where code like 'pytest\\_%' "
+        c.execute(text(f"update pen_types set code='orphan_'||code, is_active=false where code like '{_LIKE}' "
                        "and id in (select pen_type_id from orders where pen_type_id is not null)"))
-        c.execute(text("update paper_types set code='orphan_'||code, is_active=false where code like 'pytest\\_%' "
+        c.execute(text(f"update paper_types set code='orphan_'||code, is_active=false where code like '{_LIKE}' "
                        "and id in (select paper_type_id from orders where paper_type_id is not null)"))
-        c.execute(text("update templates set code='orphan_'||left(code, 30), is_active=false where code like 'pytest\\_%' "
+        c.execute(text(f"update templates set code='orphan_'||left(code, 30), is_active=false where code like '{_LIKE}' "
                        "and id in (select template_id from order_inputs where template_id is not null)"))
         c.execute(text("delete from paper_pen_compats where paper_type_id in "
-                       "(select id from paper_types where code like 'pytest\\_%')"))
-        c.execute(text("delete from ink_colors where pen_type_id in (select id from pen_types where code like 'pytest\\_%')"))
-        c.execute(text("delete from pen_types where code like 'pytest\\_%'"))
-        c.execute(text("delete from paper_types where code like 'pytest\\_%'"))
-        c.execute(text("delete from templates where code like 'pytest\\_%'"))
+                       f"(select id from paper_types where code like '{_LIKE}')"))
+        c.execute(text(f"delete from ink_colors where pen_type_id in (select id from pen_types where code like '{_LIKE}')"))
+        c.execute(text(f"delete from pen_types where code like '{_LIKE}'"))
+        c.execute(text(f"delete from paper_types where code like '{_LIKE}'"))
+        c.execute(text(f"delete from templates where code like '{_LIKE}'"))
         c.execute(text(f"delete from audit_logs where actor_id in {_TEST_IDS} "
                        f"or (entity_type = 'account' and entity_id in {_TEST_IDS})"))
         c.execute(text(f"delete from showcase_posts where posted_by in {_TEST_IDS}"))   # Phase 5c; reviews go with their orders
         c.execute(text(f"update accounts set created_by = null where created_by in {_TEST_IDS}"))
         c.execute(text(f"update system_settings set updated_by = null where updated_by in {_TEST_IDS}"))   # Admin tests write no-op values
-        c.execute(text("delete from accounts where email like 'pytest\\_%@example.com'"))
+        if not SHARD:
+            c.execute(text(f"delete from accounts where email like '{_LIKE}@example.com'"))
+            return
+        # T2 shard: a row of ANOTHER prefix (another shard, maybe still running) can still point at one of our accounts
+        # (seen 2026-11-21: another prefix's order assigned to / accepted by our Staff). Never touch that row: keep the
+        # account, log who points at it, and let the serial phase's ordinary cleanup (every 'pytest_' row) remove both.
+        sp = c.begin_nested()
+        try:
+            c.execute(text(f"delete from accounts where email like '{_LIKE}@example.com'"))
+            sp.commit()
+            return
+        except IntegrityError:
+            sp.rollback()
+        kept = []
+        for (aid,) in c.execute(text(f"select id from accounts where email like '{_LIKE}@example.com'")).all():
+            one = c.begin_nested()
+            try:
+                c.execute(text("delete from accounts where id = :i"), {"i": aid})
+                one.commit()
+            except IntegrityError:
+                one.rollback()
+                kept.append((aid, [tuple(r) for r in c.execute(text(
+                    "select o.id, o.code, o.order_status::text, a.email from orders o join accounts a on a.id = o.customer_id "
+                    "where :i in (o.assigned_staff_id, o.assigned_by)"), {"i": aid}).all()]))
+        log = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".test_progress", "cross_shard.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(f"{PREFIX}: kept {kept}\n")
 
 
-# Every session deletes ALL 'pytest_' rows at its start and end, so two sessions on the same database destroy each other's
+# An ordinary session deletes ALL 'pytest_' rows at its start and end (a shard only its own prefix, see above), so two sessions on the same database destroy each other's
 # data mid-test (2026-11-17: 6 U6/U8 tests failed with 422 / 409 / missing ids that way). A session-level Postgres advisory
 # lock lets only one session in; a second one stops at once instead of corrupting the first. The lock dies with its
 # connection, so a killed run never leaves it behind. Needs a session-mode connection (Supabase session pooler, local DB).
@@ -117,6 +163,11 @@ _SUITE_LOCK_KEY = 0x56485253   # "VHRS"
 
 @pytest.fixture(scope="session", autouse=True)
 def _db_clean():
+    if os.environ.get("VHRS_TEST_RUNNER_LOCK") == "1":     # scripts/run_tests_sharded.py holds the suite lock for its shards
+        _cleanup()
+        yield
+        _cleanup()
+        return
     lock = get_engine().connect()
     if not lock.execute(text("select pg_try_advisory_lock(:k)"), {"k": _SUITE_LOCK_KEY}).scalar():
         lock.close()
@@ -141,7 +192,11 @@ def _db_clean():
 @pytest.fixture(scope="session", autouse=True)
 def _all_order_types_open(_db_clean):
     """The seed restricts customers to OT-1/OT-3 (LI-10); tests exercise every type, so the restriction is
-    lifted while the suite runs and put back afterwards."""
+    lifted while the suite runs and put back afterwards. Under scripts/run_tests_sharded.py the runner does it once for all
+    shards (VHRS_TEST_ORDER_TYPES_OPEN=1), since one shard putting it back would close it under the others."""
+    if os.environ.get("VHRS_TEST_ORDER_TYPES_OPEN") == "1":
+        yield
+        return
     with get_engine().begin() as c:
         row = c.execute(text("select value::text, description from system_settings where key='order_types_enabled'")).first()
         c.execute(text("delete from system_settings where key='order_types_enabled'"))
@@ -191,11 +246,17 @@ def client():
         yield c
 
 
+@functools.lru_cache
+def _password_hash(password: str) -> str:
+    """bcrypt once per password per session (a fresh hash per account cost ~110 ms each, docs/TEST_SPEEDUP_PLAN.md)."""
+    return hash_password(password)
+
+
 def make_account(role: str = "CUSTOMER", password: str = PASSWORD) -> str:
-    email = f"pytest_{uuid.uuid4().hex[:10]}@example.com"
+    email = fresh_email()
     with get_engine().begin() as c:
         c.execute(text("insert into accounts (role_id, email, password_hash, full_name) values (:r,:e,:h,:n)"),
-                  {"r": ROLE_ID[role], "e": email, "h": hash_password(password), "n": f"Test {role}"})
+                  {"r": ROLE_ID[role], "e": email, "h": _password_hash(password), "n": f"Test {role}"})
     return email
 
 

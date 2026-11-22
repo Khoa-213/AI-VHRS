@@ -1,12 +1,12 @@
 import uuid
 
-from tests.conftest import PASSWORD, auth, login, make_account
+from tests.conftest import PASSWORD, auth, login, make_account, fresh_email
 
 API = "/api/v1"
 
 
 def _email() -> str:
-    return f"pytest_{uuid.uuid4().hex[:10]}@example.com"
+    return fresh_email()
 
 
 def _bearer(tok: dict) -> dict[str, str]:

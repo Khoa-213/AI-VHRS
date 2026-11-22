@@ -15,7 +15,7 @@ from app.db.session import get_engine
 from app.integrations.storage import InMemoryStorage
 from app.main import app
 from app.services import pricing as pr
-from tests.conftest import auth
+from tests.conftest import auth, fresh_code
 
 API = "/api/v1"
 
@@ -27,7 +27,7 @@ def _sql(stmt: str, **params):
 
 @pytest.fixture(scope="module")
 def catalog():
-    tag = "pytest_" + uuid.uuid4().hex[:6]
+    tag = fresh_code(6)
     ids = {}
     ids["paper"] = _sql("""insert into paper_types (code,name,gsm,surface,size,unit_price,stock_qty)
                            values (:c,'Giay test A4',100,'ART','A4',15000,100) returning id""", c=tag + "_p")

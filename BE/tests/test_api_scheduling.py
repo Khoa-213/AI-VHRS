@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.domain import scheduling_rules as sr
-from tests.conftest import auth
+from tests.conftest import auth, fresh_code
 from tests.test_api_orders import API, _sql
 from tests.test_api_payments import _paid
 from tests.test_api_workshop import (W, _accepted, _err, _order_status, _ot3, _user, cust, manager, policy,  # noqa: F401
@@ -39,7 +39,7 @@ def _robot(category=None, status="AVAILABLE") -> int:
     cats = "null" if category is None else f"array['{category}']::pen_category[]"
     return _sql(f"""insert into robots (code,station,status,supported_pen_categories)
                     values (:c,'Ban test',cast(:s as robot_status),{cats}) returning id""",
-                c="pytest_" + uuid.uuid4().hex[:8], s=status)
+                c=fresh_code(), s=status)
 
 
 @pytest.fixture

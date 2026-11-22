@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import text
 
 from app.db.session import get_engine
-from tests.conftest import auth
+from tests.conftest import auth, fresh_code
 from tests.test_api_orders import API, _png, _sql  # noqa: F401
 from tests.test_api_workshop import (W, _err, _quoted as _draft_quote, _user, cust, manager, policy,  # noqa: F401
                                      staff, store, wcat)
@@ -19,7 +19,7 @@ M = f"{API}/manager"
 
 
 def _tag() -> str:
-    return "pytest_" + uuid.uuid4().hex[:8]
+    return fresh_code()
 
 
 @pytest.fixture

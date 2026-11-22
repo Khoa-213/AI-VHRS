@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
     database_url: str
+    # connection pool per process; the sharded test runner lowers it (Supabase's session pooler caps clients)
+    db_pool_size: int = 3
+    db_max_overflow: int = 2
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_ttl_min: int = 30
