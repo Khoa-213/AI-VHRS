@@ -41,6 +41,43 @@ def test_zhang_suen_thins_a_thick_line_to_one_pixel():
     assert sk.sum(axis=0).max() == 1                       # one pixel per column in the middle
 
 
+def _zhang_suen_reference(ink: np.ndarray) -> np.ndarray:
+    """The textbook per-pixel Zhang-Suen loop (the product's version before the lookup table, 2026-11-22)."""
+    img = np.pad((ink > 0).astype(np.uint8), 1)
+    while True:
+        changed = False
+        for step in (0, 1):
+            p = img
+            p2, p3, p4, p5 = p[:-2, 1:-1], p[:-2, 2:], p[1:-1, 2:], p[2:, 2:]
+            p6, p7, p8, p9 = p[2:, 1:-1], p[2:, :-2], p[1:-1, :-2], p[:-2, :-2]
+            centre = p[1:-1, 1:-1]
+            b = (p2.astype(np.int16) + p3 + p4 + p5 + p6 + p7 + p8 + p9)
+            seq = (p2, p3, p4, p5, p6, p7, p8, p9, p2)
+            a = sum(((seq[i] == 0) & (seq[i + 1] == 1)).astype(np.int16) for i in range(8))
+            if step == 0:
+                cond = ((p2 * p4 * p6) == 0) & ((p4 * p6 * p8) == 0)
+            else:
+                cond = ((p2 * p4 * p8) == 0) & ((p2 * p6 * p8) == 0)
+            mask = (centre == 1) & (b >= 2) & (b <= 6) & (a == 1) & cond
+            if mask.any():
+                centre[mask] = 0
+                changed = True
+        if not changed:
+            return img[1:-1, 1:-1].astype(bool)
+
+
+def test_lookup_table_thinning_matches_the_reference_loop_exactly():
+    """Handwriting-like script, blobs and random noise: the faster thinning gives the same skeleton, pixel for pixel."""
+    rng = np.random.default_rng(7)
+    noise = (rng.random((240, 320)) > 0.7).astype(np.uint8) * 255
+    blobs = np.zeros((240, 320), np.uint8)
+    for _ in range(12):
+        cv2.circle(blobs, (int(rng.integers(0, 320)), int(rng.integers(0, 240))), int(rng.integers(3, 25)), 255, -1)
+    script = 255 - _blank(500, 1200)
+    cv2.putText(script, "Thuong nho", (40, 300), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 4.0, 255, 11, cv2.LINE_AA)
+    for ink in (noise, blobs, (script > 127).astype(np.uint8) * 255):
+        assert np.array_equal(recovery.zhang_suen(ink), _zhang_suen_reference(ink))
+
 def test_t_shape_gives_two_pen_paths_through_the_junction():
     img = _blank(400, 400)
     cv2.line(img, (60, 100), (340, 100), 20, 8)             # horizontal bar
