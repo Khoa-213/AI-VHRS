@@ -125,7 +125,9 @@
 /* With the assistant on (`.co-shell--ai`): the chat takes the estimate box's place on the right and carries the price;
    the order's sketch takes the chat's old place under the form and follows every answer. */
 .co-root .co-shell--ai{grid-template-columns:minmax(0,1fr) minmax(340px,440px)}
-.co-side--ai .oa{height:calc(100vh - 96px - 84px);min-height:520px}
+/* Pinned for the whole page: the column (chat + 16px gap + 48px save button) ends above the frame's bottom padding and
+   margin, so the sticky box never reaches the end of `.co-shell` and stays put down to the last pixel of the page. */
+.co-side--ai .oa{height:calc(100vh - 96px - 64px - clamp(48px,6vw,88px) - clamp(8px,1.1vw,16px) - 8px);min-height:460px}
 .co-side--ai .oa-list{min-height:0;max-height:none}
 
 .co-sketch{display:flex;flex-direction:column;gap:14px;padding:clamp(18px,2.4vw,26px);border-radius:20px;background:linear-gradient(135deg,transparent,var(--tray))}
