@@ -19,6 +19,7 @@ import { aiStatus, emptySelection, getSketchInfo, type AiSelection, type SketchI
 import { draftPathFor, drawPathFor } from './draft'
 import { Sparkle } from '@phosphor-icons/react'
 import OrderAssistant from './ai/OrderAssistant'
+import AiPolicyDialog from './ai/AiPolicyDialog'
 import SketchView from './ai/SketchView'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
@@ -31,16 +32,6 @@ import './create-order.css'
 import './order-entry.css'
 import './co-home.css'
 import './ai/order-ai.css'
-
-const AI_KEY = 'aivhrs-co-ai'
-/** The customer's choice stays between visits: the assistant is on unless they turned it off. */
-function readWantAi(): boolean {
-  try {
-    return localStorage.getItem(AI_KEY) !== 'off'
-  } catch {
-    return true
-  }
-}
 
 const MODES: InputMode[] = ['text', 'upload', 'draw']
 const STEPS = ['co.step.0', 'co.step.1', 'co.step.2']
@@ -92,7 +83,11 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [uploading, setUploading] = useState(0)
   const [est, setEst] = useState<Estimate | null>(null)
   // The AI assistant: on or off by the customer's choice; `aiBusy` keeps the form still while it works.
-  const [wantAi, setWantAi] = useState(readWantAi)
+  // Create Order always opens on "By myself". The assistant opens only after the customer ticks the AI chat data policy,
+  // asked again on every visit (owner decision 2026-11-24, Quang).
+  const [wantAi, setWantAi] = useState(false)
+  const [aiAccepted, setAiAccepted] = useState(false)
+  const [policyOpen, setPolicyOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
   const [sketch, setSketch] = useState<SketchInfo | null>(null)
   // What the customer picked on the sketch for the assistant; ids belong to one revision, so a new revision clears it.
@@ -340,14 +335,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     return (await enqueue(ensure)).id
   }, [enqueue, ensure, idle])
 
-  const pickAi = (on: boolean) => {
-    setWantAi(on)
-    try {
-      localStorage.setItem(AI_KEY, on ? 'on' : 'off')
-    } catch {
-      // Storage blocked: the choice lasts until the page closes.
-    }
-  }
+  const pickAi = (on: boolean) => setWantAi(on)
 
   const sketchRev = sketch?.revisionId ?? null
   useEffect(() => {
@@ -400,9 +388,32 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   }
 
   /** The first choice of step 1: the assistant writes from text, so choosing it moves to the text mode. */
-  const chooseHow = async (ai: boolean) => {
+  /** "AI assistant" opens the data policy first; the chat opens once the customer ticks it. */
+  const chooseHow = async (ai: boolean, accepted = aiAccepted) => {
+    if (ai && !accepted) {
+      setPolicyOpen(true)
+      return
+    }
     if (ai && mode !== 'text' && !(await chooseMode('text'))) return
     pickAi(ai)
+  }
+
+  const policyAccepted = () => {
+    setAiAccepted(true)
+    setPolicyOpen(false)
+    void chooseHow(true, true)
+  }
+
+  /** Closed without ticking: back to (or staying on) "By myself". */
+  const policyDeclined = () => {
+    setPolicyOpen(false)
+    pickAi(false)
+  }
+
+  /** The backend refused a message for want of consent (withdrawn or a new policy version). */
+  const consentNeeded = () => {
+    setAiAccepted(false)
+    setPolicyOpen(true)
   }
 
   const openCanvas = async () => {
@@ -536,7 +547,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
       else if (fields.includes('materials')) goTo(1)
       else if (e instanceof ApiError && e.code === 'SKETCH_OUTDATED' && mode === 'text') {
         // The text or the paper changed after the assistant drew the sketch: the assistant panel can draw it again.
-        if (aiAvailable) pickAi(true)
+        if (aiAvailable) void chooseHow(true)
         goTo(0)
       }
       fail(e)
@@ -641,8 +652,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   return (
     <Frame>
       <div className={`co${aiOn ? ' co--ai' : ''}`}>
+        {policyOpen && <AiPolicyDialog onAccepted={policyAccepted} onDecline={policyDeclined} />}
         <header className="co-head">
-          <span className="co-eyebrow">{order ? `${t('co.eyebrow')} · ${order.code}` : t('co.eyebrow')}</span>
           <h1 className="co-h1">{t('co.h1')}</h1>
           <div className="co-head-row">
             <span className="co-progress">{t('co.progress', { n: step + 1, total: STEPS.length })}</span>
@@ -685,7 +696,6 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                 <>
                   <div className="co-intro">
                     <h2 className="co-h2">{t('co.s1.title')}</h2>
-                    <p className="co-lede">{t('co.s1.lede')}</p>
                   </div>
 
                   <div className="co-how">
@@ -701,9 +711,11 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                         {t('oa.manual')}
                       </button>
                     </div>
-                    <p className="co-how-hint" role="status">
-                      {aiState.loading ? t('oa.checking') : !aiAvailable ? t('oa.unavailable') : t(aiPicked ? 'oa.ai.sub' : 'oa.manual.sub')}
-                    </p>
+                    {!(aiPicked && aiAvailable && !aiState.loading) && (
+                      <p className="co-how-hint" role="status">
+                        {aiState.loading ? t('oa.checking') : !aiAvailable ? t('oa.unavailable') : t('oa.manual.sub')}
+                      </p>
+                    )}
                   </div>
 
                   {!aiPicked && (
@@ -1032,7 +1044,18 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
               <section className="co-sketch" aria-labelledby="co-sketch-t">
                 <div className="co-sketch-head">
                   <h3 id="co-sketch-t" className="co-h3">{t('oa.sketchTitle')}</h3>
-                  <p className="co-sub-hint">{t('oa.sketchSub')}</p>
+                  <details className="oa-est">
+                    <summary>
+                      <span>{t('co.range')}</span>
+                      <b className="oa-est-total">{range}</b>
+                    </summary>
+                    <dl className="oa-est-lines">
+                      <div><dt>{t('co.sum.materials')}</dt><dd>{materialsLabel}</dd></div>
+                      <div><dt>{t('co.sum.qty')}</dt><dd>{qty}</dd></div>
+                      {est && <div><dt>{t('co.minDeposit')}</dt><dd>{est.minDepositPct}%</dd></div>}
+                    </dl>
+                    <span className="oa-fine">{t(est && !est.materialsPriced ? 'co.pickMaterialsHint' : 'co.fine')}</span>
+                  </details>
                 </div>
                 <div className={`co-sketch-stage${aiBusy ? ' busy' : ''}`} aria-busy={aiBusy}>
                   {order && sketch ? (
@@ -1068,25 +1091,11 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                 orderId={orderId}
                 ensureOrder={ensureOrderId}
                 sketch={sketch}
-                canDraw={!!order && text.trim().length > 0 && templateId !== null}
                 selection={selection}
                 onClearSelection={() => setSelection(emptySelection())}
                 onChanged={aiChanged}
                 onBusy={setAiBusy}
-                summary={
-                  <details className="oa-est">
-                    <summary>
-                      <span>{t('co.range')}</span>
-                      <b className="oa-est-total">{range}</b>
-                    </summary>
-                    <dl className="oa-est-lines">
-                      <div><dt>{t('co.sum.materials')}</dt><dd>{materialsLabel}</dd></div>
-                      <div><dt>{t('co.sum.qty')}</dt><dd>{qty}</dd></div>
-                      {est && <div><dt>{t('co.minDeposit')}</dt><dd>{est.minDepositPct}%</dd></div>}
-                    </dl>
-                    <span className="oa-fine">{t(est && !est.materialsPriced ? 'co.pickMaterialsHint' : 'co.fine')}</span>
-                  </details>
-                }
+                onConsentNeeded={consentNeeded}
               />
             ) : (
               <aside className="co-rail">
