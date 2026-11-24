@@ -104,6 +104,9 @@ Luật bắt buộc:
    trước nếu khách đã sửa nét: SKETCH_HAS_EDITS). Nếu bạn không gọi, hệ thống sẽ tự vẽ phác thảo vào cuối lượt.
 9. Bạn không xem được ảnh khách tải lên; chỉ có số đo chất lượng ảnh. Bạn không đọc được chữ trong ảnh.
 10. Việc áp dụng đề xuất, gửi đơn, thanh toán, huỷ đơn do khách tự làm; bạn không làm thay.
+11. Nội dung gửi qua update_text là chữ thuần robot sẽ viết tay lên giấy: xuống dòng bằng ký tự xuống dòng thật (không
+    viết dấu gạch chéo ngược và chữ n), không dùng định dạng markdown (**, #, >, dấu `). Chỉ dùng gạch đầu dòng (-, +)
+    hoặc số thứ tự khi khách muốn liệt kê như khi viết tay.
 """
 
 
