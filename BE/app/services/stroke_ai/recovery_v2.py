@@ -53,7 +53,8 @@ SIMPLIFY_EPS = 0.4        # the stroke's centre: F1 +4 points, fewer sharp turns
 MAX_SIDE_PX = 2000        # S8: working resolution (v1: 1,600); 1,600 -> 2,000 gave F1 +2.3 on the benchmark
 FINE_PEN_PX = 7.0         # S8b: thin writing is traced on a copy enlarged until the pen line is about this wide,
 FINE_MAX = 3.0            # at most this many times,
-FINE_MAX_SIDE = 2400      # and no larger than this (px); below FINE_MIN the copy is not worth it
+FINE_MAX_PIXELS = 8_000_000   # and to no more pixels than this (the copy covers only the box around the ink);
+                          # below FINE_MIN the copy is not worth it
 FINE_MIN = 1.25
 FINE_CLOSE = 0.5          # (1.0 closed the small bowls again, test) gaps up to about one original pixel across a stroke are closed on the enlarged copy
 FOLDS = True              # S5 on (switch off to measure without it)
@@ -64,6 +65,8 @@ COLOUR_DE = 25.0          # S3: an ink piece whose colour (Lab a, b) is this far
 COLOUR_MAX_SHARE = 0.15   # ... unless such pieces hold more than this share of the ink (a second pen: all kept)
 BLOB_PENS = 5.0           # a dark area this many pen widths thick is not written with the pen (a punch hole)
 BLOB_INSIDE = 0.5         # ... and an ink piece goes when at least this share of it lies on such an area
+MARK_NEAR_PENS = 3.0      # a piece too small for the speck filter stays when this close (pen widths) to a letter:
+MARK_MIN_PEN_AREA = 0.3   # the dot of i, a full stop, a tone mark; and at least this many pen^2 big
 
 
 def _sheet_ink(gray: np.ndarray, mask: np.ndarray, band: np.ndarray,
@@ -214,6 +217,30 @@ def _off_colour(ink: np.ndarray, bgr: np.ndarray) -> np.ndarray:
     return (far[comp] * 255).astype(np.uint8)
 
 
+def _remove_specks(ink: np.ndarray) -> np.ndarray:
+    """v1's speck filter (a size share of the page), except that a small piece next to a letter is kept: on a book page
+    photographed at 1500 x 2000 px the filter took the dots of i, the full stops and the tone marks (73 pieces under 36 px,
+    owner's photo 2026-11-24). Noise far from the writing still goes."""
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
+    h, w = ink.shape
+    area = stats[:, cv2.CC_STAT_AREA]
+    min_area = max(6, int(0.000012 * h * w))                 # = v1._remove_specks
+    keep = (area >= min_area) & (area <= 0.3 * h * w)
+    keep[0] = False
+    if not keep.any():
+        return (keep[lab] * 255).astype(np.uint8)
+    letters = (keep[lab] * 255).astype(np.uint8)
+    pen = ruling_mod._pen_px(letters)
+    small = ~keep & (area >= max(4.0, MARK_MIN_PEN_AREA * pen * pen))
+    small[0] = False
+    if small.any():
+        r = max(1, int(round(MARK_NEAR_PENS * pen)))
+        near = cv2.dilate(letters, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))) > 0
+        hit = np.unique(lab[near & small[lab]])
+        keep[hit[hit > 0]] = True
+    return (keep[lab] * 255).astype(np.uint8)
+
+
 def _blobs(ink: np.ndarray, bgr: np.ndarray, pen: float) -> np.ndarray:
     """Ink on a dark area far thicker than the pen (`BLOB_PENS`): a punch hole, a dark sticker, a thumb over the corner.
     Found on the photo itself (darker than half the paper's grey, still there after an opening of that size): the
@@ -238,8 +265,9 @@ def _blobs(ink: np.ndarray, bgr: np.ndarray, pen: float) -> np.ndarray:
     return (bad[comp] * 255).astype(np.uint8)
 
 
-def _fine_factor(pen: float, side: int) -> float:
-    f = min(FINE_MAX, FINE_PEN_PX / max(pen, 1.0), FINE_MAX_SIDE / max(side, 1))
+def _fine_factor(pen: float, area: int) -> float:
+    """How much to enlarge the box around the ink (`area` pixels) for tracing."""
+    f = min(FINE_MAX, FINE_PEN_PX / max(pen, 1.0), (FINE_MAX_PIXELS / max(area, 1)) ** 0.5)
     return f if f >= FINE_MIN else 1.0
 
 
@@ -278,6 +306,10 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
     # S1: the sheet, found on the photo at full size and straightened from it, THEN reduced to MAX_SIDE_PX: the writing keeps
     # all the photo's pixels instead of sharing them with the table around the sheet
     found = paper_mod.find_paper(img)
+    if found is not None and paper_mod.cut_letters(img, found.mask) >= paper_mod.CUT_LETTERS:
+        # the outline runs through words: part of the sheet may have been taken for background (shade, a picture printed
+        # on the page). Not decided here (a torn letter cuts a few too): the customer is asked to crop to the sheet
+        warnings.append("PAPER_EDGE_UNSURE")
     if found is not None:
         w0, h0 = found.size
         sc = min(1.0, MAX_SIDE_PX / max(w0, h0))
@@ -317,7 +349,7 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
         anchor = ((mask > 0) & (band == 0) | (rim > 0)).astype(np.uint8) * 255
     else:
         ink = v1._binarise(gray)
-    ink = v1._remove_specks(ink)
+    ink = _remove_specks(ink)
     ink, angle = v1._deskew(ink)
     flat = v1._flatten(gray)
     if angle:
@@ -344,11 +376,15 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
     ink = ink & ~removed["BLOB"]
     removed["COLOUR"] = _off_colour(ink, img)             # S3: print in another colour than the pen (logo, margin marks)
     ink = ink & ~removed["COLOUR"]
-    ink = v1._remove_specks(ink)
+    ink = _remove_specks(ink)
     if not ink.any():
         raise AppError(422, "NO_STROKES_FOUND", "Không tìm thấy nét chữ trong ảnh. Hãy kiểm tra độ tương phản.")
 
-    fine = _fine_factor(ruling_mod._pen_px(ink), max(h, w))
+    pen_now = ruling_mod._pen_px(ink)
+    pad = int(3 * pen_now) + 8                              # the box around the ink: a page with two lines of small writing
+    bx, by, bw, bh = cv2.boundingRect(ink)                  # is enlarged as much as a small photo of them would be
+    bx0, by0, bx1, by1 = max(bx - pad, 0), max(by - pad, 0), min(bx + bw + pad, w), min(by + bh + pad, h)
+    fine = _fine_factor(pen_now, (bx1 - bx0) * (by1 - by0))
     if fine > 1:
         noise = np.zeros_like(ink)
         for mask in removed.values():
@@ -356,8 +392,10 @@ def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_bo
         # S8b: a pen line 2-3 px wide (a small photo) closes the bowls of o / a / b and merges neighbouring strokes when
         # binarised, and its skeleton is a staircase. The cleaned ink stays the judge of WHERE ink is; its shape is taken
         # from an enlarged copy of the sheet
-        strokes_px, comp_of, width_px = v1.trace(_fine_ink(ink, gray, fine, noise), SMOOTH_WINDOW, SIMPLIFY_EPS)
-        strokes_px, width_px = [(np.asarray(p, float) + 0.5) / fine - 0.5 for p in strokes_px], width_px / fine   # pixel centres
+        box = (slice(by0, by1), slice(bx0, bx1))
+        strokes_px, comp_of, width_px = v1.trace(_fine_ink(ink[box], gray[box], fine, noise[box]), SMOOTH_WINDOW, SIMPLIFY_EPS)
+        strokes_px = [(np.asarray(p, float) + 0.5) / fine - 0.5 + (bx0, by0) for p in strokes_px]       # pixel centres
+        width_px /= fine
     else:
         strokes_px, comp_of, width_px = v1.trace(ink, SMOOTH_WINDOW, SIMPLIFY_EPS)
     if width_px / sc < LOW_RES_PEN_PX:                     # S0: pen width in pixels of the photo as uploaded
