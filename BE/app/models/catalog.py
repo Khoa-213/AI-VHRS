@@ -8,6 +8,7 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Enum, FetchedValue, Foreig
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core import media
 from app.db.session import Base
 
 
@@ -36,6 +37,12 @@ class PaperType(Base):
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
+    image_path: Mapped[str | None] = mapped_column(Text)        # 0030: the workshop's photo, path in the public media bucket
+    image_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def image_url(self) -> str | None:
+        return media.public_url(self.image_path)
 
 
 class PenType(Base):
@@ -55,6 +62,12 @@ class PenType(Base):
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
+    image_path: Mapped[str | None] = mapped_column(Text)        # 0030: the workshop's photo, path in the public media bucket
+    image_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def image_url(self) -> str | None:
+        return media.public_url(self.image_path)
 
 
 class InkColor(Base):
@@ -67,6 +80,12 @@ class InkColor(Base):
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
+    image_path: Mapped[str | None] = mapped_column(Text)        # 0030: the workshop's photo, path in the public media bucket
+    image_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def image_url(self) -> str | None:
+        return media.public_url(self.image_path)
 
 
 class MaterialProfile(Base):
@@ -109,9 +128,16 @@ class Template(Base):
     name: Mapped[str] = mapped_column(String(150))
     kind: Mapped[TemplateKind] = mapped_column(Enum(TemplateKind, name="template_kind", create_type=False))
     font_uri: Mapped[str] = mapped_column(Text)          # "hershey:<font>" for single-line fonts
-    preview_url: Mapped[str | None] = mapped_column(Text)
+    preview_url: Mapped[str | None] = mapped_column(Text)   # stored preview: path in the public media bucket (or a full URL)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+
+    @property
+    def preview_image_url(self) -> str:
+        """What the web app shows for this template: its stored preview or, without one, the sample this API draws."""
+        if self.preview_url and self.preview_url.startswith(("http://", "https://")):
+            return self.preview_url
+        return media.public_url(self.preview_url) or media.api_url(f"/catalog/templates/{self.id}/preview")
 
 
 class PricingConfig(Base):

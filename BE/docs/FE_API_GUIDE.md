@@ -37,6 +37,11 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **App Technical Staff điều khiển robot qua BE** (mục 7g, KHÔNG gọi máy trạm trực tiếp): gửi lệnh bằng `POST /technician/robot-commands`, hỏi kết quả bằng `GET /technician/robot-commands/{id}`; luôn hiện nhãn chế độ MOCK / SIM / REAL và trạng thái kết nối agent (`GET /technician/robots/{id}/live` → `agent_online`).
 - [ ] **Danh sách mẫu chữ:** có thêm 4 mẫu `kind = "TYPOGRAPHY"` (Playpen Sans, Pangolin, Patrick Hand, Mali Light, `font_uri` dạng `outline:fonts/...`); `GET /catalog/templates/{id}/preview?text=` trả PNG (tối đa 80 ký tự với mẫu này, lần đầu có thể chậm ~3 giây). Hiển thị cảnh báo "thứ tự nét do hệ thống dựng lại" nếu cần.
 
+**Ảnh thật của giấy, bút, mực (mục 5.1, 7.1b; 2026-11-24, migration 0030)**
+- [ ] **Màn chọn vật tư của khách:** giấy, bút, mực trong `/catalog/*` có thêm `image_url`. Có ảnh thì hiện ảnh (`<img src={image_url}>`, URL công khai, không cần token); `null` thì giữ cách vẽ hiện tại (vạch theo `stroke_width_mm`, chấm màu theo `hex_code`). Không dùng ảnh lấy ở nguồn khác.
+- [ ] **Màn vật tư của Manager:** nút tải / thay / gỡ ảnh cho từng loại giấy, bút, màu mực (`PUT` / `DELETE /manager/papers|pens|inks/{id}/image`, thân request là chính file ảnh).
+- [ ] **Danh sách mẫu chữ:** `preview_url` giờ luôn là địa chỉ ảnh mở được; dùng làm ảnh đại diện của mẫu chữ.
+
 **Bản sao số 3D của robot (mục 7g)**
 - [ ] **Xem 3D = nhúng trang do BE phục vụ** (cách chắc chắn nhất, không cần viết three.js): gọi `POST /technician/robots/{id}/view-ticket` → mở `<BE>` + `viewer_path` trong WebView (mobile) hoặc `<iframe>` (web). Trang chỉ-đọc, tự cập nhật 4 lần/giây, tự hiện cảnh báo đỏ "NHẤN NÚT E-STOP". Vé sống 60 phút: hết hạn thì xin vé mới và nạp lại. Chi tiết và phương án tự vẽ ở mục 7g.3. Nút Tạm dừng/Tiếp tục/DỪNG của FE nằm **ngoài** khung 3D và gọi `POST /technician/robot-commands`.
 - [ ] **Ảnh phác thảo cho khách** (mục 5.2, 6): `GET /orders/{id}/quotation` → `sketch.image_urls[]` (JPG) là ảnh khách xem để quyết định đặt cọc; Staff dùng `image_urls[]` + `trajectory_url` (file chạy của robot) ở `GET /workshop/orders/{id}/sketches/{v}`.
@@ -219,6 +224,7 @@ stateDiagram-v2
 
 ### 5.1 Chuẩn bị đơn
 1. **Danh mục** (không cần đăng nhập): `GET /catalog/papers`, `GET /catalog/pens?paper_id=` (chỉ bút tương thích với giấy), `GET /catalog/pens/{id}/inks`, `GET /catalog/templates`, `GET /catalog/templates/{id}/preview?text=...` (ảnh PNG xem thử). Bộ nét đã lưu: `GET /catalog/my-styles`.
+   **Ảnh thật của vật tư (migration 0030, 2026-11-24):** mỗi giấy, bút, mực trong các câu trả lời trên (kể cả `suggest-materials`) có **`image_url`**: ảnh do xưởng tự chụp / quét, lưu trong kho của hệ thống, định dạng WebP, cạnh dài tối đa 800 px, **URL công khai** (đặt thẳng vào `<img>`, không cần Bearer). `null` = xưởng chưa tải ảnh: FE giữ cách vẽ hiện tại, **không lấy ảnh ở nguồn ngoài**. URL đổi mỗi khi xưởng thay ảnh, nên không cần tự chống cache. Mẫu chữ: **`preview_url`** luôn là địa chỉ ảnh mở được (ảnh đã lưu ở kho công khai, hoặc `/api/v1/catalog/templates/{id}/preview` do BE vẽ; địa chỉ này là tương đối khi BE chưa đặt `PUBLIC_BASE_URL`, FE nối với gốc API như các lời gọi khác).
 2. **Giá ước tính**: `POST /pricing/estimate {order_type, quantity, paper_type_id?, pen_type_id?, ink_color_id?, text? | order_id?}` → `{chars_min, chars_max, price_min, price_max, min_deposit_pct, basis, note}`. Hiển thị **khoảng giá**; không bao giờ bắt khách tự nhập số ký tự (hệ thống tự đếm).
 3. **Tạo đơn**: `POST /orders {order_type, quantity}` → đơn `DRAFT`. Loại đơn đang mở cho khách do hệ thống cấu hình: hiện **chỉ `OT1_COPY_RESTORE` và `OT3_TEMPLATE`** (OT-2 bị khoá, lỗi `409 ORDER_TYPE_SUSPENDED`).
 4. **Chọn vật tư theo thứ tự giấy → bút → mực.** Sau khi khách chọn giấy, gọi **`GET /catalog/suggest-materials?paper_type_id=`** (công khai) → `{paper, pens:[{id,name,category,surcharge,..., inks:[{id,name,hex_code,unit_price}]}]}`: chỉ gồm các bút **tương thích** với giấy đó, mỗi bút kèm màu mực còn bán; hiển thị để khách chọn (không cần gọi thêm `/catalog/pens` và `/pens/{id}/inks`). Khách không thể chọn bút/mực không phù hợp (BE từ chối `422 PEN_INCOMPATIBLE`), nên không cần cảnh báo chất lượng.
@@ -564,6 +570,30 @@ Agent vẫn có thể phục vụ trang điều khiển riêng trong LAN (`cli s
 | Robot | `GET/POST /manager/robots`, `PATCH .../{id}`; đặt `MAINTENANCE`/`BROKEN` trả `affected_job_ids` (job cần xếp lại). Không đặt tay `BUSY` |
 
 Không có xoá cứng: dùng `is_active:false` (khách không còn thấy nhưng đơn cũ vẫn tham chiếu được). Mọi thay đổi tồn kho cần `reason` và được ghi nhật ký.
+
+### 7.1b Ảnh thật của giấy, bút, mực (migration 0030, 2026-11-24)
+Xưởng tải ảnh của chính mình cho từng loại giấy, bút, màu mực; khách thấy ảnh đó ở màn chọn vật tư (`image_url` trong `/catalog/*`, mục 5.1).
+```
+PUT    /manager/papers/{id}/image     thân request = file ảnh   → PaperOut (có image_url)
+DELETE /manager/papers/{id}/image                               → PaperOut (image_url: null)
+PUT    /manager/pens/{id}/image       → PenOut      DELETE /manager/pens/{id}/image → PenOut
+PUT    /manager/inks/{id}/image       → InkOut      DELETE /manager/inks/{id}/image → InkOut
+```
+- **Thân request là chính file ảnh**, không phải `multipart/form-data` và không phải JSON:
+  ```ts
+  await fetch(`${API}/manager/papers/${id}/image`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': file.type },   // image/jpeg | image/png | image/webp
+    body: file,                                                                  // File lấy từ <input type="file">
+  })
+  ```
+- Nhận **JPEG, PNG, WebP, tối đa 5 MB**. BE đọc loại ảnh từ nội dung file (không tin `Content-Type`), xoay ảnh JPEG theo chiều chụp, thu về cạnh dài tối đa **800 px**, lưu **WebP**, **bỏ EXIF** (vị trí GPS, máy chụp). Ảnh PNG / WebP nền trong suốt giữ được nền trong suốt. Ảnh nhỏ hơn 800 px không bị phóng to.
+- `GET /manager/papers|pens|inks` cũng trả `image_url`. Tải ảnh mới thì ảnh cũ bị thay và **`image_url` đổi** (đường dẫn chứa mã băm nội dung); tải lại đúng ảnh cũ thì URL giữ nguyên.
+- `DELETE` gỡ ảnh: `image_url` thành `null`, file bị xoá khỏi kho (trình duyệt / CDN có thể còn giữ bản cũ tối đa 1 ngày). Gọi lại không lỗi.
+- Lỗi: `422 FILE_TOO_LARGE` (quá 5 MB), `422 UNSUPPORTED_FILE` (không phải jpg / png / webp), `422 INVALID_IMAGE` (file hỏng hoặc rỗng), `422 IMAGE_TOO_MANY_PIXELS` (trên 40 triệu điểm ảnh: thu nhỏ rồi tải lại), `422 IMAGE_TOO_SMALL` (cạnh dưới 32 px), `404 NOT_FOUND`, `503 STORAGE_NOT_CONFIGURED | STORAGE_UNAVAILABLE | MEDIA_BUCKET_NOT_PUBLIC` (kho ảnh chưa cấu hình / lỗi: báo quản trị).
+- Mỗi lần tải / gỡ được ghi nhật ký (`CATALOG_IMAGE_SET`, `CATALOG_IMAGE_REMOVE`).
+- **Nên chụp gì** (gợi ý, chi tiết ở `docs/MATERIALS_RESEARCH_2026-11-24.md` mục 7): giấy = một góc tờ giấy thật; bút = nét bút do robot viết trên giấy trắng; mực = ô màu / dòng chữ do robot viết bằng đúng mực đó. Nạp nhiều ảnh một lần: `scripts/upload_catalog_images.py --dir <thư mục>` (tên file = mã vật tư; chạy không có `--apply` để xem trước).
+- Mẫu chữ: `GET /manager/templates` có thêm `preview_url` (cùng địa chỉ khách thấy). Ảnh mẫu của font TTF do `scripts/add_outline_font.py` tạo; chưa có API tải ảnh mẫu chữ.
 
 ### 7.2 Bảng giá có phiên bản (FR-30)
 ```

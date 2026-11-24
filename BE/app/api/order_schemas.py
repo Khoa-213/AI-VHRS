@@ -22,6 +22,7 @@ class PaperOut(_ORM):
     surface: str
     size: str
     unit_price: Decimal
+    image_url: str | None = Field(default=None, description="ảnh thật của loại giấy do xưởng tải lên (WebP, công khai); null: chưa có")
 
 
 class PenOut(_ORM):
@@ -31,6 +32,7 @@ class PenOut(_ORM):
     category: str
     stroke_width_mm: Decimal
     surcharge: Decimal
+    image_url: str | None = Field(default=None, description="ảnh thật của bút / nét bút; null: chưa có (FE vẽ vạch theo stroke_width_mm)")
 
 
 class InkOut(_ORM):
@@ -39,6 +41,7 @@ class InkOut(_ORM):
     name: str
     hex_code: str | None
     unit_price: Decimal
+    image_url: str | None = Field(default=None, description="ảnh mẫu màu mực thật; null: chưa có (FE tô chấm theo hex_code)")
 
 
 class PenWithInksOut(PenOut):
@@ -56,7 +59,9 @@ class TemplateOut(_ORM):
     code: str
     name: str
     kind: str
-    preview_url: str | None
+    preview_url: str | None = Field(description=(
+        "ảnh mẫu của mẫu chữ, mở được trực tiếp: ảnh đã lưu ở kho công khai, hoặc ảnh BE vẽ "
+        "(`/catalog/templates/{id}/preview`). Tương đối (`/api/v1/...`) khi BE chưa đặt PUBLIC_BASE_URL"))
 
 
 # ---- pricing (FR-10, FR-29) -------------------------------------------------------------

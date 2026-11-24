@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_key: str | None = None
     storage_bucket: str = "order-inputs"
+    # PUBLIC bucket of catalog media (migration 0030): the workshop's photos of papers, pens, inks and template previews.
+    # World-readable by address, written only by this server. It must NOT be the bucket of customer uploads above.
+    catalog_media_bucket: str = "catalog-media"
     upload_url_ttl_seconds: int = 7200
     # ---- online payments (VNPay, MoMo) ---------------------------------------------------------------------
     # mock    = simulated payments only (default; tests and local work). No call leaves the server.

@@ -8,6 +8,7 @@ from typing import Protocol
 
 import httpx
 
+from app.core import media
 from app.core.config import get_settings
 from app.core.errors import AppError
 
@@ -92,6 +93,39 @@ class SupabaseStorage:
         return out
 
 
+class SupabaseMediaStorage(SupabaseStorage):
+    """The PUBLIC bucket of catalog media (migration 0030). Anyone who has an object's address can read it; only this
+    server writes. The bucket is created public; one that already exists and is private is never switched here (a wrong
+    bucket name must not publish what is in it)."""
+    MIME_TYPES = ["image/webp", "image/png", "image/jpeg"]
+
+    def _ensure_bucket(self) -> None:
+        if self._bucket_ready:
+            return
+        r = httpx.post(f"{self.base}/bucket", headers=self._headers, timeout=15,
+                       json={"id": self.bucket, "name": self.bucket, "public": True, "allowed_mime_types": self.MIME_TYPES})
+        if r.status_code >= 500 or r.status_code in (401, 403):
+            raise AppError(503, "STORAGE_UNAVAILABLE", "Dịch vụ lưu trữ tạm thời không khả dụng.")
+        if r.status_code >= 400:                               # it exists already: check that it is the public one
+            info = httpx.get(f"{self.base}/bucket/{self.bucket}", headers=self._headers, timeout=15)
+            if info.status_code >= 400 or info.json().get("public") is not True:
+                raise AppError(503, "MEDIA_BUCKET_NOT_PUBLIC",
+                               f"Bucket '{self.bucket}' đã có nhưng không công khai; kiểm tra CATALOG_MEDIA_BUCKET.")
+        self._bucket_ready = True
+
+    def write(self, path: str, data: bytes, content_type: str, *, max_age: int = 3600) -> None:
+        """Upload (overwrites). `max_age`: seconds browsers and the CDN may keep the object."""
+        self._ensure_bucket()
+        r = httpx.post(f"{self.base}/object/{self.bucket}/{path}", content=data, timeout=60,
+                       headers={**self._headers, "Content-Type": content_type, "x-upsert": "true",
+                                "cache-control": f"max-age={int(max_age)}"})
+        if r.status_code >= 400:
+            raise AppError(503, "STORAGE_UNAVAILABLE", "Không lưu được file lên dịch vụ lưu trữ.")
+
+    def public_url(self, path: str) -> str | None:
+        return media.public_url(path)
+
+
 class InMemoryStorage:
     """Test double. Never used in production wiring."""
 
@@ -104,8 +138,11 @@ class InMemoryStorage:
     def put(self, path: str, data: bytes) -> None:
         self.objects[path] = data
 
-    def write(self, path: str, data: bytes, content_type: str) -> None:
+    def write(self, path: str, data: bytes, content_type: str, **_: object) -> None:
         self.objects[path] = data
+
+    def public_url(self, path: str) -> str | None:
+        return media.public_url(path)
 
     def read(self, path: str) -> bytes | None:
         return self.objects.get(path)
@@ -131,3 +168,28 @@ def get_storage() -> ObjectStorage:
             raise AppError(503, "STORAGE_NOT_CONFIGURED", "Chưa cấu hình dịch vụ lưu trữ file.")
         _instance = SupabaseStorage(s.supabase_url, s.supabase_service_key, s.storage_bucket, s.upload_url_ttl_seconds)
     return _instance
+
+
+_media: SupabaseMediaStorage | None = None
+
+
+def get_media_storage() -> SupabaseMediaStorage:
+    """The public catalog media bucket (migration 0030)."""
+    global _media
+    if _media is None:
+        s = get_settings()
+        if not (s.supabase_url and s.supabase_service_key):
+            raise AppError(503, "STORAGE_NOT_CONFIGURED", "Chưa cấu hình dịch vụ lưu trữ file.")
+        if s.catalog_media_bucket == s.storage_bucket:        # never publish the bucket of customer uploads
+            raise AppError(503, "STORAGE_NOT_CONFIGURED", "CATALOG_MEDIA_BUCKET phải khác STORAGE_BUCKET.")
+        _media = SupabaseMediaStorage(s.supabase_url, s.supabase_service_key, s.catalog_media_bucket,
+                                      s.upload_url_ttl_seconds)
+    return _media
+
+
+def optional_media_storage() -> ObjectStorage | None:
+    """None when storage is not configured: only the endpoints that need it answer 503."""
+    try:
+        return get_media_storage()
+    except AppError:
+        return None
