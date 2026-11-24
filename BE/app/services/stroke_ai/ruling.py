@@ -31,6 +31,13 @@ V_RUN = 0.15             # a vertical margin / grid line: at least this share of
 MIN_RUN_PX = 40
 SEARCH_DEG = 15          # the ruling's angle is searched in +-this many degrees
 FINE = (-1.0, -0.5, 0.0, 0.5, 1.0)                   # around the angle found
+BENT = (-5.0, -4.0, -3.0, -2.0, 2.0, 3.0, 4.0, 5.0)  # also searched: a notebook page bends near the spine and the
+                         # bottom, its lines turn a few degrees off the page's angle. Lines found there only ADD to
+                         # those found within FINE, never thicken them (see _lines)
+BENT_RUN = 2.0           # ... over this many times the usual run: joined-up writing on a densely ruled letter makes
+                         # short straight dark runs at some angle among many, a page's bent line runs on
+BENT_PIECE = 3.0         # a stretch found only at a wider angle is kept when it is this many runs long on its own: at
+                         # 1-2 runs the owner's torn letter (1.jpg) still lost strokes inside words, at 3 it keeps them all
 GAP_PX = 5               # specks of paper texture breaking a line: gaps this short are closed before measuring the run
 LINE_DARK = 12           # darkness (0-255, flattened image) a run must keep along its whole length to be a printed line
 MAX_THICK_PENS = 1.6     # the core of a ruled line is at most this many pen widths thick (min 4 px)
@@ -41,10 +48,16 @@ LIGHT_LINE = 50          # ruling this much lighter (0-255) than the pen: band p
 LIGHT_MIN_PX = 50        # ... measured on at least this many ruling pixels away from writing
 LIGHT_FAINT = 0.05       # under this share of the lines binarised as ink: the lines are faint, measured on all their pixels
 LIGHT_ALONE = 0.85       # ... or, touching no ink off the lines, by this share (as dark as the pen)
+STRAY_DARK = 0.75        # a thin piece along a found line, lighter than this share of the pen's darkness, is ruling
+LINE_ON = 0.9            # "along a line": this share of the piece on the continuation of found lines
+CROSS_PENS = 8.0         # ... or a small piece (at most this many pens across) where a found row and column cross: the '+'
+                         # left where two grid lines meet, thick in both directions so not 'thin'
 LIGHT_SPLIT = 0.5        # ... and stay when darker than the ruling by this share of the gap to the pen
 MIN_LINES = 4            # fewer lines than this in one direction are ruling only if one of them is long:
 LONE_LINE = 0.5          # ... at least this share of the width (height for vertical lines)
 RUN_PENS = 4.0           # halo ink of a line is cleared when it runs along the line at least this many pen widths
+THICK_GAIN = 1.75        # band ink this many times thicker than the ruling itself (90th percentile) is a pen stroke
+THICK_MIN_PX = 3.0       # ... and at least this thick (distance to the ink's edge, px)
 
 
 @dataclass
@@ -100,7 +113,7 @@ def _ruling_angle(dark: np.ndarray, length: int) -> float:
 
 
 def _lines(dark: np.ndarray, length: int, horizontal: bool, angles: tuple[float, ...],
-           pen: float) -> tuple[np.ndarray, np.ndarray, int]:
+           pen: float, bent: tuple[float, ...] = ()) -> tuple[np.ndarray, np.ndarray, int, np.ndarray]:
     """Printed lines at any of `angles`: pixels of a long dark run (`_run_response` >= LINE_DARK) that are THIN across the
     run: within `half` pixels on BOTH sides the response falls below half its own value. A fold's shadow, the gap of a tear
     or the table along the sheet's edge are long too, but wide. Tested pixel by pixel (not per connected piece: on a real
@@ -115,11 +128,21 @@ def _lines(dark: np.ndarray, length: int, horizontal: bool, angles: tuple[float,
         up[0, :half + 1], down[0, half:] = 1, 1
     out = np.zeros_like(dark)
     level = np.zeros_like(dark)
-    for a in angles:
-        r = _run_response(_rot(dark, a), length, horizontal).astype(np.int16)
-        level = np.maximum(level, _rot(r.astype(np.uint8), a, inverse=True))
+    wide = np.zeros_like(dark)
+    best_near = np.zeros_like(dark)                          # strongest run through each pixel at the page's angle(s) ...
+    best_bent = np.zeros_like(dark)                          # ... and at the wider ones
+    for a in tuple(angles) + tuple(bent):
+        r = _run_response(_rot(dark, a), length if a in angles else int(BENT_RUN * length), horizontal).astype(np.int16)
         thin = (r >= LINE_DARK) & (2 * cv2.erode(r.astype(np.uint8), up).astype(np.int16) < r)             & (2 * cv2.erode(r.astype(np.uint8), down).astype(np.int16) < r)
-        out |= _rot((thin * 255).astype(np.uint8), a, inverse=True)
+        found = _rot((thin * 255).astype(np.uint8), a, inverse=True)
+        back = _rot(r.astype(np.uint8), a, inverse=True)
+        if a in angles:
+            level = np.maximum(level, back)
+            best_near = np.maximum(best_near, back)
+            out |= found
+        else:
+            best_bent = np.maximum(best_bent, back)
+            wide |= found
     out = ((out > 127) * 255).astype(np.uint8)
     # a line must still be long after the thin test (a short thin stretch at the edge of a wide band is not a line)
     n, lab, st, _ = cv2.connectedComponentsWithStats(out, connectivity=8)
@@ -131,8 +154,21 @@ def _lines(dark: np.ndarray, length: int, horizontal: bool, angles: tuple[float,
     if 0 < keep.sum() < MIN_LINES and size[keep].max() < LONE_LINE * (dark.shape[1] if horizontal else dark.shape[0]):
         keep[:] = False
     out = (keep[lab] * 255).astype(np.uint8)
+    added = np.zeros_like(out)
+    if bent and keep.any():
+        # a straight line still answers a little at the wider angles; taken there, every line thickens past the crossing
+        # test and the letters crossing it lose their middles (the torn letter lost whole words when +-5 degrees were simply
+        # searched). A bent stretch answers BEST at a wider angle: only there is it added, as pieces long on their own
+        # (joined to a short straight stretch inside writing, it made that stretch "long" too; see BENT_PIECE)
+        added = ((wide > 127) & (best_bent > best_near) & (out == 0)).astype(np.uint8) * 255
+        n, lab, st, _ = cv2.connectedComponentsWithStats(added, connectivity=8)
+        size = st[:, cv2.CC_STAT_WIDTH] if horizontal else st[:, cv2.CC_STAT_HEIGHT]
+        long_ = size >= int(BENT_PIECE * length)
+        long_[0] = False
+        added = (long_[lab] * 255).astype(np.uint8)
+        out |= added
     across = np.ones((3, 1), np.uint8) if horizontal else np.ones((1, 3), np.uint8)
-    return cv2.dilate(out, across), level, int(keep.sum())
+    return cv2.dilate(out, across), level, int(keep.sum()), cv2.dilate(added, across)
 
 
 def _halo(lines: np.ndarray, horizontal: bool, pen: float) -> np.ndarray:
@@ -161,8 +197,9 @@ def remove_ruling(ink: np.ndarray, flat: np.ndarray) -> tuple[np.ndarray, Ruling
     vl = max(MIN_RUN_PX, int(V_RUN * h))
     base = _ruling_angle(dark, hl)
     angles = tuple(base + d for d in FINE)
-    hor, hlevel, nh = _lines(dark, hl, True, angles, pen)
-    ver, vlevel, nv = _lines(dark, vl, False, angles, pen)
+    bent = tuple(base + d for d in BENT)
+    hor, hlevel, nh, hbent = _lines(dark, hl, True, angles, pen, bent)
+    ver, vlevel, nv, vbent = _lines(dark, vl, False, angles, pen, bent)
     core = hor | ver
     hpiece, vpiece = _halo(hor, True, pen), _halo(ver, False, pen)
     # the halo of a line binarises as ink where the line is dark (ruling in the pen's colour): that ink runs ALONG the line,
@@ -175,6 +212,7 @@ def remove_ruling(ink: np.ndarray, flat: np.ndarray) -> tuple[np.ndarray, Ruling
         return ink, Ruling(np.zeros_like(ink), np.zeros_like(ink), 0, 0, base)
     hb, vb = hor & ink, ver & ink
     rest = ink & ~(hb | vb)
+    extra = np.zeros_like(ink)                               # ink off the lines found, removed as ruling all the same
     # crossings: ink right above and right below a horizontal band (left / right of a vertical one)
     span = int(np.ceil(max(4.0, MAX_THICK_PENS * pen))) + 4
     bridge = cv2.morphologyEx(rest, cv2.MORPH_CLOSE, np.ones((span, 3), np.uint8)) & hb
@@ -227,5 +265,50 @@ def remove_ruling(ink: np.ndarray, flat: np.ndarray) -> tuple[np.ndarray, Ruling
                     keep = touch | (mean > line_dark + LIGHT_ALONE * (pen_dark - line_dark))
                     keep[0] = False
                     bridge = (keep[lab] * 255).astype(np.uint8)
-    removed = (hb | vb) & ~bridge
+    if THICK_GAIN:
+        # a pen stroke running along a line, thicker than the ruling (a signature's long sweep across a squared page,
+        # owner's notebook 2026-11-24): its middle is farther from the ink's edge than any printed line gets
+        edge = cv2.distanceTransform((ink > 0).astype(np.uint8), cv2.DIST_L2, 5)
+        band = (hb | vb) > 0
+        if band.sum() >= LIGHT_MIN_PX:
+            line_r = float(np.percentile(edge[band], 90))
+            thick = band & (edge >= max(THICK_MIN_PX, THICK_GAIN * line_r))
+            if thick.any():
+                # a stroke, not the blob where a pen line crosses a ruled one (pen and ruling alike, ruled_same: -1.5)
+                n, lab, st, _ = cv2.connectedComponentsWithStats(thick.astype(np.uint8), connectivity=8)
+                ok = np.maximum(st[:, cv2.CC_STAT_WIDTH], st[:, cv2.CC_STAT_HEIGHT]) >= RUN_PENS * pen
+                ok[0] = False
+                thick = ok[lab]
+            if thick.any():
+                r = int(np.ceil(THICK_GAIN * line_r)) + 1
+                grown = cv2.dilate(thick.astype(np.uint8) * 255, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+                bridge |= (hb | vb) & grown
+    if bent:
+        # a stretch found only at the wider angles stays where writing is right beside it: on a densely written letter
+        # in the pen's colour those stretches also follow the writing itself (torn letter); a notebook's bent line still
+        # goes everywhere away from the letters
+        near = cv2.dilate(rest, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * span + 1, 2 * span + 1)))
+        bridge |= (hbent | vbent) & (hb | vb) & near
+    if STRAY_DARK and rest.any():
+        # bits of a line the search did not take (a stretch fainter or more bent than the rest, the last lines at the edge
+        # of the photo): a thin piece lying along the continuation of a found line and clearly lighter than the pen
+        ext = _rot(cv2.dilate(_rot(hor, base), np.ones((1, w), np.uint8)), base, inverse=True)
+        ext |= _rot(cv2.dilate(_rot(ver, base), np.ones((h, 1), np.uint8)), base, inverse=True)
+        n, lab, st, _ = cv2.connectedComponentsWithStats(rest, connectivity=8)
+        m = lab > 0
+        cnt = np.maximum(np.bincount(lab[m], minlength=n), 1)
+        on = np.bincount(lab[m], (ext[m] > 0).astype(np.float64), n) / cnt
+        mean = np.bincount(lab[m], dark[m].astype(np.float64), n) / cnt
+        short, long_ = (np.minimum(st[:, cv2.CC_STAT_WIDTH], st[:, cv2.CC_STAT_HEIGHT]),
+                        np.maximum(st[:, cv2.CC_STAT_WIDTH], st[:, cv2.CC_STAT_HEIGHT]))
+        thin = short <= 2 * pen
+        # ... or, on a row / column where no line was found at all, a straight dash at least 4 pens long (an accent or a
+        # dot is shorter; a faint WORD is not thin)
+        dash = thin & (long_ >= 4 * pen) & (long_ >= 4 * short)
+        small = long_ <= CROSS_PENS * pen
+        drop = ((on >= LINE_ON) & (thin | small) | dash) & (mean < STRAY_DARK * float(np.median(dark[rest > 0])))
+        drop[0] = False
+        extra = (drop[lab] * 255).astype(np.uint8)
+        rest = rest & ~extra
+    removed = ((hb | vb) & ~bridge) | extra
     return rest | bridge, Ruling(removed, bridge, nh, nv, base)

@@ -196,7 +196,8 @@ class SketchDetailOut(SketchOut):
 class StaffStrokeEditIn(BaseModel):
     """V2 Phase H: one Geometry Engine edit on the latest version (same ops and limits per order type as the customer's
     editor, `FE_API_GUIDE.md` 7r). Select by `stroke_ids` and / or `word_ids` of `document`."""
-    op: Literal["translate", "rotate", "scale", "slant", "curvature", "smooth", "extend", "trim", "join", "split", "delete"]
+    op: Literal["translate", "rotate", "scale", "slant", "curvature", "smooth", "extend", "trim", "join", "split", "delete",
+                "erase"]   # erase: eraser brush, params {paths: [{points, radius_mm}], page}, see FE_API_GUIDE 7r
     stroke_ids: list[str] = Field(default_factory=list, max_length=500)
     word_ids: list[str] = Field(default_factory=list, max_length=200)
     line_ids: list[str] = Field(default_factory=list, max_length=100, description="V2 Phase F: whole lines of `document`")

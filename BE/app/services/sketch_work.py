@@ -388,6 +388,6 @@ class SketchWorkService:
 
 def _describe(report: dict[str, Any]) -> str:
     names = {"translate": "Dời", "rotate": "Xoay", "scale": "Đổi cỡ", "slant": "Đổi độ nghiêng", "curvature": "Đổi độ cong",
-             "smooth": "Làm mượt", "extend": "Kéo dài", "trim": "Cắt ngắn", "join": "Nối", "split": "Tách", "delete": "Xoá"}
+             "smooth": "Làm mượt", "extend": "Kéo dài", "trim": "Cắt ngắn", "join": "Nối", "split": "Tách", "delete": "Xoá", "erase": "Tẩy"}
     n = len(report["changed"]) + len(report["removed"])
     return f"{names.get(report['op'], report['op'])} {n} nét (trang {report['page']})"

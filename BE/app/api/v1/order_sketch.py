@@ -168,7 +168,7 @@ def generate(order_id: int, svc: Svc,
 
 
 @router.post("/orders/{order_id}/sketch/edit", response_model=WorkingSketchOut, responses=_ERR,
-             summary="V2 Một lệnh sửa có cấu trúc (dời / xoay / co giãn / nghiêng / độ cong / mượt / kéo dài / cắt / nối / tách / xoá)")
+             summary="V2 Một lệnh sửa có cấu trúc (dời / xoay / co giãn / nghiêng / độ cong / mượt / kéo dài / cắt / nối / tách / xoá / tẩy)")
 def edit(order_id: int, body: SketchEditIn, svc: Svc,
          _limit: Annotated[None, Depends(rate_limit("sketch_edit", 120, 60))]) -> WorkingSketchOut:
     rev, _, report = svc.edit(order_id, base_revision_id=body.base_revision_id, op=body.op, stroke_ids=body.stroke_ids,

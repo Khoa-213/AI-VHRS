@@ -17,6 +17,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from app.services.stroke_ai import recovery as v1
+
 WORK_SIDE = 480              # detection runs on a copy this size; the result is scaled back
 FRAME_SHARE = 0.04           # the outer frame of the photo (this share of the short side) is background
 MIN_CONTRAST = 10.0          # Lab distance frame <-> centre below this: no visible background
@@ -108,11 +110,72 @@ def paper_mask(bgr: np.ndarray) -> np.ndarray | None:
 
 
 CUT_OFF_SHARE = 0.05     # more of the outline than this on the photo's border: the sheet runs out of the photo
+RULED_MIN = 10.0         # thin ruled-line pixels per 1000 inside the sheet: from here on the sheet is ruled / squared paper
+GRID_OUT_SHARE = 0.25    # ... and the same ruling this dense OUTSIDE the found sheet (vs inside): the outline is wrong
+
+
+CUT_LETTERS = 8          # letter-sized ink pieces cut in two by the found outline: from this many the outline may have cut
+                         # into the sheet itself (a book page in shade, 2026-11-24: 11; the owner's torn letter: 4)
+
+
+def cut_letters(bgr: np.ndarray, mask: np.ndarray) -> int:
+    """How many letter-sized ink pieces the sheet's outline cuts in two (at least a quarter of the piece on each side).
+    A real sheet edge runs past the writing, not through it; on GrabCut's mistakes (a shaded half taken for the table)
+    the outline slices whole lines of words. Long pieces (the table's edge, a shadow) and the photo's frame are left out."""
+    ink = v1._binarise(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))
+    ih, iw = ink.shape
+    contours, _ = cv2.findContours(ink, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+    pen = max(1.0, 2.0 * float((ink > 0).sum()) / max(sum(cv2.arcLength(c, True) for c in contours), 1.0))
+    inside = mask > 0
+    edge = inside ^ (cv2.erode(mask, np.ones((3, 3), np.uint8)) > 0)
+    m = int(1.5 * FRAME_SHARE * min(ih, iw))
+    edge[:m], edge[-m:], edge[:, :m], edge[:, -m:] = False, False, False, False
+    n, lab, st, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
+    count = 0
+    for i in np.unique(lab[edge]):
+        if i == 0:
+            continue
+        x, y, w, h, a = st[i]
+        if max(w, h) > 12 * pen:
+            continue
+        piece = lab[y:y + h, x:x + w] == i
+        on = int((piece & inside[y:y + h, x:x + w]).sum())
+        if min(on, a - on) >= 0.25 * a:
+            count += 1
+    return count
+
+
+def _ruling_runs_out(bgr: np.ndarray, mask: np.ndarray) -> bool:
+    """The ruling of the sheet continues outside the outline GrabCut found: the "background" is more of the same sheet.
+
+    A squared notebook in hand shadow (owner's photo, 2026-11-24): GrabCut took the shaded half and the top corner for
+    background and "Đồi", "THẰNG" were never traced. Thin long horizontal / vertical ink is ruling; solid dark areas (a dark
+    table, wood) are left out of the count, so only a ruled sheet with ruling beyond its outline trips this."""
+    ink = v1._binarise(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))
+    ih, iw = ink.shape
+    k = max(15, int(0.05 * min(ih, iw)))
+    lines = (cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, k), np.uint8))
+             | cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((k, 1), np.uint8))) > 0
+    solid = cv2.dilate(cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8)), np.ones((15, 15), np.uint8)) > 0
+    lines &= ~solid
+    m = int(1.5 * FRAME_SHARE * min(ih, iw))
+    lines[:m], lines[-m:], lines[:, :m], lines[:, -m:] = False, False, False, False
+    inside = cv2.dilate(mask, np.ones((9, 9), np.uint8)) > 0
+    framed = np.zeros_like(inside)
+    framed[m:-m, m:-m] = True
+    n_in, n_out = int(inside.sum()), int((~inside & framed).sum())
+    if n_in == 0 or n_out == 0:
+        return False
+    d_in = 1000.0 * float((lines & inside).sum()) / n_in
+    d_out = 1000.0 * float((lines & ~inside).sum()) / n_out
+    return d_in >= RULED_MIN and d_out >= GRID_OUT_SHARE * d_in
 
 
 def find_paper(bgr: np.ndarray) -> PaperFind | None:
     mask = paper_mask(bgr)
     if mask is None:
+        return None
+    if _ruling_runs_out(bgr, mask):
         return None
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     share = float((mask > 0).mean())
