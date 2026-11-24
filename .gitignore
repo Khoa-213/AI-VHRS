@@ -204,3 +204,7 @@ BE/be_stdout.log
 BE/be_stderr.log
 robot_agent/runs/agent_stdout.log
 robot_agent/runs/agent_stderr.log
+
+# Ảnh vật tư gốc của chủ dự án (đã nạp vào danh mục trên Supabase, không thuộc mã nguồn)
+/material/
+/material.zip
