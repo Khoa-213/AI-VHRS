@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  ArrowClockwise, ArrowCounterClockwise, ArrowUp, CaretLeft, ChatCircleText, ClockCounterClockwise, NotePencil, PencilSimpleLine,
+  ArrowClockwise, ArrowCounterClockwise, ArrowUp, CaretLeft, ChatCircleText, ChatsCircle, ClockCounterClockwise, NotePencil, PencilSimpleLine,
   Sparkle, Trash, X,
 } from '@phosphor-icons/react'
 import { useLocale, useT } from '../../../i18n'
@@ -13,6 +13,7 @@ import {
 import { errText, orderErrorKey } from '../../../services/orders'
 import ProposalCard from './ProposalCard'
 import RichText from './RichText'
+import StaffChat from './StaffChat'
 
 const TOOLS = new Set([
   'get_order', 'list_materials', 'list_templates', 'update_text', 'set_layout', 'choose_materials', 'set_options',
@@ -58,6 +59,8 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [fresh, setFresh] = useState(false)
   const [sessions, setSessions] = useState<AiSession[]>([])
+  /** Who the panel talks to: the assistant, or the workshop staff (the chats of the orders already sent). */
+  const [who, setWho] = useState<'ai' | 'staff'>('ai')
   const [history, setHistory] = useState(false)
   const [doomed, setDoomed] = useState<number | null>(null)
   const [text, setText] = useState('')
@@ -266,16 +269,17 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
   const outOfTurns = status?.left === 0
   const canWrite = !unavailable && !outOfTurns
   const picked = selectionSize(selection)
+  const staff = who === 'staff'
 
   return (
     <section className="oa" aria-label={t('oa.title')}>
       <header className="oa-head">
-        <span className="oa-avatar" aria-hidden="true"><Sparkle weight="fill" /></span>
+        <span className="oa-avatar" aria-hidden="true">{staff ? <ChatsCircle weight="fill" /> : <Sparkle weight="fill" />}</span>
         <div className="oa-head-text">
-          <b>{t('oa.title')}</b>
-          <span title={chatName}>{chatName}</span>
+          <b>{t(staff ? 'cd.title' : 'oa.title')}</b>
+          {staff ? <span>{t('cd.sub')}</span> : <span title={chatName}>{chatName}</span>}
         </div>
-        <div className="oa-tools">
+        <div className="oa-tools" hidden={staff}>
           {sketch && orderId !== null && (
             <>
               <button type="button" className="oa-tool" disabled={busy || !sketch.canUndo} title={t('oa.undoHint')} onClick={() => move('undo')}>
@@ -300,7 +304,18 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
         </div>
       </header>
 
-      {history ? (
+      <div className="oa-who" role="radiogroup" aria-label={t('oa.chatWith')}>
+        <button type="button" role="radio" aria-checked={!staff} className={staff ? '' : 'on'} onClick={() => setWho('ai')}>
+          <Sparkle aria-hidden="true" weight="fill" />{t('oa.title')}
+        </button>
+        <button type="button" role="radio" aria-checked={staff} className={staff ? 'on' : ''} onClick={() => { setWho('staff'); setHistory(false); setDoomed(null) }}>
+          <ChatsCircle aria-hidden="true" weight="fill" />{t('oa.staffTab')}
+        </button>
+      </div>
+
+      {staff ? (
+        <StaffChat />
+      ) : history ? (
         <div className="oa-history" role="region" aria-label={t('oa.history')}>
           <div className="oa-history-head">
             <button type="button" className="oa-tool" title={t('oa.back')} onClick={() => { setHistory(false); setDoomed(null) }}>
@@ -418,7 +433,7 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
       </div>
       )}
 
-      <div className="oa-foot">
+      <div className="oa-foot" hidden={staff}>
         {sketch?.inputsChanged && (
           <div className="oa-note" role="status">
             <span>{t('oa.outdated')}</span>
