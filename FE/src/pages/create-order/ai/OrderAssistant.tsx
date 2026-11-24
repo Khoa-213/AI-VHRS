@@ -14,6 +14,7 @@ import { errText, orderErrorKey } from '../../../services/orders'
 import ProposalCard from './ProposalCard'
 import RichText from './RichText'
 import StaffChat from './StaffChat'
+import ThinkingStage, { type StageFinish } from './ThinkingStage'
 
 const TOOLS = new Set([
   'get_order', 'list_materials', 'list_templates', 'update_text', 'set_layout', 'choose_materials', 'set_options',
@@ -67,6 +68,15 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string[]>([])
   const [pending, setPending] = useState<string | null>(null)
+  /** How the turn on screen ended; the thinking stage plays its ending and then calls back. */
+  const [stageEnd, setStageEnd] = useState<StageFinish>(null)
+  const stageDone = useRef<(() => void) | null>(null)
+  const stageOn = useRef(false)
+  /** The answer that just arrived: held back while the stage plays its ending (`holdId`), then unfolded word by word (`freshId`). */
+  const [holdId, setHoldId] = useState<number | string | null>(null)
+  const [freshId, setFreshId] = useState<number | string | null>(null)
+  /** True once the sent message is in `messages`, so the "sending" bubble gives way to it. */
+  const [echoed, setEchoed] = useState(false)
   type Ask = 'undo' | 'redo' | 'redraw'
   const [ask, setAsk] = useState<Ask | null>(null)
   const [err, setErr] = useState('')
@@ -110,7 +120,7 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
 
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' })
-  }, [messages.length, progress.length, pending])
+  }, [messages.length, progress.length, pending, freshId])
 
   // The message box is one line and grows with what is typed.
   useLayoutEffect(() => {
@@ -154,6 +164,10 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
     if (!msg || busy) return
     setPending(msg)
     setProgress([])
+    setFreshId(null)
+    setHoldId(null)
+    setEchoed(false)
+    let answered: number | string | null = null
     await work(async () => {
       let id: number | null = orderId
       let sid: number | null = fresh ? null : sessionId
@@ -171,6 +185,8 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
         sid = turn.sessionId
         setSessionId(sid)
         setFresh(false)
+        if (stageOn.current) setHoldId(turn.reply.id)
+        setEchoed(true)
         setMessages((m) => [...m, turn.user, turn.reply])
         setText('')
         onClearSelection()
@@ -188,6 +204,7 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
         await refresh(id, sid)
         await onChanged()
         aiStatus().then(setStatus).catch(() => undefined)
+        answered = turn.reply.id
       } catch (e) {
         if (e instanceof ApiError && e.code === 'AI_CONSENT_REQUIRED') {
           // Consent withdrawn elsewhere or a new policy version: the dialog asks again, the typed text stays.
@@ -200,6 +217,21 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
         if (id !== null && sid !== null) await refresh(id, sid)
       }
     })
+    // The stage plays its ending (green, then the ball settles on the avatar) before the answer unfolds; never longer than 4 s.
+    if (stageOn.current) {
+      setStageEnd(answered !== null ? 'ok' : 'fail')
+      await new Promise<void>((done) => {
+        const timer = window.setTimeout(done, 4000)
+        stageDone.current = () => {
+          window.clearTimeout(timer)
+          done()
+        }
+      })
+      stageDone.current = null
+    }
+    setStageEnd(null)
+    setHoldId(null)
+    setFreshId(answered)
     setPending(null)
     setProgress([])
   }
@@ -270,6 +302,10 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
   const canWrite = !unavailable && !outOfTurns
   const picked = selectionSize(selection)
   const staff = who === 'staff'
+  const staged = !!pending && !staff && !history
+  useEffect(() => {
+    stageOn.current = staged
+  })
 
   return (
     <section className="oa" aria-label={t('oa.title')}>
@@ -400,35 +436,36 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
               </div>
             )
           }
+          if (m.id === holdId) return null
           const body = m.status === 'FAILED' && !m.content ? t('oa.failed') : m.content
           return (
-            <div key={m.id} className="oa-row">
+            <div key={m.id} className={`oa-row${m.id === freshId ? ' oa-row--fresh' : ''}`}>
               <span className="oa-avatar oa-avatar--sm" aria-hidden="true"><Sparkle weight="fill" /></span>
               <div className="oa-col oa-turn">
                 <div className="oa-by"><b>{t('oa.title')}</b><span className="oa-time">{clock(m.createdAt)}</span></div>
-                {body && <div className={`oa-msg oa-msg--bot${m.status === 'FAILED' ? ' failed' : ''}`}><RichText text={body} /></div>}
+                {body && <div className={`oa-msg oa-msg--bot${m.status === 'FAILED' ? ' failed' : ''}`}><RichText text={body} reveal={m.id === freshId} /></div>}
                 {m.proposal && <ProposalCard proposal={m.proposal} />}
               </div>
             </div>
           )
         })}
 
+        {pending && !echoed && (
+          <div className="oa-row oa-row--me oa-row--sent">
+            <div className="oa-col">
+              <div className="oa-by"><b>{t('oa.you')}</b></div>
+              <p className="oa-msg oa-msg--me">{pending}</p>
+            </div>
+          </div>
+        )}
         {pending && (
-          <>
-            <div className="oa-row oa-row--me">
-              <div className="oa-col">
-                <div className="oa-by"><b>{t('oa.you')}</b></div>
-                <p className="oa-msg oa-msg--me">{pending}</p>
-              </div>
-            </div>
-            <div className="oa-row">
-              <span className="oa-avatar oa-avatar--sm" aria-hidden="true"><Sparkle weight="fill" /></span>
-              <div className="oa-wait" aria-live="polite">
-                <span className="oa-typing" aria-hidden="true"><i /><i /><i /></span>
-                <span className="oa-fine">{progress[progress.length - 1] ?? t('oa.thinking')}</span>
-              </div>
-            </div>
-          </>
+          <ThinkingStage
+            label={progress[progress.length - 1] ?? null}
+            labels={[t('oa.thinking'), t('oa.think.search'), t('oa.think.analyze'), t('oa.think.compose')]}
+            doneLabel={t('oa.done')}
+            finish={stageEnd}
+            onFinished={() => stageDone.current?.()}
+          />
         )}
       </div>
       )}
