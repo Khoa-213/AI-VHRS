@@ -19,12 +19,13 @@ import threading
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.schemas import ErrorOut
+from app.api.v1.ai_chat import SessionItemOut
 from app.api.v1.orders import optional_storage
 from app.api.v1.studio import STREAM_PING_S, MessageOut, ToolCallOut, _sse, assistant_providers
 from app.core.errors import AppError
@@ -39,10 +40,11 @@ from app.services.ai.proposals import ProposalService
 router = APIRouter(tags=["Order assistant (V2)"])
 log = logging.getLogger(__name__)
 CustomerDep = Annotated[Account, Depends(require_roles(RoleCode.CUSTOMER.value))]
-_ERR = {404: {"model": ErrorOut, "description": "ORDER_NOT_FOUND"},
+_ERR = {404: {"model": ErrorOut, "description": "ORDER_NOT_FOUND / SESSION_NOT_FOUND"},
         409: {"model": ErrorOut, "description": "ORDER_NOT_EDITABLE / STALE_REVISION / AI_TURN_IN_PROGRESS / PROPOSAL_STALE / "
-                                                "PROPOSAL_NOT_PENDING"},
-        422: {"model": ErrorOut, "description": "AI_CONSENT_REQUIRED / EMPTY_MESSAGE"},
+                                                "PROPOSAL_NOT_PENDING / TOO_MANY_SESSIONS"},
+        422: {"model": ErrorOut, "description": "AI_CONSENT_REQUIRED (details.policy_version) / EMPTY_MESSAGE / "
+                                                "INVALID_SESSION_CHOICE"},
         429: {"model": ErrorOut, "description": "AI_DAILY_LIMIT / RATE_LIMITED"},
         503: {"model": ErrorOut, "description": "AI_UNAVAILABLE / AI_DISABLED / AI_BUDGET_EXHAUSTED"}}
 
@@ -57,8 +59,9 @@ class Selection(BaseModel):
 class OrderMessageIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     ai_consent: bool = Field(default=False, description=(
-        "Bắt buộc true ở tin nhắn đầu tiên của đơn: khách đồng ý gửi tin nhắn và nội dung đơn (chữ, vật tư, số đo phác thảo) "
-        "cho nhà cung cấp AI bên ngoài. Ảnh không bao giờ được gửi."))
+        "0031: true = khách đồng ý chính sách dữ liệu chat AI đang áp dụng (`GET /privacy-policy/ai-chat`). Chỉ cần khi tài "
+        "khoản chưa đồng ý phiên bản hiện hành (một lần cho mọi đơn; hỏi lại khi chính sách đổi phiên bản); thiếu thì "
+        "422 AI_CONSENT_REQUIRED. Ảnh không bao giờ được gửi."))
     base_revision_id: int | None = Field(default=None, description=(
         "Revision phác thảo khách đang nhìn. Khác bản hiện tại → 409 STALE_REVISION, không gọi AI."))
     selection: Selection | None = Field(default=None, description=(
@@ -69,6 +72,11 @@ class OrderMessageIn(BaseModel):
         "0029: tiếp tục từ đề xuất này (chưa áp dụng); đề xuất mới gồm cả phần cũ. Bỏ trống: tự tiếp tục đề xuất PENDING mới "
         "nhất còn áp dụng được. Đề xuất đã áp dụng / bỏ qua → 409 PROPOSAL_NOT_PENDING; đơn đã đổi → 409 PROPOSAL_STALE."))
     from_order: bool = Field(default=False, description="0029: true = bắt đầu từ đơn hiện tại, bỏ qua các đề xuất đang chờ")
+    session_id: int | None = Field(default=None, description=(
+        "0031: nhắn tiếp cuộc chat này của đơn (trợ lý nhớ cuộc chat đó). Bỏ trống: cuộc chat dùng gần nhất của đơn"))
+    new_session: bool = Field(default=False, description=(
+        "0031: true = bắt đầu cuộc chat mới trên đơn này (trợ lý không nhớ các cuộc chat khác nhưng vẫn thấy đơn hiện tại). "
+        "Không gửi kèm session_id (422 INVALID_SESSION_CHOICE); tối đa 20 cuộc chat mỗi đơn (409 TOO_MANY_SESSIONS)"))
 
 
 class ProposalOut(BaseModel):
@@ -121,17 +129,35 @@ class OrderTurnOut(BaseModel):
     user: OrderMessageOut
     reply: OrderMessageOut
     replayed: bool
+    session_id: int = Field(description="0031: cuộc chat chứa lượt này (cuộc chat mới khi gửi new_session)")
     sketch_revision_id: int | None = Field(description=(
         "Revision phác thảo hiện tại của đơn sau lượt này. Từ 0029 trợ lý không đổi đơn nên thường không đổi; phác thảo "
         "mới nằm trong `proposal.sketch_revision_id`"))
     proposal: ProposalOut | None = Field(default=None, description="0029: đề xuất của lượt này (null: trợ lý chỉ trả lời / đọc)")
 
 
+class ConversationSessionOut(BaseModel):
+    id: int
+    title: str | None = Field(description="tên khách đặt, hoặc câu đầu tiên của cuộc chat (title_is_custom = false)")
+    title_is_custom: bool
+    created_at: datetime
+    last_message_at: datetime | None
+
+
 class OrderConversationOut(BaseModel):
-    consented_at: datetime | None
+    consented_at: datetime | None = Field(description=(
+        "0031: lúc tài khoản đồng ý chính sách dữ liệu chat AI ĐANG ÁP DỤNG (null: chưa đồng ý / đã rút lại / chính sách vừa "
+        "đổi phiên bản: hiện ô đồng ý)"))
+    policy_version: str = Field(description="0031: phiên bản chính sách dữ liệu chat AI đang áp dụng")
+    policy_accepted: bool
+    session: ConversationSessionOut | None = Field(description="0031: cuộc chat đang xem (null: đơn chưa có cuộc chat nào)")
     flags: list[dict[str, Any]]
     messages: list[OrderMessageOut]
     proposals: list[ProposalOut] = Field(default=[], description="0029: mọi đề xuất của đơn, cũ trước")
+
+
+class SessionRenameIn(BaseModel):
+    title: str = Field(max_length=500, description="1 đến 120 ký tự sau khi bỏ khoảng trắng thừa")
 
 
 def _assistant(session: SessionDep, customer: CustomerDep, request: Request,
@@ -178,7 +204,17 @@ def _turn_out(a: AssistantService, order_id: int, out: dict[str, Any]) -> OrderT
         a.session.refresh(out["proposal"])
         prop = proposal_out(props, order, out["proposal"])
     return OrderTurnOut(user=message_out(out["user"], []), reply=message_out(out["reply"], out["tool_calls"], prop),
-                        replayed=out["replayed"], sketch_revision_id=order.current_sketch_revision_id, proposal=prop)
+                        replayed=out["replayed"], session_id=out["reply"].session_id,
+                        sketch_revision_id=order.current_sketch_revision_id, proposal=prop)
+
+
+def _session_out(a: AssistantService, sess) -> ConversationSessionOut | None:
+    if sess is None:
+        return None
+    from app.services.ai import chat_sessions
+    item = next(i for i in chat_sessions.of_order(a.session, a.customer.id, sess.order_id) if i["id"] == sess.id)
+    return ConversationSessionOut(id=sess.id, title=item["title"], title_is_custom=item["title_is_custom"],
+                                  created_at=sess.created_at, last_message_at=sess.last_message_at)
 
 
 def _owned(a: AssistantService, order_id: int) -> None:
@@ -187,18 +223,63 @@ def _owned(a: AssistantService, order_id: int) -> None:
 
 
 @router.get("/orders/{order_id}/assistant/messages", response_model=OrderConversationOut, responses=_ERR,
-            summary="V2 Hội thoại với trợ lý AI của đơn")
-def messages(order_id: int, assistant: Assistant) -> OrderConversationOut:
+            summary="V2 Hội thoại với trợ lý AI của đơn (0031: một cuộc chat; mặc định cuộc chat dùng gần nhất)")
+def messages(order_id: int, assistant: Assistant,
+             session_id: Annotated[int | None, Query(description="0031: cuộc chat cần xem (id từ .../assistant/sessions)")] = None,
+             ) -> OrderConversationOut:
     _owned(assistant, order_id)
-    sess = assistant.session_of_order(order_id)
+    sess = assistant.session_of_order(order_id, session_id)
     order = assistant.session.get(Order, order_id)
     props = ProposalService(assistant.session, assistant.customer, assistant._ip)
     now = props.current_hash(order)
     rows = assistant.session_messages(sess)
     by_msg = {mid: proposal_out(props, order, p, now) for mid, p in props.of_messages([m.id for m, _ in rows]).items()}
-    return OrderConversationOut(consented_at=sess.consented_at if sess else None, flags=(sess.flags or []) if sess else [],
+    consent = assistant.consent_status()
+    return OrderConversationOut(consented_at=consent["policy_accepted_at"], policy_version=consent["policy_version"],
+                                policy_accepted=consent["policy_accepted"], session=_session_out(assistant, sess),
+                                flags=(sess.flags or []) if sess else [],
                                 messages=[message_out(m, c, by_msg.get(m.id)) for m, c in rows],
                                 proposals=[proposal_out(props, order, p, now) for p in props.of_order(order_id)])
+
+
+# ---------------------------------------------------------------------------------------------------------- conversations (0031)
+@router.get("/orders/{order_id}/assistant/sessions", response_model=list[SessionItemOut], responses=_ERR,
+            summary="Các cuộc chat với trợ lý AI của đơn, dùng gần nhất trước (cuộc chat đã xoá không có)")
+def order_sessions(order_id: int, assistant: Assistant) -> list[SessionItemOut]:
+    from app.services.ai import chat_sessions
+    _owned(assistant, order_id)
+    return [SessionItemOut(**i) for i in chat_sessions.of_order(assistant.session, assistant.customer.id, order_id)]
+
+
+@router.patch("/orders/{order_id}/assistant/sessions/{session_id}", response_model=SessionItemOut, responses=_ERR,
+              summary="Đổi tên một cuộc chat (1 đến 120 ký tự)")
+def rename_session(order_id: int, session_id: int, body: SessionRenameIn, assistant: Assistant) -> SessionItemOut:
+    from app.services.ai import chat_sessions
+    _owned(assistant, order_id)
+    sess = chat_sessions.get(assistant.session, order_id, session_id)
+    chat_sessions.rename(assistant.session, sess, body.title, actor_id=assistant.customer.id, ip=assistant._ip)
+    return SessionItemOut(**next(i for i in chat_sessions.of_order(assistant.session, assistant.customer.id, order_id)
+                                 if i["id"] == sess.id))
+
+
+@router.delete("/orders/{order_id}/assistant/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT,
+               response_class=Response, responses=_ERR,
+               summary="Xoá một cuộc chat khi đơn còn là bản nháp (nội dung bị xoá; cờ cảnh báo vẫn lưu cho xưởng)",
+               description=("Đơn không còn là bản nháp (đã gửi, kể cả NEED_INFO) → `409 ORDER_NOT_EDITABLE`. Trợ lý đang trả lời "
+                            "trên đơn → `409 AI_TURN_IN_PROGRESS`. "
+                            "Đề xuất đang chờ của cuộc chat thành REJECTED. Lượt nhắn đã dùng trong ngày không được trả lại."))
+def delete_session(order_id: int, session_id: int, assistant: Assistant) -> Response:
+    from app.models.order import OrderStatus
+    from app.services.ai import chat_sessions
+    from app.services.sketch_work import SketchWorkService
+    order = SketchWorkService(assistant.session, assistant.customer, None).order(order_id, write=True)   # owner + editable
+    if order.order_status != OrderStatus.DRAFT:              # the policy: only while the order is a draft (not NEED_INFO)
+        raise AppError(409, "ORDER_NOT_EDITABLE", "Chỉ xoá được cuộc chat khi đơn còn là bản nháp.",
+                       {"order_status": order.order_status.value})
+    assistant.lock_order(order_id)
+    sess = chat_sessions.get(assistant.session, order_id, session_id)
+    chat_sessions.wipe(assistant.session, sess, reason="CUSTOMER", actor_id=assistant.customer.id, ip=assistant._ip)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/orders/{order_id}/assistant/messages", response_model=OrderTurnOut, responses=_ERR,
@@ -210,7 +291,8 @@ def send_message(order_id: int, body: OrderMessageIn, assistant: Assistant,
     # own bucket "order_ai" (30 / min per IP: customers behind one school / office NAT share an IP); counted after the role check
     out = assistant.send_order(order_id, body.text, consent=body.ai_consent, base_revision_id=body.base_revision_id,
                                selection=body.selection.model_dump() if body.selection else None, client_ref=body.client_ref,
-                               base_proposal_id=body.base_proposal_id, from_order=body.from_order)
+                               base_proposal_id=body.base_proposal_id, from_order=body.from_order,
+                               session_id=body.session_id, new_session=body.new_session)
     return _turn_out(assistant, order_id, out)
 
 
@@ -226,7 +308,8 @@ def send_message_stream(order_id: int, body: OrderMessageIn, session: SessionDep
     assistant.lock_order(order_id)
     if assistant.replay(order_id, body.client_ref) is None:
         assistant.precheck_order(order_id, body.text, consent=body.ai_consent, base_revision_id=body.base_revision_id,
-                                 base_proposal_id=body.base_proposal_id, from_order=body.from_order)
+                                 base_proposal_id=body.base_proposal_id, from_order=body.from_order,
+                                 session_id=body.session_id, new_session=body.new_session)
     customer_id, storage, ip, providers = assistant.customer.id, assistant._storage, assistant._ip, assistant._providers
     session.commit()                                     # frees the order row and the lock before the worker takes them
     events: queue.Queue = queue.Queue()
@@ -238,6 +321,7 @@ def send_message_stream(order_id: int, body: OrderMessageIn, session: SessionDep
             out = a.send_order(order_id, body.text, consent=body.ai_consent, base_revision_id=body.base_revision_id,
                                selection=body.selection.model_dump() if body.selection else None, client_ref=body.client_ref,
                                base_proposal_id=body.base_proposal_id, from_order=body.from_order,
+                               session_id=body.session_id, new_session=body.new_session,
                                on_event=lambda name, data: events.put((name, data)))
             turn = _turn_out(a, order_id, out)
             s.commit()

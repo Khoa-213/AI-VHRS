@@ -276,7 +276,7 @@ def test_sheet_photos_of_styles_not_kept_are_purged_after_the_retention_but_the_
     monkeypatch.setattr(bj, "PURGE_AFTER_DAYS", 0)
     from app.db.session import _factory
     with _factory()() as s:
-        out = bj.photo_purge(s, order_ids=[-1], style_ids=[keep, drop], storage=store)
+        out = bj.photo_purge(s, order_ids=[-1], style_ids=[keep, drop], storage=store, enabled=False)   # switch off
     assert out.get("style_pages_would_delete") == 1 and out["dry_run"] is True, out
     with _factory()() as s:
         out = bj.photo_purge(s, order_ids=[-1], style_ids=[keep, drop], storage=store, enabled=True)
@@ -288,4 +288,4 @@ def test_sheet_photos_of_styles_not_kept_are_purged_after_the_retention_but_the_
         assert bj.photo_purge(s, order_ids=[-1], style_ids=[keep, drop], storage=store, enabled=True)[
             "style_pages_deleted"] == 0
     with _factory()() as s:                          # an order-scoped run (other tests) never looks at styles
-        assert "style_pages_would_delete" not in bj.photo_purge(s, order_ids=[-1], storage=store)
+        assert "style_pages_would_delete" not in bj.photo_purge(s, order_ids=[-1], storage=store, enabled=False)

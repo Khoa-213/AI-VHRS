@@ -13,6 +13,14 @@ from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import _user, cust, policy, staff, store, wcat  # noqa: F401
 
 
+def purge_switch(monkeypatch, on: bool) -> None:
+    """The shared `photo_purge_enabled` as this test needs it (it is ON in production since 2026-11-24): a test must not
+    depend on the value of the real setting, and must not change it."""
+    real = bj.CatalogRepository.setting
+    monkeypatch.setattr(bj.CatalogRepository, "setting",
+                        lambda self, key, default=None: on if key == "photo_purge_enabled" else real(self, key, default))
+
+
 def _run(job, oid, **kw):
     with _factory()() as s:
         return bj.JOBS[job](s, order_ids=[oid], **kw)
@@ -109,6 +117,7 @@ def test_customer_photos_are_purged_after_90_days_only_when_enabled(client, cust
     monkeypatch.setattr(bj, "PURGE_AFTER_DAYS", 0)                                     # "90 days ago" = now
     assert _run("photo_purge", oid, storage=store, enabled=True)["deleted"] == 0       # the order is still open
     assert client.post(f"{API}/orders/{oid}/cancel", headers=cust, json={"reason": "pytest"}).status_code == 200
+    purge_switch(monkeypatch, False)
     assert _run("photo_purge", oid, storage=store) == {"dry_run": True, "would_delete": 1, "storage": True}   # setting off
     assert _run("photo_purge", oid, storage=store, enabled=True) == {"dry_run": False, "deleted": 1, "failed": 0}
     assert f"pytest/{oid}/a.jpg" not in store.objects and f"pytest/{oid}/b.jpg" in store.objects   # kept with consent
@@ -118,6 +127,7 @@ def test_customer_photos_are_purged_after_90_days_only_when_enabled(client, cust
 
 
 def test_the_runner_never_overlaps_and_keeps_going_after_an_error(client, cust, staff, wcat, monkeypatch):
+    purge_switch(monkeypatch, False)                       # the purges below are dry runs whatever the real setting is
     oid, q = _quoted(client, cust, staff[0], wcat)
     with get_engine().connect() as c:                                                  # another run holds the lock
         assert c.execute(text("select pg_try_advisory_lock(:k)"), {"k": bj.LOCK_KEY}).scalar()
