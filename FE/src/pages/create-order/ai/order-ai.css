@@ -88,13 +88,13 @@
 /* The assistant's turn while it is answered, as a row of the conversation: a ball rises from the send button and opens
    into a sphere of dots in the text colour, with the current step beside it; it turns green, collapses into a green ball
    and the ball settles where the answer's avatar is. ThinkingStage writes positions, sizes and opacities each frame. */
-.oa-think{position:relative;flex:none;display:flex;align-items:center;gap:4px;height:120px;margin:-6px 0 -6px -18px}
+.oa-think{position:relative;flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:118px}
 .oa-think-orb{flex:none;display:block;color:var(--t1);outline:0 solid var(--good)}
-.oa-think-ball{position:absolute;left:0;top:0;z-index:1;width:34px;height:34px;border-radius:50%;opacity:0;background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--t1) 26%,var(--surface)),color-mix(in srgb,var(--t1) 10%,var(--surface)));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--t1) 18%,transparent),0 10px 26px -10px color-mix(in srgb,var(--t1) 50%,transparent);will-change:transform,width,height}
-.oa-think-green,.oa-think-ring{position:absolute;left:0;top:0;width:48px;height:48px;border-radius:50%;opacity:0;will-change:transform,opacity}
+.oa-think-ball{position:absolute;left:0;top:0;z-index:1;width:30px;height:30px;border-radius:50%;opacity:0;background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--t1) 26%,var(--surface)),color-mix(in srgb,var(--t1) 10%,var(--surface)));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--t1) 18%,transparent),0 10px 26px -10px color-mix(in srgb,var(--t1) 50%,transparent);will-change:transform,width,height}
+.oa-think-green,.oa-think-ring{position:absolute;left:0;top:0;width:42px;height:42px;border-radius:50%;opacity:0;will-change:transform,opacity}
 .oa-think-green{background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--good) 65%,#fff),var(--good));box-shadow:0 0 24px color-mix(in srgb,var(--good) 50%,transparent)}
 .oa-think-ring{border:2px solid var(--good)}
-.oa-think .oa-wait{min-width:0;opacity:0}
+.oa-think .oa-wait{justify-content:center;min-width:0;max-width:100%;min-height:20px;opacity:0;text-align:center}
 /* The message just sent slides up from the message box. */
 .oa-row--sent{animation:oa-sent .36s cubic-bezier(.22,1,.36,1)}
 @keyframes oa-sent{from{opacity:0;transform:translateY(14px) scale(.96)}}
