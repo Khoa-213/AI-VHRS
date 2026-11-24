@@ -53,16 +53,34 @@ export interface WorkQuery {
   q?: string
   orderType?: string
   unassigned?: boolean
+  mine?: boolean
+  orderIds?: number[]
   page?: number
   pageSize?: number
 }
 
 export async function listWork(opts: WorkQuery = {}): Promise<Page<WorkOrder>> {
+  if ((opts.mine || opts.q || opts.orderIds) && !(await supportsQueueApi())) {
+    const { orders, actorId } = await legacyQueue()
+    const needle = opts.q?.trim().toLocaleLowerCase()
+    const statuses = [opts.status ?? []].flat()
+    const rows = orders.filter((o) => (!opts.mine || o.assignedStaffId === actorId)
+      && (!opts.unassigned || o.assignedStaffId === null && o.status === 'SUBMITTED')
+      && (!statuses.length || statuses.includes(o.status))
+      && (!opts.orderType || o.type === opts.orderType)
+      && (!opts.orderIds || opts.orderIds.includes(o.id))
+      && (!needle || o.code.toLocaleLowerCase().includes(needle) || o.customerName.toLocaleLowerCase().includes(needle)))
+      .sort((a, b) => Date.parse(a.submittedAt ?? a.createdAt) - Date.parse(b.submittedAt ?? b.createdAt) || a.id - b.id)
+    const page = opts.page ?? 1, pageSize = opts.pageSize ?? 50
+    return { items: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize }
+  }
   const q = new URLSearchParams()
   for (const st of [opts.status ?? []].flat()) q.append('status', st)
   if (opts.q?.trim()) q.set('q', opts.q.trim())
   if (opts.orderType) q.set('order_type', opts.orderType)
   if (opts.unassigned) q.set('unassigned', 'true')
+  if (opts.mine) q.set('mine', 'true')
+  for (const id of opts.orderIds ?? []) q.append('order_ids', String(id))
   q.set('page', String(opts.page ?? 1))
   q.set('page_size', String(opts.pageSize ?? 50))
   const r = await api<{ items: RawWork[]; total: number; page: number; page_size: number }>(`/workshop/orders?${q}`)
@@ -74,6 +92,52 @@ export const allWork = async (opts: Omit<WorkQuery, 'page' | 'pageSize'> = {}): 
   newestFirst(await allPages((page) => listWork({ ...opts, page, pageSize: 100 }), 100), (o) => o.submittedAt ?? o.createdAt)
 
 export const getWork = async (id: number): Promise<WorkOrder> => toWork(await api<RawWork>(`/workshop/orders/${id}`))
+
+export interface QueueCounts { pool: number; mine: Partial<Record<OrderStatus, number>> }
+let queueSupport: Promise<boolean> | undefined
+function supportsQueueApi(): Promise<boolean> {
+  return queueSupport ??= api<QueueCounts>('/workshop/queue-counts').then(() => true).catch((e) => {
+    queueSupport = undefined
+    if (e instanceof ApiError && e.status === 404) { queueSupport = Promise.resolve(false); return false }
+    throw e
+  })
+}
+
+// Older deployments ignore new query parameters. Read all authorized pages before filtering,
+// so counts/search never silently refer only to the first page or include another Staff's pool.
+let legacyPending: Promise<{ orders: WorkOrder[]; actorId: number }> | undefined
+function legacyQueue() {
+  if (!legacyPending) {
+    legacyPending = Promise.all([
+      api<{ id: number }>('/me'),
+      allPages(async (page) => {
+        const r = await api<{ items: RawWork[]; total: number }>(`/workshop/orders?page=${page}&page_size=100`)
+        return { items: r.items.map(toWork), total: r.total }
+      }, 100),
+    ]).then(([actor, orders]) => ({ actorId: actor.id, orders })).finally(() => { legacyPending = undefined })
+  }
+  return legacyPending
+}
+
+export async function queueCounts(): Promise<QueueCounts> {
+  if (queueSupport && !(await queueSupport)) return legacyCounts()
+  try {
+    const counts = await api<QueueCounts>('/workshop/queue-counts')
+    queueSupport = Promise.resolve(true)
+    return counts
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 404) throw e
+    queueSupport = Promise.resolve(false)
+    return legacyCounts()
+  }
+}
+
+async function legacyCounts(): Promise<QueueCounts> {
+  const { orders, actorId } = await legacyQueue()
+  const mine: QueueCounts['mine'] = {}
+  for (const o of orders) if (o.assignedStaffId === actorId) mine[o.status] = (mine[o.status] ?? 0) + 1
+  return { pool: orders.filter((o) => o.assignedStaffId === null && o.status === 'SUBMITTED').length, mine }
+}
 
 export const claimOrder = async (id: number) => toWork(await api<RawWork>(`/workshop/orders/${id}/claim`, { method: 'POST' }))
 

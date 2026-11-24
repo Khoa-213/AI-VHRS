@@ -14,6 +14,8 @@ Jobs:
                      the customer agreed to keep. OT-2 O2: also the photos of sample-sheet pages of styles not kept
                      (`keep_consent` false), untouched that long and not waiting for review (the traced strokes stay).
                      DRY RUN (count only) unless `system_settings.photo_purge_enabled` is true.
+* ai_chat_purge      0031: the text of the AI conversations of the same orders, after the same time, with the same switch
+                     (the customer agrees to it in the AI chat data policy). Rows, flags and counts stay.
 
 `order_ids` limits every job to those orders (tests run against the shared database and must never touch real orders).
 """
@@ -37,6 +39,7 @@ from app.models.ops import Payment, PaymentStatus, PaymentType
 from app.models.order import (HandwritingStyle, HandwritingStylePage, Order, OrderInput, OrderInputKind, OrderStatus,
                               StyleStatus)
 from app.models.sketch import Quotation, QuotationStatus
+from app.models.studio import AiSession, StudioDraft
 from app.repositories.catalog import CatalogRepository
 from app.services import audit, gateway_checkout as checkout, notifications
 from app.services import quotations as quotation_service
@@ -255,9 +258,42 @@ def photo_purge(session: Session, *, order_ids: list[int] | None = None, storage
     return {**out, "style_pages_deleted": s_deleted, "style_pages_failed": s_failed}
 
 
+def ai_chat_purge(session: Session, *, order_ids: list[int] | None = None, enabled: bool | None = None,
+                  **_: Any) -> dict[str, Any]:
+    """0031: the text of the AI conversations of orders COMPLETED or CANCELLED more than `image_retention_days` (90) ago is
+    wiped (rows, flags and counts stay: chat_sessions.wipe), the conversations of the order itself and of the studio draft
+    that led to it. Same rule and same switch as the customer's photos (BR-23): a dry run unless `photo_purge_enabled`."""
+    from app.services.ai import chat_sessions
+    if enabled is None:                                     # only tests pass it: the shared setting stays untouched
+        enabled = CatalogRepository(session).setting("photo_purge_enabled", False) is True
+    days = PURGE_AFTER_DAYS if PURGE_AFTER_DAYS == 0 else _int_setting(session, "image_retention_days", PURGE_AFTER_DAYS)
+    cutoff = _now() - timedelta(days=days)
+    finished = or_(and_(Order.order_status == OrderStatus.COMPLETED, func.coalesce(Order.completed_at, Order.updated_at) < cutoff),
+                   and_(Order.order_status == OrderStatus.CANCELLED, Order.updated_at < cutoff))
+    of_orders = (select(AiSession.id, Order.id.label("oid")).join(Order, Order.id == AiSession.order_id)
+                 .where(AiSession.deleted_at.is_(None), finished))
+    of_drafts = (select(AiSession.id, Order.id.label("oid")).join(StudioDraft, StudioDraft.id == AiSession.draft_id)
+                 .join(Order, Order.id == StudioDraft.order_id).where(AiSession.deleted_at.is_(None), finished))
+    due = [tuple(r) for r in session.execute(_scoped(of_orders, Order.id, order_ids).order_by(AiSession.id).limit(BATCH))]
+    due += [tuple(r) for r in session.execute(_scoped(of_drafts, Order.id, order_ids).order_by(AiSession.id).limit(BATCH))]
+    if not enabled:
+        session.rollback()
+        return {"dry_run": True, "would_delete": len(due)}
+    deleted = 0
+    for sid, oid in due:
+        sess = session.get(AiSession, sid, with_for_update=True)
+        if sess is None or sess.deleted_at is not None:
+            session.rollback()
+            continue
+        chat_sessions.wipe(session, sess, reason="RETENTION", actor_id=None, ip=None, order_id=oid)
+        session.commit()
+        deleted += 1
+    return {"dry_run": False, "deleted": deleted}
+
+
 JOBS: dict[str, Callable[..., dict[str, Any]]] = {
     "quotation_expiry": quotation_expiry, "deposit_deadline": deposit_deadline, "acceptance": acceptance,
-    "email_retry": email_retry, "photo_purge": photo_purge,
+    "email_retry": email_retry, "photo_purge": photo_purge, "ai_chat_purge": ai_chat_purge,
 }
 
 

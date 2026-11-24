@@ -37,6 +37,17 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **App Technical Staff điều khiển robot qua BE** (mục 7g, KHÔNG gọi máy trạm trực tiếp): gửi lệnh bằng `POST /technician/robot-commands`, hỏi kết quả bằng `GET /technician/robot-commands/{id}`; luôn hiện nhãn chế độ MOCK / SIM / REAL và trạng thái kết nối agent (`GET /technician/robots/{id}/live` → `agent_online`).
 - [ ] **Danh sách mẫu chữ:** có thêm 4 mẫu `kind = "TYPOGRAPHY"` (Playpen Sans, Pangolin, Patrick Hand, Mali Light, `font_uri` dạng `outline:fonts/...`); `GET /catalog/templates/{id}/preview?text=` trả PNG (tối đa 80 ký tự với mẫu này, lần đầu có thể chậm ~3 giây). Hiển thị cảnh báo "thứ tự nét do hệ thống dựng lại" nếu cần.
 
+**Cuộc chat với trợ lý AI và chính sách dữ liệu chat (mục 7s.1, 7s.2; 2026-11-24, migration 0031)**
+- [ ] **Ô đồng ý chính sách chat AI:** hiện khi `policy_accepted = false` (từ `GET /studio/assistant/status` hoặc `GET /orders/{id}/assistant/messages`), kèm link mở toàn văn `GET /privacy-policy/ai-chat`; đồng ý một lần cho tài khoản, bị hỏi lại khi chính sách đổi phiên bản.
+- [ ] **Nút "Cuộc chat mới"** trong chatbox (gửi tin đầu với `new_session: true`, các tin sau gửi `session_id`), danh sách cuộc chat của đơn, đổi tên, xoá (chỉ khi đơn còn nháp).
+- [ ] **Thanh bên kiểu ChatGPT:** `GET /me/assistant/sessions` (mọi cuộc chat của khách, có phân trang), bấm vào thì mở đơn và cuộc chat đó.
+- [ ] **Tài khoản > Quyền riêng tư:** xem trạng thái đồng ý và nút rút lại đồng ý (`DELETE /me/assistant/consent`).
+
+**Ảnh thật của giấy, bút, mực (mục 5.1, 7.1b; 2026-11-24, migration 0030)**
+- [ ] **Màn chọn vật tư của khách:** giấy, bút, mực trong `/catalog/*` có thêm `image_url`. Có ảnh thì hiện ảnh (`<img src={image_url}>`, URL công khai, không cần token); `null` thì giữ cách vẽ hiện tại (vạch theo `stroke_width_mm`, chấm màu theo `hex_code`). Không dùng ảnh lấy ở nguồn khác.
+- [ ] **Màn vật tư của Manager:** nút tải / thay / gỡ ảnh cho từng loại giấy, bút, màu mực (`PUT` / `DELETE /manager/papers|pens|inks/{id}/image`, thân request là chính file ảnh).
+- [ ] **Danh sách mẫu chữ:** `preview_url` giờ luôn là địa chỉ ảnh mở được; dùng làm ảnh đại diện của mẫu chữ.
+
 **Bản sao số 3D của robot (mục 7g)**
 - [ ] **Xem 3D = nhúng trang do BE phục vụ** (cách chắc chắn nhất, không cần viết three.js): gọi `POST /technician/robots/{id}/view-ticket` → mở `<BE>` + `viewer_path` trong WebView (mobile) hoặc `<iframe>` (web). Trang chỉ-đọc, tự cập nhật 4 lần/giây, tự hiện cảnh báo đỏ "NHẤN NÚT E-STOP". Vé sống 60 phút: hết hạn thì xin vé mới và nạp lại. Chi tiết và phương án tự vẽ ở mục 7g.3. Nút Tạm dừng/Tiếp tục/DỪNG của FE nằm **ngoài** khung 3D và gọi `POST /technician/robot-commands`.
 - [ ] **Ảnh phác thảo cho khách** (mục 5.2, 6): `GET /orders/{id}/quotation` → `sketch.image_urls[]` (JPG) là ảnh khách xem để quyết định đặt cọc; Staff dùng `image_urls[]` + `trajectory_url` (file chạy của robot) ở `GET /workshop/orders/{id}/sketches/{v}`.
@@ -219,6 +230,7 @@ stateDiagram-v2
 
 ### 5.1 Chuẩn bị đơn
 1. **Danh mục** (không cần đăng nhập): `GET /catalog/papers`, `GET /catalog/pens?paper_id=` (chỉ bút tương thích với giấy), `GET /catalog/pens/{id}/inks`, `GET /catalog/templates`, `GET /catalog/templates/{id}/preview?text=...` (ảnh PNG xem thử). Bộ nét đã lưu: `GET /catalog/my-styles`.
+   **Ảnh thật của vật tư (migration 0030, 2026-11-24):** mỗi giấy, bút, mực trong các câu trả lời trên (kể cả `suggest-materials`) có **`image_url`**: ảnh do xưởng tự chụp / quét, lưu trong kho của hệ thống, định dạng WebP, cạnh dài tối đa 800 px, **URL công khai** (đặt thẳng vào `<img>`, không cần Bearer). `null` = xưởng chưa tải ảnh: FE giữ cách vẽ hiện tại, **không lấy ảnh ở nguồn ngoài**. URL đổi mỗi khi xưởng thay ảnh, nên không cần tự chống cache. Mẫu chữ: **`preview_url`** luôn là địa chỉ ảnh mở được (ảnh đã lưu ở kho công khai, hoặc `/api/v1/catalog/templates/{id}/preview` do BE vẽ; địa chỉ này là tương đối khi BE chưa đặt `PUBLIC_BASE_URL`, FE nối với gốc API như các lời gọi khác).
 2. **Giá ước tính**: `POST /pricing/estimate {order_type, quantity, paper_type_id?, pen_type_id?, ink_color_id?, text? | order_id?}` → `{chars_min, chars_max, price_min, price_max, min_deposit_pct, basis, note}`. Hiển thị **khoảng giá**; không bao giờ bắt khách tự nhập số ký tự (hệ thống tự đếm).
 3. **Tạo đơn**: `POST /orders {order_type, quantity}` → đơn `DRAFT`. Loại đơn đang mở cho khách do hệ thống cấu hình: hiện **chỉ `OT1_COPY_RESTORE` và `OT3_TEMPLATE`** (OT-2 bị khoá, lỗi `409 ORDER_TYPE_SUSPENDED`).
 4. **Chọn vật tư theo thứ tự giấy → bút → mực.** Sau khi khách chọn giấy, gọi **`GET /catalog/suggest-materials?paper_type_id=`** (công khai) → `{paper, pens:[{id,name,category,surcharge,..., inks:[{id,name,hex_code,unit_price}]}]}`: chỉ gồm các bút **tương thích** với giấy đó, mỗi bút kèm màu mực còn bán; hiển thị để khách chọn (không cần gọi thêm `/catalog/pens` và `/pens/{id}/inks`). Khách không thể chọn bút/mực không phù hợp (BE từ chối `422 PEN_INCOMPATIBLE`), nên không cần cảnh báo chất lượng.
@@ -564,6 +576,30 @@ Agent vẫn có thể phục vụ trang điều khiển riêng trong LAN (`cli s
 | Robot | `GET/POST /manager/robots`, `PATCH .../{id}`; đặt `MAINTENANCE`/`BROKEN` trả `affected_job_ids` (job cần xếp lại). Không đặt tay `BUSY` |
 
 Không có xoá cứng: dùng `is_active:false` (khách không còn thấy nhưng đơn cũ vẫn tham chiếu được). Mọi thay đổi tồn kho cần `reason` và được ghi nhật ký.
+
+### 7.1b Ảnh thật của giấy, bút, mực (migration 0030, 2026-11-24)
+Xưởng tải ảnh của chính mình cho từng loại giấy, bút, màu mực; khách thấy ảnh đó ở màn chọn vật tư (`image_url` trong `/catalog/*`, mục 5.1).
+```
+PUT    /manager/papers/{id}/image     thân request = file ảnh   → PaperOut (có image_url)
+DELETE /manager/papers/{id}/image                               → PaperOut (image_url: null)
+PUT    /manager/pens/{id}/image       → PenOut      DELETE /manager/pens/{id}/image → PenOut
+PUT    /manager/inks/{id}/image       → InkOut      DELETE /manager/inks/{id}/image → InkOut
+```
+- **Thân request là chính file ảnh**, không phải `multipart/form-data` và không phải JSON:
+  ```ts
+  await fetch(`${API}/manager/papers/${id}/image`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': file.type },   // image/jpeg | image/png | image/webp
+    body: file,                                                                  // File lấy từ <input type="file">
+  })
+  ```
+- Nhận **JPEG, PNG, WebP, tối đa 5 MB**. BE đọc loại ảnh từ nội dung file (không tin `Content-Type`), xoay ảnh JPEG theo chiều chụp, thu về cạnh dài tối đa **800 px**, lưu **WebP**, **bỏ EXIF** (vị trí GPS, máy chụp). Ảnh PNG / WebP nền trong suốt giữ được nền trong suốt. Ảnh nhỏ hơn 800 px không bị phóng to.
+- `GET /manager/papers|pens|inks` cũng trả `image_url`. Tải ảnh mới thì ảnh cũ bị thay và **`image_url` đổi** (đường dẫn chứa mã băm nội dung); tải lại đúng ảnh cũ thì URL giữ nguyên.
+- `DELETE` gỡ ảnh: `image_url` thành `null`, file bị xoá khỏi kho (trình duyệt / CDN có thể còn giữ bản cũ tối đa 1 ngày). Gọi lại không lỗi.
+- Lỗi: `422 FILE_TOO_LARGE` (quá 5 MB), `422 UNSUPPORTED_FILE` (không phải jpg / png / webp), `422 INVALID_IMAGE` (file hỏng hoặc rỗng), `422 IMAGE_TOO_MANY_PIXELS` (trên 40 triệu điểm ảnh: thu nhỏ rồi tải lại), `422 IMAGE_TOO_SMALL` (cạnh dưới 32 px), `404 NOT_FOUND`, `503 STORAGE_NOT_CONFIGURED | STORAGE_UNAVAILABLE | MEDIA_BUCKET_NOT_PUBLIC` (kho ảnh chưa cấu hình / lỗi: báo quản trị).
+- Mỗi lần tải / gỡ được ghi nhật ký (`CATALOG_IMAGE_SET`, `CATALOG_IMAGE_REMOVE`).
+- **Nên chụp gì** (gợi ý, chi tiết ở `docs/MATERIALS_RESEARCH_2026-11-24.md` mục 7): giấy = một góc tờ giấy thật; bút = nét bút do robot viết trên giấy trắng; mực = ô màu / dòng chữ do robot viết bằng đúng mực đó. Nạp nhiều ảnh một lần: `scripts/upload_catalog_images.py --dir <thư mục>` (tên file = mã vật tư; chạy không có `--apply` để xem trước).
+- Mẫu chữ: `GET /manager/templates` có thêm `preview_url` (cùng địa chỉ khách thấy). Ảnh mẫu của font TTF do `scripts/add_outline_font.py` tạo; chưa có API tải ảnh mẫu chữ.
 
 ### 7.2 Bảng giá có phiên bản (FR-30)
 ```
@@ -995,7 +1031,7 @@ GET  /workshop/orders/{id}/assistant                   (Staff / Manager) cờ c�
 - **Trợ lý luôn vẽ phác thảo khi cần** (2026-11-22): đơn mẫu chữ (OT3) có nội dung + mẫu chữ mà **chưa có phác thảo**, hoặc **nội dung đổi sau khi đã có phác thảo**, thì trong cùng lượt trợ lý gọi `generate_sketch`; nếu mô hình quên, BE tự vẽ ở cuối lượt (`reply.tool_calls` có thêm `generate_sketch`, câu trả lời có thêm dòng "Mình đã tạo phác thảo theo nội dung hiện tại…"). Vì vậy một câu hỏi như "đơn ổn chưa?" trên đơn chưa có phác thảo cũng trả về đề xuất có ảnh. Ngoại lệ: phác thảo có nét khách đã sửa (`SKETCH_HAS_EDITS`) thì không tự vẽ đè; đề xuất giữ phác thảo cũ với `preview.sketch_outdated = true` → FE ghi "Phác thảo chưa khớp nội dung mới" và trợ lý hỏi khách có vẽ lại không.
 
 **Tin nhắn**
-- `ai_consent: true` bắt buộc ở tin nhắn đầu tiên của đơn (câu FE: "Tin nhắn, nội dung đơn và số đo phác thảo sẽ được gửi tới nhà cung cấp AI bên ngoài; ảnh của bạn không bị gửi").
+- Đồng ý (từ 0031, mục 7s.1): khách đồng ý **chính sách dữ liệu chat AI** một lần cho tài khoản; khi chưa đồng ý phiên bản đang áp dụng thì tin nhắn phải kèm `ai_consent: true` (thiếu → `422 AI_CONSENT_REQUIRED`). Trước 0031 là "tin nhắn đầu tiên của mỗi đơn".
 - Giới hạn (nâng 2026-11-22 để khách không bị chặn giữa chừng): tin nhắn tối đa **8000 ký tự** (dán cả bức thư được; `422 MESSAGE_TOO_LONG`), **30 tin / phút / IP** (`429 RATE_LIMITED` kèm `retry_after_seconds`; studio cũ vẫn 10), mặc định **100 tin / khách / ngày** (`429 AI_DAILY_LIMIT`; số còn lại ở `GET /studio/assistant/status`), tối đa **12 thao tác / lượt** (đủ cho chọn vật tư + sửa chữ + bố cục + vẽ + kiểm tra trong một đề xuất). Admin vẫn hạ được các trần ngày / lượt.
 - `base_revision_id` = revision phác thảo khách đang nhìn (từ `GET /orders/{id}/sketch`). Đã đổi (tab khác) → `409 STALE_REVISION` **trước khi gọi AI**; tải lại rồi gửi lại. Không có phác thảo thì bỏ trống.
 - `selection = {stroke_ids, word_ids, line_ids, paragraph_ids}`: vùng khách đang chọn trên canvas. Có selection thì trợ lý **chỉ được sửa trong vùng đó** (ngoài vùng → công cụ bị từ chối `OUTSIDE_SELECTION`). Không chọn gì thì trợ lý tìm từ theo chữ (OT-3 mỗi từ có `text`).
@@ -1005,6 +1041,41 @@ GET  /workshop/orders/{id}/assistant                   (Staff / Manager) cờ c�
 - `OrderTurnOut = {user, reply, replayed, sketch_revision_id, proposal}`. `proposal` null = trợ lý chỉ trả lời / đọc đơn. `reply.proposal` giống `proposal` (để vẽ thẻ ngay trong tin). `sketch_revision_id` là revision **hiện tại của đơn** (không đổi sau lượt chat). `reply.tool_calls[] = {name, ok, revision_id}` chỉ để hiện tiến trình.
 - Mọi nhà cung cấp lỗi / quá thời gian → `200` với `reply.status = FAILED`, `proposal = null`, đơn không đổi (kể cả khi trợ lý đã chạy vài công cụ trước khi lỗi).
 - Stream: `user_saved`, `provider`, `tool {name, ok, revision_id, error, auto?}` (`auto: true` = BE tự vẽ phác thảo cuối lượt), `failover`, **`proposal {id, sketch_revision_id, fields}`**, rồi `reply` (= `OrderTurnOut`) hoặc `error`; cuối cùng `done`. Revision trong sự kiện `tool` là bản nháp của đề xuất, **không** tải nó lên canvas.
+
+### 7s.1 Chính sách dữ liệu chat AI và đồng ý (migration 0031, 2026-11-24)
+Khách phải đồng ý **chính sách dữ liệu khi chat với trợ lý AI** trước khi dùng trợ lý: **một lần cho tài khoản** (mọi đơn, mọi cuộc chat), **hỏi lại khi chính sách đổi phiên bản**, rút lại được bất cứ lúc nào.
+```
+GET    /privacy-policy/ai-chat        (không cần đăng nhập) → {title, version, body, sections[{title, body}], providers[], retention_days, retention_enforced, is_draft}
+GET    /me/assistant/consent          (khách) → {policy_version, accepted, accepted_at}
+POST   /me/assistant/consent          {policy_version} → như trên   (409 POLICY_VERSION_CHANGED: chính sách vừa đổi, tải lại cho khách đọc)
+DELETE /me/assistant/consent          rút lại đồng ý → accepted: false (gọi lại không lỗi)
+```
+- Văn bản **"QUYỀN RIÊNG TƯ KHI SỬ DỤNG TRỢ LÝ AI"**, phiên bản `AI-1.0`, **chủ dự án đã duyệt 2026-11-24** (`is_draft: false`), 7 mục: phạm vi hỗ trợ; dữ liệu gửi cho nhà cung cấp AI (tin nhắn, nội dung và lựa chọn của đơn, thông số kích thước phác thảo; **không gửi ảnh**); quyền truy cập (đơn nháp: chỉ khách; sau khi gửi đơn: nhân viên tiếp nhận / xử lý đơn và quản lý xưởng, chỉ xem); lưu trữ và xoá (`retention_days` ngày sau khi đơn hoàn tất / huỷ; xoá đơn nháp là xoá chat; cảnh báo an toàn vẫn lưu); quyền của khách; lưu ý không gửi thông tin nhạy cảm; nhà cung cấp AI đang dùng (BE tự điền).
+- Hiển thị: `body` là toàn văn, xuống dòng thật, đoạn cách nhau bằng dòng trống, gạch đầu dòng `- ` (dùng `white-space: pre-line`); hoặc dùng `sections[]` để in đậm đề mục (`title`) và hiện `body` của từng mục. Không có ký hiệu markdown.
+- **Hiện ô đồng ý khi `policy_accepted = false`.** Trạng thái có sẵn ở `GET /studio/assistant/status` (`policy_version`, `policy_accepted`, `policy_accepted_at`) và `GET /orders/{id}/assistant/messages` (`policy_version`, `policy_accepted`, `consented_at`). Câu ngắn gợi ý cạnh ô: "Tôi đồng ý với chính sách dữ liệu khi chat với trợ lý AI: tin nhắn và nội dung đơn được gửi tới nhà cung cấp AI, xưởng có thể đọc đoạn chat khi tôi gửi đơn" + link "Xem chính sách".
+- Khách tick: gọi `POST /me/assistant/consent {policy_version}`, **hoặc** gửi tin nhắn kèm `ai_consent: true` (BE ghi nhận đồng ý phiên bản đang áp dụng). Đã đồng ý thì không cần gửi `ai_consent` nữa.
+- `422 AI_CONSENT_REQUIRED` (có `details.policy_version`) khi khách chưa đồng ý, đã rút lại, hoặc chính sách vừa đổi phiên bản: hiện lại ô đồng ý.
+- `consented_at` trong `GET .../assistant/messages` giờ là **lúc tài khoản đồng ý phiên bản đang áp dụng** (trước 0031 là lúc bắt đầu cuộc chat của đơn).
+- Màn **Tài khoản > Quyền riêng tư** nên có trạng thái đồng ý (`GET /me/assistant/consent`) và nút "Rút lại đồng ý" (`DELETE`). Rút lại không xoá các đoạn chat cũ; khách vẫn tự tạo và gửi đơn bằng các ô nhập.
+
+### 7s.2 Nhiều cuộc chat trên một đơn và thanh bên kiểu ChatGPT (migration 0031, 2026-11-24)
+Mỗi đơn có thể có **nhiều cuộc chat** (tối đa 20). Ở **cuộc chat mới**, trợ lý **không nhớ** các cuộc chat khác nhưng **vẫn thấy đơn như hiện tại** (nội dung, vật tư, phác thảo). Nhắn tiếp một cuộc chat cũ thì trợ lý nhớ lại cuộc chat đó.
+```
+POST   /orders/{id}/assistant/messages       {..., new_session: true}  → bắt đầu cuộc chat mới; OrderTurnOut có session_id
+POST   /orders/{id}/assistant/messages       {..., session_id}         → nhắn tiếp cuộc chat đó
+GET    /orders/{id}/assistant/messages?session_id=                      → một cuộc chat (bỏ trống: cuộc chat dùng gần nhất); có `session`
+GET    /orders/{id}/assistant/sessions                                  → SessionItem[] của đơn, dùng gần nhất trước
+PATCH  /orders/{id}/assistant/sessions/{sid}  {title}                   → SessionItem (1 đến 120 ký tự)
+DELETE /orders/{id}/assistant/sessions/{sid}                            → 204 (chỉ khi đơn còn nháp)
+GET    /me/assistant/sessions?limit=20&cursor=                          → {items: SessionItem[], next_cursor} mọi đơn của khách
+```
+`SessionItem = {id, order_id, order_code, order_type, order_status, title, title_is_custom, preview, message_count, created_at, last_message_at, can_chat, can_delete}`. `title`: tên khách đặt hoặc câu đầu tiên của cuộc chat (`title_is_custom: false`). `preview`: tin cuối (tối đa 140 ký tự). `can_chat: false`: đơn đã gửi, chỉ xem. `can_delete`: hiện nút xoá (chỉ đơn `DRAFT`). Khách xoá cả đơn nháp thì các cuộc chat của đơn mất theo; cảnh báo an toàn của chúng được giữ trong nhật ký.
+- **Nút "Cuộc chat mới":** xoá khung chat trên màn hình, chưa gọi BE; tin đầu tiên gửi `new_session: true`, lấy `session_id` trong kết quả rồi các tin sau gửi `session_id`. Không gửi `new_session` cùng `session_id` (`422 INVALID_SESSION_CHOICE`). Đủ 20 cuộc chat → `409 TOO_MANY_SESSIONS`.
+- **Không gửi `session_id`** thì tin nhắn vào cuộc chat dùng gần nhất của đơn (FE cũ vẫn chạy như trước).
+- **Thanh bên:** `GET /me/assistant/sessions`, cuộn xuống thì gọi lại với `cursor = next_cursor` (null: hết; cursor sai → `422 INVALID_CURSOR`). Bấm một mục → mở đơn `order_id` (trang tạo đơn với bản nháp) và tải `GET /orders/{order_id}/assistant/messages?session_id={id}`. Mục có `can_chat: false` mở ở chế độ chỉ xem.
+- **Xoá cuộc chat** (chỉ khi đơn còn là **bản nháp `DRAFT`**, theo chính sách: `SessionItem.can_delete`; đơn đã gửi, kể cả `NEED_INFO` (vẫn nhắn được), → `409 ORDER_NOT_EDITABLE`; trợ lý đang trả lời → `409 AI_TURN_IN_PROGRESS`): nội dung bị xoá vĩnh viễn, cuộc chat biến mất khỏi mọi danh sách, đề xuất đang chờ của nó thành `REJECTED`. Hộp xác nhận nên ghi: "Xoá nội dung cuộc chat này? Không khôi phục được. Lượt nhắn đã dùng hôm nay không được trả lại." Cảnh báo an toàn của cuộc chat (vd yêu cầu làm giả chữ ký) vẫn lưu cho xưởng.
+- `404 SESSION_NOT_FOUND`: cuộc chat không thuộc đơn này, của khách khác, hoặc đã xoá.
+- Staff / Manager (`GET /workshop/orders/{id}/assistant`, sau khi khách gửi đơn): thêm `sessions[] {id, title, created_at, last_message_at, message_count, flags, deleted, deleted_reason}` và `messages[].session_id`; cuộc chat đã xoá chỉ còn cờ cảnh báo, không còn tin nhắn. `flags` gom cờ của mọi cuộc chat.
 
 **Áp dụng / bỏ qua**
 - Áp dụng ghi nội dung / vật tư / tuỳ chọn / phác thảo của đề xuất vào đơn và tính lại giá theo bảng giá hiện hành (`estimate` trong kết quả). Bấm lại đề xuất đã áp dụng → `200` như lần trước.
@@ -1017,6 +1088,7 @@ GET  /workshop/orders/{id}/assistant                   (Staff / Manager) cờ c�
 **Giới hạn**
 - Trợ lý **không** áp dụng đề xuất, gửi đơn, thanh toán, huỷ đơn, không đọc ảnh (chỉ số đo chất lượng), không đổi loại đơn và không sửa ảnh / canvas vẽ tay. Yêu cầu làm giả chữ ký / giấy tờ → trợ lý gắn cờ `FORGERY_RISK` (gắn ngay, không cần áp dụng), Staff thấy trong `GET /workshop/orders/{id}/assistant`.
 - Sửa nội dung chữ / mẫu / bố cục chỉ có ở đơn OT-3 (với OT-1 / OT-2 các công cụ đó bị ẩn).
+- Nội dung trợ lý ghi vào đơn là **chữ thuần với xuống dòng thật** (sửa 2026-11-24, báo lỗi của FE ở đơn 12514): BE đổi chuỗi gạch chéo + n mà mô hình gửi thành xuống dòng và bỏ định dạng chat (`**`, `#`, `>`, dấu `); gạch đầu dòng `-` / `+`, số thứ tự vẫn giữ. FE không cần làm sạch gì thêm. Đơn đã lưu chuỗi sai trước bản sửa không tự sửa: khách sửa ở ô nội dung hoặc nhờ trợ lý viết lại.
 
 ## 7t. Staff sửa nét bằng Geometry Engine (V2 Phase H, migration 0025, 2026-11-19)
 

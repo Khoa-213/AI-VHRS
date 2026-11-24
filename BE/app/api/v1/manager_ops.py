@@ -15,13 +15,15 @@ from app.api.ops_schemas import (CompatIn, CompatOut, InkIn, InkOut, InkPatch, P
                                  StyleOut, TemplateAdminOut, TemplateIn, TemplatePatch)
 from app.api.staff_schemas import ReasonIn
 from app.api.v1.orders import optional_storage
-from app.integrations.storage import ObjectStorage
+from app.core.errors import AppError
+from app.integrations.storage import ObjectStorage, optional_media_storage
 from app.models.account import Account, RoleCode
 from app.models.ops import RobotStatus
 from app.models.order import StyleStatus
 from app.repositories.catalog import CatalogRepository
 from app.repositories.ops import RobotRepository
 from app.domain import material_specs
+from app.services import catalog_media
 from app.services.manager_catalog import ManagerCatalogService
 from app.services.material_profiles import MaterialProfileService
 
@@ -44,6 +46,37 @@ Profiles = Annotated[MaterialProfileService, Depends(_profiles)]
 RobotStatusQuery = Annotated[RobotStatus | None, Query(alias="status")]
 
 
+# ---- product photos (migration 0030) ---------------------------------------------------------------
+async def image_body(request: Request, _: ManagerDep) -> bytes:
+    """The request body is the image file itself. It is read only after the caller is known to be a Manager, and never
+    past the size limit (a larger body is refused without being kept in memory)."""
+    limit = catalog_media.MAX_BYTES
+    too_large = AppError(422, "FILE_TOO_LARGE", f"Ảnh tối đa {limit // (1024 * 1024)} MB.")
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        raise too_large
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise too_large
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+ImageBody = Annotated[bytes, Depends(image_body)]
+Media = Annotated[ObjectStorage | None, Depends(optional_media_storage)]
+_IMAGE_BODY = {"requestBody": {"required": True, "content": {
+    mime: {"schema": {"type": "string", "format": "binary"}} for mime in ("image/jpeg", "image/png", "image/webp")}}}
+_IMAGE_NOTE = ("Thân request là chính file ảnh (không phải multipart, không phải JSON), `Content-Type: image/jpeg | image/png | "
+               "image/webp`, tối đa 5 MB. BE đọc loại ảnh thật từ nội dung file, xoay ảnh JPEG cho đúng chiều, thu về cạnh dài "
+               "tối đa 800 px, lưu WebP và bỏ EXIF (vị trí GPS, máy chụp). Ảnh cũ bị thay; `image_url` mới khác URL cũ. "
+               "Lỗi: `422 FILE_TOO_LARGE | UNSUPPORTED_FILE | INVALID_IMAGE | IMAGE_TOO_MANY_PIXELS | IMAGE_TOO_SMALL`, "
+               "`503 STORAGE_NOT_CONFIGURED | STORAGE_UNAVAILABLE | MEDIA_BUCKET_NOT_PUBLIC`.")
+_IMAGE_GONE = "Gỡ ảnh: `image_url` thành null, file bị xoá khỏi kho (bản đã cache có thể còn tối đa 1 ngày). Gọi lại không lỗi."
+
+
 # ---- papers --------------------------------------------------------------------------------------
 @router.get("/papers", response_model=list[PaperOut], summary="FR-41 Danh sách giấy (kể cả đã ngừng) + tồn kho")
 def papers(session: SessionDep, _: ManagerDep) -> list[PaperOut]:
@@ -58,6 +91,17 @@ def create_paper(body: PaperIn, svc: Svc) -> PaperOut:
 @router.patch("/papers/{paper_id}", response_model=PaperOut, summary="Sửa thông tin / giá / bật-tắt loại giấy")
 def update_paper(paper_id: int, body: PaperPatch, svc: Svc) -> PaperOut:
     return PaperOut.model_validate(svc.update_paper(paper_id, body.model_dump(exclude_unset=True)))
+
+
+@router.put("/papers/{paper_id}/image", response_model=PaperOut, openapi_extra=_IMAGE_BODY,
+            summary="Tải ảnh thật của loại giấy (thay ảnh cũ)", description=_IMAGE_NOTE)
+def paper_image(paper_id: int, data: ImageBody, svc: Svc, media: Media) -> PaperOut:
+    return PaperOut.model_validate(svc.set_image("paper", paper_id, data, media))
+
+
+@router.delete("/papers/{paper_id}/image", response_model=PaperOut, summary="Gỡ ảnh của loại giấy", description=_IMAGE_GONE)
+def paper_image_remove(paper_id: int, svc: Svc, media: Media) -> PaperOut:
+    return PaperOut.model_validate(svc.remove_image("paper", paper_id, media))
 
 
 @router.post("/papers/{paper_id}/stock", response_model=PaperOut, summary="Điều chỉnh tồn kho giấy (ghi audit, có lý do)")
@@ -86,6 +130,17 @@ def pen_stock(pen_id: int, body: StockIn, svc: Svc) -> PenOut:
     return PenOut.model_validate(svc.adjust_stock("pen", pen_id, body.mode, body.quantity, body.reason))
 
 
+@router.put("/pens/{pen_id}/image", response_model=PenOut, openapi_extra=_IMAGE_BODY,
+            summary="Tải ảnh thật của bút / nét bút (thay ảnh cũ)", description=_IMAGE_NOTE)
+def pen_image(pen_id: int, data: ImageBody, svc: Svc, media: Media) -> PenOut:
+    return PenOut.model_validate(svc.set_image("pen", pen_id, data, media))
+
+
+@router.delete("/pens/{pen_id}/image", response_model=PenOut, summary="Gỡ ảnh của bút", description=_IMAGE_GONE)
+def pen_image_remove(pen_id: int, svc: Svc, media: Media) -> PenOut:
+    return PenOut.model_validate(svc.remove_image("pen", pen_id, media))
+
+
 @router.get("/inks", response_model=list[InkOut], summary="Danh sách màu mực (lọc theo bút)")
 def inks(session: SessionDep, _: ManagerDep, pen_id: int | None = Query(default=None)) -> list[InkOut]:
     return [InkOut.model_validate(i) for i in CatalogRepository(session).all_inks(pen_id)]
@@ -100,6 +155,17 @@ def create_ink(pen_id: int, body: InkIn, svc: Svc) -> InkOut:
 @router.patch("/inks/{ink_id}", response_model=InkOut, summary="Sửa màu mực")
 def update_ink(ink_id: int, body: InkPatch, svc: Svc) -> InkOut:
     return InkOut.model_validate(svc.update_ink(ink_id, body.model_dump(exclude_unset=True)))
+
+
+@router.put("/inks/{ink_id}/image", response_model=InkOut, openapi_extra=_IMAGE_BODY,
+            summary="Tải ảnh mẫu màu mực thật (thay ảnh cũ)", description=_IMAGE_NOTE)
+def ink_image(ink_id: int, data: ImageBody, svc: Svc, media: Media) -> InkOut:
+    return InkOut.model_validate(svc.set_image("ink", ink_id, data, media))
+
+
+@router.delete("/inks/{ink_id}/image", response_model=InkOut, summary="Gỡ ảnh của màu mực", description=_IMAGE_GONE)
+def ink_image_remove(ink_id: int, svc: Svc, media: Media) -> InkOut:
+    return InkOut.model_validate(svc.remove_image("ink", ink_id, media))
 
 
 @router.post("/inks/{ink_id}/stock", response_model=InkOut, summary="Điều chỉnh tồn kho mực")
@@ -165,20 +231,24 @@ def set_compat(paper_id: int, pen_id: int, body: CompatIn, svc: Svc) -> CompatOu
 
 
 # ---- templates & handwriting styles --------------------------------------------------------------
+def _template_out(t) -> TemplateAdminOut:
+    return TemplateAdminOut.model_validate(t).model_copy(update={"preview_url": t.preview_image_url})
+
+
 @router.get("/templates", response_model=list[TemplateAdminOut], summary="FR-42 Mẫu chữ (kể cả đang tắt)")
 def templates(session: SessionDep, _: ManagerDep) -> list[TemplateAdminOut]:
-    return [TemplateAdminOut.model_validate(t) for t in CatalogRepository(session).all_templates()]
+    return [_template_out(t) for t in CatalogRepository(session).all_templates()]
 
 
 @router.post("/templates", response_model=TemplateAdminOut, status_code=status.HTTP_201_CREATED,
              summary="Thêm mẫu chữ (font một nét `hershey:<tên>`)")
 def create_template(body: TemplateIn, svc: Svc) -> TemplateAdminOut:
-    return TemplateAdminOut.model_validate(svc.create_template(body.model_dump()))
+    return _template_out(svc.create_template(body.model_dump()))
 
 
 @router.patch("/templates/{template_id}", response_model=TemplateAdminOut, summary="Sửa / bật-tắt mẫu chữ")
 def update_template(template_id: int, body: TemplatePatch, svc: Svc) -> TemplateAdminOut:
-    return TemplateAdminOut.model_validate(svc.update_template(template_id, body.model_dump(exclude_unset=True)))
+    return _template_out(svc.update_template(template_id, body.model_dump(exclude_unset=True)))
 
 
 @router.get("/styles", response_model=list[StyleOut], summary="FR-42 Bộ nét chờ duyệt (lọc theo trạng thái)")

@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0029 (alembic head), generated 2026-11-22 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0031 (alembic head), generated 2026-11-24 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0029);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0029;
+--      baseline schema and every migration up to 0031);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0031;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -710,6 +710,41 @@ ALTER TABLE public.accounts ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 );
 
 --
+-- Name: ai_chat_consents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ai_chat_consents (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    policy_version character varying(20) NOT NULL,
+    accepted_at timestamp with time zone DEFAULT now() NOT NULL,
+    withdrawn_at timestamp with time zone
+);
+
+--
+-- Name: TABLE ai_chat_consents; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ai_chat_consents IS 'Customer consent to the AI chat data policy, one row per account and policy version';
+
+--
+-- Name: ai_chat_consents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ai_chat_consents_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: ai_chat_consents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ai_chat_consents_id_seq OWNED BY public.ai_chat_consents.id;
+
+--
 -- Name: ai_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -813,8 +848,18 @@ CREATE TABLE public.ai_sessions (
     last_message_at timestamp with time zone,
     order_id bigint,
     flags jsonb DEFAULT '[]'::jsonb NOT NULL,
+    title character varying(120),
+    deleted_at timestamp with time zone,
+    deleted_reason character varying(12),
+    CONSTRAINT chk_ai_sessions_deleted CHECK ((((deleted_at IS NULL) = (deleted_reason IS NULL)) AND ((deleted_reason IS NULL) OR ((deleted_reason)::text = ANY ((ARRAY['CUSTOMER'::character varying, 'RETENTION'::character varying])::text[]))))),
     CONSTRAINT chk_ai_sessions_target CHECK ((num_nonnulls(draft_id, order_id) = 1))
 );
+
+--
+-- Name: COLUMN ai_sessions.deleted_reason; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ai_sessions.deleted_reason IS 'CUSTOMER (deleted while the order was a draft) | RETENTION (purge job)';
 
 --
 -- Name: ai_sessions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -1145,10 +1190,18 @@ CREATE TABLE public.ink_colors (
     stock_qty integer DEFAULT 0 NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    image_path text,
+    image_updated_at timestamp with time zone,
     CONSTRAINT ink_colors_hex_code_check CHECK ((hex_code ~ '^#[0-9A-Fa-f]{6}$'::text)),
     CONSTRAINT ink_colors_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT ink_colors_unit_price_check CHECK ((unit_price >= (0)::numeric))
 );
+
+--
+-- Name: COLUMN ink_colors.image_path; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ink_colors.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
 
 --
 -- Name: ink_colors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -1473,10 +1526,18 @@ CREATE TABLE public.paper_types (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    image_path text,
+    image_updated_at timestamp with time zone,
     CONSTRAINT paper_types_gsm_check CHECK ((gsm > 0)),
     CONSTRAINT paper_types_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT paper_types_unit_price_check CHECK ((unit_price >= (0)::numeric))
 );
+
+--
+-- Name: COLUMN paper_types.image_path; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.paper_types.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
 
 --
 -- Name: paper_types_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -1553,6 +1614,8 @@ CREATE TABLE public.pen_types (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    image_path text,
+    image_updated_at timestamp with time zone,
     CONSTRAINT chk_pen_force_band CHECK (((f_min_n > (0)::numeric) AND (f_min_n < f_target_n) AND (f_target_n < f_max_n) AND (f_max_n < f_hard_n))),
     CONSTRAINT pen_types_f_target_n_check CHECK (((f_target_n >= 0.3) AND (f_target_n <= 2.0))),
     CONSTRAINT pen_types_stock_qty_check CHECK ((stock_qty >= 0)),
@@ -1560,6 +1623,12 @@ CREATE TABLE public.pen_types (
     CONSTRAINT pen_types_surcharge_check CHECK ((surcharge >= (0)::numeric)),
     CONSTRAINT pen_types_v_max_mm_s_check CHECK ((v_max_mm_s > (0)::numeric))
 );
+
+--
+-- Name: COLUMN pen_types.image_path; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.pen_types.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
 
 --
 -- Name: pen_types_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -2601,6 +2670,12 @@ CREATE VIEW public.v_order_eta_postponement AS
   GROUP BY order_id;
 
 --
+-- Name: ai_chat_consents id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_chat_consents ALTER COLUMN id SET DEFAULT nextval('public.ai_chat_consents_id_seq'::regclass);
+
+--
 -- Name: ai_messages id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2702,6 +2777,13 @@ ALTER TABLE ONLY public.studio_revisions ALTER COLUMN id SET DEFAULT nextval('pu
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_pkey PRIMARY KEY (id);
+
+--
+-- Name: ai_chat_consents ai_chat_consents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_chat_consents
+    ADD CONSTRAINT ai_chat_consents_pkey PRIMARY KEY (id);
 
 --
 -- Name: ai_messages ai_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -3236,6 +3318,13 @@ ALTER TABLE ONLY public.handwriting_style_pages
     ADD CONSTRAINT uq_style_page UNIQUE (style_id, page_no);
 
 --
+-- Name: ai_chat_consents ux_ai_chat_consents_version; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_chat_consents
+    ADD CONSTRAINT ux_ai_chat_consents_version UNIQUE (account_id, policy_version);
+
+--
 -- Name: sketch_regions ux_sketch_region; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3265,6 +3354,18 @@ CREATE INDEX ix_ai_messages_session ON public.ai_messages USING btree (session_i
 --
 
 CREATE INDEX ix_ai_proposals_order ON public.ai_proposals USING btree (order_id, status);
+
+--
+-- Name: ix_ai_sessions_customer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ai_sessions_customer ON public.ai_sessions USING btree (customer_id, last_message_at DESC);
+
+--
+-- Name: ix_ai_sessions_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ai_sessions_order ON public.ai_sessions USING btree (order_id, id) WHERE (order_id IS NOT NULL);
 
 --
 -- Name: ix_ai_tool_calls_message; Type: INDEX; Schema: public; Owner: -
@@ -3597,12 +3698,6 @@ CREATE UNIQUE INDEX ux_accounts_verified_phone ON public.accounts USING btree (p
 CREATE UNIQUE INDEX ux_ai_messages_client_ref ON public.ai_messages USING btree (session_id, client_ref) WHERE (client_ref IS NOT NULL);
 
 --
--- Name: ux_ai_sessions_order; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX ux_ai_sessions_order ON public.ai_sessions USING btree (order_id) WHERE (order_id IS NOT NULL);
-
---
 -- Name: ux_jobs_one_active_per_order; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3845,6 +3940,13 @@ ALTER TABLE ONLY public.accounts
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id);
+
+--
+-- Name: ai_chat_consents ai_chat_consents_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ai_chat_consents
+    ADD CONSTRAINT ai_chat_consents_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 --
 -- Name: ai_messages ai_messages_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -4784,6 +4886,12 @@ ALTER TABLE ONLY public.templates
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: ai_chat_consents; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ai_chat_consents ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: ai_proposals; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -5028,7 +5136,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0029');
+INSERT INTO alembic_version (version_num) VALUES ('0031');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

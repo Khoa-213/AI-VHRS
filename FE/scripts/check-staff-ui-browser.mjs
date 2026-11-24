@@ -70,12 +70,15 @@ try {
         throw new Error('UI navigation attempted a data mutation: '+path)
       }
       if (path === '/workshop/refunds') data={refunds:[],orphans:[]}
+      else if (path === '/workshop/queue-counts') data={pool:1,mine:{[order.order_status]:1,ACCEPTED:1}}
       else if(path.endsWith('/eta')) data={order_id:42,eta:null,postponed_days:0,threshold_days:7,can_cancel_full_refund:false,history:[]}
       else if(path.endsWith('/notifications')) data={items:[],unread_count:0,next_before_id:null}
       else if(path.endsWith('/stream')) return void fulfill(requestId,Buffer.from('event: ready\ndata: {"unread_count":0}\n\n'),200,'text/event-stream')
       else if (path === '/me') data = { id: 17, email: 'test@example.test', full_name: 'Browser Test', role: 'STAFF', status: 'ACTIVE', addresses: [], created_at: now }
       else if (path === '/workshop/orders/42' || path === '/orders/42') data = order
-      else if (path === '/workshop/orders') { const statuses = u.searchParams.getAll('status'); const candidates = [order,{...order,id:43,code:'VH-SKETCH',order_status:'ACCEPTED',submitted_at:new Date(Date.now()-15*86400000).toISOString()},{...order,id:44,code:'VH-POOL',assigned_staff_id:null,order_status:'SUBMITTED'}]; const visible = candidates.filter(o=>!statuses.length||statuses.includes(o.order_status)); data = {items:visible,total:visible.length,page:1,page_size:50} }
+      else if (path === '/workshop/orders/44') data = {...order,id:44,code:'VH-POOL',assigned_staff_id:null,order_status:'SUBMITTED'}
+      else if (path === '/workshop/orders/43') data = {...order,id:43,code:'VH-SKETCH',order_status:'ACCEPTED'}
+      else if (path === '/workshop/orders') { const statuses = u.searchParams.getAll('status'); const candidates = [order,{...order,id:43,code:'VH-SKETCH',order_status:'ACCEPTED',submitted_at:new Date(Date.now()-15*86400000).toISOString()},{...order,id:44,code:'VH-POOL',assigned_staff_id:null,order_status:'SUBMITTED'}]; const needle=(u.searchParams.get('q')||'').toLowerCase(); const visible = candidates.filter(o=>(!statuses.length||statuses.includes(o.order_status))&&(!u.searchParams.has('mine')||o.assigned_staff_id===17)&&(!u.searchParams.has('unassigned')||o.assigned_staff_id===null)&&(!needle||o.code.toLowerCase().includes(needle)||o.customer_name.toLowerCase().includes(needle))); data = {items:visible,total:visible.length,page:1,page_size:Number(u.searchParams.get('page_size'))} }
       else if (path.endsWith('/payments')) data = payments
       else if (path.endsWith('/quotations') || path.endsWith('/jobs') || path.startsWith('/catalog/')) data = []
       else if (path.endsWith('/shipment')) data = shipments
@@ -106,6 +109,9 @@ try {
         assert.equal(await evaluate(`document.querySelectorAll('.staff-nav-label').length`),4)
         assert.equal(await evaluate(`document.querySelectorAll('.staff-nav a').length`),4)
         assert.equal(await evaluate(`document.documentElement.dataset.theme`),theme,'Saved theme applied')
+        assert.ok(await evaluate(`document.querySelector('.ws-staff').classList.contains('ws-staff-glass')`),'Staff receives the glass workspace')
+        assert.ok(await evaluate(`getComputedStyle(document.querySelector('.ws-staff')).backgroundImage.includes('staff-glassy-space')`),'Supplied space artwork is the background')
+        if(width>980) assert.ok(await evaluate(`(()=>{const w=document.querySelector('.ws-staff'),h=document.querySelector('.staff-header').getBoundingClientRect(),r=w.getBoundingClientRect(),p=getComputedStyle(w,'::before');return Math.abs(h.left-r.left-parseFloat(p.left))<2&&Math.abs(h.right-r.right+parseFloat(p.right))<2})()`),'Header aligns with both edges of the content glass frame')
         assert.equal(await evaluate(`document.querySelectorAll('.staff-sidebar .staff-nav a').length`),4)
         assert.equal(await evaluate(`document.querySelectorAll('.staff-sidebar .appearance-switch, .staff-sidebar .nbell, .staff-sidebar .staff-user').length`),0)
         assert.equal(await evaluate(`document.querySelector('.staff-user-button').getAttribute('href')`),'/account/profile')
@@ -137,14 +143,29 @@ try {
         if(route==='/staff') {
           await evaluate(`document.querySelector('.ws-staff>.app2').scrollTo({top:500,behavior:'instant'})`)
           await sleep(100)
-          assert.ok(await evaluate(`(()=>{const h=document.querySelector('.staff-header').getBoundingClientRect(),a=document.querySelector('.ws-staff>.app2').getBoundingClientRect();return a.top>=h.bottom&&h.top===0&&document.documentElement.scrollHeight<=innerHeight+1})()`),'Content scrolls below header inside viewport frame')
+          assert.ok(await evaluate(`(()=>{const h=document.querySelector('.staff-header').getBoundingClientRect(),a=document.querySelector('.ws-staff>.app2').getBoundingClientRect();return a.top>=h.bottom&&h.top>=0&&h.top<=16&&document.documentElement.scrollHeight<=innerHeight+1})()`),'Content scrolls below inset glass header inside viewport frame')
           assert.ok(await evaluate(`(()=>{const r=document.querySelector('.staff-header').getBoundingClientRect();return r.top>=0&&r.top<=21})()`),'Navigation remains available while scrolling: '+JSON.stringify(await evaluate(`({width:innerWidth,scroll:scrollY,top:document.querySelector('.staff-header').getBoundingClientRect().top,root:document.querySelector('.ws-staff').getBoundingClientRect().height,position:getComputedStyle(document.querySelector('.staff-sidebar')).position})`)))
           await evaluate(`document.querySelector('.ws-staff>.app2').scrollTo({top:0,behavior:'instant'})`)
+          assert.equal(await evaluate(`document.querySelector('.staff-attention').getAttribute('href')`),'/staff/review?scope=mine&stage=open')
+          await evaluate(`document.querySelector('.staff-attention').click()`)
+          await wait(`location.search.includes('scope=mine') && !!document.querySelector('.ol-filter')`,'Attention banner opens unresolved personal tasks')
+          await goto('/staff')
+          await wait(`!!document.querySelector('.staff-attention')`,'Attention count loaded')
           const before=await evaluate(`Number(document.querySelector('.staff-chart-total b').textContent)`)
           await evaluate(`document.querySelector('.staff-period button:last-child').click()`)
           await wait(`document.querySelector('.staff-period button:last-child').getAttribute('aria-pressed')==='true'`,'30 day chart')
           assert.equal(await evaluate(`Number(document.querySelector('.staff-chart-total b').textContent)`),before+1,'Chart uses actual dated records')
           assert.equal(await evaluate(`document.querySelectorAll('.staff-kpis .k').length`),4)
+          assert.equal(await evaluate(`document.querySelectorAll('.staff-kpi-widget .k').length`),4,'Four metrics share one outer widget')
+          assert.equal(await evaluate(`document.querySelectorAll('.staff-dashboard-top .staff-chart-surface').length`),2,'Both charts have an inner surface')
+          if(width===1440) {
+            assert.ok(await evaluate(`(()=>{const boxes=['.staff-kpi-widget','.staff-performance','.staff-distribution'].map(s=>document.querySelector(s).getBoundingClientRect());return boxes.every(b=>Math.abs(b.top-boxes[0].top)<2)})()`),'Three overview widgets share one row')
+            assert.ok(await evaluate(`(()=>{const boxes=[...document.querySelectorAll('.staff-dashboard-bottom>.panel')].map(e=>e.getBoundingClientRect());return boxes.length===2&&Math.abs(boxes[0].top-boxes[1].top)<2})()`),'Two list widgets share the next row')
+            const point=await evaluate(`(()=>{const r=document.querySelector('.staff-dashboard-bottom .item').getBoundingClientRect();return {x:r.left+20,y:r.top+20}})()`)
+            await command('Input.dispatchMouseEvent',{type:'mouseMoved',...point})
+            await wait(`getComputedStyle(document.querySelector('.staff-dashboard-bottom .item')).transform!=='none'`,'Order hover lifts the selected row')
+            await command('Input.dispatchMouseEvent',{type:'mouseMoved',x:0,y:0})
+          }
           await evaluate(`document.querySelector('.staff-chart-data summary').click()`)
           assert.equal(await evaluate(`document.querySelector('.staff-chart-data').open`),true)
           assert.equal(await evaluate(`document.querySelectorAll('.staff-chart-data tbody tr').length`),30)
@@ -153,14 +174,16 @@ try {
         }
         if(route==='/staff/review') {
           assert.ok(await evaluate(`!!document.querySelector('.staff-board')`),'Pipeline overview')
-          assert.equal(await evaluate(`document.querySelectorAll('.staff-board .ol-sec').length`),4,'Existing groups only')
-          assert.equal(await evaluate(`getComputedStyle(document.querySelector('.staff-board .ol-scroll')).gridTemplateColumns.split(' ').length`),width>1100?4:width>480?2:1,'Responsive pipeline')
+          assert.equal(await evaluate(`document.querySelectorAll('.staff-board .ol-sec').length`),1,'Pool has one intake list')
+          assert.equal(await evaluate(`document.querySelectorAll('.ol-filter').length`),0,'Pool needs no stage filter')
           await evaluate(`document.querySelector('.ol-row').click()`)
           await wait(`!!document.querySelector('.wk-content') && location.pathname.includes('/review/')`,'Board card opens existing order detail')
           await goto('/staff/review')
         }
         if(route!=='/staff') assert.equal(await evaluate(`document.querySelector('.staff-back').getAttribute('href')`),'/staff')
         if(route==='/staff/review/42') {
+          await evaluate(`document.querySelectorAll('.ol-scope button')[1].click()`)
+          await wait(`!!document.querySelector('.ol-filter [role=combobox]')`,'personal workflow filters')
           assert.equal(await evaluate(`getComputedStyle(document.querySelector('.wk-order-head')).backgroundColor`),await evaluate(`getComputedStyle(document.querySelector('.ol')).backgroundColor`),'Order surfaces follow the selected theme')
           assert.equal(await evaluate(`getComputedStyle(document.querySelector('.wk-block')).backgroundColor`),await evaluate(`getComputedStyle(document.querySelector('.ol')).backgroundColor`),'Detail cards follow the selected theme')
           assert.ok(await evaluate(`document.querySelector('.wk-content .opv-svg').getBoundingClientRect().height<=281`),'Preview must stay compact')
@@ -181,7 +204,7 @@ try {
           await evaluate(`document.querySelector('[role=option]:first-child').click()`)
           await wait(`document.querySelectorAll('.ol-scroll .ol-row').length===2`,'open stage restored')
           await evaluate(`(()=>{const el=document.querySelector('.ol-search input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'VH-POOL');el.dispatchEvent(new Event('input',{bubbles:true}))})()`)
-          await wait(`document.querySelectorAll('.ol-scroll .ol-row').length===1 && document.querySelector('.ol-scroll').textContent.includes('VH-POOL')`,'search still covers unclaimed orders')
+          await wait(`document.querySelectorAll('.ol-scroll .ol-row').length===0`,'personal search excludes unclaimed orders')
           await evaluate(`document.querySelector('.ol-clear').click()`)
           await wait(`document.querySelectorAll('.ol-scroll .ol-row').length===2`,'clear restores scope')
           await wait(`document.querySelectorAll('.wk-actions button').length===3`,'intake actions')

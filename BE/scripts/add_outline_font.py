@@ -7,6 +7,8 @@
 Without --apply nothing is written anywhere (checks, thinning and a local preview PNG only). With --apply:
   * Supabase Storage (existing bucket, prefix `fonts/<slug>/`): the font, its licence file, `<font>.glyphs.json` (the thinned
     glyphs, so a request never has to thin a glyph) and `preview.png`;
+  * the public catalog media bucket: `fonts/<slug>/preview.png` again (migration 0030: the catalog's `preview_url` is a
+    public address, so the web app opens the preview without a signed link);
   * `templates`: ONE row (kind TYPOGRAPHY, font_uri `outline:fonts/<slug>/<file>`), `ON CONFLICT (code) DO NOTHING`, so
     re-running never overwrites a template the Manager edited. Nothing is deleted or updated.
 It refuses fonts whose licence file is not one of the allowed open licences, fonts missing any Vietnamese letter, and fonts
@@ -27,7 +29,7 @@ from sqlalchemy import text  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
 from app.db.session import get_engine  # noqa: E402
-from app.integrations.storage import SupabaseStorage  # noqa: E402
+from app.integrations.storage import SupabaseStorage, get_media_storage  # noqa: E402
 from app.services.stroke_ai import outline_font as of  # noqa: E402
 from app.services.stroke_ai import text_to_stroke as tts  # noqa: E402
 from app.services.stroke_ai.trajectory import render_preview  # noqa: E402
@@ -88,6 +90,7 @@ def main() -> int:
     store.write(f"{base}/LICENSE.txt", lic.encode(), "text/plain")
     store.write(font_path + of.CACHE_SUFFIX, cache, "application/json")
     store.write(f"{base}/preview.png", png, "image/png")
+    get_media_storage().write(f"{base}/preview.png", png, "image/png")     # 0030: where the catalog's preview_url points
     with get_engine().begin() as c:
         n = c.execute(text("""insert into templates (code, name, kind, font_uri, preview_url)
                               values (:c, :n, 'TYPOGRAPHY', :u, :p) on conflict (code) do nothing"""),

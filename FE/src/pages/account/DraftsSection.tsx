@@ -94,6 +94,10 @@ export default function DraftsSection({ onCount }: { onCount?: (n: number) => vo
           )
         })}
       </ul>
+      <Link to="/studio" className="dr-new">
+        <span className="dr-new-plus" aria-hidden>+</span>
+        <span>{t('dr.studio')}: {t('dr.studioBody')}</span>
+      </Link>
       <Link to={ORDER_HREF} className="dr-new">
         <span className="dr-new-plus" aria-hidden>+</span>
         <span>{t('dr.newOrder')}</span>

@@ -135,6 +135,7 @@ class PaperOut(_ORM):
     stock_qty: int
     is_active: bool
     specs: dict[str, Any] = {}      # U6: {key: {value, source, unit?, note?}}
+    image_url: str | None = None    # 0030: the workshop's photo (public URL), null: none yet
 
 
 class PenIn(BaseModel):
@@ -186,6 +187,7 @@ class PenOut(_ORM):
     stock_qty: int
     is_active: bool
     specs: dict[str, Any] = {}
+    image_url: str | None = None    # 0030: the workshop's photo (public URL), null: none yet
 
 
 class InkIn(BaseModel):
@@ -212,6 +214,7 @@ class InkOut(_ORM):
     stock_qty: int
     is_active: bool
     specs: dict[str, Any] = {}
+    image_url: str | None = None    # 0030: the workshop's photo (public URL), null: none yet
 
 
 class SpecsIn(BaseModel):
@@ -317,6 +320,7 @@ class TemplateAdminOut(_ORM):
     kind: TemplateKind
     font_uri: str
     is_active: bool
+    preview_url: str | None = None    # resolved address of the preview image (see catalog TemplateOut)
 
 
 class StyleOut(_ORM):

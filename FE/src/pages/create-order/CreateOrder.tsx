@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import SiteFooter from '../../components/layout/SiteFooter'
+import CustomerFrame from '../../components/layout/CustomerFrame'
 import OrderPreview from '../../components/ui/OrderPreview'
 import { useAsync } from '../../hooks/useAsync'
 import { useDebounced } from '../../hooks/useDebounced'
@@ -15,7 +15,11 @@ import { useUser } from '../../store/store'
 import type { InputMode } from '../../types'
 import { fmt } from '../../utils/format'
 import { ApiError } from '../../services/api'
+import { aiStatus, emptySelection, getSketchInfo, type AiSelection, type SketchInfo } from '../../services/orderAi'
 import { draftPathFor, drawPathFor } from './draft'
+import { Sparkle } from '@phosphor-icons/react'
+import OrderAssistant from './ai/OrderAssistant'
+import SketchView from './ai/SketchView'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
 import { openAuth } from '../../store/authDialog'
@@ -26,6 +30,17 @@ import '../landing/landing-redesign.css'
 import './create-order.css'
 import './order-entry.css'
 import './co-home.css'
+import './ai/order-ai.css'
+
+const AI_KEY = 'aivhrs-co-ai'
+/** The customer's choice stays between visits: the assistant is on unless they turned it off. */
+function readWantAi(): boolean {
+  try {
+    return localStorage.getItem(AI_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
 
 const MODES: InputMode[] = ['text', 'upload', 'draw']
 const STEPS = ['co.step.0', 'co.step.1', 'co.step.2']
@@ -42,11 +57,7 @@ function initialMode(): InputMode | null {
 /** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
 function Frame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
   return (
-    <div className="lp-root co-root">
-      <Header />
-      <main className={`co-frame${narrow ? ' co-frame--narrow' : ''}`} data-screen-label="Create Order">{children}</main>
-      <SiteFooter framed />
-    </div>
+    <CustomerFrame label="Create Order" narrow={narrow}>{children}</CustomerFrame>
   )
 }
 
@@ -80,6 +91,20 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(0)
   const [est, setEst] = useState<Estimate | null>(null)
+  // The AI assistant: on or off by the customer's choice; `aiBusy` keeps the form still while it works.
+  const [wantAi, setWantAi] = useState(readWantAi)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [sketch, setSketch] = useState<SketchInfo | null>(null)
+  // What the customer picked on the sketch for the assistant; ids belong to one revision, so a new revision clears it.
+  const [selection, setSelection] = useState<AiSelection>(emptySelection)
+
+  const aiState = useAsync(aiStatus, [])
+  const aiAvailable = !!aiState.data?.available
+  const aiOn = mode === 'text' && wantAi && aiAvailable
+  // Until the status is known the form waits, so it does not flash and then give way to the assistant.
+  const aiWait = mode === 'text' && wantAi && aiState.loading
+  // What the "AI / myself" switch shows: the assistant while it is on or still being checked.
+  const aiPicked = aiOn || aiWait
 
   const papers = useAsync(getPapers, [])
   const templates = useAsync(getTemplates, [])
@@ -277,16 +302,84 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   const clampQty = (n: number) => setQty(Math.max(1, Math.min(MAX_QTY, Math.round(n) || 1)))
 
+  // ---------- AI assistant ----------
+
+  /** Puts a server copy of the draft into the form without saving it back (the assistant changed it there). */
+  const fill = useCallback((o: Order) => {
+    adopt(o)
+    const tx = o.inputs.find((i) => i.kind === 'TEXT_CONTENT')
+    setText(tx?.text ?? '')
+    setTemplateId(tx?.templateId ?? null)
+    setAlignment(tx?.alignment ?? null)
+    setFontSize(tx?.fontSizeMm ? String(tx.fontSizeMm) : '')
+    setPaperId(o.paperId); setPenId(o.penId); setInkId(o.inkId)
+    setSuggest(o.workshopSuggest); setQty(o.quantity); setNote(o.note ?? '')
+    // What is on screen is what the server has: the autosave must not send it back.
+    lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}`
+    sentQty.current = o.quantity
+    sentNote.current = o.note ?? ''
+  }, [adopt])
+
+  /** After the assistant worked, or the sketch was undone or drawn again: load the draft and the sketch again. */
+  const aiChanged = useCallback(async () => {
+    const id = orderRef.current?.id
+    if (!id) return
+    try {
+      await idle() // a save still on its way must not overwrite what the assistant just did
+      const [o, s] = await Promise.all([getOrder(id), getSketchInfo(id)])
+      fill(o)
+      setSketch(s)
+    } catch (e) {
+      setErr(orderErrorKey(e))
+    }
+  }, [fill, idle])
+
+  /** The draft the assistant works on; it is created when the first message is sent. */
+  const ensureOrderId = useCallback(async () => {
+    await idle()
+    return (await enqueue(ensure)).id
+  }, [enqueue, ensure, idle])
+
+  const pickAi = (on: boolean) => {
+    setWantAi(on)
+    try {
+      localStorage.setItem(AI_KEY, on ? 'on' : 'off')
+    } catch {
+      // Storage blocked: the choice lasts until the page closes.
+    }
+  }
+
+  const sketchRev = sketch?.revisionId ?? null
+  useEffect(() => {
+    setSelection(emptySelection())
+  }, [sketchRev])
+
+  // A draft that already has a sketch (made by the assistant earlier) shows it.
+  const orderId = order?.id ?? null
+  useEffect(() => {
+    if (orderId === null) {
+      setSketch(null)
+      return
+    }
+    if (!aiAvailable) return
+    let live = true
+    getSketchInfo(orderId).then((s) => live && setSketch(s)).catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [orderId, aiAvailable])
+
   // ---------- content mode ----------
 
-  const chooseMode = async (m: InputMode) => {
-    if (m === mode && m !== 'draw') return
+  /** Switches the input mode; false when the customer cancelled or the switch failed. */
+  const chooseMode = async (m: InputMode): Promise<boolean> => {
+    if (m === mode && m !== 'draw') return true
     setErr('')
     const next = typeOf(m)
     const cur = orderRef.current
     if (cur && cur.type !== next) {
       const stale = cur.inputs.filter((i) => (next === 'OT1_COPY_RESTORE' ? i.kind !== 'ORIGINAL_IMAGE' : i.kind === 'ORIGINAL_IMAGE'))
-      if (stale.length && !window.confirm(t('co.switchWarn'))) return
+      if (stale.length && !window.confirm(t('co.switchWarn'))) return false
       setBusy(true)
       try {
         await enqueue(async () => {
@@ -296,13 +389,20 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
         })
       } catch (e) {
         fail(e)
-        return
+        return false
       } finally {
         setBusy(false)
       }
     }
     setMode(m)
     if (m === 'draw') await openCanvas()
+    return true
+  }
+
+  /** The first choice of step 1: the assistant writes from text, so choosing it moves to the text mode. */
+  const chooseHow = async (ai: boolean) => {
+    if (ai && mode !== 'text' && !(await chooseMode('text'))) return
+    pickAi(ai)
   }
 
   const openCanvas = async () => {
@@ -403,12 +503,17 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     if (i === 1) return materialsOk && qty >= 1
     return true
   }
-  const ok = valid(step) && !busy && uploading === 0
+  // The assistant's answers are applied as they come, so the form is only held while it works.
+  const aiLocked = aiOn && aiBusy
+  const ok = valid(step) && !busy && uploading === 0 && !aiBusy
   const hints = [
-    t(mode === 'text'
+    t(aiOn
+      ? 'oa.hint'
+      : mode === 'text'
       ? (!text.trim() ? 'co.hint0.textEmpty' : 'co.hint0.textStyle')
       : mode === 'upload' ? 'co.hint0.upload' : 'co.hint0.draw'),
     t(!materialsOk ? (!paperId ? 'co.hint1.paper' : !penId ? 'co.hint1.pen' : 'co.hint1.ink') : 'co.hint1.qty'),
+    aiBusy ? t('oa.thinking') : '',
   ]
 
   const goTo = (i: number) => {
@@ -429,6 +534,11 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
       const fields = incompleteFields(e)
       if (fields.includes('inputs')) goTo(0)
       else if (fields.includes('materials')) goTo(1)
+      else if (e instanceof ApiError && e.code === 'SKETCH_OUTDATED' && mode === 'text') {
+        // The text or the paper changed after the assistant drew the sketch: the assistant panel can draw it again.
+        if (aiAvailable) pickAi(true)
+        goTo(0)
+      }
       fail(e)
     } finally {
       setBusy(false)
@@ -551,14 +661,14 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
           </div>
         )}
 
-        <div className="co-shell">
+        <div className={`co-shell${aiOn ? ' co-shell--ai' : ''}`}>
           <div className="co-main">
             <div className="co-steps">
               {STEPS.map((key, i) => {
                 const cur = i === step
                 const done = i <= maxStep && !cur
                 return (
-                  <button key={key} className={`co-step${cur ? ' cur' : done ? ' done' : ''}`} disabled={i > maxStep} aria-current={cur ? 'step' : undefined} onClick={() => openStep(i)}>
+                  <button key={key} className={`co-step${cur ? ' cur' : done ? ' done' : ''}`} disabled={i > maxStep || aiBusy} aria-current={cur ? 'step' : undefined} onClick={() => openStep(i)}>
                     <span className="co-step-bar" />
                     <span className="co-step-label">
                       <span className="co-step-num">{done ? '✓' : i + 1}</span>
@@ -570,6 +680,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
             </div>
 
             <div className="co-body">
+              <fieldset className="co-lock" disabled={aiLocked}>
               {step === 0 && (
                 <>
                   <div className="co-intro">
@@ -577,16 +688,36 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                     <p className="co-lede">{t('co.s1.lede')}</p>
                   </div>
 
-                  <div className="co-tray co-tray--3">
-                    {MODES.map((m) => (
-                      <button key={m} className={`co-opt${mode === m ? ' on' : ''}`} disabled={busy || closed.includes(m)} onClick={() => void chooseMode(m)}>
-                        <span className="co-opt-name">{t(`co.mode.${m}`)}</span>
-                        <span className="co-opt-sub">{closed.includes(m) ? t('co.modeClosed') : t(`co.mode.${m}.sub`)}</span>
+                  <div className="co-how">
+                    <span id="oa-who" className="co-group-label">{t('oa.who')}</span>
+                    <div className="co-seg co-seg--how" role="radiogroup" aria-labelledby="oa-who">
+                      <button type="button" role="radio" aria-checked={aiPicked} className={`co-how-ai${aiPicked ? ' on' : ''}`}
+                        disabled={!aiAvailable || busy || aiBusy} onClick={() => void chooseHow(true)}>
+                        <Sparkle aria-hidden="true" weight="fill" className="co-how-icon" />
+                        {t('oa.ai')}
                       </button>
-                    ))}
+                      <button type="button" role="radio" aria-checked={!aiPicked} className={!aiPicked ? 'on' : ''}
+                        disabled={busy || aiBusy} onClick={() => void chooseHow(false)}>
+                        {t('oa.manual')}
+                      </button>
+                    </div>
+                    <p className="co-how-hint" role="status">
+                      {aiState.loading ? t('oa.checking') : !aiAvailable ? t('oa.unavailable') : t(aiPicked ? 'oa.ai.sub' : 'oa.manual.sub')}
+                    </p>
                   </div>
 
-                  {mode === 'text' && (
+                  {!aiPicked && (
+                    <div className="co-tray co-tray--3">
+                      {MODES.map((m) => (
+                        <button key={m} className={`co-opt${mode === m ? ' on' : ''}`} disabled={busy || aiBusy || closed.includes(m)} onClick={() => void chooseMode(m)}>
+                          <span className="co-opt-name">{t(`co.mode.${m}`)}</span>
+                          <span className="co-opt-sub">{closed.includes(m) ? t('co.modeClosed') : t(`co.mode.${m}.sub`)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {mode === 'text' && !aiOn && !aiWait && (
                     <>
                       <section className="co-sub" aria-labelledby="co-t1">
                         <div className="co-sub-head">
@@ -894,12 +1025,29 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                   )}
                 </>
               )}
+              </fieldset>
             </div>
+
+            {aiOn && (
+              <section className="co-sketch" aria-labelledby="co-sketch-t">
+                <div className="co-sketch-head">
+                  <h3 id="co-sketch-t" className="co-h3">{t('oa.sketchTitle')}</h3>
+                  <p className="co-sub-hint">{t('oa.sketchSub')}</p>
+                </div>
+                <div className={`co-sketch-stage${aiBusy ? ' busy' : ''}`} aria-busy={aiBusy}>
+                  {order && sketch ? (
+                    <SketchView orderId={order.id} sketch={sketch} selection={selection} onSelection={setSelection} pickLocked={aiBusy} />
+                  ) : (
+                    <span className="co-hint">{t('oa.sketchEmpty')}</span>
+                  )}
+                </div>
+              </section>
+            )}
 
             {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
 
             <div className="co-nav">
-              <button className="co-btn co-btn--line co-back" disabled={step === 0} onClick={() => step > 0 && goTo(step - 1)}>
+              <button className="co-btn co-btn--line co-back" disabled={step === 0 || aiBusy} onClick={() => step > 0 && goTo(step - 1)}>
                 {t('co.back')}
               </button>
               <div className="co-next-wrap">
@@ -914,38 +1062,67 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
             </div>
           </div>
 
-          <div className="co-side">
-            <aside className="co-rail">
-              <div className="co-preview">
-                {mode === 'text' && previewSrc ? (
-                  <img className="co-preview-img" src={previewSrc} alt={t('co.previewAlt')} />
-                ) : order && order.inputs.length ? (
-                  <OrderPreview order={order} inkColor={ink?.hex} />
-                ) : (
-                  <span className="co-hint">{t('co.previewEmpty')}</span>
-                )}
-              </div>
-              <div className="co-rail-body">
-                <span className="co-est-title">{t('co.estimate')}</span>
-                <div className="co-lines">
-                  <div className="co-line"><span>{t('co.sum.materials')}</span><span>{materialsLabel}</span></div>
-                  <div className="co-line"><span>{t('co.sum.qty')}</span><span>{qty}</span></div>
-                  {est && <div className="co-line"><span>{t('co.chars.label')}</span><span>{est.charsMin === est.charsMax ? est.charsMax : `${est.charsMin} – ${est.charsMax}`}</span></div>}
+          <div className={`co-side${aiOn ? ' co-side--ai' : ''}`}>
+            {aiOn ? (
+              <OrderAssistant
+                orderId={orderId}
+                ensureOrder={ensureOrderId}
+                sketch={sketch}
+                canDraw={!!order && text.trim().length > 0 && templateId !== null}
+                selection={selection}
+                onClearSelection={() => setSelection(emptySelection())}
+                onChanged={aiChanged}
+                onBusy={setAiBusy}
+                summary={
+                  <details className="oa-est">
+                    <summary>
+                      <span>{t('co.range')}</span>
+                      <b className="oa-est-total">{range}</b>
+                    </summary>
+                    <dl className="oa-est-lines">
+                      <div><dt>{t('co.sum.materials')}</dt><dd>{materialsLabel}</dd></div>
+                      <div><dt>{t('co.sum.qty')}</dt><dd>{qty}</dd></div>
+                      {est && <div><dt>{t('co.minDeposit')}</dt><dd>{est.minDepositPct}%</dd></div>}
+                    </dl>
+                    <span className="oa-fine">{t(est && !est.materialsPriced ? 'co.pickMaterialsHint' : 'co.fine')}</span>
+                  </details>
+                }
+              />
+            ) : (
+              <aside className="co-rail">
+                <div className="co-preview">
+                  {order && sketch ? (
+                    <SketchView orderId={order.id} sketch={sketch} />
+                  ) : mode === 'text' && previewSrc ? (
+                    <img className="co-preview-img" src={previewSrc} alt={t('co.previewAlt')} />
+                  ) : order && order.inputs.length ? (
+                    <OrderPreview order={order} inkColor={ink?.hex} />
+                  ) : (
+                    <span className="co-hint">{t('co.previewEmpty')}</span>
+                  )}
                 </div>
-                <div className="co-total-row">
-                  <span>{t('co.range')}</span>
-                  <span className="co-total">{range}</span>
-                </div>
-                {est && (
-                  <div className="co-eta">
-                    <div><span>{t('co.minDeposit')}</span><b>{est.minDepositPct}%</b></div>
+                <div className="co-rail-body">
+                  <span className="co-est-title">{t('co.estimate')}</span>
+                  <div className="co-lines">
+                    <div className="co-line"><span>{t('co.sum.materials')}</span><span>{materialsLabel}</span></div>
+                    <div className="co-line"><span>{t('co.sum.qty')}</span><span>{qty}</span></div>
+                    {est && <div className="co-line"><span>{t('co.chars.label')}</span><span>{est.charsMin === est.charsMax ? est.charsMax : `${est.charsMin} – ${est.charsMax}`}</span></div>}
                   </div>
-                )}
-                {est && <span className="co-fine">{t(`co.basis.${est.basis}`)}</span>}
-                {est && !est.materialsPriced && <span className="co-fine">{t('co.pickMaterialsHint')}</span>}
-                <span className="co-fine">{t('co.fine')}</span>
-              </div>
-            </aside>
+                  <div className="co-total-row">
+                    <span>{t('co.range')}</span>
+                    <span className="co-total">{range}</span>
+                  </div>
+                  {est && (
+                    <div className="co-eta">
+                      <div><span>{t('co.minDeposit')}</span><b>{est.minDepositPct}%</b></div>
+                    </div>
+                  )}
+                  {est && <span className="co-fine">{t(`co.basis.${est.basis}`)}</span>}
+                  {est && !est.materialsPriced && <span className="co-fine">{t('co.pickMaterialsHint')}</span>}
+                  <span className="co-fine">{t('co.fine')}</span>
+                </div>
+              </aside>
+            )}
             <Link to="/account/drafts" className="co-btn co-btn--line co-save">{t('co.saveExit')}</Link>
           </div>
         </div>

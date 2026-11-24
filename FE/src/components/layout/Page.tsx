@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
-import SiteFooter from './SiteFooter'
-import SiteHeader from './SiteHeader'
+import CustomerFrame from './CustomerFrame'
 
 interface PageProps {
   /** Max content width in px. */
@@ -9,15 +8,11 @@ interface PageProps {
   children: ReactNode
 }
 
-/** Header, gradient shell and footer shared by every order page. */
+/** Customer frame shared by review, delivery, payment and account recovery. */
 export default function Page({ width = 1320, label, children }: PageProps) {
   return (
-    <>
-      <SiteHeader />
-      <main className="vh-main" data-screen-label={label}>
-        <div className="vh-wrap" style={{ maxWidth: width }}>{children}</div>
-      </main>
-      <SiteFooter />
-    </>
+    <CustomerFrame label={label} className="customer-order-frame">
+      <div className="vh-wrap" style={{ maxWidth: width }}>{children}</div>
+    </CustomerFrame>
   )
 }
