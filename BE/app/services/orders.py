@@ -298,9 +298,22 @@ class OrderService:
         if order.order_status != OrderStatus.DRAFT:
             raise AppError(409, "ORDER_NOT_DRAFT", "Chỉ xóa được bản nháp.")
         paths = [r.file_url for r in self.orders.inputs(order.id) if r.file_url]
+        self._keep_ai_flags(order)
         self.orders.delete(order)
         for p in paths:
             self._delete_object(p)
+
+    def _keep_ai_flags(self, order: Order) -> None:
+        """The AI chat data policy: safety flags (e.g. FORGERY_RISK) stay in the audit log when the conversations go, also
+        when the customer deletes the draft (its conversations are deleted with it)."""
+        from sqlalchemy import select
+
+        from app.models.studio import AiSession
+        flags = [f for s in self.session.scalars(select(AiSession).where(AiSession.order_id == order.id)) for f in (s.flags or [])]
+        if flags:
+            audit.record(self.session, actor_id=self.customer.id, action="AI_FLAGS_KEPT", entity_type="order",
+                         entity_id=order.id, old={"order_code": order.code, "flags": flags},
+                         reason="Khách xoá đơn nháp; cảnh báo an toàn của trợ lý AI được giữ", ip=self.ip)
 
     # ---- inputs ----
     def _check_kind(self, order: Order, kind: OrderInputKind) -> None:

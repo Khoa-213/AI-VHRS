@@ -200,6 +200,10 @@ class AssistantStatusOut(BaseModel):
     messages_left_today: int
     daily_message_limit: int
     sends_photos: bool
+    policy_version: str | None = Field(default=None, description=(
+        "0031: phiên bản chính sách dữ liệu chat AI đang áp dụng (`GET /privacy-policy/ai-chat`)"))
+    policy_accepted: bool = Field(default=False, description="0031: tài khoản đã đồng ý phiên bản đó (false: hiện ô đồng ý)")
+    policy_accepted_at: datetime | None = None
 
 
 class StudioRegionEditIn(BaseModel):
@@ -440,7 +444,7 @@ def send_message_stream(draft_id: int, body: MessageIn, session: SessionDep, svc
         svc.get_open(draft_id)                            # raises DRAFT_CLOSED with the usual message
     text = assistant.precheck(draft, body.text, consent=body.ai_consent)
     customer_id, storage, ip, providers = svc.customer.id, svc.storage, svc.ip, assistant._providers
-    session.commit()                                     # nothing written here: frees the row before the worker locks it
+    session.commit()                                     # saves a consent given now (0031); frees the row before the worker locks it
     events: queue.Queue = queue.Queue()
 
     def work() -> None:

@@ -40,7 +40,7 @@ from app.core.errors import AppError
 from app.models.account import Account
 from app.models.studio import AiMessage, AiSession, AiToolCall, StudioDraft
 from app.repositories.catalog import CatalogRepository
-from app.services.ai import llm
+from app.services.ai import chat_policy, chat_sessions, llm
 from app.services.ai.tools import StudioTools
 from app.services.studio import StudioService
 
@@ -104,6 +104,9 @@ Luật bắt buộc:
    trước nếu khách đã sửa nét: SKETCH_HAS_EDITS). Nếu bạn không gọi, hệ thống sẽ tự vẽ phác thảo vào cuối lượt.
 9. Bạn không xem được ảnh khách tải lên; chỉ có số đo chất lượng ảnh. Bạn không đọc được chữ trong ảnh.
 10. Việc áp dụng đề xuất, gửi đơn, thanh toán, huỷ đơn do khách tự làm; bạn không làm thay.
+11. Nội dung gửi qua update_text là chữ thuần robot sẽ viết tay lên giấy: xuống dòng bằng ký tự xuống dòng thật (không
+    viết dấu gạch chéo ngược và chữ n), không dùng định dạng markdown (**, #, >, dấu `). Chỉ dùng gạch đầu dòng (-, +)
+    hoặc số thứ tự khi khách muốn liệt kê như khi viết tay.
 """
 
 
@@ -146,7 +149,25 @@ class AssistantService:
         return {"enabled": enabled, "available": bool(available),
                 "providers": [i.name for i in infos if i.configured] if self._providers is None else [p.name for p in self._providers],
                 "messages_left_today": max(0, limit - used["my_messages"]), "daily_message_limit": limit,
-                "sends_photos": False}
+                "sends_photos": False, **self.consent_status()}
+
+    # ------------------------------------------------------------------ consent (migration 0031: once per account)
+    def consent_status(self) -> dict[str, Any]:
+        st = chat_policy.status(self.session, self.customer.id)
+        return {"policy_version": st["policy_version"], "policy_accepted": st["accepted"],
+                "policy_accepted_at": st["accepted_at"]}
+
+    def require_consent(self, consent: bool) -> None:
+        """The customer has agreed to the AI chat data policy in force, or agrees now (`ai_consent: true`)."""
+        version = chat_policy.version(self.session)
+        if chat_policy.has_consent(self.session, self.customer.id, version):
+            return
+        if not consent:
+            raise AppError(422, "AI_CONSENT_REQUIRED",
+                           "Cần đọc và đồng ý chính sách dữ liệu khi chat với trợ lý AI trước khi dùng trợ lý "
+                           "(tin nhắn và nội dung đơn được gửi tới nhà cung cấp AI bên ngoài).",
+                           {"policy_version": version})
+        chat_policy.accept(self.session, self.customer, version, ip=self._ip)
 
     def _check_caps(self) -> None:
         if not self.setting("ai_assistant_enabled"):
@@ -164,8 +185,11 @@ class AssistantService:
     def session_of(self, draft: StudioDraft) -> AiSession | None:
         return self.session.scalar(select(AiSession).where(AiSession.draft_id == draft.id))
 
-    def session_of_order(self, order_id: int) -> AiSession | None:
-        return self.session.scalar(select(AiSession).where(AiSession.order_id == order_id))
+    def session_of_order(self, order_id: int, session_id: int | None = None) -> AiSession | None:
+        """`session_id`: that conversation of the order (404 when it is not one); otherwise the one used last."""
+        if session_id is not None:
+            return chat_sessions.get(self.session, order_id, session_id)
+        return chat_sessions.latest(self.session, order_id)
 
     def messages(self, draft: StudioDraft) -> list[tuple[AiMessage, list[AiToolCall]]]:
         return self.session_messages(self.session_of(draft))
@@ -203,9 +227,9 @@ class AssistantService:
     # ------------------------------------------------------------------ one turn
     def precheck(self, draft: StudioDraft, text: str, *, consent: bool) -> str:
         """Every refusal that comes before a model is called (the streaming route answers these as plain HTTP errors)."""
-        return self._precheck(self.session_of(draft), text, consent=consent)
+        return self._precheck(text, consent=consent)
 
-    def _precheck(self, sess: AiSession | None, text: str, *, consent: bool) -> str:
+    def _precheck(self, text: str, *, consent: bool) -> str:
         text = (text or "").strip()
         if not text:
             raise AppError(422, "EMPTY_MESSAGE", "Tin nhắn không được để trống.")
@@ -214,9 +238,7 @@ class AssistantService:
         self._check_caps()
         if not self.providers():
             raise AppError(503, "AI_UNAVAILABLE", "Chưa cấu hình nhà cung cấp AI. Bạn vẫn dùng studio bằng các ô nhập.")
-        if not consent and sess is None:
-            raise AppError(422, "AI_CONSENT_REQUIRED",
-                           "Cần đồng ý gửi tin nhắn và nội dung bản nháp cho nhà cung cấp AI bên ngoài trước khi dùng trợ lý.")
+        self.require_consent(consent)
         return text
 
     # ------------------------------------------------------------------ orders (V2 Phase C)
@@ -229,13 +251,14 @@ class AssistantService:
 
     def replay(self, order_id: int, client_ref: str | None) -> dict[str, Any] | None:
         """The stored turn of a message already sent with this `client_ref` (None: not sent yet)."""
-        sess = self.session_of_order(order_id)
-        if not client_ref or sess is None:
+        if not client_ref:
             return None
-        user = self.session.scalar(select(AiMessage).where(AiMessage.session_id == sess.id, AiMessage.client_ref == client_ref))
+        user = self.session.scalar(select(AiMessage).join(AiSession, AiSession.id == AiMessage.session_id)
+                                   .where(AiSession.order_id == order_id, AiMessage.client_ref == client_ref)
+                                   .order_by(AiMessage.id.desc()).limit(1))
         if user is None:
             return None
-        reply = self.session.scalar(select(AiMessage).where(AiMessage.session_id == sess.id, AiMessage.role == "ASSISTANT",
+        reply = self.session.scalar(select(AiMessage).where(AiMessage.session_id == user.session_id, AiMessage.role == "ASSISTANT",
                                                             AiMessage.id > user.id).order_by(AiMessage.id).limit(1))
         if reply is None:
             raise AppError(409, "AI_TURN_IN_PROGRESS", "Tin nhắn này đang được trợ lý xử lý.")
@@ -250,25 +273,26 @@ class AssistantService:
             raise AppError(409, "AI_TURN_IN_PROGRESS", "Trợ lý đang xử lý một tin nhắn khác của đơn này; vui lòng chờ.")
 
     def precheck_order(self, order_id: int, text: str, *, consent: bool, base_revision_id: int | None = None,
-                       base_proposal_id: int | None = None, from_order: bool = False) -> str:
+                       base_proposal_id: int | None = None, from_order: bool = False, session_id: int | None = None,
+                       new_session: bool = False) -> str:
         from app.services.sketch_work import SketchWorkService
         order = SketchWorkService(self.session, self.customer, None).order(order_id, write=True)   # owner + editable
         cur = order.current_sketch_revision_id
         if base_revision_id is not None and cur != base_revision_id:
             raise AppError(409, "STALE_REVISION", "Phác thảo đã đổi (tab khác hoặc trợ lý vừa sửa); hãy tải lại rồi nhắn tiếp.",
                            {"current_revision_id": cur})
-        out = self._precheck(self.session_of_order(order_id), text, consent=consent)
-        self.proposal_base(order, base_proposal_id, from_order)
+        sess = chat_sessions.pick(self.session, order_id, session_id, new_session)
+        out = self._precheck(text, consent=consent)
+        self.proposal_base(order, base_proposal_id, from_order, sess)
         return out
 
-    def proposal_base(self, order: Any, base_proposal_id: int | None, from_order: bool) -> Any:
+    def proposal_base(self, order: Any, base_proposal_id: int | None, from_order: bool, sess: AiSession | None = None) -> Any:
         """The pending proposal this turn continues (None: start from the order). Asked for and not applicable -> 409."""
         from app.services.ai.proposals import ProposalService
         props = ProposalService(self.session, self.customer, self._ip)
         if from_order:
             return None
-        if base_proposal_id is None:
-            sess = self.session_of_order(order.id)
+        if base_proposal_id is None:                       # the latest pending proposal of this conversation
             return props.latest_applicable(order, sess.id) if sess is not None else None
         p = props.get(order.id, base_proposal_id)
         ok, why = props.applicability(order, p)
@@ -280,20 +304,23 @@ class AssistantService:
 
     def send_order(self, order_id: int, text: str, *, consent: bool, base_revision_id: int | None = None,
                    selection: dict[str, list[str]] | None = None, client_ref: str | None = None,
-                   base_proposal_id: int | None = None, from_order: bool = False,
+                   base_proposal_id: int | None = None, from_order: bool = False, session_id: int | None = None,
+                   new_session: bool = False,
                    on_event: Callable[[str, dict[str, Any]], None] | None = None) -> dict[str, Any]:
         """One customer message on an order DRAFT. Same turn as the studio, with the order's tools; what the turn changes
-        becomes a proposal and the order is put back (migration 0029)."""
+        becomes a proposal and the order is put back (migration 0029). It goes to the conversation `session_id`, to a new
+        one (`new_session`: the assistant does not remember the others) or to the one used last (0031)."""
         from app.services.ai import proposals as pr
         from app.services.sketch_work import SketchWorkService
         self.lock_order(order_id)
         done = self.replay(order_id, client_ref)
         if done is not None:
             return done
-        text = self.precheck_order(order_id, text, consent=consent, base_revision_id=base_revision_id)
+        text = self.precheck_order(order_id, text, consent=consent, base_revision_id=base_revision_id,
+                                   session_id=session_id, new_session=new_session)
         order = SketchWorkService(self.session, self.customer, None).order(order_id, write=True)
-        base = self.proposal_base(order, base_proposal_id, from_order)
-        sess = self.session_of_order(order_id)
+        sess = chat_sessions.pick(self.session, order_id, session_id, new_session)
+        base = self.proposal_base(order, base_proposal_id, from_order, sess)
         if sess is None:
             sess = AiSession(order_id=order_id, customer_id=self.customer.id, consented_at=datetime.now(timezone.utc), flags=[])
             self.session.add(sess)
@@ -451,18 +478,26 @@ class AssistantService:
 
 
 def order_assistant_log(session: Session, order_id: int) -> dict[str, Any]:
-    """V2 Phase C, for the Staff: the assistant's flags on the order (e.g. FORGERY_RISK) and its conversation with the customer."""
-    sess = session.scalar(select(AiSession).where(AiSession.order_id == order_id))
-    if sess is None:
-        return {"has_conversation": False, "consented_at": None, "flags": [], "messages": []}
-    rows = list(session.scalars(select(AiMessage).where(AiMessage.session_id == sess.id).order_by(AiMessage.id)))
+    """V2 Phase C, for the Staff: the assistant's flags on the order (e.g. FORGERY_RISK) and its conversations with the
+    customer (0031: several; a conversation the customer deleted shows as deleted, without its text, with its flags)."""
+    sessions = list(session.scalars(select(AiSession).where(AiSession.order_id == order_id).order_by(AiSession.id)))
+    if not sessions:
+        return {"has_conversation": False, "consented_at": None, "flags": [], "messages": [], "sessions": []}
+    live = [s.id for s in sessions if s.deleted_at is None]
+    rows = list(session.scalars(select(AiMessage).where(AiMessage.session_id.in_(live)).order_by(AiMessage.id))) if live else []
     calls: dict[int, list[dict[str, Any]]] = {}
     if rows:
         for c in session.scalars(select(AiToolCall).where(AiToolCall.message_id.in_([r.id for r in rows])).order_by(AiToolCall.id)):
             calls.setdefault(c.message_id, []).append({"name": c.name, "ok": c.ok, "sketch_revision_id": c.sketch_revision_id})
-    return {"has_conversation": True, "consented_at": sess.consented_at, "flags": sess.flags or [],
-            "messages": [{"role": r.role, "content": r.content, "status": r.status, "provider": r.provider,
-                          "tools": calls.get(r.id, []), "created_at": r.created_at} for r in rows]}
+    counts = dict(session.execute(select(AiMessage.session_id, func.count()).where(AiMessage.session_id.in_([s.id for s in sessions]))
+                                  .group_by(AiMessage.session_id)).all())
+    return {"has_conversation": True, "consented_at": sessions[0].consented_at,
+            "flags": [f for s in sessions for f in (s.flags or [])],
+            "messages": [{"session_id": r.session_id, "role": r.role, "content": r.content, "status": r.status,
+                          "provider": r.provider, "tools": calls.get(r.id, []), "created_at": r.created_at} for r in rows],
+            "sessions": [{"id": s.id, "title": s.title, "created_at": s.created_at, "last_message_at": s.last_message_at,
+                          "message_count": int(counts.get(s.id, 0)), "flags": s.flags or [], "deleted": s.deleted_at is not None,
+                          "deleted_reason": s.deleted_reason} for s in sessions]}
 
 
 def _jsonable(v: Any) -> Any:

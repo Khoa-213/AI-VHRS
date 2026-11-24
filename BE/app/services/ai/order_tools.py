@@ -30,6 +30,7 @@ from app.services import audit
 log = logging.getLogger(__name__)
 from app.services import htr_hints
 from app.services import sketch_geometry as geo
+from app.services.ai import plain_text
 from app.services.ai.llm import ToolSpec
 from app.services.ai.tools import FLAG_KINDS, _obj, list_materials, list_templates
 from app.services.orders import OrderService
@@ -53,7 +54,9 @@ SPECS: list[ToolSpec] = [
              "Sửa nội dung chữ / mẫu chữ / cỡ chữ / căn lề của đơn viết theo mẫu. Chỉ gửi trường cần đổi. Chỉ đổi nội dung khi "
              "khách yêu cầu rõ; giữ nguyên câu chữ của khách. Định dạng của phần chữ không đổi được giữ. Kết quả có giá "
              "trị cũ; undo_sketch qua một lần tạo lại phác thảo cũng đưa nội dung về bản đã vẽ.",
-             _obj({"text": {"type": "string", "description": "toàn bộ nội dung mới"},
+             _obj({"text": {"type": "string", "description": (
+                       "toàn bộ nội dung mới, là chữ thuần robot sẽ viết lên giấy: xuống dòng bằng ký tự xuống dòng thật, "
+                       "không dùng định dạng markdown (**, #, >, dấu `)")},
                    "template_id": {"type": "integer"},
                    "font_size_mm": {"type": "number", "description": "chiều cao chữ hoa, mm"},
                    "alignment": {"type": "string", "enum": ["LEFT", "CENTER", "RIGHT", "JUSTIFY"]}})),
@@ -348,7 +351,8 @@ class OrderTools:
         new = dict(cur)
         warnings: list[str] = []
         if "text" in ch:
-            new["text_content"] = unicodedata.normalize("NFC", str(ch["text"]))
+            # what the robot writes: line breaks the model sent as "\\n" text become line breaks, chat formatting goes
+            new["text_content"] = unicodedata.normalize("NFC", plain_text.for_paper(str(ch["text"])))
             if new["text_content"] != cur["text_content"] and cur["layout"]:
                 # V2 Phase D: the styled parts follow the unchanged characters (they used to be dropped)
                 new["layout"], remap = text_layout.remap_stored(unicodedata.normalize("NFC", cur["text_content"] or ""),
@@ -412,7 +416,7 @@ class OrderTools:
         if "quantity" in ch and not (isinstance(ch["quantity"], int) and 1 <= ch["quantity"] <= 10000):
             raise AppError(422, "INVALID_QUANTITY", "Số bản phải từ 1 đến 10000.")
         if "customer_note" in ch and ch["customer_note"] is not None:
-            ch["customer_note"] = str(ch["customer_note"])[:2000]
+            ch["customer_note"] = plain_text.unescape(str(ch["customer_note"]))[:2000]
         return self._update(ch)
 
     # ------------------------------------------------------------------ change: sketch

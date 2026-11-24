@@ -51,6 +51,20 @@ class AiSession(Base):
     consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 0031: several conversations per order; the customer's name for it; deleted = text wiped, row kept (CUSTOMER | RETENTION)
+    title: Mapped[str | None] = mapped_column(String(120))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_reason: Mapped[str | None] = mapped_column(String(12))
+
+
+class AiChatConsent(Base):
+    """0031: the customer's consent to one version of the AI chat data policy (one row per account and version)."""
+    __tablename__ = "ai_chat_consents"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    policy_version: Mapped[str] = mapped_column(String(20))
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default="now()")
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AiMessage(Base):

@@ -257,3 +257,11 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 ### 2026-11-22 · Test cho một luật mới phải KHÔNG đạt khi tắt luật đó
 **Bối cảnh:** OT-1 v2, luật giữ thân chữ L nằm trùng đường lưới dọc. Bản test đầu vẫn đạt khi tắt luật: thân chữ quá ngắn nên vùng giữ cũ (3 bề rộng nét quanh chữ) đã phủ gần hết; bản thứ hai đặt chân chữ đúng lên một dòng kẻ ngang nên không còn "chữ ngoài dòng kẻ" để chạm.
 **Bài học:** viết test xong thì tắt luật mới (đặt hằng số về 0) và chạy lại; test phải hỏng. Nếu không, ảnh thử chưa mô phỏng đúng trường hợp.
+
+### 2026-11-24 · Chữ mô hình gửi trong tham số công cụ phải được làm sạch trước khi lưu
+**Bối cảnh:** đơn 12514, `gemini-3.5-flash-lite` gửi `update_text` với xuống dòng là chuỗi gạch chéo + n (có lần hai dấu gạch chéo), thêm cả định dạng chat; BE lưu nguyên nên phác thảo vẽ ra có `\n`. Tin của khách vẫn xuống dòng đúng, nên lỗi chỉ lộ ra trên giấy.
+**Cách làm đúng:** mọi chữ mô hình ghi vào dữ liệu thật (nội dung đơn, ghi chú) đi qua một hàm làm sạch có test (`services/ai/plain_text.py`), kèm luật trong prompt; chỉ đổi khi chắc là lỗi (ở đây: chỉ khi văn bản chưa có xuống dòng thật) và không đụng đường nhập của khách. Đọc `ai_tool_calls.args` của đơn bị lỗi trước để biết lỗi do mô hình hay do bộ chuyển đổi nhà cung cấp.
+
+### 2026-11-24 · `None` gán vào cột JSONB là JSON `null`, không phải SQL `NULL`
+**Bối cảnh:** xoá nội dung cuộc chat AI (`ai_tool_calls.result = None` bằng `update().values(...)`), test `result IS NULL` vẫn thấy 2 dòng: SQLAlchemy ghi `None` của cột `JSON` / `JSONB` thành giá trị JSON `null`.
+**Cách làm đúng:** muốn SQL `NULL` thì gán `sqlalchemy.null()` (hoặc khai báo cột `JSONB(none_as_null=True)`); kiểm tra bằng `IS NULL` trong test.
