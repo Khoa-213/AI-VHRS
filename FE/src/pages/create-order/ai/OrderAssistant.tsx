@@ -1,10 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowClockwise, ArrowCounterClockwise, ArrowUp, X } from '@phosphor-icons/react'
-import { useT } from '../../../i18n'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  ArrowClockwise, ArrowCounterClockwise, ArrowUp, CaretLeft, ChatCircleText, ClockCounterClockwise, NotePencil, PencilSimpleLine,
+  Sparkle, Trash, X,
+} from '@phosphor-icons/react'
+import { useLocale, useT } from '../../../i18n'
 import { ApiError } from '../../../services/api'
 import {
-  aiConversation, aiStatus, applyProposal, redoSketch, redrawSketch, selectionSize, sendAiMessage, staleReason, undoSketch,
-  type AiEvent, type AiMessage, type AiSelection, type AiStatus, type EnsureOrder, type ReloadOrder, type SketchInfo } from '../../../services/orderAi'
+  aiConversation, aiSessions, aiStatus, applyProposal, deleteAiSession, redoSketch, redrawSketch, selectionSize, sendAiMessage,
+  staleReason, undoSketch,
+  type AiEvent, type AiMessage, type AiSelection, type AiSession, type AiStatus, type EnsureOrder, type ReloadOrder, type SketchInfo,
+} from '../../../services/orderAi'
 import { errText, orderErrorKey } from '../../../services/orders'
 import ProposalCard from './ProposalCard'
 import RichText from './RichText'
@@ -25,14 +30,16 @@ const newRef = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? 
  * change; the backend answers with a proposal, which is applied at once (the customer asked for no Apply step), so the
  * sketch box beside the form shows the new sketch as soon as the answer arrives. Undo / redo in the header go back.
  * Every message starts from the order as it is (`from_order`), so a proposal left over from earlier is never built on.
+ *
+ * Conversations (migration 0031): "New chat" clears the panel without calling the backend; the first message then goes with
+ * `new_session` and the next ones with the `session_id` it returned. The history lists the order's conversations; a draft's can
+ * be deleted. A new conversation does not remember the others but still sees the order as it is now.
  */
-export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, selection, onClearSelection, onChanged, onBusy, summary }: {
+export default function OrderAssistant({ orderId, ensureOrder, sketch, selection, onClearSelection, onChanged, onBusy, onConsentNeeded }: {
   orderId: number | null
   /** The draft on the server; it is created when the first message is sent. */
   ensureOrder: EnsureOrder
   sketch: SketchInfo | null
-  /** The order already has the text and the style, so the sketch can be drawn from them. */
-  canDraw: boolean
   /** What the customer picked on the sketch (sent with the next message). */
   selection: AiSelection
   onClearSelection: () => void
@@ -40,14 +47,19 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
   onChanged: ReloadOrder
   /** True while the assistant is working, so the rest of the form stays still. */
   onBusy: (busy: boolean) => void
-  /** The order's estimated price, shown under the title (the chat takes the estimate box's place). */
-  summary?: ReactNode
+  /** The backend asks for the data policy again (consent withdrawn or a new version): Create Order shows its dialog. */
+  onConsentNeeded: () => void
 }) {
   const t = useT()
+  const locale = useLocale()
   const [status, setStatus] = useState<AiStatus | null>(null)
   const [messages, setMessages] = useState<AiMessage[]>([])
-  const [consented, setConsented] = useState(false)
-  const [agree, setAgree] = useState(false)
+  /** The conversation on screen; `null` with `fresh` = a new chat that starts with the next message. */
+  const [sessionId, setSessionId] = useState<number | null>(null)
+  const [fresh, setFresh] = useState(false)
+  const [sessions, setSessions] = useState<AiSession[]>([])
+  const [history, setHistory] = useState(false)
+  const [doomed, setDoomed] = useState<number | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<string[]>([])
@@ -84,9 +96,10 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
       .then((c) => {
         if (!live) return
         setMessages(c.messages)
-        setConsented(c.consented)
+        setSessionId(c.sessionId)
       })
       .catch((e) => live && fail(e))
+    aiSessions(orderId).then((l) => live && setSessions(l)).catch(() => undefined)
     return () => {
       live = false
     }
@@ -104,14 +117,15 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
     el.style.height = `${Math.min(el.scrollHeight, MAX_INPUT_PX)}px`
   }, [text])
 
-  const refresh = async (id: number) => {
+  const refresh = async (id: number, sid: number | null = sessionId) => {
     try {
-      const c = await aiConversation(id)
+      const c = await aiConversation(id, sid)
       setMessages(c.messages)
-      setConsented(c.consented)
+      setSessionId(c.sessionId)
     } catch {
       // The messages keep what they had; the next action loads them again.
     }
+    aiSessions(id).then(setSessions).catch(() => undefined)
   }
 
   const work = async (job: ReloadOrder) => {
@@ -134,24 +148,27 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
 
   const send = async (said?: string) => {
     const msg = (said ?? text).trim()
-    if (!msg || busy || (!consented && !agree)) return
+    if (!msg || busy) return
     setPending(msg)
     setProgress([])
     await work(async () => {
       let id: number | null = orderId
+      let sid: number | null = fresh ? null : sessionId
       try {
         id = await ensureOrder()
         const turn = await sendAiMessage(id, {
           text: msg,
-          ai_consent: true,
           ...(sketch ? { base_revision_id: sketch.revisionId } : {}),
           ...(selectionSize(selection) ? { selection } : {}),
           from_order: true,
+          ...(fresh || sessionId === null ? (fresh ? { new_session: true } : {}) : { session_id: sessionId }),
           client_ref: newRef(),
         }, (e) => setProgress((p) => [...p, describe(e)]))
         loadedFor.current = id
+        sid = turn.sessionId
+        setSessionId(sid)
+        setFresh(false)
         setMessages((m) => [...m, turn.user, turn.reply])
-        setConsented(true)
         setText('')
         onClearSelection()
         // The answer goes straight onto the order: the sketch box shows it now, Undo goes back.
@@ -165,13 +182,19 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
             fail(e, why ? `oa.stale.${why}` : undefined)
           }
         }
-        await refresh(id)
+        await refresh(id, sid)
         await onChanged()
         aiStatus().then(setStatus).catch(() => undefined)
       } catch (e) {
+        if (e instanceof ApiError && e.code === 'AI_CONSENT_REQUIRED') {
+          // Consent withdrawn elsewhere or a new policy version: the dialog asks again, the typed text stays.
+          onConsentNeeded()
+          return
+        }
         fail(e)
         if (e instanceof ApiError && e.code === 'STALE_REVISION') await onChanged().catch(() => undefined)
-        if (id !== null) await refresh(id)
+        // A refused first message of a new chat leaves the new chat open.
+        if (id !== null && sid !== null) await refresh(id, sid)
       }
     })
     setPending(null)
@@ -196,70 +219,206 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
     })
   }
 
+  /** A new chat: the panel is cleared now, the conversation is created with the next message. */
+  const newChat = () => {
+    setHistory(false)
+    setDoomed(null)
+    setMessages([])
+    setSessionId(null)
+    setFresh(true)
+    setErr('')
+    setText('')
+    input.current?.focus()
+  }
+
+  const openSession = (sid: number) => {
+    if (orderId === null) return
+    setHistory(false)
+    setDoomed(null)
+    setFresh(false)
+    void work(() => refresh(orderId, sid))
+  }
+
+  const removeSession = (sid: number) => {
+    if (orderId === null) return
+    void work(async () => {
+      try {
+        await deleteAiSession(orderId, sid)
+        setDoomed(null)
+        setSessions((l) => l.filter((x) => x.id !== sid))
+        if (sid === sessionId) {
+          setMessages([])
+          setSessionId(null)
+          setFresh(true)
+        }
+      } catch (e) {
+        fail(e)
+      }
+    })
+  }
+
+  const clock = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+  const when = (iso: string) => new Date(iso).toLocaleString(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const current = sessions.find((x) => x.id === sessionId)
+  const chatName = fresh || (!current && !messages.length) ? t('oa.newChat') : current?.title || t('oa.untitled')
+
   const unavailable = status !== null && !status.available
   const outOfTurns = status?.left === 0
-  const needConsent = !consented
-  const canWrite = !unavailable && !outOfTurns && (!needConsent || agree)
+  const canWrite = !unavailable && !outOfTurns
   const picked = selectionSize(selection)
 
   return (
     <section className="oa" aria-label={t('oa.title')}>
       <header className="oa-head">
-        <b>{t('oa.title')}</b>
-        {sketch && orderId !== null && (
-          <div className="oa-tools">
-            <button type="button" className="oa-tool" disabled={busy || !sketch.canUndo} title={t('oa.undoHint')} onClick={() => move('undo')}>
-              <ArrowCounterClockwise aria-hidden="true" weight="bold" />{t('oa.undo')}
+        <span className="oa-avatar" aria-hidden="true"><Sparkle weight="fill" /></span>
+        <div className="oa-head-text">
+          <b>{t('oa.title')}</b>
+          <span title={chatName}>{chatName}</span>
+        </div>
+        <div className="oa-tools">
+          {sketch && orderId !== null && (
+            <>
+              <button type="button" className="oa-tool" disabled={busy || !sketch.canUndo} title={t('oa.undoHint')} onClick={() => move('undo')}>
+                <ArrowCounterClockwise aria-hidden="true" weight="bold" /><span className="oa-sr">{t('oa.undo')}</span>
+              </button>
+              <button type="button" className="oa-tool" disabled={busy || !sketch.canRedo} title={t('oa.redo')} onClick={() => move('redo')}>
+                <ArrowClockwise aria-hidden="true" weight="bold" /><span className="oa-sr">{t('oa.redo')}</span>
+              </button>
+              <span className="oa-tools-sep" aria-hidden="true" />
+            </>
+          )}
+          {orderId !== null && (
+            <button type="button" className={`oa-tool${history ? ' on' : ''}`} aria-expanded={history} title={t('oa.history')} disabled={busy}
+              onClick={() => { setHistory((h) => !h); setDoomed(null) }}>
+              <ClockCounterClockwise aria-hidden="true" weight="bold" /><span className="oa-sr">{t('oa.history')}</span>
             </button>
-            <button type="button" className="oa-tool" disabled={busy || !sketch.canRedo} title={t('oa.redo')} onClick={() => move('redo')}>
-              <ArrowClockwise aria-hidden="true" weight="bold" />{t('oa.redo')}
+          )}
+          <button type="button" className="oa-tool oa-tool--new" title={t('oa.newChat')} disabled={busy || unavailable || (fresh && !messages.length) || (!messages.length && sessionId === null)}
+            onClick={newChat}>
+            <NotePencil aria-hidden="true" weight="bold" /><span className="oa-tool-label">{t('oa.newChat')}</span>
+          </button>
+        </div>
+      </header>
+
+      {history ? (
+        <div className="oa-history" role="region" aria-label={t('oa.history')}>
+          <div className="oa-history-head">
+            <button type="button" className="oa-tool" title={t('oa.back')} onClick={() => { setHistory(false); setDoomed(null) }}>
+              <CaretLeft aria-hidden="true" weight="bold" /><span className="oa-sr">{t('oa.back')}</span>
             </button>
+            <b>{t('oa.history')}</b>
+            <span className="oa-fine">{t('oa.sessionsN', { n: sessions.length })}</span>
+          </div>
+          {sessions.length ? (
+            <ul className="oa-sessions">
+              {sessions.map((x) => (
+                <li key={x.id} className={`oa-session${x.id === sessionId && !fresh ? ' on' : ''}`}>
+                  {doomed === x.id ? (
+                    <div className="oa-session-ask" role="alert">
+                      <span>{t('oa.delConfirm')}</span>
+                      <div className="oa-session-ask-btns">
+                        <button type="button" className="oa-btn oa-btn--line" disabled={busy} onClick={() => setDoomed(null)}>{t('oa.cancel')}</button>
+                        <button type="button" className="oa-btn oa-btn--danger" disabled={busy} onClick={() => removeSession(x.id)}>{t('oa.delYes')}</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <button type="button" className="oa-session-open" disabled={busy} onClick={() => openSession(x.id)}>
+                        <ChatCircleText aria-hidden="true" className="oa-session-icon" />
+                        <span className="oa-session-text">
+                          <b>{x.title || t('oa.untitled')}</b>
+                          {x.preview && <span>{x.preview}</span>}
+                          <small>{when(x.lastMessageAt ?? x.createdAt)} · {t('oa.messagesN', { n: x.messageCount })}</small>
+                        </span>
+                      </button>
+                      {x.canDelete && (
+                        <button type="button" className="oa-tool" title={t('oa.del')} disabled={busy} onClick={() => setDoomed(x.id)}>
+                          <Trash aria-hidden="true" /><span className="oa-sr">{t('oa.del')}</span>
+                        </button>
+                      )}
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="oa-history-empty">{t('oa.historyEmpty')}</p>
+          )}
+          <button type="button" className="oa-btn oa-btn--line oa-history-new" disabled={busy || unavailable} onClick={newChat}>
+            <NotePencil aria-hidden="true" weight="bold" />{t('oa.newChat')}
+          </button>
+        </div>
+      ) : (
+      <div className="oa-list" ref={list} role="log" aria-live="polite" aria-label={t('oa.title')}>
+        {!messages.length && !pending && (
+          <div className="oa-hero">
+            <b className="oa-hero-title">{t(fresh ? 'oa.newChat' : 'oa.emptyTitle')}</b>
+            {fresh && <span className="oa-fine">{t('oa.newChatHint')}</span>}
           </div>
         )}
-      </header>
-      {summary}
-
-      <div className="oa-list" ref={list} role="log" aria-live="polite" aria-label={t('oa.title')}>
-        <div className="oa-msg oa-msg--bot"><p>{t('oa.hello')}</p></div>
+        <div className="oa-row">
+          <span className="oa-avatar oa-avatar--sm" aria-hidden="true"><Sparkle weight="fill" /></span>
+          <div className="oa-col">
+            <div className="oa-by"><b>{t('oa.title')}</b></div>
+            <div className="oa-msg oa-msg--bot"><p>{t('oa.hello')}</p></div>
+          </div>
+        </div>
         {!messages.length && !pending && !unavailable && (
           <div className="oa-try">
             {[1, 2].map((n) => (
-              <button key={n} type="button" className="co-example" disabled={busy} onClick={() => { setText(t(`oa.ex.${n}`)); input.current?.focus() }}>
-                {t(`oa.ex.${n}`)}
+              <button key={n} type="button" className="oa-suggest" disabled={busy} onClick={() => { setText(t(`oa.ex.${n}`)); input.current?.focus() }}>
+                <PencilSimpleLine aria-hidden="true" className="oa-suggest-icon" />
+                <span>{t(`oa.ex.${n}`)}</span>
               </button>
             ))}
           </div>
         )}
 
         {messages.map((m) => {
-          if (m.role === 'USER') return <p key={m.id} className="oa-msg oa-msg--me">{m.content}</p>
+          if (m.role === 'USER') {
+            return (
+              <div key={m.id} className="oa-row oa-row--me">
+                <div className="oa-col">
+                  <div className="oa-by"><span className="oa-time">{clock(m.createdAt)}</span><b>{t('oa.you')}</b></div>
+                  <p className="oa-msg oa-msg--me">{m.content}</p>
+                </div>
+              </div>
+            )
+          }
           const body = m.status === 'FAILED' && !m.content ? t('oa.failed') : m.content
           return (
-            <div key={m.id} className="oa-turn">
-              {body && <div className={`oa-msg oa-msg--bot${m.status === 'FAILED' ? ' failed' : ''}`}><RichText text={body} /></div>}
-              {m.proposal && <ProposalCard proposal={m.proposal} />}
+            <div key={m.id} className="oa-row">
+              <span className="oa-avatar oa-avatar--sm" aria-hidden="true"><Sparkle weight="fill" /></span>
+              <div className="oa-col oa-turn">
+                <div className="oa-by"><b>{t('oa.title')}</b><span className="oa-time">{clock(m.createdAt)}</span></div>
+                {body && <div className={`oa-msg oa-msg--bot${m.status === 'FAILED' ? ' failed' : ''}`}><RichText text={body} /></div>}
+                {m.proposal && <ProposalCard proposal={m.proposal} />}
+              </div>
             </div>
           )
         })}
 
         {pending && (
           <>
-            <p className="oa-msg oa-msg--me">{pending}</p>
-            <div className="oa-wait" aria-live="polite">
-              <span className="oa-typing" aria-hidden="true"><i /><i /><i /></span>
-              <span className="oa-fine">{progress[progress.length - 1] ?? t('oa.thinking')}</span>
+            <div className="oa-row oa-row--me">
+              <div className="oa-col">
+                <div className="oa-by"><b>{t('oa.you')}</b></div>
+                <p className="oa-msg oa-msg--me">{pending}</p>
+              </div>
+            </div>
+            <div className="oa-row">
+              <span className="oa-avatar oa-avatar--sm" aria-hidden="true"><Sparkle weight="fill" /></span>
+              <div className="oa-wait" aria-live="polite">
+                <span className="oa-typing" aria-hidden="true"><i /><i /><i /></span>
+                <span className="oa-fine">{progress[progress.length - 1] ?? t('oa.thinking')}</span>
+              </div>
             </div>
           </>
         )}
       </div>
+      )}
 
       <div className="oa-foot">
-        {!sketch && canDraw && orderId !== null && (
-          <div className="oa-note" role="status">
-            <span>{t('oa.noSketch')}</span>
-            <button type="button" className="oa-link" disabled={busy} onClick={() => move('redraw')}>{t('oa.draw')}</button>
-          </div>
-        )}
         {sketch?.inputsChanged && (
           <div className="oa-note" role="status">
             <span>{t('oa.outdated')}</span>
@@ -278,12 +437,6 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
           <p className="co-hint">{t('oa.unavailable')}</p>
         ) : (
           <>
-            {needConsent && (
-              <label className="oa-consent">
-                <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-                <span><b>{t('oa.consentTitle')}.</b> {t('oa.consent')}</span>
-              </label>
-            )}
             <div className={`oa-composer${busy ? ' busy' : ''}`}>
               {picked > 0 && (
                 <div className="oa-chips">
@@ -310,15 +463,14 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, canDraw, 
                     }
                   }}
                 />
+              </div>
+              <div className="oa-bar">
+                {!!status?.limit && <span className="oa-quota">{t('oa.quota', { left: status.left ?? 0, limit: status.limit })}</span>}
                 <button type="button" className="oa-send" aria-label={t(busy ? 'oa.sending' : 'oa.send')} title={t(busy ? 'oa.sending' : 'oa.send')}
                   disabled={busy || !text.trim() || !canWrite} onClick={() => void send()}>
                   <ArrowUp aria-hidden="true" weight="bold" />
                 </button>
               </div>
-            </div>
-            <div className="oa-meta">
-              <span>{t('oa.enterHint')}</span>
-              {!!status?.limit && <span className="vh-mono">{t('oa.quota', { left: status.left ?? 0, limit: status.limit })}</span>}
             </div>
           </>
         )}

@@ -22,6 +22,27 @@ export async function aiStatus(): Promise<AiStatus> {
   return { enabled: s.enabled, available: s.available, left: s.messages_left_today, limit: s.daily_message_limit }
 }
 
+// ---------- data policy (migration 0031, guide 7s.1) ----------
+
+/** The AI chat data policy in force. The text is the backend's, in Vietnamese only. */
+export interface AiPolicy {
+  title: string
+  version: string
+  body: string
+  sections: { title: string; body: string }[]
+  providers: string[]
+  retentionDays: number | null
+}
+
+export async function aiChatPolicy(): Promise<AiPolicy> {
+  const p = await api<{ title: string; version: string; body: string; sections?: { title: string; body: string }[] | null; providers?: string[] | null; retention_days?: number | null }>('/privacy-policy/ai-chat')
+  return { title: p.title, version: p.version, body: p.body, sections: p.sections ?? [], providers: p.providers ?? [], retentionDays: p.retention_days ?? null }
+}
+
+/** Records the customer's consent to that version (`409 POLICY_VERSION_CHANGED` when a newer one came out meanwhile). */
+export const acceptAiPolicy = (version: string) =>
+  api<{ policy_version: string; accepted: boolean }>('/me/assistant/consent', { method: 'POST', body: { policy_version: version } })
+
 // ---------- proposals ----------
 
 export type ProposalStatus = 'PENDING' | 'APPLIED' | 'REJECTED'
@@ -119,10 +140,45 @@ const toMessage = (m: RawMessage): AiMessage => ({
   proposal: m.proposal ? toProposal(m.proposal) : null,
 })
 
-export async function aiConversation(orderId: number): Promise<{ consented: boolean; messages: AiMessage[] }> {
-  const c = await api<{ consented_at: string | null; messages: RawMessage[] }>(`/orders/${orderId}/assistant/messages`)
-  return { consented: !!c.consented_at, messages: c.messages.map(toMessage) }
+/** One conversation of an order (migration 0031: an order can have up to 20; a new one does not remember the others). */
+export interface AiSession {
+  id: number
+  orderId: number
+  /** The customer's name for it, or its first message. */
+  title: string | null
+  /** The last message, at most 140 characters. */
+  preview: string | null
+  messageCount: number
+  createdAt: string
+  lastMessageAt: string | null
+  /** The order can still change: the customer can keep chatting. */
+  canChat: boolean
+  /** The order is still a draft: the conversation can be deleted. */
+  canDelete: boolean
 }
+interface RawSession {
+  id: number; order_id: number; title: string | null; preview: string | null; message_count: number
+  created_at: string; last_message_at: string | null; can_chat: boolean; can_delete: boolean
+}
+const toSession = (s: RawSession): AiSession => ({
+  id: s.id, orderId: s.order_id, title: s.title, preview: s.preview, messageCount: s.message_count,
+  createdAt: s.created_at, lastMessageAt: s.last_message_at, canChat: s.can_chat, canDelete: s.can_delete,
+})
+
+/** One conversation of the order; without `sessionId` the one used last. `sessionId` is null when the order has none yet. */
+export async function aiConversation(orderId: number, sessionId?: number | null): Promise<{ consented: boolean; sessionId: number | null; messages: AiMessage[] }> {
+  const q = sessionId ? `?session_id=${sessionId}` : ''
+  const c = await api<{ consented_at: string | null; session: { id: number } | null; messages: RawMessage[] }>(`/orders/${orderId}/assistant/messages${q}`)
+  return { consented: !!c.consented_at, sessionId: c.session?.id ?? null, messages: c.messages.map(toMessage) }
+}
+
+/** The conversations of the order, the one used last first. */
+export const aiSessions = async (orderId: number): Promise<AiSession[]> =>
+  (await api<RawSession[]>(`/orders/${orderId}/assistant/sessions`)).map(toSession)
+
+/** Deletes a conversation for good (draft orders only, `can_delete`). */
+export const deleteAiSession = (orderId: number, sessionId: number) =>
+  api<void>(`/orders/${orderId}/assistant/sessions/${sessionId}`, { method: 'DELETE' })
 
 /** The proposals still waiting for the customer: they lock the form and the sending of the order. */
 export const openProposals = (messages: AiMessage[]): AiProposal[] =>
@@ -137,16 +193,21 @@ export const selectionSize = (s: AiSelection): number => s.stroke_ids.length + s
 
 export interface AiTurnBody {
   text: string
-  ai_consent: boolean
+  /** Not sent from Create Order: the customer accepts the policy in its dialog before the chat opens. */
+  ai_consent?: boolean
   base_revision_id?: number
   selection?: AiSelection
   /** Continue this pending proposal (the backend continues the latest one when this is left out). */
   base_proposal_id?: number
   /** Start from the order as it is now and ignore the pending proposals. */
   from_order?: boolean
+  /** Start a new conversation (never together with `session_id`). */
+  new_session?: boolean
+  /** Continue this conversation; without it (and without `new_session`) the one used last. */
+  session_id?: number
   client_ref: string
 }
-export interface AiTurn { user: AiMessage; reply: AiMessage; proposal: AiProposal | null }
+export interface AiTurn { user: AiMessage; reply: AiMessage; proposal: AiProposal | null; sessionId: number | null }
 export type AiEvent =
   | { type: 'tool'; name: string; ok: boolean }
   | { type: 'failover' }
@@ -209,9 +270,9 @@ export async function sendAiMessage(orderId: number, body: AiTurnBody, onEvent: 
       if (event === 'tool') onEvent({ type: 'tool', name: String(json.name ?? ''), ok: !!json.ok })
       else if (event === 'failover') onEvent({ type: 'failover' })
       else if (event === 'reply') {
-        const r = json as unknown as { user: RawMessage; reply: RawMessage; proposal?: RawProposal | null }
+        const r = json as unknown as { user: RawMessage; reply: RawMessage; proposal?: RawProposal | null; session_id?: number | null }
         const reply = toMessage(r.reply)
-        turn = { user: toMessage(r.user), reply, proposal: r.proposal ? toProposal(r.proposal) : reply.proposal }
+        turn = { user: toMessage(r.user), reply, proposal: r.proposal ? toProposal(r.proposal) : reply.proposal, sessionId: r.session_id ?? null }
       } else if (event === 'error') {
         failure = new ApiError(409, String(json.code ?? 'INTERNAL_ERROR'), String(json.message ?? ''))
       }

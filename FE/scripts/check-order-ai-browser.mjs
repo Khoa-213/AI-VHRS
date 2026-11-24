@@ -24,7 +24,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const REPLY_TEXT = 'Happy birthday, Mom!'
 
 // ---- the fake backend: the assistant PROPOSES (BE migration 0029); the FE applies each proposal at once ----
-const state = { fail: { generate: false, apply: false, turn: false, limit: false }, sketchGone: false, available: true, created: false, order: null, sketch: null, msgs: [], consented: false, left: 30, turn: 0, nextMsg: 1, proposals: {}, bodies: [] }
+const state = { fail: { generate: false, apply: false, turn: false, limit: false }, sketchGone: false, available: true, created: false, order: null, sketch: null, msgs: [], consented: false, left: 30, turn: 0, nextMsg: 1, proposals: {}, bodies: [], sessions: [], nextSid: 1, consents: [] }
 const log = []
 const newOrder = () => ({
   id: 77, code: 'VH-AI-1', order_type: 'OT3_TEMPLATE', order_status: 'DRAFT', production_status: 'NOT_STARTED',
@@ -63,7 +63,14 @@ const makeProposal = (id, messageId) => ({
   preview: { revision_id: 11, pages: 2, preview_url: `/api/v1/orders/77/assistant/proposals/${id}/preview`, sketch_changed: true, sketch_outdated: false },
 })
 /** What the conversation returns: every assistant message carries its proposal as it is now. */
-const conversation = () => state.msgs.map((m) => ({ ...m, proposal: m.pid ? state.proposals[m.pid] : null }))
+const conversation = (sid) => state.msgs.filter((m) => m.sid === sid).map((m) => ({ ...m, proposal: m.pid ? state.proposals[m.pid] : null }))
+/** Conversations (migration 0031), the one used last first. */
+const latestSession = () => [...state.sessions].sort((a, b) => b.last - a.last)[0] ?? null
+const sessionItem = (x) => {
+  const msgs = state.msgs.filter((m) => m.sid === x.id)
+  return { id: x.id, order_id: 77, order_code: 'VH-AI-1', order_type: 'OT3_TEMPLATE', order_status: 'DRAFT', title: msgs.find((m) => m.role === 'USER')?.content ?? null,
+    title_is_custom: false, preview: msgs.at(-1)?.content?.slice(0, 140) ?? null, message_count: msgs.length, created_at: now, last_message_at: now, can_chat: true, can_delete: true }
+}
 
 const server = createServer(async (req, res) => {
   try {
@@ -82,9 +89,11 @@ const errors = []
 const sse = (events) => events.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`).join('')
 
 /** The answer of the fake backend: [body, status, mime]. */
-function answer(method, path, postData) {
+function answer(method, path, postData, search = '') {
   const body = postData ? JSON.parse(postData) : {}
   if (path === '/me') return [{ id: 17, email: 'test@example.test', full_name: 'Browser Test', role: 'CUSTOMER', status: 'ACTIVE', addresses: [], created_at: now }]
+  if (path === '/privacy-policy/ai-chat') return [{ title: 'QUYỀN RIÊNG TƯ KHI SỬ DỤNG TRỢ LÝ AI', version: 'AI-1.0', body: 'Toàn văn', sections: [{ title: '1. Phạm vi hỗ trợ', body: 'Trợ lý hỗ trợ soạn nội dung.' }, { title: '2. Dữ liệu được gửi', body: 'Hệ thống gửi:\n\n- Tin nhắn\n- Nội dung đơn' }], providers: ['Anthropic (Claude)', 'Google (Gemini)'], retention_days: 90, retention_enforced: false, is_draft: false }]
+  if (path === '/me/assistant/consent' && method === 'POST') { state.consents.push(body.policy_version); state.consented = true; return [{ policy_version: 'AI-1.0', accepted: true, accepted_at: now }] }
   if (path === '/studio/assistant/status') return [{ enabled: state.available, available: state.available, providers: ['test'], messages_left_today: state.left, daily_message_limit: 30, sends_photos: false }]
   if (path === '/catalog/papers') return [[{ id: 1, code: 'P1', name: 'Paper A5', gsm: 100, surface: 'SMOOTH', size: 'A5', unit_price: '1000' }]]
   if (path === '/catalog/pens') return [[{ id: 1, code: 'G1', name: 'Gel pen', category: 'GEL', stroke_width_mm: '0.5', surcharge: '0' }]]
@@ -100,15 +109,30 @@ function answer(method, path, postData) {
   if (path === '/orders/77' && method === 'PATCH') return [state.order]
   if (path === '/orders/77/assistant/messages') {
     const proposals = Object.values(state.proposals)
-    return [{ consented_at: state.consented ? now : null, flags: [], messages: conversation(), proposals }]
+    const asked = Number(new URLSearchParams(search).get('session_id')) || null
+    const sess = asked ? state.sessions.find((x) => x.id === asked) : latestSession()
+    if (asked && !sess) return [{ error: { code: 'SESSION_NOT_FOUND', message: 'No chat' } }, 404]
+    return [{ consented_at: state.consented ? now : null, policy_version: 'AI-1.0', policy_accepted: state.consented, session: sess ? { id: sess.id, title: null, title_is_custom: false, created_at: now, last_message_at: now } : null, flags: [], messages: sess ? conversation(sess.id) : [], proposals }]
+  }
+  if (path === '/orders/77/assistant/sessions') return [[...state.sessions].sort((a, b) => b.last - a.last).map(sessionItem)]
+  const delSession = /^\/orders\/77\/assistant\/sessions\/(\d+)$/.exec(path)
+  if (delSession && method === 'DELETE') {
+    const id = Number(delSession[1])
+    state.sessions = state.sessions.filter((x) => x.id !== id)
+    state.msgs = state.msgs.filter((m) => m.sid !== id)
+    return ['', 204]
   }
   if (path === '/orders/77/assistant/messages/stream') {
     if (state.fail.limit) return [{ error: { code: 'AI_DAILY_LIMIT', message: 'Daily limit' } }, 429]
+    assert.equal(body.ai_consent, undefined, 'consent is given in the policy dialog, not with the message')
+    if (!state.consented) return [{ error: { code: 'AI_CONSENT_REQUIRED', message: 'Consent first', details: { policy_version: 'AI-1.0' } } }, 422]
     state.turn += 1
     state.bodies.push(body)
-    assert.ok(body.ai_consent === true, 'the message carries the consent')
     assert.ok(body.client_ref, 'every message carries a client_ref')
-    state.consented = true
+    assert.ok(!(body.new_session && body.session_id), 'never new_session together with session_id')
+    let sess = body.session_id ? state.sessions.find((x) => x.id === body.session_id) : body.new_session ? null : latestSession()
+    if (!sess) { sess = { id: state.nextSid++, last: 0 }; state.sessions.push(sess) }
+    sess.last = state.turn
     state.left -= 1
     const user = message(state.nextMsg++, 'USER', body.text)
     const id = state.nextMsg++
@@ -118,12 +142,12 @@ function answer(method, path, postData) {
     if (proposal) state.proposals[proposal.id] = proposal
     const reply = message(id, 'ASSISTANT', failed ? '' : proposal ? 'I wrote it for you:\n- **Style:** Style one\n- **Paper:** Paper A5' : 'The word is fine as it is.', proposal)
     if (failed) reply.status = 'FAILED'
-    state.msgs.push(user, { ...reply, pid: proposal?.id ?? null })
+    state.msgs.push({ ...user, sid: sess.id }, { ...reply, pid: proposal?.id ?? null, sid: sess.id })
     return [sse([
       ['user_saved', { id: user.id }], ['provider', { provider: 'test', model: 'test' }],
       ['tool', { name: 'update_text', ok: true, revision_id: null }], ['tool', { name: 'generate_sketch', ok: true, revision_id: 11 }],
       ...(proposal ? [['proposal', { id: proposal.id, sketch_revision_id: 11, fields: ['text'] }]] : []),
-      ['reply', { user, reply, replayed: false, sketch_revision_id: state.sketch?.rev ?? null, proposal }], ['done', {}],
+      ['reply', { user, reply, replayed: false, session_id: sess.id, sketch_revision_id: state.sketch?.rev ?? null, proposal }], ['done', {}],
     ]), 200, 'text/event-stream']
   }
   const decide = /^\/orders\/77\/assistant\/proposals\/(\d+)\/(apply|reject)$/.exec(path)
@@ -178,7 +202,7 @@ try {
     const path = u.pathname.replace('/api/v1', '')
     log.push(`${request.method} ${path}`)
     try {
-      const [data, code = 200, mime = 'application/json'] = answer(request.method, path, request.postData)
+      const [data, code = 200, mime = 'application/json'] = answer(request.method, path, request.postData, u.search)
       await fulfill(requestId, data, code, mime)
     } catch (e) { errors.push(e.message); await fulfill(requestId, { error: { code: 'TEST_ERROR', message: e.message } }, 500) }
   }
@@ -192,6 +216,15 @@ try {
   const option = async (name) => { const find = `[...document.querySelectorAll('.co-seg--how button')].find(b=>b.textContent.trim()===${JSON.stringify(name)})`; await wait(`!!(${find}) && !(${find}).disabled`, `option "${name}"`); await evaluate(`(${find}).click()`); await sleep(100) }
   const open = async (path) => { await command('Page.navigate', { url: `http://127.0.0.1:${port}${path}` }); await wait(`!!document.querySelector('.co')`, `open ${path}`) }
   // A saved draft with content and materials opens on the review step: go back to the first one.
+  /** "AI assistant", then the data policy dialog: tick the box and the chat opens. */
+  const enterAi = async (shotName) => {
+    await wait(`!!document.querySelector('.co-how-ai') && !document.querySelector('.co-how-ai').disabled`, 'AI choice')
+    await evaluate(`document.querySelector('.co-how-ai').click()`)
+    await wait(`!!document.querySelector('.oap[open] .oap-agree input:not(:disabled)')`, 'policy dialog')
+    if (shotName) { await noOverflow(shotName); await shot(shotName) }
+    await evaluate(`document.querySelector('.oap-agree input').click()`)
+    await wait(`!document.querySelector('.oap') && !!document.querySelector('.oa')`, 'the chat opens after the tick')
+  }
   const firstStep = async () => { await wait(`!!document.querySelector('.co-step')`, 'steps'); await evaluate(`document.querySelector('.co-step').click()`); await sleep(100) }
   const text = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)})?.innerText ?? ''`)
   const noOverflow = async (label) => assert.equal(await evaluate('document.documentElement.scrollWidth > innerWidth + 1'), false, `horizontal overflow: ${label}`)
@@ -205,11 +238,31 @@ try {
   const svgClick = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
 
   // 1. The assistant is offered and chosen; the manual text form is not shown beside it.
+  // Create Order opens on "By myself"; "AI assistant" first shows the AI chat data policy from the backend.
   await open('/create-order')
-  await wait(`!!document.querySelector('.oa')`, 'assistant panel')
+  await wait(`!!document.querySelector('.co-tray--3')`, 'manual by default')
   assert.ok((await text('.co-body')).includes('AI assistant'), 'AI choice is offered')
+  assert.equal(await evaluate(`!!document.querySelector('.oa')`), false, 'no chat before the customer picks the assistant')
+  assert.equal(await evaluate(`document.querySelector('.co-how-ai').getAttribute('aria-checked')`), 'false', '"By myself" is the default')
+  await evaluate(`document.querySelector('.co-how-ai').click()`)
+  await wait(`!!document.querySelector('.oap[open] .oap-sec')`, 'the policy dialog with the backend text')
+  assert.match(await text('.oap'), /QUYỀN RIÊNG TƯ KHI SỬ DỤNG TRỢ LÝ AI/)
+  assert.match(await text('.oap'), /Version AI-1\.0/)
+  assert.match(await text('.oap'), /Anthropic \(Claude\), Google \(Gemini\)/)
+  assert.match(await text('.oap'), /only available in Vietnamese/)
+  assert.equal(await evaluate(`document.querySelectorAll('.oap-sec').length`), 2)
+  assert.equal(await evaluate(`document.querySelectorAll('.oap-sec li').length`), 2, 'bullets of the policy are a list')
+  await shot('order-ai-policy-1440.png')
+  await click('Make it myself')
+  await wait(`!document.querySelector('.oap')`, 'declining closes the dialog')
+  assert.equal(await evaluate(`!!document.querySelector('.oa')`), false, 'declining keeps "By myself"')
+  assert.equal(state.consents.length, 0, 'nothing is recorded without the tick')
+  await enterAi()
+  assert.deepEqual(state.consents, ['AI-1.0'], 'the tick records the consent to the version read')
   assert.equal(await evaluate(`!!document.querySelector('.co-tray--3')`), false, 'the input modes are hidden while the assistant is picked')
-  assert.equal(await evaluate(`!!document.querySelector('.co-side .oa .oa-est')`), true, 'the chat sits on the right with the estimated price')
+  assert.equal(await evaluate(`!!document.querySelector('.co-side .oa') && !document.querySelector('.oa .oa-est')`), true, 'the chat sits on the right, without the price')
+  assert.equal(await evaluate(`!!document.querySelector('.co-sketch .co-sketch-head .oa-est')`), true, 'the estimated price sits in the sketch box head')
+  assert.equal(await evaluate(`!!document.querySelector('.oa-hero') && !document.querySelector('.oa-hero .oa-avatar')`), true, 'no logo above "What would you like to write today?"')
   assert.equal(await evaluate(`!!document.querySelector('.co-rail')`), false, 'the estimate box gives way to the chat')
   assert.equal(await evaluate(`!!document.querySelector('.co-main .co-sketch')`), true, 'the sketch takes the chat\'s old place under the form')
   assert.equal(await evaluate(`!!document.querySelector('.co-live') || !!document.querySelector('.co-sub textarea.co-text')`), false, 'the manual text form is hidden in AI mode')
@@ -220,7 +273,6 @@ try {
   const composerH = await evaluate(`document.querySelector('.oa-input textarea').getBoundingClientRect().height`)
   assert.ok(composerH < 60, `the message box starts as one line (${composerH}px)`)
   await typeInto('.oa textarea', 'Write a short birthday greeting for my mother')
-  await evaluate(`document.querySelector('.oa-consent input').click()`)
   await clickSel('.oa-send')
   await wait(`document.querySelector('.oa-prop')?.dataset.status === 'APPLIED'`, 'the answer is applied')
   assert.ok(log.includes('POST /orders'), 'the draft is created with the first message')
@@ -284,6 +336,7 @@ try {
   assert.equal(await evaluate(`!!document.querySelector('.oa')`), false)
   await option('AI assistant')
   await wait(`!!document.querySelector('.oa .oa-prop')`, 'conversation comes back')
+  assert.equal(await evaluate(`!!document.querySelector('.oap')`), false, 'accepted once on this page: no second dialog')
 
   // 6. Another answer is applied too; the chat stays at every step and the order can go on.
   await typeInto('.oa textarea', 'Make it a little shorter')
@@ -319,19 +372,18 @@ try {
   assert.equal(await locked(), false, 'the form stays free after a failed turn')
   state.fail.turn = false
 
-  // The order has text but no sketch and the file storage is down: drawing says so, and works again once storage is back.
+  // The order has text but no sketch: the chat shows no "draw the sketch" prompt (removed 2026-11-24, the assistant draws it).
   state.sketchGone = true
-  state.fail.generate = true
   await open('/create-order/draft/77')
   await firstStep()
-  await wait(`!!(${button('Draw the sketch')})`, 'draw button when there is no sketch')
-  await click('Draw the sketch')
-  await wait(`!!document.querySelector('.oa .lg-error')`, 'storage error')
-  assert.match(await text('.oa .lg-error'), /File storage is not available/)
-  state.fail.generate = false
-  await click('Draw the sketch')
-  await wait(`!!document.querySelector('.co-sketch .oa-view-img')`, 'sketch after storage is back')
-  assert.equal(await evaluate(`!!document.querySelector('.oa .lg-error')`), false, 'the error clears on the next try')
+  await enterAi()
+  await wait(`!!document.querySelector('.oa-foot')`, 'chat without a sketch')
+  assert.equal(await evaluate(`!!document.querySelector('.oa-foot .oa-note')`), false, 'no draw prompt when there is no sketch')
+  state.sketchGone = false
+  await open('/create-order/draft/77')
+  await firstStep()
+  await enterAi()
+  await wait(`!!document.querySelector('.co-sketch .oa-view-img')`, 'the sketch is back')
 
   // 8. The order changed while the assistant answered (another tab): applying is refused, the chat says why and marks the
   //    answer as not applied, and the form stays free.
@@ -352,6 +404,7 @@ try {
       await command('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: width < 600 })
       await open('/create-order/draft/77')
       await firstStep()
+      await enterAi(width === 390 ? `order-ai-policy-${lang}-390.png` : undefined)
       await wait(`!!document.querySelector('.oa .oa-prop')`, `${lang} ${width} answer summary`)
       assert.ok((await text('.co-body')).includes(ai), `${lang}: ${ai}`)
       assert.ok((await text('.oa')).includes(applied), `${lang}: ${applied}`)
@@ -360,6 +413,56 @@ try {
       if (lang === 'vi' && width === 390) await shot('order-ai-vi-390.png')
     }
   }
+
+  // 10. Conversations (migration 0031): New chat clears the panel, its first message goes with new_session and the next ones
+  //     with its session_id; the history lists both chats, opens the old one and deletes the new one after a confirmation.
+  await evaluate(`localStorage.setItem('aivhrs-lang','en')`)
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
+  await open('/create-order/draft/77')
+  await firstStep()
+  await enterAi()
+  await wait(`!!document.querySelector('.oa .oa-prop')`, 'the last chat is loaded')
+  const oldMine = await evaluate(`document.querySelectorAll('.oa-msg--me').length`)
+  const sent = state.bodies.length
+  await click('New chat')
+  assert.equal(await evaluate(`document.querySelectorAll('.oa-list .oa-prop, .oa-list .oa-msg--me').length`), 0, 'a new chat clears the panel')
+  assert.match(await text('.oa-head'), /New chat/)
+  assert.equal(log.includes('POST /orders/77/assistant/sessions'), false, 'a new chat calls nothing before its first message')
+  await typeInto('.oa textarea', 'Start over please')
+  await clickSel('.oa-send')
+  await wait(`document.querySelectorAll('.oa-msg--me').length === 1 && !document.querySelector('.oa-wait')`, 'first answer of the new chat')
+  assert.equal(state.bodies[sent].new_session, true, 'the first message of a new chat starts a session')
+  assert.equal(state.bodies[sent].session_id, undefined)
+  await typeInto('.oa textarea', 'And once more')
+  await clickSel('.oa-send')
+  await wait(`document.querySelectorAll('.oa-msg--me').length === 2 && !document.querySelector('.oa-wait')`, 'second answer of the new chat')
+  assert.equal(state.bodies[sent + 1].session_id, 2, 'the next messages continue that session')
+  assert.equal(state.bodies[sent + 1].new_session, undefined)
+  await clickSel('.oa-tool[aria-expanded]')
+  await wait(`document.querySelectorAll('.oa-session').length === 2`, 'both chats are listed')
+  assert.match(await text('.oa-session.on'), /Start over please/, 'the open chat is marked')
+  await shot('order-ai-history-1440.png')
+  await evaluate(`[...document.querySelectorAll('.oa-session')].find((li) => !li.classList.contains('on')).querySelector('.oa-session-open').click()`)
+  await wait(`!document.querySelector('.oa-history') && document.querySelectorAll('.oa-msg--me').length === ${oldMine}`, 'the old chat opens')
+  await clickSel('.oa-tool[aria-expanded]')
+  await wait(`document.querySelectorAll('.oa-session').length === 2`, 'history again')
+  await evaluate(`[...document.querySelectorAll('.oa-session')].find((li) => li.textContent.includes('Start over please')).querySelector('button[title="Delete chat"]').click()`)
+  await wait(`!!document.querySelector('.oa-session-ask')`, 'delete asks first')
+  assert.match(await text('.oa-session-ask'), /cannot be restored/)
+  await click('Delete')
+  await wait(`document.querySelectorAll('.oa-session').length === 1`, 'the chat is deleted')
+  assert.ok(log.includes('DELETE /orders/77/assistant/sessions/2'))
+  await shot('order-ai-light-1440.png')
+
+  // Consent withdrawn elsewhere: the backend refuses the message, the dialog asks again and the typed text stays.
+  state.consented = false
+  await typeInto('.oa textarea', 'After the withdrawal')
+  await clickSel('.oa-send')
+  await wait(`!!document.querySelector('.oap[open] .oap-agree input:not(:disabled)')`, 'the dialog comes back on AI_CONSENT_REQUIRED')
+  assert.equal(await evaluate(`document.querySelector('.oa textarea').value`), 'After the withdrawal')
+  await evaluate(`document.querySelector('.oap-agree input').click()`)
+  await wait(`!document.querySelector('.oap') && !!document.querySelector('.oa')`, 'the chat stays after the new tick')
+  assert.equal(state.consented, true)
 
   // 9. The assistant is off: only the manual form, with a note.
   await evaluate(`localStorage.setItem('aivhrs-lang','en')`)
@@ -375,7 +478,7 @@ try {
   assert.equal(await evaluate(`!!document.querySelector('.co-rail') && !document.querySelector('.co-sketch')`), true, 'without the assistant the estimate box is back')
 
   assert.deepEqual(errors, [])
-  console.log('PASS: AI choice, layout (chat with price on the right, sketch on the left), first turn (draft, proposal applied at once, sketch box updated, no Apply/Skip, compact summary, Markdown), one-line composer, undo and redo, pick on the sketch (chip, selection sent and cleared), by myself, chat at every step, from_order on every message, errors (daily limit, provider failed, storage down then back, apply refused), vi/ja at 1440 and 390, assistant off. All API calls intercepted.')
+  console.log('PASS: AI choice, layout (chat with price on the right, sketch on the left), first turn (draft, proposal applied at once, sketch box updated, no Apply/Skip, compact summary, Markdown), one-line composer, undo and redo, pick on the sketch (chip, selection sent and cleared), by myself, chat at every step, from_order on every message, errors (daily limit, provider failed, apply refused), no draw prompt without a sketch, default "By myself", policy dialog (backend text, decline, tick records the version, asked again on AI_CONSENT_REQUIRED), vi/ja at 1440 and 390, new chat and history (new_session, session_id, open, delete), assistant off. All API calls intercepted.')
 } finally {
   ws?.close(); browser?.kill(); server.closeAllConnections(); server.close()
 }
