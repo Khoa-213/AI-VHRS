@@ -640,7 +640,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   return (
     <Frame>
-      <div className="co">
+      <div className={`co${aiOn ? ' co--ai' : ''}`}>
         <header className="co-head">
           <span className="co-eyebrow">{order ? `${t('co.eyebrow')} · ${order.code}` : t('co.eyebrow')}</span>
           <h1 className="co-h1">{t('co.h1')}</h1>
