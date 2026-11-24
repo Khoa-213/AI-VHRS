@@ -36,6 +36,9 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+import cv2
+import numpy as np
+
 from app.core.errors import AppError
 from app.services.stroke_ai import trajectory as tj
 
@@ -43,7 +46,13 @@ FORMAT = "vhrs-sketch/2"
 EDGE_MM = 1.0                    # a point closer than this to the paper edge is refused (the pen holder needs room)
 MIN_STROKE_MM = 0.2
 MAX_SELECTION = 500
-OPS = ("translate", "rotate", "scale", "slant", "curvature", "smooth", "extend", "trim", "join", "split", "delete")
+OPS = ("translate", "rotate", "scale", "slant", "curvature", "smooth", "extend", "trim", "join", "split", "delete", "erase")
+AI_OPS = tuple(o for o in OPS if o != "erase")   # erase takes the brush's coordinates: a person paints it, never the model
+ERASE_RADIUS_MM = (0.2, 15.0)    # erase: the brush's radius
+ERASE_MAX_PATHS = 200            # ... brush strokes sent in one save
+ERASE_MAX_POINTS = 20000         # ... points of all of them together
+ERASE_STEP_MM = 0.1              # ... a stroke is tested against the brush at most this far apart
+ERASE_GRID_MM = 0.05             # ... the brush is drawn on a raster of the page this fine
 
 
 @dataclass(frozen=True)
@@ -281,6 +290,107 @@ def _num(params: dict[str, Any], key: str, lo: float, hi: float, *, default: flo
     return float(v)
 
 
+def _erase_paths(params: dict[str, Any]) -> list[tuple[list[tuple[float, float]], float]]:
+    """`params.paths` = [{"points": [[x, y], ...], "radius_mm": r}, ...] in mm: the brush strokes, validated."""
+    paths = params.get("paths")
+    if not isinstance(paths, list) or not paths:
+        raise AppError(422, "INVALID_EDIT_PARAMS", "Tham số 'paths' là danh sách vệt tẩy.", {"param": "paths"})
+    if len(paths) > ERASE_MAX_PATHS:
+        raise AppError(422, "EDIT_OUT_OF_RANGE", f"Tối đa {ERASE_MAX_PATHS} vệt tẩy mỗi lần lưu.",
+                       {"param": "paths", "max": ERASE_MAX_PATHS, "value": len(paths)})
+    out, total = [], 0
+    for i, pth in enumerate(paths):
+        if not isinstance(pth, dict):
+            raise AppError(422, "INVALID_EDIT_PARAMS", "Mỗi vệt tẩy là {points, radius_mm}.", {"param": f"paths[{i}]"})
+        r = _num(pth, "radius_mm", *ERASE_RADIUS_MM)
+        pts = pth.get("points")
+        if not isinstance(pts, list) or not pts:
+            raise AppError(422, "INVALID_EDIT_PARAMS", "Vệt tẩy cần ít nhất một điểm.", {"param": f"paths[{i}].points"})
+        total += len(pts)
+        if total > ERASE_MAX_POINTS:
+            raise AppError(422, "EDIT_OUT_OF_RANGE", f"Các vệt tẩy có tối đa {ERASE_MAX_POINTS} điểm.",
+                           {"param": "paths", "max": ERASE_MAX_POINTS})
+        clean = []
+        for q in pts:
+            if (not isinstance(q, (list, tuple)) or len(q) != 2
+                    or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in q)):
+                raise AppError(422, "INVALID_EDIT_PARAMS", "Điểm của vệt tẩy là [x, y] (mm).", {"param": f"paths[{i}].points"})
+            clean.append((float(q[0]), float(q[1])))
+        out.append((clean, r))
+    return out
+
+
+class _Brush:
+    """The brush strokes drawn on a raster of the page (ERASE_GRID_MM per pixel): one lookup per test point, and an
+    integral image to skip strokes the brush is nowhere near."""
+
+    def __init__(self, paths: list[tuple[list[tuple[float, float]], float]], w_mm: float, h_mm: float) -> None:
+        g = ERASE_GRID_MM
+        self.mask = np.zeros((int(math.ceil(h_mm / g)) + 2, int(math.ceil(w_mm / g)) + 2), np.uint8)
+        for pts, r in paths:
+            rad = max(1, int(round(r / g)))
+            px = [(int(round(x / g)), int(round(y / g))) for x, y in pts]
+            for q in px:
+                cv2.circle(self.mask, q, rad, 1, -1)
+            for a, b in zip(px, px[1:]):
+                cv2.line(self.mask, a, b, 1, 2 * rad + 1)
+        self.sum = cv2.integral(self.mask)
+
+    def any_in(self, x0: float, y0: float, x1: float, y1: float) -> bool:
+        h, w = self.mask.shape
+        g = ERASE_GRID_MM
+        c0, r0 = max(0, int(x0 / g) - 1), max(0, int(y0 / g) - 1)
+        c1, r1 = min(w, int(x1 / g) + 2), min(h, int(y1 / g) + 2)
+        if c0 >= c1 or r0 >= r1:
+            return False
+        s = self.sum
+        return bool(s[r1, c1] - s[r0, c1] - s[r1, c0] + s[r0, c0] > 0)
+
+    def under(self, xy: np.ndarray) -> np.ndarray:
+        h, w = self.mask.shape
+        c = np.clip(np.rint(xy[:, 0] / ERASE_GRID_MM).astype(np.int64), 0, w - 1)
+        r = np.clip(np.rint(xy[:, 1] / ERASE_GRID_MM).astype(np.int64), 0, h - 1)
+        return self.mask[r, c] > 0
+
+
+def _erase_stroke(pts: list[list[float]], brush: _Brush) -> list[list[list[float]]] | None:
+    """The pieces of a polyline left outside the brush, in drawing order; None = the brush does not touch it. The
+    original points are kept; where the brush's edge crosses a segment a cut point is placed (to ~ERASE_STEP_MM)."""
+    P = np.asarray(pts, np.float64)
+    if not brush.any_in(P[:, 0].min(), P[:, 1].min(), P[:, 0].max(), P[:, 1].max()):
+        return None
+    seg = np.hypot(*(P[1:] - P[:-1]).T)
+    ns = np.maximum(1, np.ceil(seg / ERASE_STEP_MM)).astype(np.int64)
+    off = np.concatenate([[0], np.cumsum(ns)])                     # sample index of each original point
+    rep_ = np.repeat(np.arange(len(ns)), ns)
+    k = (np.arange(int(ns.sum())) - off[rep_] + 1) / ns[rep_]
+    xy = np.vstack([P[:1], P[rep_] + (P[rep_ + 1] - P[rep_]) * k[:, None]])
+    ins = brush.under(xy)
+    if not ins.any():
+        return None
+    pieces: list[list[list[float]]] = []
+    cur: list[list[float]] = [] if ins[0] else [list(pts[0])]
+    flips = np.nonzero(ins[1:] != ins[:-1])[0] + 1                  # sample q differs from q - 1
+    fi = 0
+    for v in range(len(ns)):
+        end = off[v + 1]
+        while fi < len(flips) and flips[fi] <= end:
+            q = flips[fi]
+            cut = ((xy[q - 1] + xy[q]) / 2).tolist()
+            if ins[q]:                                               # entering the brush: the piece ends at the cut
+                cur.append(cut)
+                pieces.append(cur)
+                cur = []
+            else:                                                    # leaving it: a new piece starts at the cut
+                cur = [cut]
+            fi += 1
+        if not ins[end]:
+            cur.append(list(pts[v + 1]))
+    if cur:
+        pieces.append(cur)
+    return [[[_r(x), _r(y)] for x, y in pc] for pc in pieces if len(pc) >= 2 and _length(pc) >= MIN_STROKE_MM]
+
+
 def _end(params: dict[str, Any]) -> str:
     end = params.get("end", "end")
     if end not in ("start", "end"):
@@ -295,9 +405,14 @@ def apply(doc: dict[str, Any], op: str, stroke_ids: list[str], params: dict[str,
     if op not in OPS:
         raise AppError(422, "INVALID_EDIT_OP", f"Lệnh sửa không hợp lệ. Có: {', '.join(OPS)}.", {"ops": list(OPS)})
     ids = list(dict.fromkeys(stroke_ids or []))
+    brush_selects = op == "erase" and not ids
+    if brush_selects:
+        # the brush is the selection: the strokes of the page it crosses
+        pno = int(_num(params, "page", 1, len(doc["pages"]), default=1))
+        ids = [st["id"] for st in doc["pages"][pno - 1]["strokes"]]
     if not ids:
         raise AppError(422, "EMPTY_SELECTION", "Chưa chọn nét nào để sửa.")
-    if len(ids) > MAX_SELECTION:
+    if len(ids) > MAX_SELECTION and not brush_selects:
         raise AppError(422, "SELECTION_TOO_LARGE", f"Mỗi lần sửa tối đa {MAX_SELECTION} nét.")
     new = copy.deepcopy(doc)
     index = stroke_index(new)
@@ -377,6 +492,32 @@ def apply(doc: dict[str, Any], op: str, stroke_ids: list[str], params: dict[str,
             page["strokes"].remove(st)
             removed.append(st["id"])
         sel = []
+    elif op == "erase":
+        # an eraser: the parts of the strokes under the brush go, the rest stays exactly where it was. The first piece
+        # left keeps the stroke's id, the others get new ids right after it (same word); a stroke erased whole is removed
+        brush = _Brush(_erase_paths(params), page["width_mm"], page["height_mm"])
+        kept: list[dict[str, Any]] = []
+        for st in sel:
+            pieces = _erase_stroke(st["points"], brush)
+            if pieces is None:
+                continue
+            if not pieces:
+                page["strokes"].remove(st)
+                removed.append(st["id"])
+                continue
+            st["points"] = pieces[0]
+            kept.append(st)
+            pos = page["strokes"].index(st)
+            for k, pc in enumerate(pieces[1:], start=1):
+                nid = f"s{new['next_id']}"
+                new["next_id"] += 1
+                twin = {**copy.deepcopy(st), "id": nid, "points": pc}
+                page["strokes"].insert(pos + k, twin)
+                added.append(nid)
+                kept.append(twin)
+        if not kept and not removed:
+            raise AppError(422, "NO_CHANGE", "Vệt tẩy không chạm nét nào.")
+        sel = kept
 
     # validation of the result
     w, h = page["width_mm"], page["height_mm"]
@@ -734,6 +875,8 @@ def reapply(doc: dict[str, Any], operations: list[dict[str, Any]], limits: Limit
     reapplied, dropped = [], []
     for o in operations:
         item = {k: o.get(k) for k in ("op", "word_ids", "line_ids", "paragraph_ids", "params", "author")}
+        if o.get("op") == "erase":                       # the brush's path (up to 20 000 points) is not repeated here
+            item["params"] = {"paths": len((o.get("params") or {}).get("paths") or [])}
         if o.get("op") not in REAPPLY_OPS:
             dropped.append({**item, "reason": "OP_NOT_REAPPLIED"})
             continue

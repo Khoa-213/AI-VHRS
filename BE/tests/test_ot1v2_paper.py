@@ -121,3 +121,52 @@ def test_a_sheet_running_out_of_the_photo_is_not_straightened_as_a_rectangle():
     found = P.find_paper(cut)
     assert found is not None and found.method == "box"
     assert P.find_paper(photo).method == "quad"                 # the whole sheet in view: straightened as before
+
+
+def test_a_sheet_whose_grid_runs_past_the_found_outline_is_used_whole():
+    """A squared notebook in hand shadow (owner's photo, 2026-11-24): GrabCut called the shaded half background and the
+    words there were never traced. The grid continuing outside the outline shows the outline is wrong."""
+    h, w = 900, 700
+    img = np.full((h, w, 3), 236, np.uint8)
+    for v in range(40, w, 30):
+        cv2.line(img, (v, 0), (v, h), (190, 140, 140), 2)
+    for v in range(40, h, 30):
+        cv2.line(img, (0, v), (w, v), (190, 140, 140), 2)
+    half = np.zeros((h, w), np.uint8)
+    half[: h // 2] = 255
+    assert P._ruling_runs_out(img, half)
+    whole = np.full((h, w), 255, np.uint8)
+    whole[:60], whole[-60:], whole[:, :60], whole[:, -60:] = 0, 0, 0, 0
+    plain = img.copy()
+    plain[whole == 0] = (60, 90, 120)                              # the table around a whole sheet: no grid there
+    assert not P._ruling_runs_out(plain, whole)
+
+
+def _lines_of_words(h: int, w: int) -> np.ndarray:
+    img = np.full((h, w, 3), 236, np.uint8)
+    for y in range(150, h - 140, 60):                               # baselines 150, 210, ..., 390, ...
+        cv2.putText(img, "mua xuan hoa no ven song", (80, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (120, 40, 30), 2,
+                    cv2.LINE_AA)
+    return img
+
+
+def test_an_outline_running_through_a_line_of_words_warns(monkeypatch):
+    """Table of contents photo (owner, 2026-11-24): GrabCut's outline sliced through whole lines of words and the rest
+    of the page was dropped without a word. An outline that cuts letters in two raises PAPER_EDGE_UNSURE (the customer
+    is asked to crop to the sheet); one running past the writing does not."""
+    h, w = 900, 700
+    img = _lines_of_words(h, w)
+    whole = np.zeros((h, w), np.uint8)
+    whole[60:-60, 40:-40] = 255
+    cut = whole.copy()
+    cut[384:] = 0                                                   # through the middle of the words on baseline 390
+    assert P.cut_letters(img, whole) == 0
+    assert P.cut_letters(img, cut) >= P.CUT_LETTERS
+    warned = {}
+    for name, m in (("whole", whole), ("cut", cut)):
+        monkeypatch.setattr(P, "find_paper", lambda bgr, m=m: P.PaperFind(
+            mask=m, homography=np.eye(3), size=(w, h), pieces=1, method="box", inner=(0, 0, w, h),
+            share=float((m > 0).mean())))
+        _, stats, _ = R2.recover_page(_jpg(img), paper_size="A4")
+        warned[name] = "PAPER_EDGE_UNSURE" in stats.warnings
+    assert warned == {"whole": False, "cut": True}

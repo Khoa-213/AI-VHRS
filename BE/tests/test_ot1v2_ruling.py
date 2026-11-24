@@ -122,3 +122,58 @@ def test_a_light_grid_line_right_beside_a_stem_is_not_kept():
     assert (ink[230:276, 1290:1293] > 0).sum() > 0               # the line was ink next to the stem
     assert (out[230:276, 1290:1293] > 0).sum() == 0              # and is gone
     assert (out[230:276, 1283:1288] > 0).mean() > 0.9            # the stem is whole
+
+
+def test_lines_bent_a_few_degrees_near_the_spine_go_too():
+    """Squared notebook, 2026-11-24: the page bends near the spine and the bottom, its lines turn 3-4 degrees from the
+    page's angle; with only +-1 degree searched around it, those stretches were traced as strokes (on this clean drawing
+    the old search still caught 3.5 degrees in pieces; 4.5 it did not). The bent part holds no writing, as near a real
+    spine: a bent stretch is taken only when BENT_PIECE runs long on its own, so one cut short by letters stays (the
+    price of keeping every stroke of the owner's torn letter)."""
+    img = _page(ruled=False)
+    for y in LINE_YS[:5]:                                          # the flat part of the page; grid nearly as dark as the
+        cv2.line(img, (0, y), (W, y), 60, 2, cv2.LINE_AA)          # pen, so the lighter-than-the-pen rules cannot help
+    t = np.tan(np.radians(4.5))
+    for y in LINE_YS[5:]:                                          # the bent part: 4.5 degrees off
+        cv2.line(img, (0, y), (W, int(round(y - t * W))), 60, 2, cv2.LINE_AA)
+    writing = np.full_like(img, 255)
+    _loops(writing)
+    img[:LINE_YS[2] + 60] = np.minimum(img, writing)[:LINE_YS[2] + 60]
+    ink, out, ru = _run(img)
+    bent = [y - t * 1340 for y in LINE_YS[5:]]                     # where the bent lines cross the empty right margin
+    before = sum(int((ink[int(y) - 4:int(y) + 5, 1330:1350] > 0).sum()) for y in bent)
+    after = sum(int((out[int(y) - 4:int(y) + 5, 1330:1350] > 0).sum()) for y in bent)
+    assert before > 50 and after == 0
+
+
+def test_a_thick_pen_sweep_along_a_grid_line_stays():
+    """A signature's long sweep lying along a line of the grid, pen and grid alike in colour (owner's notebook,
+    2026-11-24): darkness cannot tell them apart, the pen line is three times thicker than the printed one."""
+    img = _page(line_grey=60)
+    _loops(img)
+    y = LINE_YS[3]
+    cv2.line(img, (300, y), (1000, y), 40, 7, cv2.LINE_AA)
+    ink, out, ru = _run(img)
+    assert (out[y - 1:y + 2, 400:900] > 0).mean() > 0.9           # the sweep stays
+    assert _between_letters(out, y) == 0                           # its grid line beyond it still goes
+
+
+def test_a_cross_left_where_two_grid_lines_meet_goes():
+    """Where a found row and a found column cross, a small light '+' was left behind (the lines' search missed that
+    stretch of both); it is not thin in either direction, so the thin-piece rule did not take it."""
+    img = _page(ruled=False)
+    cx, cy = 1340, LINE_YS[2]
+    for y in LINE_YS:                                              # rows stop short of the right margin
+        cv2.line(img, (0, y), (1280, y), 150, 2, cv2.LINE_AA)
+    for x in range(80, W, 140):                                    # columns; the one at x=cx broken around the row at cy
+        if x == cx:
+            cv2.line(img, (x, 0), (x, cy - 60), 150, 2, cv2.LINE_AA)
+            cv2.line(img, (x, cy + 60), (x, H), 150, 2, cv2.LINE_AA)
+        else:
+            cv2.line(img, (x, 0), (x, H), 150, 2, cv2.LINE_AA)
+    _loops(img)
+    cv2.line(img, (cx, cy - 14), (cx, cy + 14), 150, 2, cv2.LINE_AA)    # the '+' left on the crossing
+    cv2.line(img, (cx - 14, cy), (cx + 14, cy), 150, 2, cv2.LINE_AA)
+    ink, out, ru = _run(img)
+    assert (ink[cy - 14:cy + 15, cx - 14:cx + 15] > 0).sum() > 40
+    assert not (out[cy - 14:cy + 15, cx - 14:cx + 15] > 0).any()

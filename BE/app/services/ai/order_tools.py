@@ -96,7 +96,7 @@ SPECS: list[ToolSpec] = [
              "phải}; curvature {factor: 1 giữ nguyên, <1 thẳng bớt, >1 cong thêm}; smooth {passes 1-5}; extend / trim "
              "{mm, end: start|end}; join (đúng 2 nét); split {at 0.05-0.95}; delete. Tham số phải nằm trong limits của "
              "get_sketch. Khi khách đã chọn vùng, chỉ được sửa trong vùng đó.",
-             _obj({"op": {"type": "string", "enum": list(geo.OPS)},
+             _obj({"op": {"type": "string", "enum": list(geo.AI_OPS)},
                    "stroke_ids": {"type": "array", "items": {"type": "string"}},
                    "word_ids": {"type": "array", "items": {"type": "string"}},
                    "line_ids": {"type": "array", "items": {"type": "string"}},
@@ -430,8 +430,8 @@ class OrderTools:
 
     def _edit(self, a: dict[str, Any]) -> tuple[dict[str, Any], int]:
         op = a.get("op")
-        if op not in geo.OPS:
-            raise AppError(422, "INVALID_EDIT", f"op phải là một trong {list(geo.OPS)}.")
+        if op not in geo.AI_OPS:                 # erase (an eraser brush) needs coordinates: people only
+            raise AppError(422, "INVALID_EDIT", f"op phải là một trong {list(geo.AI_OPS)}.")
         stroke_ids = [str(x) for x in (a.get("stroke_ids") or [])]
         word_ids = [str(x) for x in (a.get("word_ids") or [])]
         line_ids = [str(x) for x in (a.get("line_ids") or [])]

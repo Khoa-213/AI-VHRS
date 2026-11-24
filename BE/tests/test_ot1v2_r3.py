@@ -137,8 +137,8 @@ def test_thin_writing_is_traced_on_an_enlarged_copy():
     """S8b (owner's 720 px photos, 2026-11-22): a pen line 2-3 px wide closes the bowls of o / a / b when binarised and the
     letters come out unreadable. Small bowls drawn large, shrunk and blurred like a small photo: traced on the enlarged
     copy they stay open loops; traced at the photo's own size they collapse into a line."""
-    assert R2._fine_factor(3.0, 900) == 7.0 / 3.0 and R2._fine_factor(8.0, 900) == 1.0
-    assert R2._fine_factor(3.0, 2000) == 1.0                              # a large photo: not worth a copy
+    assert R2._fine_factor(3.0, 900 * 700) == 7.0 / 3.0 and R2._fine_factor(8.0, 900 * 700) == 1.0
+    assert R2._fine_factor(3.0, 3000 * 2000) == 1.0                       # a large page full of writing: not worth a copy
 
     big = np.full((1600, 2400), 236, np.uint8)
     centres = [(200 + 220 * i, 300 + 400 * j) for j in range(3) for i in range(10)]
@@ -176,3 +176,20 @@ def test_thin_writing_is_traced_on_an_enlarged_copy():
     finally:
         R2.FINE_MAX = saved
     assert fine >= 27 and plain <= 3, (fine, plain)
+
+
+def test_the_dot_of_an_i_and_a_full_stop_are_not_specks():
+    """Book page, 2026-11-24: on a 1500 x 2000 px sheet v1's speck filter (36 px) took every dot, full stop and tone mark.
+    A piece that small next to a letter stays; the same piece far from the writing, and a tiny one next to it, go."""
+    ink = np.zeros((2000, 1500), np.uint8)
+    for x in range(200, 1200, 60):                                    # stems of letters, 5 px pen
+        cv2.line(ink, (x, 400), (x, 440), 255, 5)
+    cv2.rectangle(ink, (499, 386), (503, 390), 255, cv2.FILLED)      # dot over a stem: 25 px, under v1's 36
+    cv2.rectangle(ink, (512, 436), (516, 440), 255, cv2.FILLED)      # full stop beside a stem's foot
+    cv2.rectangle(ink, (700, 1500), (704, 1504), 255, cv2.FILLED)    # same size, far from any letter: noise
+    cv2.rectangle(ink, (620, 380), (621, 381), 255, cv2.FILLED)      # 4 px next to a letter: noise
+    assert not v1._remove_specks(ink)[388, 501]                       # the old filter loses the dot
+    out = R2._remove_specks(ink)
+    assert out[388, 501] and out[438, 514]
+    assert not out[1502, 702] and not out[380, 620]
+    assert out[420, 200] and out[420, 1160]

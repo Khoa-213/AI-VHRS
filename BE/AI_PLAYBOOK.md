@@ -257,3 +257,10 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 ### 2026-11-22 · Test cho một luật mới phải KHÔNG đạt khi tắt luật đó
 **Bối cảnh:** OT-1 v2, luật giữ thân chữ L nằm trùng đường lưới dọc. Bản test đầu vẫn đạt khi tắt luật: thân chữ quá ngắn nên vùng giữ cũ (3 bề rộng nét quanh chữ) đã phủ gần hết; bản thứ hai đặt chân chữ đúng lên một dòng kẻ ngang nên không còn "chữ ngoài dòng kẻ" để chạm.
 **Bài học:** viết test xong thì tắt luật mới (đặt hằng số về 0) và chạy lại; test phải hỏng. Nếu không, ảnh thử chưa mô phỏng đúng trường hợp.
+
+### 2026-11-24 · Benchmark tổng hợp tăng điểm mà lá thư thật của chủ dự án hỏng
+**Bối cảnh:** OT-1 v2 đợt 5 (vở ô ly cong gần gáy). Mở dải góc dò dòng kẻ từ ±1° lên ±5° làm benchmark 220 ảnh tăng (94,88 → 95,08 %, 0 ảnh kém hơn > 2 điểm) và vở ô ly sạch hẳn, nhưng lá thư rách thật (`1.jpg`) mất gần một nửa nét (949 → 508): chữ viết liền tạo nhiều đoạn thẳng đậm ở góc lệch, bị coi là dòng kẻ. Ảnh tổng hợp không có kiểu chữ đó nên không bắt được.
+**Bài học:** mọi thay đổi bộ phục dựng phải chạy lại các ảnh thật chủ dự án đã gửi (`images/1.jpg` …, đếm nét + so điểm mực mất / thêm với bản trước, xem tận mắt), không chỉ benchmark. Ưu tiên luật chỉ THÊM ở nơi luật cũ bỏ sót (ở đây: đoạn cong chỉ lấy khi góc lệch trả lời tốt hơn góc thẳng và tự dài ≥ 3 lần đoạn chuẩn) thay vì nới luật cũ.
+### 2026-11-24 · Số nét giảm không có nghĩa là sạch hơn: phải nhìn ảnh
+**Bối cảnh:** OT-1 v2 đợt 6, đo độ "mảnh" của vạch so với nền giấy cạnh nó để bắt lưới trong bóng. Số nét vở ô ly giảm 637 → 415 và 367 → 243, lá thư giữ 949; nhìn ảnh mới thấy chữ bút chì gãy (chân chữ L, chữ "Seventeen", nét dọc chữ H).
+**Bài học:** số nét / số điểm mực chỉ là chỉ báo; mỗi thử nghiệm trên ảnh thật phải xem ảnh ghép (ảnh gốc | trước | sau) trước khi kết luận, nhất là ảnh có cả bút bi và bút chì.
