@@ -130,7 +130,7 @@ export default function ResetPassword() {
   </>
 
   return (
-    <Page label="Reset password" width={560}>
+    <Page label="Reset password" width={560} footer>
       <div className="entry-reset">
         <div className="entry-login entry-register-card">
           <div className="entry-login-panel">

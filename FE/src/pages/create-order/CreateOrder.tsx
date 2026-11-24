@@ -54,10 +54,10 @@ function initialMode(): InputMode | null {
   return (m?.[1] as InputMode | undefined) ?? null
 }
 
-/** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
+/** Same shell as the homepage (floating navbar, one rounded surface), without the footer: this is the order flow. */
 function Frame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
   return (
-    <CustomerFrame label="Create Order" narrow={narrow}>{children}</CustomerFrame>
+    <CustomerFrame label="Create Order" narrow={narrow} footer={false}>{children}</CustomerFrame>
   )
 }
 
