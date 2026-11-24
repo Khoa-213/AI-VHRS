@@ -59,7 +59,8 @@ def inks(pen_id: int, session: SessionDep) -> list[InkOut]:
 
 @router.get("/templates", response_model=list[TemplateOut], summary="Thư viện mẫu chữ đang bật")
 def templates(session: SessionDep) -> list[TemplateOut]:
-    return [TemplateOut.model_validate(t) for t in CatalogRepository(session).templates()]
+    return [TemplateOut.model_validate(t).model_copy(update={"preview_url": t.preview_image_url})
+            for t in CatalogRepository(session).templates()]
 
 
 def _template_preview(tpl, text: str, *, size: float = 9.0, alignment: str = text_layout.DEFAULT_ALIGNMENT,

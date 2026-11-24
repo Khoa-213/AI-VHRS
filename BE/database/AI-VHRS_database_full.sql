@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0029 (alembic head), generated 2026-11-22 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0030 (alembic head), generated 2026-11-24 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0029);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0029;
+--      baseline schema and every migration up to 0030);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0030;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -1145,10 +1145,18 @@ CREATE TABLE public.ink_colors (
     stock_qty integer DEFAULT 0 NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    image_path text,
+    image_updated_at timestamp with time zone,
     CONSTRAINT ink_colors_hex_code_check CHECK ((hex_code ~ '^#[0-9A-Fa-f]{6}$'::text)),
     CONSTRAINT ink_colors_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT ink_colors_unit_price_check CHECK ((unit_price >= (0)::numeric))
 );
+
+--
+-- Name: COLUMN ink_colors.image_path; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ink_colors.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
 
 --
 -- Name: ink_colors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -1473,10 +1481,18 @@ CREATE TABLE public.paper_types (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    image_path text,
+    image_updated_at timestamp with time zone,
     CONSTRAINT paper_types_gsm_check CHECK ((gsm > 0)),
     CONSTRAINT paper_types_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT paper_types_unit_price_check CHECK ((unit_price >= (0)::numeric))
 );
+
+--
+-- Name: COLUMN paper_types.image_path; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.paper_types.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
 
 --
 -- Name: paper_types_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -1553,6 +1569,8 @@ CREATE TABLE public.pen_types (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    image_path text,
+    image_updated_at timestamp with time zone,
     CONSTRAINT chk_pen_force_band CHECK (((f_min_n > (0)::numeric) AND (f_min_n < f_target_n) AND (f_target_n < f_max_n) AND (f_max_n < f_hard_n))),
     CONSTRAINT pen_types_f_target_n_check CHECK (((f_target_n >= 0.3) AND (f_target_n <= 2.0))),
     CONSTRAINT pen_types_stock_qty_check CHECK ((stock_qty >= 0)),
@@ -1560,6 +1578,12 @@ CREATE TABLE public.pen_types (
     CONSTRAINT pen_types_surcharge_check CHECK ((surcharge >= (0)::numeric)),
     CONSTRAINT pen_types_v_max_mm_s_check CHECK ((v_max_mm_s > (0)::numeric))
 );
+
+--
+-- Name: COLUMN pen_types.image_path; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.pen_types.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
 
 --
 -- Name: pen_types_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -5028,7 +5052,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0029');
+INSERT INTO alembic_version (version_num) VALUES ('0030');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

@@ -6,11 +6,12 @@ Every change is audited with its old and new values. Codes are immutable once cr
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, Callable
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
@@ -23,9 +24,17 @@ from app.repositories.catalog import CatalogRepository
 from app.services import handwriting_styles as styles_svc
 from app.repositories.ops import JobRepository, RobotRepository
 from app.domain import material_specs
-from app.services import audit
+from app.services import audit, catalog_media
 from app.services.stroke_ai.outline_font import OUTLINE_PREFIX
 from app.services.stroke_ai.text_to_stroke import FONT_PREFIX, SUPPORTED_FONTS
+
+log = logging.getLogger(__name__)
+
+# 0030, product photos: material -> (model, audit entity, message when the row does not exist)
+IMAGE_OF = {"paper": (PaperType, "paper_type", "Không tìm thấy loại giấy."),
+            "pen": (PenType, "pen_type", "Không tìm thấy loại bút."),
+            "ink": (InkColor, "ink_color", "Không tìm thấy màu mực.")}
+IMAGE_MAX_AGE = 86400            # seconds a served photo may stay cached; a removed photo is gone everywhere within a day
 
 PRICING_FIELDS = ("u_ot1", "u_ot2", "u_ot3", "w_min", "s_ot1", "s_ot2", "s_ot3", "k_simple", "k_medium", "k_complex",
                   "discount_tiers", "p_min_pct", "adjust_threshold_pct", "canvas_mm_per_char")
@@ -112,6 +121,53 @@ class ManagerCatalogService:
         row = self._locked(InkColor, ink_id, "Không tìm thấy màu mực.")
         old, new = self._apply(row, changes, ("name", "hex_code", "unit_price", "is_active"))
         self._audit("CATALOG_INK_UPDATE", "ink_color", row.id, old, new)
+        return row
+
+    # ------------------------------------------------------------------ product photos (migration 0030)
+    def _after_commit(self, fn: Callable[[], None]) -> None:
+        """Run `fn` once this request's transaction is committed (never when it is rolled back). A failure is logged:
+        the database is already right, only an unused file stays behind."""
+        def run(_session: Session) -> None:
+            try:
+                fn()
+            except Exception:
+                log.warning("catalog media: clean-up after commit failed", exc_info=True)
+        event.listen(self.session, "after_commit", run, once=True)
+
+    def set_image(self, material: str, row_id: int, data: bytes, media: Any) -> Any:
+        """Store the workshop's photo of a paper / pen / ink and point the row to it. The upload is normalised first
+        (services.catalog_media: real type, size limits, upright, at most 800 px, WebP, no EXIF). The previous photo is
+        deleted from storage once the change is committed."""
+        model, entity, missing = IMAGE_OF[material]
+        row = self._locked(model, row_id, missing)
+        if media is None:
+            raise AppError(503, "STORAGE_NOT_CONFIGURED", "Chưa cấu hình dịch vụ lưu trữ file.")
+        stored, width, height = catalog_media.normalise(data)
+        path = catalog_media.object_path(material, row.id, stored)
+        old = row.image_path
+        media.write(path, stored, catalog_media.CONTENT_TYPE, max_age=IMAGE_MAX_AGE)
+        row.image_path, row.image_updated_at = path, datetime.now(timezone.utc)
+        self.session.flush()
+        self.session.refresh(row)
+        self._audit("CATALOG_IMAGE_SET", entity, row.id, {"image_path": old},
+                    {"image_path": path, "width": width, "height": height, "bytes": len(stored)})
+        if old and old != path:
+            self._after_commit(lambda: media.delete(old))
+        return row
+
+    def remove_image(self, material: str, row_id: int, media: Any) -> Any:
+        """Take the photo off a paper / pen / ink (asked twice: nothing more to do). The file is deleted after the commit."""
+        model, entity, missing = IMAGE_OF[material]
+        row = self._locked(model, row_id, missing)
+        old = row.image_path
+        if old is None:
+            return row
+        row.image_path, row.image_updated_at = None, datetime.now(timezone.utc)
+        self.session.flush()
+        self.session.refresh(row)
+        self._audit("CATALOG_IMAGE_REMOVE", entity, row.id, {"image_path": old}, {"image_path": None})
+        if media is not None:
+            self._after_commit(lambda: media.delete(old))
         return row
 
     # ------------------------------------------------------------------ stock (FR-41)
