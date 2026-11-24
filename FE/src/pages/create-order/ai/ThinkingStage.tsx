@@ -11,15 +11,15 @@ import { useEffect, useRef, useState } from 'react'
 
 const TAU = Math.PI * 2
 const RINGS = 13
-const ORB_D = 84
+const ORB_D = 72
 const ORB_R = ORB_D / 2
 /** The canvas is the row's first box; the sphere sits in its middle. */
-const CANVAS = 120
+const CANVAS = 92
 const C0 = CANVAS / 2
-const BALL = 34
-const GREEN = 48
-/** Where the answer's avatar will be, from the row's corner (the row is pulled 18px left, the avatar is 30px). */
-const AVATAR_X = 33
+const BALL = 30
+const GREEN = 42
+/** Where the answer's avatar will be, from the row's corner (the avatar is 30px, in the row's corner). */
+const AVATAR_X = 15
 const AVATAR_Y = 15
 const AVATAR = 30
 /** Milliseconds: the flight, then the sphere builds; the answer is not shown before the sphere stood for a moment. */
@@ -133,8 +133,11 @@ export default function ThinkingStage({ label, labels, doneLabel, finish, onFini
     const from = root.closest('.oa')?.querySelector('.oa-send')?.getBoundingClientRect()
     const startX = from ? from.left + from.width / 2 - box.left : box.width - 40
     const startY = from ? from.top + from.height / 2 - box.top : box.height + 80
-    const ctrlX = lerp(startX, C0, 0.2)
-    const ctrlY = lerp(startY, C0, 0.9)
+    // The sphere sits in the middle of the row; everything that flies or lands is measured from the row's corner.
+    const orbX = cv.offsetLeft + C0
+    const orbY = cv.offsetTop + C0
+    const ctrlX = lerp(startX, orbX, 0.2)
+    const ctrlY = lerp(startY, orbY, 0.9)
 
     // The dots take the text colour and turn to the theme's green (read from the canvas' outline colour).
     const style = getComputedStyle(cv)
@@ -266,7 +269,7 @@ export default function ThinkingStage({ label, labels, doneLabel, finish, onFini
         sy[n] = C0 + oy
         sd[n] = depth
         sg[n] = gr
-        sr[n] = (0.95 * (0.45 + 0.75 * depth) * f + 0.8 * l + gr * 0.22) * (1 + o.rad) * (0.4 + 0.6 * eo)
+        sr[n] = (0.85 * (0.45 + 0.75 * depth) * f + 0.7 * l + gr * 0.2) * (1 + o.rad) * (0.4 + 0.6 * eo)
         sa[n] = Math.min(1, a) * eo * o.alpha
       }
 
@@ -338,8 +341,8 @@ export default function ThinkingStage({ label, labels, doneLabel, finish, onFini
       // Flight: a ball from the send button to the sphere's place, on a curve, growing on the way.
       const u = easeIo(span(t, 0, FLY))
       const d = t < FLY * 0.82 ? lerp(BALL, ORB_D * 1.06, easeIo(span(t, 0, FLY * 0.82))) : lerp(ORB_D * 1.06, ORB_D, easeOut(span(t, FLY * 0.82, FLY)))
-      const bx = bez(u, startX, ctrlX, C0)
-      const by = bez(u, startY, ctrlY, C0)
+      const bx = bez(u, startX, ctrlX, orbX)
+      const by = bez(u, startY, ctrlY, orbY)
       let ballOp = easeOut(span(t, 0, 120)) * (1 - easeOut(span(t, FLY, FLY + 240)))
 
       const a = t - FLY
@@ -353,8 +356,8 @@ export default function ThinkingStage({ label, labels, doneLabel, finish, onFini
       }
       let greenOp = 0
       let greenScale = 0.55
-      let greenX = C0
-      let greenY = C0
+      let greenX = orbX
+      let greenY = orbY
       let ringT = -1
 
       if (endAt >= 0 && failed) {
@@ -389,8 +392,8 @@ export default function ThinkingStage({ label, labels, doneLabel, finish, onFini
         const x = c - CONDENSE
         if (x > 0) {
           const f = easeIo(span(x, 0, OUT))
-          greenX = lerp(C0, AVATAR_X, f)
-          greenY = lerp(C0, AVATAR_Y, f)
+          greenX = lerp(orbX, AVATAR_X, f)
+          greenY = lerp(orbY, AVATAR_Y, f)
           greenScale = lerp(1, AVATAR / GREEN, f)
           if (x >= OUT) end()
         }
@@ -404,7 +407,7 @@ export default function ThinkingStage({ label, labels, doneLabel, finish, onFini
       g.style.opacity = clamp01(greenOp).toFixed(3)
       g.style.transform = `translate3d(${(greenX - GREEN / 2).toFixed(1)}px,${(greenY - GREEN / 2).toFixed(1)}px,0) scale(${greenScale.toFixed(3)})`
       rg.style.opacity = ringT < 0 ? '0' : (0.5 * (1 - ringT)).toFixed(3)
-      rg.style.transform = `translate3d(${C0 - GREEN / 2}px,${C0 - GREEN / 2}px,0) scale(${(1 + 0.9 * Math.max(0, ringT)).toFixed(3)})`
+      rg.style.transform = `translate3d(${(orbX - GREEN / 2).toFixed(1)}px,${(orbY - GREEN / 2).toFixed(1)}px,0) scale(${(1 + 0.9 * Math.max(0, ringT)).toFixed(3)})`
       if (!over) raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
