@@ -43,6 +43,8 @@ class Column:
 class _Pdf(FPDF):
     generated: str = ""
     running: str = ""
+    kind: str = "Báo cáo nội bộ"         # footer wording; the quotation PDF (quotation_pdf.py) sets its own
+    source: str = T.SOURCE
 
     def header(self) -> None:
         if self.page_no() == 1:
@@ -70,13 +72,13 @@ class _Pdf(FPDF):
         self.cell(self.get_string_width(T.BRAND) + 1.5, 4, T.BRAND)
         self.set_font("dv", "", 7.5)
         self.set_text_color(*rgb(C.ink3))
-        self.cell(0, 4, f"· {T.WORKSHOP} · Báo cáo nội bộ · Xuất lúc {self.generated}")
+        self.cell(0, 4, f"· {T.WORKSHOP} · {self.kind} · Xuất lúc {self.generated}")
         self.set_x(MARGIN)
         self.cell(0, 4, f"Trang {self.page_no()}/{{nb}}", align="R")
         self.set_xy(MARGIN, y + 5.5)
         self.set_font("dv", "", 6.5)
         self.set_text_color(*rgb(C.muted))
-        self.cell(0, 3.5, T.SOURCE)
+        self.cell(0, 3.5, self.source)
         self.set_text_color(*rgb(C.ink))
 
     @property
