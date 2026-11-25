@@ -272,3 +272,7 @@ Chi tiết, sơ đồ và endpoint từng bước: `docs/FE_API_GUIDE.md` mục 
 ### 2026-11-24 · `None` gán vào cột JSONB là JSON `null`, không phải SQL `NULL`
 **Bối cảnh:** xoá nội dung cuộc chat AI (`ai_tool_calls.result = None` bằng `update().values(...)`), test `result IS NULL` vẫn thấy 2 dòng: SQLAlchemy ghi `None` của cột `JSON` / `JSONB` thành giá trị JSON `null`.
 **Cách làm đúng:** muốn SQL `NULL` thì gán `sqlalchemy.null()` (hoặc khai báo cột `JSONB(none_as_null=True)`); kiểm tra bằng `IS NULL` trong test.
+
+### 2026-11-24 · Lượt test dài trên Supabase treo khi pooler cắt kết nối
+**Bối cảnh:** lượt toàn suite chia nhóm (`run_tests_sharded.py --tag AIS`) đứng hơn 2 giờ ở một test bắn request đồng thời; tiến trình 0 % CPU, trên Supabase không còn truy vấn nào đang chạy hay chờ khoá và khoá advisory của bộ test đã mất (kết nối giữ khoá bị cắt).
+**Cách làm đúng:** khi một lượt chạy lâu bất thường, xem thời gian sửa cuối của log trong `.test_progress/`, `pg_stat_activity` (truy vấn đang chạy / chờ, `pg_blocking_pids`) và `pg_locks` (khoá advisory) trước khi kết luận. Không có hoạt động nào thì dừng tiến trình, chạy `scripts/recover_after_interrupted_tests.py`, rồi chạy lại phần chưa xong. Lượt chạy lại bọc bằng `timeout 3600` để không treo vô hạn.
