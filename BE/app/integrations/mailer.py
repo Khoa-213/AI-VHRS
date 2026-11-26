@@ -46,11 +46,12 @@ class SmtpMailer:
             msg["Reply-To"] = self.reply_to
         msg.set_content(body)
         if self.html:
-            logo = mail_html.logo_bytes()
-            msg.add_alternative(mail_html.render(body, subject, with_logo=logo is not None), subtype="html")
-            if logo is not None:                 # multipart/alternative > multipart/related(html, logo)
-                msg.get_payload()[1].add_related(logo, "image", "png", cid=f"<{mail_html.LOGO_CID}>",
-                                                 filename="ai-vhrs-logo.png", disposition="inline")
+            images = mail_html.inline_images()
+            msg.add_alternative(mail_html.render(body, subject, with_logo=bool(images), with_dark_logo=len(images) > 1),
+                                subtype="html")
+            for cid, png in images:              # multipart/alternative > multipart/related(html, logos)
+                msg.get_payload()[1].add_related(png, "image", "png", cid=f"<{cid}>", filename=f"{cid}.png",
+                                                 disposition="inline")
         return msg
 
     def send(self, to: str, subject: str, body: str) -> None:

@@ -83,8 +83,8 @@ class PasswordResetRequestIn(BaseModel):
 
 
 class PasswordResetConfirmIn(BaseModel):
-    """Either `token` (the link in the e-mail, or the phone flow's reset_token) or `email` + `code` (the 6 digits)."""
-    token: str | None = None
+    """`email` + `code` (the 6 digits of the reset e-mail), or `token` = the `reset_token` of the SMS flow only."""
+    token: str | None = Field(default=None, description="chỉ cho luồng SMS: `reset_token` của POST /auth/phone-reset/verify")
     email: EmailStr | None = None
     code: str | None = Field(default=None, pattern=r"^\d{6}$", examples=["123456"])
     new_password: str = Field(min_length=8, max_length=72)

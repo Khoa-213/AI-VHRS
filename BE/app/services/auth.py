@@ -117,10 +117,7 @@ class AuthService:
         acc = self.repo.get_by_email(email)
         if acc is None or acc.status != AccountStatus.ACTIVE:
             return
-        token = security.create_token(
-            acc.id, security.RESET, timedelta(minutes=self.cfg.reset_token_ttl_min),
-            fp=security.password_fingerprint(acc.password_hash))
-        link = f"{web_url(self.cfg)}/reset-password?token={token}"       # base64url: no braces in it
+        link = f"{web_url(self.cfg)}/reset-password"         # the page where the code is typed; no token (2026-11-26)
         otp = PhoneOtpService(self.session, None)
         try:
             with self.session.begin_nested():
@@ -140,6 +137,7 @@ class AuthService:
         self._set_password(acc, new_password)
 
     def confirm_password_reset(self, token: str, new_password: str) -> None:
+        """The `reset_token` of the SMS flow (`POST /auth/phone-reset/verify`). The e-mail flow has no token any more."""
         payload = security.decode_token(token, security.RESET)
         acc = self.repo.get(int(payload["sub"]))
         if acc is None or payload.get("fp") != security.password_fingerprint(acc.password_hash):
