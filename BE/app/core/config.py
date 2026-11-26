@@ -3,7 +3,7 @@ from functools import lru_cache
 from typing import Literal
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -96,10 +96,18 @@ class Settings(BaseSettings):
     # sms_type 4 = SpeedSMS's default Brandname (Verify / Notify); 2 = random number; 3 = own Brandname and 5 = their
     # Android app both need SPEEDSMS_SENDER (the Brandname / the device id).
     speedsms_access_token: str | None = None
-    speedsms_sms_type: Literal[2, 3, 4, 5] = 4
+    speedsms_sms_type: int = 4                # 2, 3, 4 or 5; an int (env values are strings: Literal[2, 3, 4, 5] refused "4")
     speedsms_sender: str | None = None
     speedsms_base_url: str = "https://api.speedsms.vn/index.php"
     sms_timeout_seconds: float = 10.0
+
+    @field_validator("speedsms_sms_type")
+    @classmethod
+    def _speedsms_type(cls, v: int) -> int:
+        if v not in (2, 3, 4, 5):
+            raise ValueError("SPEEDSMS_SMS_TYPE must be 2, 3, 4 or 5")
+        return v
+
     esms_api_key: str | None = None
     esms_secret_key: str | None = None
     esms_brandname: str | None = None     # registered with the carriers through eSMS; the OTP texts must match its templates
