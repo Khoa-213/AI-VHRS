@@ -103,16 +103,22 @@ class PhoneOtpService:
                            {"limit": self.cfg.otp_daily_limit})
         self.session.execute(update(PhoneOtp).where(PhoneOtp.account_id == account_id, PhoneOtp.used_at.is_(None))
                              .values(used_at=now))                     # a new code closes the older ones
-        code = f"{secrets.randbelow(10 ** CODE_DIGITS):0{CODE_DIGITS}d}"
+        minutes = max(1, (ttl_seconds or self.cfg.otp_ttl_seconds) // 60)
+        provider_made = deliver is None and getattr(self.sms, "issues_code", False)
+        if provider_made:                       # SpeedSMS 2FA: it makes and sends the PIN, we keep only its HMAC
+            code = self.sms.send_pin(phone, text.format(code="{pin_code}", minutes=minutes))
+        else:
+            code = f"{secrets.randbelow(10 ** CODE_DIGITS):0{CODE_DIGITS}d}"
         self.session.add(PhoneOtp(account_id=account_id, phone=phone, otp_hash=_digest(account_id, phone, code),
                                   expires_at=now + timedelta(seconds=ttl_seconds or self.cfg.otp_ttl_seconds), attempt_count=0,
                                   max_attempts=self.cfg.otp_max_attempts, created_at=now))
         self.session.flush()
-        message = text.format(code=code, minutes=max(1, (ttl_seconds or self.cfg.otp_ttl_seconds) // 60))
+        message = text.format(code=code, minutes=minutes)
         if deliver is not None:                                         # e-mail (password reset)
             deliver(message)
             return {}
-        self.sms.send(phone, message)
+        if not provider_made:
+            self.sms.send(phone, message)
         return {"phone_masked": mask(phone), "expires_in": self.cfg.otp_ttl_seconds,
                 "resend_after": self.cfg.otp_resend_seconds, "mode": self.sms.mode}
 

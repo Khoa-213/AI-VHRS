@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     smtp_timeout_seconds: float = 10.0
     # ---- SMS (Phase 5e, FR-53 OTP). mock = nothing leaves the server (default; tests and local work). esms = eSMS.vn
     # (integrations/sms.py). OTP rules are assumptions approved with the 5e plan (2026-11-11).
-    sms_mode: Literal["mock", "esms", "speedsms"] = "mock"
+    sms_mode: Literal["mock", "esms", "speedsms", "speedsms2fa"] = "mock"
     # SpeedSMS (personal account, no business licence). No sandbox: speedsms mode sends REAL, paid SMS.
     # sms_type 4 = SpeedSMS's default Brandname (Verify / Notify); 2 = random number; 3 = own Brandname and 5 = their
     # Android app both need SPEEDSMS_SENDER (the Brandname / the device id).
@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     speedsms_sms_type: int = 4                # 2, 3, 4 or 5; an int (env values are strings: Literal[2, 3, 4, 5] refused "4")
     speedsms_sender: str | None = None
     speedsms_base_url: str = "https://api.speedsms.vn/index.php"
+    # SMS_MODE=speedsms2fa (2026-11-26): codes through a SpeedSMS 2FA app (brandname "Verify", no own sender needed);
+    # the App ID shown at connect.speedsms.vn > Verification. Uses SPEEDSMS_ACCESS_TOKEN too.
+    speedsms_2fa_app_id: str | None = None
     sms_timeout_seconds: float = 10.0
 
     @field_validator("speedsms_sms_type")
