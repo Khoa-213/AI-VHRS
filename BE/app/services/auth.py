@@ -136,13 +136,10 @@ class AuthService:
         PhoneOtpService(self.session, None)._check(acc.id, email_key(acc.id), code)
         self._set_password(acc, new_password)
 
-    def confirm_password_reset(self, token: str, new_password: str) -> None:
-        """The `reset_token` of the SMS flow (`POST /auth/phone-reset/verify`). The e-mail flow has no token any more."""
-        payload = security.decode_token(token, security.RESET)
-        acc = self.repo.get(int(payload["sub"]))
-        if acc is None or payload.get("fp") != security.password_fingerprint(acc.password_hash):
-            raise AppError(401, "TOKEN_INVALID", "Liên kết không hợp lệ hoặc đã được sử dụng.")
-        security.validate_password_strength(new_password)
+    def confirm_password_reset_phone(self, phone: str, code: str, new_password: str, *, ip: str | None = None) -> None:
+        """The 6-digit code sent by SMS to the account's verified number (UC-54; no token since 2026-11-26)."""
+        security.validate_password_strength(new_password)          # before the code is used up
+        acc = PhoneOtpService(self.session, None, ip).confirm_reset(phone, code)
         self._set_password(acc, new_password)
 
     def _set_password(self, acc: Account, new_password: str) -> None:

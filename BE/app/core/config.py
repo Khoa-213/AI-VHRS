@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_min: int = 30
     refresh_token_ttl_days: int = 7
-    reset_token_ttl_min: int = 30
     # FR-01: temporary lock after 5 wrong passwords. Lock length is an assumption.
     max_failed_logins: int = 5
     lockout_minutes: int = 15
