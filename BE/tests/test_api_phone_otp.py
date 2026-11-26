@@ -356,3 +356,15 @@ def test_speedsms_mode_needs_a_token_and_a_sender_for_own_brandname(monkeypatch)
     monkeypatch.setattr(s, "speedsms_sender", None)
     with pytest.raises(AppError):
         get_sms_sender()
+
+
+def test_speedsms_sms_type_is_read_from_the_environment_as_a_number(monkeypatch):
+    """Render deploy 2026-11-26 crashed: env values are strings and Literal[2, 3, 4, 5] refused "4"."""
+    import pytest
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    monkeypatch.setenv("SPEEDSMS_SMS_TYPE", "4")
+    assert Settings().speedsms_sms_type == 4
+    monkeypatch.setenv("SPEEDSMS_SMS_TYPE", "7")
+    with pytest.raises(ValidationError):
+        Settings()
