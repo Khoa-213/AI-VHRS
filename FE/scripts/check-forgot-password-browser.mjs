@@ -1,6 +1,7 @@
 // Real Edge DOM test of "Forgot password" inside the sign-in dialog, with every API call intercepted (no backend, no mail).
 // Covers: email, then the six code boxes (typing, paste, wrong code, resend wait), the new password, and the way back to
-// sign in with the email filled in; the three languages at 1440 and 390. Run `npm run build` first.
+// sign in with the email filled in; the three languages at 1440 and 390; and the page the email links to (/reset-password).
+// Run `npm run build` first.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdtemp, writeFile } from 'node:fs/promises'
@@ -27,6 +28,7 @@ function answer(method, path, body) {
   if (json) bodies.push({ path, ...json })
   if (path === '/auth/password-reset/request') return [{ message: 'ok' }, 202]
   if (path === '/auth/password-reset/confirm') {
+    assert.equal('token' in json, false, 'the email flow never sends a token')
     if (json.code !== CODE) return [{ error: { code: 'OTP_INVALID', message: 'Sai mã', details: { attempts_left: 4 } } }, 400]
     return [null, 204]
   }
@@ -182,8 +184,58 @@ try {
     }
   }
 
+  // 5. The page the email links to (no token in the link): the email, the six boxes and the new password on one screen.
+  await evaluate(`localStorage.setItem('aivhrs-lang','en')`)
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
+  const openPage = async (query, label) => {
+    await command('Page.navigate', { url: `http://127.0.0.1:${port}/reset-password${query}` })
+    await wait(`!!document.querySelector('.entry-reset #reset-password')`, `reset page: ${label}`)
+  }
+  const save = () => evaluate(`document.querySelector('.entry-reset .entry-login-submit').click()`)
+  const pageText = () => evaluate(`document.querySelector('.entry-reset')?.innerText ?? ''`)
+  await openPage('', 'no token')
+  assert.equal(await evaluate(`location.search`), '', 'nothing is left in the address')
+  assert.equal(await evaluate(`!!document.querySelector('#reset-email') && document.querySelectorAll('.entry-reset .entry-otp input').length === 6`), true, 'email and six boxes')
+  await save()
+  await wait(`!!document.querySelector('#reset-email-help.entry-login-error') && !!document.querySelector('#reset-code-help.entry-login-error')`, 'email and code are required')
+  await setInput('#reset-email', EMAIL)
+  await evaluate(`document.querySelector('.entry-reset .entry-otp input').focus()`)
+  await typeKeys(CODE)
+  await setInput('#reset-password', 'Newpass123')
+  await setInput('#reset-confirm', 'Newpass123')
+  await save()
+  await wait(`/Your password has been changed/.test(document.querySelector('.entry-reset').innerText)`, 'saved with the code')
+  assert.deepEqual(bodies.at(-1), { path: '/auth/password-reset/confirm', email: EMAIL, code: CODE, new_password: 'Newpass123' })
+  await shot('reset-page-done-1440.png')
+
+  // `?email=` fills the email in; a wrong code clears the boxes and keeps the rest.
+  await openPage(`?email=${encodeURIComponent(EMAIL)}`, 'email given')
+  assert.equal(await evaluate(`document.querySelector('#reset-email').value`), EMAIL)
+  assert.equal(await evaluate(`document.activeElement === document.querySelector('.entry-reset .entry-otp input')`), true, 'the first box has the focus when the email is known')
+  await typeKeys('000000')
+  await setInput('#reset-password', 'Newpass123')
+  await setInput('#reset-confirm', 'Newpass123')
+  await shot('reset-page-code-1440.png')
+  await save()
+  await wait(`!!document.querySelector('.entry-reset p.entry-login-error')`, 'the wrong code is refused')
+  assert.match(await pageText(), /That code is not right/)
+  assert.equal(await evaluate(`[...document.querySelectorAll('.entry-reset .entry-otp input')].map(i => i.value).join('')`), '', 'the boxes are cleared')
+  assert.equal(await evaluate(`document.querySelector('#reset-password').value`), 'Newpass123', 'the password is kept')
+
+  // A token left in an old link is ignored: the page still asks for the email and the code.
+  await openPage('?token=old-token', 'old link')
+  assert.equal(await evaluate(`!!document.querySelector('#reset-email') && document.querySelectorAll('.entry-reset .entry-otp input').length === 6`), true, 'an old token link shows the code form')
+  assert.equal(await evaluate(`location.search`), '', 'the token is dropped from the address')
+
+  // Narrow, in Vietnamese: the page fits.
+  await evaluate(`localStorage.setItem('aivhrs-lang','vi')`)
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
+  await openPage('', 'vi 390')
+  await noOverflow('reset page vi 390')
+  await shot('reset-page-vi-390.png')
+
   assert.deepEqual(errors, [])
-  console.log('PASS: email then six code boxes in the dialog (no page change), focus and one-time-code, Backspace, six digits move on, new password rules, confirm with email + code + password, wrong code brings the boxes back, paste, back to sign in with the email filled in, vi/ja at 1440 and 390. All API calls intercepted.')
+  console.log('PASS: email then six code boxes in the dialog (no page change), focus and one-time-code, Backspace, six digits move on, new password rules, confirm with email + code + password, wrong code brings the boxes back, paste, back to sign in with the email filled in, vi/ja at 1440 and 390; the /reset-password page (email + code + password, ?email=, wrong code, no token read or sent). All API calls intercepted.')
 } finally {
   ws?.close(); browser?.kill(); server.closeAllConnections(); server.close()
 }

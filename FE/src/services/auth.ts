@@ -93,7 +93,7 @@ export const apiRequestReset = (email: string) =>
 export const apiConfirmResetCode = (email: string, code: string, new_password: string) =>
   api('/auth/password-reset/confirm', { method: 'POST', body: { email, code, new_password }, auth: false })
 
-/** `POST /auth/password-reset/confirm`: the token comes from the emailed link or the phone reset. Signs out every device. */
+/** `POST /auth/password-reset/confirm` with a token: only the `reset_token` of the SMS flow (`/auth/phone-reset/verify`); the email flow uses the code. Signs out every device. */
 export const apiConfirmReset = (token: string, new_password: string) =>
   api('/auth/password-reset/confirm', { method: 'POST', body: { token, new_password }, auth: false })
 
