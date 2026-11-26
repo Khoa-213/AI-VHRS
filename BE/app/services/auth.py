@@ -1,4 +1,5 @@
 """FR-01 authentication use cases: register, login, refresh, password reset."""
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -14,6 +15,9 @@ from app.models.account import Account, AccountStatus, AuthSession, RoleCode
 from app.repositories.accounts import AccountRepository
 from app.repositories.sessions import SessionRepository
 from app.services import audit
+from app.services.phone_otp import EMAIL_OTP_SECONDS, EMAIL_RESET, PhoneOtpService, email_key
+
+log = logging.getLogger("app.auth")
 
 _BAD_CREDENTIALS = AppError(401, "INVALID_CREDENTIALS", "Email hoặc mật khẩu không đúng.")
 
@@ -116,8 +120,24 @@ class AuthService:
         token = security.create_token(
             acc.id, security.RESET, timedelta(minutes=self.cfg.reset_token_ttl_min),
             fp=security.password_fingerprint(acc.password_hash))
-        self.mailer.send(acc.email, "Đặt lại mật khẩu AI-VHRS",
-                         f"Dùng mã sau để đặt lại mật khẩu (hết hạn sau {self.cfg.reset_token_ttl_min} phút): {token}")
+        link = f"{web_url(self.cfg)}/reset-password?token={token}"       # base64url: no braces in it
+        otp = PhoneOtpService(self.session, None)
+        try:
+            with self.session.begin_nested():
+                otp._issue(acc.id, email_key(acc.id), EMAIL_RESET.replace("{link}", link),
+                           deliver=lambda body: self.mailer.send(acc.email, "Mã đặt lại mật khẩu AI-VHRS", body),
+                           ttl_seconds=EMAIL_OTP_SECONDS)
+        except AppError as exc:                    # resend wait / daily limit: same answer, nothing sent
+            log.info("password reset mail not sent: %s", exc.code)
+
+    def confirm_password_reset_code(self, email: str, code: str, new_password: str) -> None:
+        """The 6-digit code of the reset e-mail (2026-11-26). Wrong guesses are counted (5, then the code is burned)."""
+        acc = self.repo.get_by_email(email)
+        if acc is None or acc.status != AccountStatus.ACTIVE:
+            raise AppError(400, "OTP_INVALID", "Mã OTP không đúng hoặc đã hết hạn.")
+        security.validate_password_strength(new_password)          # before the code is used up
+        PhoneOtpService(self.session, None)._check(acc.id, email_key(acc.id), code)
+        self._set_password(acc, new_password)
 
     def confirm_password_reset(self, token: str, new_password: str) -> None:
         payload = security.decode_token(token, security.RESET)
@@ -125,6 +145,9 @@ class AuthService:
         if acc is None or payload.get("fp") != security.password_fingerprint(acc.password_hash):
             raise AppError(401, "TOKEN_INVALID", "Liên kết không hợp lệ hoặc đã được sử dụng.")
         security.validate_password_strength(new_password)
+        self._set_password(acc, new_password)
+
+    def _set_password(self, acc: Account, new_password: str) -> None:
         acc.password_hash = security.hash_password(new_password)
         acc.failed_login_count, acc.locked_until = 0, None
         self.sessions.revoke_all(acc.id)  # a reset must sign out every device
@@ -143,3 +166,12 @@ class AuthService:
             security.create_token(acc.id, security.REFRESH, timedelta(days=self.cfg.refresh_token_ttl_days),
                                   sid=str(sid)),
         )
+
+
+def web_url(cfg) -> str:
+    """Root of the web app for links in e-mails: PUBLIC_WEB_URL, else the origin of PAYMENT_RETURN_URL."""
+    from urllib.parse import urlsplit
+    if cfg.public_web_url:
+        return cfg.public_web_url.rstrip("/")
+    u = urlsplit(cfg.payment_return_url)
+    return f"{u.scheme}://{u.netloc}"

@@ -133,8 +133,16 @@ def test_staff_see_the_remaining_combinations(client, cust, staff, manager, wcat
     assert wcat["gel"] in pens and wcat["fountain"] not in pens                          # only compatible pens, glossy paper kept
     assert {c["paper_type_id"] for c in d["combos"]} == {wcat["gloss"]} and d["total"] == len(d["combos"])
     open_ = _suggest_order(client, cust, sh, wcat)                                       # nothing fixed: every compatible combo
-    free = client.get(f"{W}/orders/{open_}/material-suggestions", headers=sh).json()
-    assert {wcat["paper"], wcat["gloss"]} <= {c["paper_type_id"] for c in free["combos"]}
+    url = f"{W}/orders/{open_}/material-suggestions"
+    for paper in (wcat["paper"], wcat["gloss"]):        # narrowed to one paper: the real catalog size does not matter
+        one = client.get(url, headers=sh, params={"paper_type_id": paper}).json()
+        assert one["total"] >= 1 and {c["paper_type_id"] for c in one["combos"]} == {paper}
+    gel = client.get(url, headers=sh, params={"pen_type_id": wcat["gel"], "size": "A5"}).json()
+    assert gel["combos"] and all(c["pen_type_id"] == wcat["gel"] and c["paper_size"] == "A5" for c in gel["combos"])
+    every = client.get(url, headers=sh).json()                                       # pages add up to the total
+    page = client.get(url, headers=sh, params={"limit": 2, "offset": 1}).json()
+    assert page["combos"] == every["combos"][1:3] and page["total"] == every["total"] and page["limit"] == 2
+    assert client.get(url, headers=sh, params={"limit": 501}).status_code == 422
     assert client.get(f"{W}/orders/{oid}/material-suggestions", headers=manager[0]).status_code == 200      # read-only for Manager
     assert client.get(f"{W}/orders/{oid}/material-suggestions", headers=auth(client, "CUSTOMER")).status_code == 403
     other_staff = auth(client, "STAFF")

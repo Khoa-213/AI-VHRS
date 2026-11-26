@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models.account import AccountStatus
 
@@ -83,8 +83,17 @@ class PasswordResetRequestIn(BaseModel):
 
 
 class PasswordResetConfirmIn(BaseModel):
-    token: str
+    """Either `token` (the link in the e-mail, or the phone flow's reset_token) or `email` + `code` (the 6 digits)."""
+    token: str | None = None
+    email: EmailStr | None = None
+    code: str | None = Field(default=None, pattern=r"^\d{6}$", examples=["123456"])
     new_password: str = Field(min_length=8, max_length=72)
+
+    @model_validator(mode="after")
+    def _one_way(self):
+        if not self.token and not (self.email and self.code):
+            raise ValueError("Cần token, hoặc email cùng mã 6 số.")
+        return self
 
 
 class PhoneOtpVerifyIn(BaseModel):

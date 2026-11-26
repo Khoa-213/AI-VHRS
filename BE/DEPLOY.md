@@ -44,6 +44,7 @@ exists before the new code reads the order's `shipping_*` columns.
 | `LLM_PROVIDER_ORDER` | U5: order the configured providers are tried in, default `anthropic,openai,gemini`; a provider without its key is skipped. No key at all = the assistant answers 503 AI_UNAVAILABLE and the studio still works through its forms |
 | `LLM_PRICES` | U5, optional: JSON `{"model": [USD per 1M input tokens, USD per 1M output tokens]}` from the provider's price page. Without it the cost is recorded as NULL and only the call caps apply (Admin settings `ai_daily_model_calls`, `ai_daily_messages_per_customer`) |
 | `LLM_TIMEOUT_SECONDS` | U5: per model call, default 30 |
+| `PUBLIC_WEB_URL` | root of the web app for links in e-mails (password reset), e.g. `https://www.ai-vhrs.cloud`; empty: the origin of `PAYMENT_RETURN_URL` |
 | `PAYMENT_RETURN_URL` | web-app page the customer is sent back to after paying, e.g. `https://<app>.vercel.app/payment/result` (display only) |
 | `PAYMENT_EXPIRE_MINUTES` | payment link lifetime, default 15 |
 | `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | from VNPay (sandbox: email after registering at sandbox.vnpayment.vn/devreg) |
@@ -84,6 +85,10 @@ against its staging API on 2026-10-26; its real callback reached the Render serv
 |---|---|
 | `BACKGROUND_JOBS_ENABLED` | `true` on the ONE deployed instance (quotation expiry, deposit deadline, acceptance reminder / auto-accept, e-mail retry, BR-23 photo purge); every 10 minutes (`BACKGROUND_JOBS_INTERVAL_SECONDS`, minimum 60). A Postgres advisory lock stops two runs overlapping |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | notification e-mails (MSG07/08/10/11/12/15) and robot alerts; without them mail is only logged |
+| `SMTP_REPLY_TO` | optional: address replies go to (the project's mailbox), sent as `Reply-To`; the From stays on the verified domain |
+| `SMTP_HTML` | default `true`: every mail also carries an HTML part with the AI-VHRS logo inline; `false` sends plain text only |
+
+**In use since 2026-11-26: Resend** (Brevo sign-up failed): domain `mail.ai-vhrs.cloud` verified in Resend (DKIM, SPF, MX on PA Viet Nam DNS), `SMTP_HOST=smtp.resend.com`, `SMTP_PORT=2587` (STARTTLS), `SMTP_USER=resend`, `SMTP_PASSWORD` = a Resend API key, `SMTP_FROM=Xưởng Nét Việt <no-reply@mail.ai-vhrs.cloud>`. A Gmail address cannot be the From (not our domain): put it in `SMTP_REPLY_TO`. The sender picture in Gmail comes from a Google account for the From address (set its profile photo to the logo) or BIMI, not from the mail.
 
 **Render free blocks outbound SMTP ports 25, 465 and 587** (since 2025-09-26), so Gmail SMTP does not work there. Owner's choice
 (2026-11-26): Brevo SMTP relay on port 2525 (STARTTLS, no code change): `SMTP_HOST=smtp-relay.brevo.com`, `SMTP_PORT=2525`,
