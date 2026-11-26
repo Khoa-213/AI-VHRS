@@ -9,11 +9,12 @@ from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (IncidentOut, JobEventOut, JobOut, ProductionQueueRow, RescheduleIn, ResolveIncidentIn,
-                                 ScheduleConfigOut, ScheduleIn, SuggestionOut, TechnicianOut, UnscheduleIn)
+                                 RobotAssignIn, RobotOut, ScheduleConfigOut, ScheduleIn, SuggestionOut, TechnicianOut,
+                                 UnscheduleIn)
 from app.api.schemas import ErrorOut, Page
 from app.models.account import Account, RoleCode
 from app.models.ops import JobStatus, ProductionJob
-from app.services.scheduling import SchedulingService
+from app.services.scheduling import SchedulingService, robot_owners
 
 router = APIRouter(prefix="/manager", tags=["Scheduling"])
 ManagerDep = Annotated[Account, Depends(require_roles(RoleCode.MANAGER.value))]
@@ -55,16 +56,17 @@ def schedule_config(svc: Svc) -> ScheduleConfigOut:
 
 
 @router.get("/orders/{order_id}/schedule-suggestion", response_model=SuggestionOut,
-            summary="Gợi ý robot + Technical Staff + khung giờ sớm nhất (thời lượng = thời gian viết × SL + 15' + 5')",
+            summary="Gợi ý Technical Staff + robot của họ + khung giờ sớm nhất (mỗi kỹ thuật viên một gợi ý; thời lượng = thời gian viết × SL + 15' + 5')",
             responses={409: {"model": ErrorOut, "description": "NOT_SCHEDULABLE / SKETCH_REQUIRED"}})
 def suggestion(order_id: int, svc: Svc) -> SuggestionOut:
     return SuggestionOut(**svc.suggest(order_id))
 
 
 @router.post("/orders/{order_id}/schedule", response_model=JobOut, status_code=status.HTTP_201_CREATED,
-             summary="FR-37 Xếp lịch sản xuất (PENDING_SCHEDULE / FAILED / REWRITE_REQUIRED → SCHEDULED)",
+             summary="FR-37 Xếp lịch sản xuất cho một Technical Staff (robot tuỳ chọn, phải là robot của người đó)",
              responses={409: {"model": ErrorOut, "description": "SLOT_CONFLICT / ROBOT_UNAVAILABLE / NOT_SCHEDULABLE"},
-                        422: {"model": ErrorOut, "description": "OUTSIDE_WORKING_HOURS / ROBOT_NOT_SUITABLE / ..."}})
+                        422: {"model": ErrorOut, "description": "OUTSIDE_WORKING_HOURS / ROBOT_NOT_SUITABLE / ROBOT_NOT_ASSIGNED / "
+                                                                 "TECHNICIAN_HAS_NO_ROBOT / ..."}})
 def schedule(order_id: int, body: ScheduleIn, svc: Svc) -> JobOut:
     job = svc.schedule(order_id, robot_id=body.robot_id, technician_id=body.technician_id,
                        slot_start=body.slot_start, note=body.note)
@@ -100,7 +102,29 @@ def job_detail(job_id: int, svc: Svc) -> JobOut:
     return _jobs_out(svc, [svc.get(job_id)])[0]
 
 
-@router.get("/technicians", response_model=list[TechnicianOut], summary="Technical Staff đang hoạt động + số job đang giữ")
+def robot_out(session, robot) -> RobotOut:
+    out = RobotOut.model_validate(robot)
+    out.technician_id, out.technician_name = robot_owners(session).get(robot.id, (None, None))
+    return out
+
+
+@router.put("/robots/{robot_id}/technician", response_model=RobotOut,
+            summary="Giao cố định robot cho một Technical Staff (mỗi robot thuộc tối đa một người; giao lại = chuyển người)",
+            responses={404: {"model": ErrorOut, "description": "ROBOT_NOT_FOUND"},
+                       409: {"model": ErrorOut, "description": "ROBOT_HAS_ACTIVE_JOBS (người đang giữ còn job trên robot)"},
+                       422: {"model": ErrorOut, "description": "INVALID_TECHNICIAN"}})
+def assign_robot(robot_id: int, body: RobotAssignIn, svc: Svc) -> RobotOut:
+    return robot_out(svc.session, svc.assign_robot(robot_id, body.technician_id))
+
+
+@router.delete("/robots/{robot_id}/technician", response_model=RobotOut, summary="Thu hồi robot khỏi Technical Staff đang giữ",
+               responses={409: {"model": ErrorOut, "description": "ROBOT_HAS_ACTIVE_JOBS"}})
+def unassign_robot(robot_id: int, svc: Svc) -> RobotOut:
+    return robot_out(svc.session, svc.unassign_robot(robot_id))
+
+
+@router.get("/technicians", response_model=list[TechnicianOut],
+            summary="Technical Staff đang hoạt động + số job đang giữ + robot được giao")
 def technicians(svc: Svc) -> list[TechnicianOut]:
     return [TechnicianOut(**t) for t in svc.technicians()]
 

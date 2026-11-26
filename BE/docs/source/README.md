@@ -32,6 +32,7 @@ Cho tới khi có, nguồn thực tế là trigger DB `fn_order_state_guard` và
 | FR-36 (OT-2) học nét | Chưa làm; AI là cổ điển, không gọi dịch vụ ngoài | mục 5 |
 | Cổng thanh toán VNPay/MoMo, GHN/GHTK thật | **MOCK** có nhãn `mode=MOCK` (phiếu đăng ký cho phép fallback mock) | mục 5 |
 | Robot thật FR3 + Robot Agent + IoT | Thuộc phạm vi BE nhưng **chưa làm; chỉ làm khi chủ dự án yêu cầu rõ** (2026-10-18). Trước đó Technical Staff làm "web scope A": bản ghi/trạng thái, client báo kết quả lên | mục 3, 5 |
+| UC-41 / FR-40: Manager gán job cho robot **và** kỹ thuật viên; UC-31: kỹ thuật viên xem job "theo robot và ca" | **Giao robot cố định** (chủ dự án chọn 2026-11-26, migration 0032): Manager giao mỗi robot cho tối đa một kỹ thuật viên; xếp lịch giao job cho **kỹ thuật viên + giờ**, robot tuỳ chọn; kỹ thuật viên **tự chọn robot của mình** trước khi Chuẩn bị và chỉ thấy robot được giao | `PROJECT_STATUS.md` mục 9, `docs/FE_API_GUIDE.md` 7.3 / 7b.0 |
 
 ## Quyết định bổ sung của chủ dự án (2026-10-18, cho Phase 4)
 | Vấn đề tài liệu không nói rõ | Quyết định |

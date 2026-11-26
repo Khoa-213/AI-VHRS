@@ -614,15 +614,27 @@ Trường: `u_ot1/2/3` (đ/ký tự), `w_min`, `s_ot1/2/3` (phí setup), `k_simp
 ```
 GET  /manager/schedule/queue                       đơn PENDING_SCHEDULE / FAILED / REWRITE_REQUIRED (+ duration_min ước tính)
 GET  /manager/schedule/config                      {working_hours{days,start,end,utc_offset_min}, eta_buffer_days, lead_min, slot_step_min}
-GET  /manager/orders/{id}/schedule-suggestion      ≤5 gợi ý {robot, technician, slot_start, slot_end, finish_by, eta_risk} + stock_warnings
-POST /manager/orders/{id}/schedule {robot_id, technician_id, slot_start, note?}   → JobOut (201)
+GET  /manager/orders/{id}/schedule-suggestion      ≤5 gợi ý, MỖI KỸ THUẬT VIÊN MỘT gợi ý {technician, robot của người đó, slot_start, slot_end, finish_by, eta_risk} + stock_warnings
+POST /manager/orders/{id}/schedule {technician_id, slot_start, robot_id?, note?}   → JobOut (201)   (0032: robot_id tuỳ chọn)
      (U1: khoá + ký gói sản xuất của đơn; 503 PRODUCTION_SIGNING_NOT_CONFIGURED khi máy chủ chưa có khoá ký,
       409 APPROVAL_REQUIRED / DEPOSIT_REQUIRED khi báo giá đã duyệt hoặc cọc không khớp phiên bản phác thảo chốt)
 POST /manager/jobs/{id}/reschedule {robot_id?, technician_id?, slot_start?, reason}   (chỉ khi job còn SCHEDULED)
 POST /manager/jobs/{id}/unschedule {reason}
 GET  /manager/jobs?status=&robot_id=&technician_id=&from=&to=      (cũng dùng làm lịch/calendar)       GET /manager/jobs/{id}
-GET  /manager/technicians                          kỹ thuật viên + số job đang giữ
+GET  /manager/technicians                          kỹ thuật viên + số job đang giữ + robots[{id, code, status}] được giao
+PUT    /manager/robots/{robot_id}/technician {technician_id}   giao cố định robot cho một kỹ thuật viên (giao lại = chuyển người)
+DELETE /manager/robots/{robot_id}/technician                   thu hồi robot
 ```
+**Giao robot cố định (migration 0032, chủ dự án quyết định 2026-11-26, thay UC-41 cũ):** mỗi robot thuộc **tối đa một** kỹ thuật viên;
+một kỹ thuật viên giữ được nhiều robot. Manager **xếp lịch cho kỹ thuật viên**; `robot_id` tuỳ chọn (nếu gửi thì phải là robot của
+chính người đó); không gửi thì job có `robot_id = null` và **kỹ thuật viên tự chọn** một robot của mình trước khi Chuẩn bị (mục 7b.0).
+- BE chỉ nhận lịch khi kỹ thuật viên có ít nhất một robot `AVAILABLE`, hợp loại bút của đơn, rảnh trong khung giờ.
+- `GET /manager/robots` có thêm `technician_id`, `technician_name` (null = chưa giao ai). Gợi ý lịch chỉ dùng robot đã giao.
+- Đổi người nhận lịch (`reschedule` với `technician_id` khác): robot cũ không thuộc người mới thì job mới có `robot_id = null`.
+- Lỗi mới: `422 TECHNICIAN_HAS_NO_ROBOT` (`details.assigned_robots`), `422 ROBOT_NOT_ASSIGNED` (robot của người khác),
+  `409 SLOT_CONFLICT` với `details.resource = "robot"` cũng có nghĩa "không robot nào của người này rảnh",
+  `409 ROBOT_HAS_ACTIVE_JOBS` (`details.job_ids`) khi giao lại / thu hồi robot mà người đang giữ còn job SCHEDULED/PREPARING/WRITING/PAUSED trên nó.
+- `JobOut.robot_id` có thể `null`, khi đó `robot_code = ""`: hiện "Kỹ thuật viên chưa chọn robot".
 - Thời lượng job = thời gian viết × số lượng + 15' chuẩn bị + 5' chụp ảnh. Giờ làm việc mặc định T2–T7, 08:00–17:00 (UTC+7); job dài tự nối sang ngày làm việc kế.
 - `slot_start` **bắt buộc có múi giờ** (ví dụ `2026-10-20T09:00:00+07:00`) và nằm trong giờ làm việc.
 - Lỗi cần xử lý trên UI: `409 SLOT_CONFLICT` (`details.resource` = `robot`|`technician`), `409 ROBOT_UNAVAILABLE`, `422 ROBOT_NOT_SUITABLE` (robot không hỗ trợ loại bút), `422 OUTSIDE_WORKING_HOURS`, `422 SLOT_IN_PAST`, `409 JOB_ALREADY_STARTED`.
@@ -631,6 +643,21 @@ GET  /manager/technicians                          kỹ thuật viên + số job
 - Xem diễn biến sau khi xếp lịch (Phase 4a, chỉ đọc): `GET /manager/jobs/{id}/events` (nhật ký: tải gói, hiệu chuẩn, mô phỏng, tiến độ, dừng khẩn cấp, sự cố), `GET /manager/incidents?resolved=&robot_id=` và `POST /manager/incidents/{id}/resolve {note}`. `JobOut` có thêm `progress_pct`, `downloaded_at`, `started_at`, `finished_at`, `simulation_passed`. Đơn có sự cố quay lại `schedule/queue` với `production_status=FAILED`; đổi trạng thái robot về `AVAILABLE` (API robot) rồi xếp lại như bình thường.
 
 ## 7b. Luồng Technical Staff (`/technician/*`) – Phase 4a
+
+### 7b.0 Robot của tôi và chọn robot cho job (migration 0032, 2026-11-26)
+```
+GET /technician/robots                  {total, online, active, robots: RobotStatusOut[]}  chỉ robot Manager giao cho tôi
+PUT /technician/jobs/{id}/robot {robot_id}   chọn / đổi robot cho job còn SCHEDULED → JobOut
+```
+- `online` = số robot có Robot Agent gửi heartbeat trong 15 giây gần nhất; `active` = số robot đang làm việc (có lần chạy đang mở hoặc job WRITING/PAUSED).
+- Mỗi robot (`RobotStatusOut`) có thêm: `robot_status` (AVAILABLE/BUSY/MAINTENANCE/BROKEN), `station`, `is_simulated`, `supported_pen_categories`,
+  `technician_id`, `active`, `enabled_modes` (chế độ agent cho phép, `[]` khi offline), `agent_busy`; cùng các trường cũ
+  (`connection_state` ONLINE/OFFLINE/UNKNOWN, `state`, `headline_vi`, `level`, `job_id`, `job_status`, `open_alerts`, ...).
+- Chọn robot: chỉ robot của tôi (khác → `404 ROBOT_NOT_FOUND`), robot `AVAILABLE`/`BUSY` (khác → `409 ROBOT_UNAVAILABLE`), hợp bút
+  (`422 ROBOT_NOT_SUITABLE`), rảnh trong khung giờ của job (`409 SLOT_CONFLICT`), job còn `SCHEDULED` (`409 JOB_STATE_CONFLICT`).
+  Gửi lại đúng robot đang chọn: không đổi gì.
+- Chưa chọn robot thì `prepare` và lệnh robot trả `409 ROBOT_NOT_SELECTED`.
+- Robot được giao cho tôi thì tôi xem / điều khiển được (`live`, `scene`, lệnh, khoá phiên agent, cảnh báo) ngay cả khi chưa có job trên nó.
 
 Chỉ vai trò `TECHNICAL_STAFF`, chỉ job được giao cho chính mình (job khác → `404 JOB_NOT_FOUND`). **Hiện BE chưa kết nối robot** (sẽ làm khi chủ dự án yêu cầu); BE chỉ ghi nhận và canh trạng thái. Kết quả mô phỏng, tiến độ, lực, dừng khẩn cấp do client báo lên các endpoint dưới đây (web app, máy trạm hoặc nhập tay). Khi nối robot thật, hợp đồng các endpoint này giữ nguyên. Mỗi bước đổi trạng thái job đồng thời đổi `production_status` của đơn (BR-17).
 

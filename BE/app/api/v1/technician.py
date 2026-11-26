@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (CalibrationIn, CalibrationOut, IncidentIn, IncidentOut, JobEventIn, JobEventOut,
                                  JobOut, JobPackageOut, SimulationIn, TechJobDetail)
+from app.api.robot_schemas import ChooseRobotIn
 from app.api.photo_schemas import PhotoOut, PhotoQcIn, PhotoRegisterIn, PhotoUploadIn, PhotoUploadOut, QcFailIn
 from app.api.schemas import ErrorOut, Page
 from app.api.v1.orders import optional_storage
@@ -81,8 +82,18 @@ def package(job_id: int, svc: Svc) -> JobPackageOut:
     return JobPackageOut(**svc.package(job_id))
 
 
+@router.put("/jobs/{job_id}/robot", response_model=JobOut,
+            summary="Chọn / đổi robot cho job (chỉ robot Manager đã giao cho tôi; job còn SCHEDULED)",
+            responses={404: {"model": ErrorOut, "description": "JOB_NOT_FOUND / ROBOT_NOT_FOUND (không phải robot của tôi)"},
+                       409: {"model": ErrorOut, "description": "JOB_STATE_CONFLICT / ROBOT_UNAVAILABLE / SLOT_CONFLICT"},
+                       422: {"model": ErrorOut, "description": "ROBOT_NOT_SUITABLE"}})
+def choose_robot(job_id: int, body: ChooseRobotIn, svc: Svc) -> JobOut:
+    return _jobs_out(svc, [svc.choose_robot(job_id, body.robot_id)])[0]
+
+
 @router.post("/jobs/{job_id}/prepare", response_model=JobOut,
-             summary="UC-33 Bắt đầu chuẩn bị robot (SCHEDULED → PREPARING; cần đã tải gói job)", responses=CONFLICT)
+             summary="UC-33 Bắt đầu chuẩn bị robot (SCHEDULED → PREPARING; cần đã tải gói job và đã chọn robot)",
+             responses={409: {"model": ErrorOut, "description": "JOB_STATE_CONFLICT / JOB_NOT_DOWNLOADED / ROBOT_NOT_SELECTED / ROBOT_UNAVAILABLE"}})
 def prepare(job_id: int, svc: Svc) -> JobOut:
     return _jobs_out(svc, [svc.prepare(job_id)])[0]
 

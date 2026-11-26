@@ -1,6 +1,11 @@
 """Production scheduling for the Manager: FR-37 (schedule a job), FR-40 (duration), BR-18 (one job per robot at a
 time, robot fits the pen), re-scheduling after a failure or a rewrite request.
 
+Fixed robot assignment (migration 0032, owner decision 2026-11-26): each robot belongs to one technician. The Manager
+schedules a job for a TECHNICIAN and a slot; the robot is optional (when given it must be one of that technician's robots),
+otherwise the technician picks one of theirs before preparing (`TechnicianService.choose_robot`). A job is only accepted
+when the technician has a suitable, available robot that is free in the slot.
+
 The service SUGGESTS robot / technician / slot and lets the Manager confirm or choose differently. It only writes
 the schedule (production_jobs + production_status); it never talks to the robot.
 """
@@ -116,7 +121,8 @@ class SchedulingService:
         robot_busy: dict[int, list[sr.Interval]] = {}
         tech_busy: dict[int, list[sr.Interval]] = {}
         for j in self.jobs.busy(since=_now(), exclude_job_id=exclude_job_id):
-            robot_busy.setdefault(j.robot_id, []).append((j.slot_start, j.slot_end))
+            if j.robot_id is not None:
+                robot_busy.setdefault(j.robot_id, []).append((j.slot_start, j.slot_end))
             tech_busy.setdefault(j.technician_id, []).append((j.slot_start, j.slot_end))
         return robot_busy, tech_busy
 
@@ -131,22 +137,22 @@ class SchedulingService:
         role = self.accounts.role_by_code(RoleCode.TECHNICAL_STAFF.value)
         techs, _ = self.accounts.search(role_id=role.id, status=AccountStatus.ACTIVE, q=None, offset=0, limit=200)
         load = self.jobs.load_by_technician(_now())
-        candidates = []
+        by_id = {t.id: t for t in techs}
+        owners = self.robots.owners()
+        best: dict[int, tuple] = {}                     # one suggestion per technician: their earliest free, suitable robot
         for robot in self.robots.list(RobotStatus.AVAILABLE):
-            if not self._robot_fits(robot, order):
+            t = by_id.get(owners.get(robot.id))         # only robots given to an active technician can be used
+            if t is None or not self._robot_fits(robot, order):
                 continue
-            best = None
-            for t in techs:
-                try:
-                    slot = sr.find_slot(cal, earliest, minutes, robot_busy.get(robot.id, []) + tech_busy.get(t.id, []))
-                except sr.NoSlotError:
-                    continue
-                key = (slot[0], load.get(t.id, 0), t.id)
-                if best is None or key < best[0]:
-                    best = (key, t, slot)
-            if best:
-                candidates.append((best[2], robot, best[1]))
-        candidates.sort(key=lambda c: (c[0][0], c[1].id))
+            try:
+                slot = sr.find_slot(cal, earliest, minutes, robot_busy.get(robot.id, []) + tech_busy.get(t.id, []))
+            except sr.NoSlotError:
+                continue
+            key = (slot[0], robot.id)
+            if t.id not in best or key < best[t.id][0]:
+                best[t.id] = (key, slot, robot, t)
+        candidates = [(slot, robot, t) for _, slot, robot, t in best.values()]
+        candidates.sort(key=lambda c: (c[0][0], load.get(c[2].id, 0), c[1].id))
         eta_buffer = timedelta(days=p["eta_buffer_days"])
         out = []
         for (start, end), robot, tech in candidates[:MAX_SUGGESTIONS]:
@@ -193,18 +199,32 @@ class SchedulingService:
                 raise
         raise AssertionError("unreachable")
 
-    def schedule(self, order_id: int, *, robot_id: int, technician_id: int, slot_start: datetime,
-                 note: str | None = None, _replacing: ProductionJob | None = None) -> ProductionJob:
-        order = self._schedulable_order(order_id, lock=True)
-        sketch = self._sketch(order)
-        robot = self.robots.get(robot_id, lock=True)
-        if robot is None:
-            raise AppError(404, "ROBOT_NOT_FOUND", "Không tìm thấy robot.")
+    def _check_robot(self, robot: Robot, order: Order) -> None:
         if robot.status != RobotStatus.AVAILABLE:
             raise AppError(409, "ROBOT_UNAVAILABLE", f"Robot {robot.code} đang {robot.status.value}.")
         if not self._robot_fits(robot, order):
             raise AppError(422, "ROBOT_NOT_SUITABLE", f"Robot {robot.code} không phù hợp loại bút của đơn (BR-18).")
+
+    def schedule(self, order_id: int, *, technician_id: int, slot_start: datetime, robot_id: int | None = None,
+                 note: str | None = None, _replacing: ProductionJob | None = None) -> ProductionJob:
+        order = self._schedulable_order(order_id, lock=True)
+        sketch = self._sketch(order)
+        robot = None
+        if robot_id is not None:
+            robot = self.robots.get(robot_id, lock=True)
+            if robot is None:
+                raise AppError(404, "ROBOT_NOT_FOUND", "Không tìm thấy robot.")
+            self._check_robot(robot, order)
         tech = self._technician(technician_id)
+        owned = self.robots.of_technician(tech.id)
+        if robot is not None and robot.id not in {r.id for r in owned}:
+            raise AppError(422, "ROBOT_NOT_ASSIGNED", f"Robot {robot.code} không được giao cho {tech.full_name}.",
+                           {"robot_id": robot.id, "technician_id": tech.id})
+        usable = [r for r in owned if r.status == RobotStatus.AVAILABLE and self._robot_fits(r, order)]
+        if robot is None and not usable:
+            raise AppError(422, "TECHNICIAN_HAS_NO_ROBOT",
+                           f"{tech.full_name} chưa được giao robot nào sẵn sàng và phù hợp loại bút của đơn.",
+                           {"technician_id": tech.id, "assigned_robots": len(owned)})
         cal, p = self._params()
         if slot_start.tzinfo is None:
             raise AppError(422, "INVALID_SLOT", "slot_start phải có múi giờ.")
@@ -216,12 +236,15 @@ class SchedulingService:
         slot_end = cal.add_working_minutes(slot_start, minutes)
         robot_busy, tech_busy = self._busy(exclude_job_id=_replacing.id if _replacing else None)
         slot = (slot_start, slot_end)
-        if any(sr.overlaps(slot, b) for b in robot_busy.get(robot.id, [])):
+        if robot is not None and any(sr.overlaps(slot, b) for b in robot_busy.get(robot.id, [])):
             raise AppError(409, "SLOT_CONFLICT", f"Robot {robot.code} đã có job trong khung giờ này (BR-18).",
                            {"resource": "robot"})
         if any(sr.overlaps(slot, b) for b in tech_busy.get(tech.id, [])):
             raise AppError(409, "SLOT_CONFLICT", f"{tech.full_name} đã có job trong khung giờ này.",
                            {"resource": "technician"})
+        if robot is None and not [r for r in usable if not any(sr.overlaps(slot, b) for b in robot_busy.get(r.id, []))]:
+            raise AppError(409, "SLOT_CONFLICT", f"Không robot nào của {tech.full_name} rảnh trong khung giờ này (BR-18).",
+                           {"resource": "robot"})
 
         was_failed = order.production_status == ProductionStatus.FAILED
         prior = self.jobs.previous_outcomes(order.id)
@@ -233,10 +256,10 @@ class SchedulingService:
             self.session.flush()
         # U1: the job runs the signed snapshot of what the customer approved and paid for, never the live rows
         snapshot = SnapshotService(self.session).issue(order, actor_id=self.manager.id)
-        tech_name, robot_code = tech.full_name, robot.code       # read now: after a failed flush the session cannot load anything
+        tech_name, robot_code = tech.full_name, robot.code if robot else ""       # read now: after a failed flush the session cannot load anything
         try:
             job = self._add_job(ProductionJob(
-                order_id=order.id, sketch_id=sketch.id, robot_id=robot.id, technician_id=tech.id,
+                order_id=order.id, sketch_id=sketch.id, robot_id=robot.id if robot else None, technician_id=tech.id,
                 scheduled_by=self.manager.id, status=JobStatus.SCHEDULED, is_rewrite=rewrite, slot_start=slot_start,
                 slot_end=slot_end, estimated_duration_min=minutes, package_uri=sketch.trajectory_uri,
                 package_hash=sketch.content_hash, packaged_at=_now(), snapshot_id=snapshot.id))   # FR-38: the job's package
@@ -261,7 +284,7 @@ class SchedulingService:
         EtaService(self.session, self.manager, self.ip).apply(order, planned,
                                                             f"{why}: dự kiến giao {planned.strftime('%d/%m/%Y')}")
         audit.record(self.session, actor_id=self.manager.id, action="JOB_SCHEDULE", entity_type="production_job",
-                     entity_id=job.id, new={"order_id": order.id, "robot_id": robot.id, "technician_id": tech.id,
+                     entity_id=job.id, new={"order_id": order.id, "robot_id": robot.id if robot else None, "technician_id": tech.id,
                                             "slot_start": slot_start.isoformat(), "slot_end": slot_end.isoformat(),
                                             "is_rewrite": rewrite}, reason=note, ip=self.ip)
         notifications.notify(self.session, account_id=tech.id, order_id=order.id, msg_code="JOB_ASSIGNED", code=order.code,
@@ -291,14 +314,16 @@ class SchedulingService:
     def reschedule(self, job_id: int, *, robot_id: int | None, technician_id: int | None,
                    slot_start: datetime | None, reason: str) -> ProductionJob:
         old, order = self._planned_job(job_id)
-        robot_id, technician_id = robot_id or old.robot_id, technician_id or old.technician_id
+        technician_id = technician_id or old.technician_id
+        if robot_id is None and old.robot_id is not None and self.robots.owner_id(old.robot_id) == technician_id:
+            robot_id = old.robot_id          # keep the robot already picked while it still belongs to the (new) technician
         slot_start = slot_start or old.slot_start
         old_slot = (old.robot_id, old.technician_id, old.slot_start)
         old.status = JobStatus.CANCELLED
         set_actor(self.session, self.manager.id, reason)
         order.production_status = ProductionStatus.PENDING_SCHEDULE
         self.session.flush()
-        new = self.schedule(order.id, robot_id=robot_id, technician_id=technician_id, slot_start=slot_start,
+        new = self.schedule(order.id, technician_id=technician_id, robot_id=robot_id, slot_start=slot_start,
                             note=reason, _replacing=old)
         audit.record(self.session, actor_id=self.manager.id, action="JOB_RESCHEDULE", entity_type="production_job",
                      entity_id=new.id, old={"job_id": old.id, "robot_id": old_slot[0],
@@ -320,8 +345,54 @@ class SchedulingService:
         role = self.accounts.role_by_code(RoleCode.TECHNICAL_STAFF.value)
         rows, _ = self.accounts.search(role_id=role.id, status=AccountStatus.ACTIVE, q=None, offset=0, limit=200)
         load = self.jobs.load_by_technician(_now())
-        return [{"id": a.id, "full_name": a.full_name, "email": a.email, "active_jobs": load.get(a.id, 0)}
-                for a in rows]
+        owners = self.robots.owners()
+        robots = {r.id: r for r in self.robots.list()}
+        mine: dict[int, list[dict[str, Any]]] = {}
+        for rid, tid in owners.items():
+            r = robots[rid]
+            mine.setdefault(tid, []).append({"id": r.id, "code": r.code, "status": r.status.value})
+        return [{"id": a.id, "full_name": a.full_name, "email": a.email, "active_jobs": load.get(a.id, 0),
+                 "robots": sorted(mine.get(a.id, []), key=lambda x: x["code"])} for a in rows]
+
+    # ------------------------------------------------------------------ fixed robot assignment (0032)
+    def _robot_jobs(self, robot_id: int, technician_id: int) -> list[int]:
+        """Jobs of this technician still planned or running on the robot: a robot is not taken away from under them."""
+        rows, _ = self.jobs.search(statuses=[JobStatus.SCHEDULED, JobStatus.PREPARING, JobStatus.WRITING, JobStatus.PAUSED],
+                                   robot_id=robot_id, technician_id=technician_id, start=None, end=None, offset=0, limit=50)
+        return [j.id for j in rows]
+
+    def assign_robot(self, robot_id: int, technician_id: int) -> Robot:
+        robot = self.robots.get(robot_id, lock=True)
+        if robot is None:
+            raise AppError(404, "ROBOT_NOT_FOUND", "Không tìm thấy robot.")
+        tech = self._technician(technician_id)
+        current = self.robots.assignment(robot.id, lock=True)
+        if current is not None and current.technician_id == tech.id:
+            return robot
+        if current is not None and (busy := self._robot_jobs(robot.id, current.technician_id)):
+            raise AppError(409, "ROBOT_HAS_ACTIVE_JOBS", "Robot đang có job chưa xong của kỹ thuật viên hiện tại; xếp lại các job "
+                           "đó (hoặc chờ xong) rồi mới giao robot cho người khác.", {"job_ids": busy})
+        old = current.technician_id if current else None
+        self.robots.assign(robot.id, tech.id, self.manager.id)
+        audit.record(self.session, actor_id=self.manager.id, action="ROBOT_ASSIGN", entity_type="robot", entity_id=robot.id,
+                     old={"technician_id": old}, new={"technician_id": tech.id}, ip=self.ip)
+        return robot
+
+    def unassign_robot(self, robot_id: int) -> Robot:
+        robot = self.robots.get(robot_id, lock=True)
+        if robot is None:
+            raise AppError(404, "ROBOT_NOT_FOUND", "Không tìm thấy robot.")
+        current = self.robots.assignment(robot.id, lock=True)
+        if current is None:
+            return robot
+        if busy := self._robot_jobs(robot.id, current.technician_id):
+            raise AppError(409, "ROBOT_HAS_ACTIVE_JOBS", "Robot đang có job chưa xong của kỹ thuật viên; xếp lại các job đó trước.",
+                           {"job_ids": busy})
+        old = current.technician_id
+        self.robots.unassign(robot.id)
+        audit.record(self.session, actor_id=self.manager.id, action="ROBOT_UNASSIGN", entity_type="robot", entity_id=robot.id,
+                     old={"technician_id": old}, ip=self.ip)
+        return robot
 
     def labels(self, jobs: list[ProductionJob]) -> dict[str, dict[int, str]]:
         return job_labels(self.session, jobs)
@@ -350,10 +421,20 @@ class SchedulingService:
         return row
 
 
+def robot_owners(session: Session) -> dict[int, tuple[int, str]]:
+    """robot_id -> (technician_id, technician name) for every assigned robot (0032)."""
+    accounts = AccountRepository(session)
+    out = {}
+    for rid, tid in RobotRepository(session).owners().items():
+        acc = accounts.get(tid)
+        out[rid] = (tid, acc.full_name if acc else "")
+    return out
+
+
 def job_labels(session: Session, jobs: list[ProductionJob]) -> dict[str, dict[int, str]]:
     """Display names for a page of jobs (order code, robot code, technician name)."""
     orders, robots, accounts = OrderRepository(session), RobotRepository(session), AccountRepository(session)
     found = {j.order_id: orders.get(j.order_id) for j in jobs}
     return {"order": {i: o.code for i, o in found.items() if o},
-            "robot": {r: robots.get(r).code for r in {j.robot_id for j in jobs}},
+            "robot": {r: robots.get(r).code for r in {j.robot_id for j in jobs} if r is not None},
             "tech": {t: accounts.get(t).full_name for t in {j.technician_id for j in jobs}}}

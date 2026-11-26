@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.robot_schemas import (AlertOut, AlertRaiseIn, AlertResolveIn, CatalogOut, CatalogPatch, ComplianceOut, HealthOut,
-                                   HeartbeatIn, RobotStatusOut, RunCloseIn, RunOpenIn, RunOut)
+                                   HeartbeatIn, MyRobotsOut, RobotStatusOut, RunCloseIn, RunOpenIn, RunOut)
 from app.api.schemas import ErrorOut, Page
 from app.models.account import Account, RoleCode
 from app.models.ops import RobotAlert
@@ -99,6 +99,14 @@ def tech_resolve(alert_id: int, body: AlertResolveIn, svc: TechSvc) -> AlertOut:
 def heartbeat(robot_id: int, body: HeartbeatIn, svc: TechSvc) -> dict:
     robot = svc.heartbeat(robot_id, **body.model_dump())
     return {"ok": True, "robot_id": robot.id, "offline_after_seconds": OFFLINE_AFTER_S}
+
+
+@technician_router.get("/robots", response_model=MyRobotsOut,
+                       summary="Robot Manager đã giao cho tôi: tổng số, số đang kết nối, số đang hoạt động, và trạng thái từng robot")
+def my_robots(svc: TechSvc, bg: BackgroundTasks) -> MyRobotsOut:
+    data = svc.my_robots()
+    _flush_mail(svc, bg)
+    return MyRobotsOut(**{**data, "robots": _status_out(svc, data["robots"])})
 
 
 @technician_router.get("/robot-status", response_model=list[RobotStatusOut],

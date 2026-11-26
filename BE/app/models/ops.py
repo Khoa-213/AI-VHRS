@@ -159,12 +159,21 @@ class Robot(Base):
                                                  server_onupdate=FetchedValue())
 
 
+class TechnicianRobot(Base):
+    """Fixed robot assignment (migration 0032): a robot belongs to at most one Technical Staff, set by the Manager."""
+    __tablename__ = "technician_robots"
+    robot_id: Mapped[int] = mapped_column(ForeignKey("robots.id"), primary_key=True)
+    technician_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    assigned_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=FetchedValue())
+
+
 class ProductionJob(Base):
     __tablename__ = "production_jobs"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"))
     sketch_id: Mapped[int] = mapped_column(ForeignKey("sketches.id"))
-    robot_id: Mapped[int] = mapped_column(ForeignKey("robots.id"))
+    robot_id: Mapped[int | None] = mapped_column(ForeignKey("robots.id"))     # NULL until the technician picks a robot (0032)
     technician_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     scheduled_by: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, name="job_status", create_type=False),

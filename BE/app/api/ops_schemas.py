@@ -367,6 +367,12 @@ class RobotOut(_ORM):
     supported_pen_categories: list[str] | None
     note: str | None
     affected_job_ids: list[int] = Field(default=[], description="Planned jobs that need a new robot (maintenance / broken).")
+    technician_id: int | None = Field(default=None, description="Technical Staff this robot is given to (0032); null = nobody.")
+    technician_name: str | None = None
+
+
+class RobotAssignIn(BaseModel):
+    technician_id: int
 
 
 # ---------------------------------------------------------------- manager: pricing
@@ -470,7 +476,8 @@ class SuggestionOut(BaseModel):
 
 
 class ScheduleIn(BaseModel):
-    robot_id: int
+    robot_id: int | None = Field(default=None, description="Optional (0032): one of the technician's robots. Omit to let the "
+                                                           "technician pick one of theirs before preparing.")
     technician_id: int
     slot_start: datetime
     note: str | None = Field(default=None, max_length=500)
@@ -491,7 +498,7 @@ class JobOut(_ORM):
     id: int
     order_id: int
     order_code: str = ""
-    robot_id: int
+    robot_id: int | None = Field(description="Null until the technician picks one of their robots (job SCHEDULED).")
     robot_code: str = ""
     technician_id: int
     technician_name: str = ""
@@ -508,11 +515,18 @@ class JobOut(_ORM):
     simulation_passed: bool | None = None
 
 
+class TechnicianRobotRef(BaseModel):
+    id: int
+    code: str
+    status: str
+
+
 class TechnicianOut(BaseModel):
     id: int
     full_name: str
     email: str
     active_jobs: int
+    robots: list[TechnicianRobotRef] = Field(default=[], description="Robots given to this technician (0032).")
 
 
 # ---------------------------------------------------------------- Technical Staff: production floor (Phase 4a)

@@ -22,7 +22,7 @@ from app.domain import job_rules as jr
 from app.integrations.mailer import get_mailer
 from app.models.account import Account, AccountStatus, Role, RoleCode
 from app.models.ops import (ACTIVE_JOB_STATUSES, AlertCatalog, Calibration, Incident, JobEvent, JobEventType, JobStatus,
-                            ProductionJob, Robot, RobotAlert, RobotRun)
+                            ProductionJob, Robot, RobotAlert, RobotRun, TechnicianRobot)
 from app.services import audit
 
 log = logging.getLogger("app.robot_ops")
@@ -74,6 +74,9 @@ class RobotOpsService:
         if robot is None:
             raise AppError(404, "ROBOT_NOT_FOUND", "Không tìm thấy robot.")
         if self.is_manager or self.actor is None:
+            return robot
+        if self.session.scalar(select(TechnicianRobot.robot_id).where(          # 0032: a robot given to me is mine
+                TechnicianRobot.robot_id == robot_id, TechnicianRobot.technician_id == self.actor.id)) is not None:
             return robot
         live = self.session.scalar(select(ProductionJob.id).where(
             ProductionJob.robot_id == robot_id, ProductionJob.technician_id == self.actor.id,
@@ -254,8 +257,10 @@ class RobotOpsService:
         if job_id is not None:
             stmt = stmt.where(RobotAlert.job_id == job_id)
         if not self.is_manager and self.actor is not None:
-            mine = select(ProductionJob.robot_id).where(ProductionJob.technician_id == self.actor.id)
-            stmt = stmt.where(RobotAlert.robot_id.in_(mine))
+            mine = select(ProductionJob.robot_id).where(ProductionJob.technician_id == self.actor.id,
+                                                       ProductionJob.robot_id.is_not(None))
+            given = select(TechnicianRobot.robot_id).where(TechnicianRobot.technician_id == self.actor.id)
+            stmt = stmt.where(RobotAlert.robot_id.in_(mine) | RobotAlert.robot_id.in_(given))
         total = self.session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         rows = list(self.session.scalars(stmt.order_by(RobotAlert.level.desc(), RobotAlert.raised_at.desc()).offset(offset).limit(limit)))
         return rows, total
@@ -339,7 +344,15 @@ class RobotOpsService:
             state, head = "IDLE", "Sẵn sàng"
         cal = self.session.scalar(select(Calibration.created_at).where(Calibration.job_id == job.id, Calibration.is_valid.is_(True))
                                   .order_by(Calibration.id.desc()).limit(1)) if job else None
+        from app.services.robot_link import hub        # late import: robot_link imports this module
+        agent = hub.live(robot.id).status if conn == "ONLINE" else {}
+        owner = self.session.scalar(select(TechnicianRobot.technician_id).where(TechnicianRobot.robot_id == robot.id))
         return {"robot_id": robot.id, "robot_code": robot.code, "state": state, "headline_vi": head, "level": level,
+                "robot_status": robot.status.value, "station": robot.station, "is_simulated": robot.is_simulated,
+                "supported_pen_categories": robot.supported_pen_categories, "technician_id": owner,
+                "active": bool(run is not None or (job is not None and job.status in (JobStatus.WRITING, JobStatus.PAUSED))),
+                "enabled_modes": [str(m).upper() for m in agent.get("enabled_modes") or []],
+                "agent_busy": bool(agent.get("busy")),
                 "mode": robot.last_mode, "connection_state": conn, "last_seen_at": seen,
                 "seconds_since_seen": round(age, 1) if age is not None else None,
                 "controller_version": robot.controller_version, "firmware_version": robot.firmware_version,
@@ -348,11 +361,21 @@ class RobotOpsService:
                 "calibration_age_minutes": round((now - cal).total_seconds() / 60, 1) if cal else None}
 
     def my_robots_status(self) -> list[dict[str, Any]]:
+        """Robots given to me (0032) plus any robot I still hold a live job on (a job scheduled before the assignment)."""
         self.sweep_stale()
         ids = select(ProductionJob.robot_id).where(ProductionJob.technician_id == self.actor.id,
+                                                   ProductionJob.robot_id.is_not(None),
                                                    ProductionJob.status.in_(ACTIVE_JOB_STATUSES))
-        robots = list(self.session.scalars(select(Robot).where(Robot.id.in_(ids)).order_by(Robot.code)))
+        given = select(TechnicianRobot.robot_id).where(TechnicianRobot.technician_id == self.actor.id)
+        robots = list(self.session.scalars(select(Robot).where(Robot.id.in_(ids) | Robot.id.in_(given)).order_by(Robot.code)))
         return [self.status(r) for r in robots]
+
+    def my_robots(self) -> dict[str, Any]:
+        """The technician's robot strip: how many of MY robots are connected and which are working (owner request 2026-11-26)."""
+        given = set(self.session.scalars(select(TechnicianRobot.robot_id).where(TechnicianRobot.technician_id == self.actor.id)))
+        rows = [r for r in self.my_robots_status() if r["robot_id"] in given]
+        return {"total": len(rows), "online": sum(r["connection_state"] == "ONLINE" for r in rows),
+                "active": sum(r["active"] for r in rows), "robots": rows}
 
     # ------------------------------------------------------------------ manager views
     def all_robots_status(self) -> list[dict[str, Any]]:
@@ -423,7 +446,7 @@ class RobotOpsService:
     # ------------------------------------------------------------------ process compliance
     def compliance(self, job_id: int) -> dict[str, Any]:
         job = self._own_job(job_id)
-        robot = self.session.get(Robot, job.robot_id)
+        robot = self.session.get(Robot, job.robot_id) if job.robot_id is not None else None
         from app.models.order import Order
         order = self.session.get(Order, job.order_id)
         events = list(self.session.scalars(select(JobEvent).where(JobEvent.job_id == job.id).order_by(JobEvent.id)))

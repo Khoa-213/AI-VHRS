@@ -47,7 +47,7 @@ class ReportService:
         jobs_today = _rows(s, f"""
             select j.id as job_id, j.order_id, o.code as order_code, j.robot_id, r.code as robot_code, j.technician_id,
                    j.status::text as status, j.slot_start, j.slot_end, j.is_rewrite
-            from production_jobs j join orders o on o.id = j.order_id join robots r on r.id = j.robot_id
+            from production_jobs j join orders o on o.id = j.order_id left join robots r on r.id = j.robot_id
             where (j.slot_start at time zone '{TZ}')::date = :d and j.status::text <> 'CANCELLED'
             order by j.slot_start, j.id""", d=today)
         upcoming = _num(s.execute(text(f"""

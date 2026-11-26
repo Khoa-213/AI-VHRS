@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel
 
+from app.services.scheduling import robot_owners
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (CompatIn, CompatOut, InkIn, InkOut, InkPatch, PaperIn, PaperOut, PaperPatch, PenIn,
                                  PenOut, PenPatch, ProfileIn, ProfileOut, ProfilePatch, ProfileVerifyIn, SpecsIn, PricingOut, PricingSaveIn, RobotIn, RobotOut, RobotPatch, StockIn,
@@ -292,7 +293,13 @@ def reject_style(style_id: int, body: ReasonIn, svc: Svc) -> StyleOut:
 # ---- robots --------------------------------------------------------------------------------------
 @router.get("/robots", response_model=list[RobotOut], summary="FR-39 Danh sách robot")
 def robots(session: SessionDep, _: ManagerDep, status_: RobotStatusQuery = None) -> list[RobotOut]:
-    return [RobotOut.model_validate(r) for r in RobotRepository(session).list(status_)]
+    owners = robot_owners(session)
+    out = []
+    for r in RobotRepository(session).list(status_):
+        row = RobotOut.model_validate(r)
+        row.technician_id, row.technician_name = owners.get(r.id, (None, None))
+        out.append(row)
+    return out
 
 
 @router.post("/robots", response_model=RobotOut, status_code=status.HTTP_201_CREATED, summary="Thêm robot")
@@ -305,6 +312,7 @@ def create_robot(body: RobotIn, svc: Svc) -> RobotOut:
 def update_robot(robot_id: int, body: RobotPatch, svc: Svc) -> RobotOut:
     row, affected = svc.update_robot(robot_id, body.model_dump(exclude_unset=True))
     out = RobotOut.model_validate(row)
+    out.technician_id, out.technician_name = robot_owners(svc.session).get(row.id, (None, None))
     out.affected_job_ids = affected
     return out
 
