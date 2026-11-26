@@ -344,6 +344,22 @@ def test_speedsms_failures_become_clean_errors(reply, status, code):
     assert err.value.status == status and err.value.code == code
 
 
+def test_speedsms_rejection_tells_why_without_leaking_the_number():
+    """2026-11-26: a 502 came back with provider_code null; the provider's status and words are now in the details."""
+    replies = [httpx.Response(422, json=[{"field": "sender", "message": "Sender is invalid."}]),
+               httpx.Response(400, json={"status": "error", "message": "Phone 84853643832 is not allowed"}),
+               httpx.Response(200, json={"status": "error", "code": "101", "message": "Invalid or missing parameters"})]
+    seen = []
+    for reply in replies:
+        with pytest.raises(AppError) as err:
+            _speedsms(lambda req, reply=reply: reply).send("0853643832", "x")
+        assert err.value.code == "SMS_REJECTED"
+        seen.append(err.value.details)
+    assert seen[0] == {"provider_code": None, "provider_http": 422, "provider_message": "sender: Sender is invalid."}
+    assert seen[1]["provider_message"] == "Phone 848****832 is not allowed" and "84853643832" not in str(seen[1])
+    assert seen[2]["provider_code"] == "101" and seen[2]["provider_http"] == 200
+
+
 def test_speedsms_mode_needs_a_token_and_a_sender_for_own_brandname(monkeypatch):
     from app.core.config import get_settings
     from app.integrations.sms import get_sms_sender, sms_mode_label

@@ -18,6 +18,7 @@ tests with a mocked transport only. No call to eSMS (sandbox or live) has been m
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Protocol
 
@@ -96,6 +97,24 @@ def intl_phone(phone: str) -> str:
     return "84" + p[1:] if p.startswith("0") else p
 
 
+_LONG_NUMBER = re.compile(r"\d{8,}")
+
+
+def _reason(data) -> str | None:
+    """The provider's explanation, whatever its shape: {"message": ...}, or a list of field errors
+    [{"field": ..., "message": ...}]. Long digit runs (phone numbers) are masked; at most 200 characters."""
+    if isinstance(data, dict):
+        parts = [data.get("message"), data.get("error")]
+    elif isinstance(data, list):
+        parts = [f"{x.get('field')}: {x.get('message')}" if isinstance(x, dict) and x.get("field") else
+                 (x.get("message") if isinstance(x, dict) else x) for x in data]
+    else:
+        parts = [data]
+    text = "; ".join(str(p) for p in parts if p not in (None, "", []))
+    text = _LONG_NUMBER.sub(lambda m: m.group(0)[:3] + "****" + m.group(0)[-3:], text)
+    return text[:200] or None
+
+
 # SpeedSMS error codes (speedsms.vn/sms-api-service, read 2026-11-17) that mean the account or server setup is wrong.
 _SPEEDSMS_CONFIG_CODES = {"007": "IP bị khoá", "008": "tài khoản bị khoá", "009": "tài khoản chưa được gọi API",
                           "300": "tài khoản không đủ tiền"}
@@ -123,23 +142,26 @@ class SpeedSms:
         except (httpx.HTTPError, ValueError) as exc:
             log.warning("SMS mode=%s to=%s failed: %s", self.mode, mask(phone), type(exc).__name__)
             raise AppError(502, "SMS_UNAVAILABLE", "Không kết nối được tới nhà cung cấp SMS, vui lòng thử lại.") from exc
+        reason = _reason(data)                                       # SpeedSMS's own words, numbers masked
         data = data if isinstance(data, dict) else {}
-        code, body = str(data.get("code", "")), data.get("data") if isinstance(data.get("data"), dict) else {}
+        code, body = str(data.get("code") or ""), data.get("data") if isinstance(data.get("data"), dict) else {}
         refused = to in (body.get("invalidPhone") or []) or to in (data.get("invalidPhone") or [])
         if r.status_code in (401, 403):
             # a wrong / pasted-wrong token: SpeedSMS answers HTTP 401 {"name": "Unauthorized", "code": 0, "status": 401}
             # (seen 2026-11-26); "0" is not empty, so `code or "401"` let it through as SMS_REJECTED (502)
             code = "401"
         if data.get("status") != "success" or code != "00" or refused:
+            reason = reason or ("invalid phone" if refused else None)
             log.warning("SMS mode=%s to=%s rejected: http=%s code=%s %s", self.mode, mask(phone), r.status_code, code or "-",
-                        data.get("message") or ("invalid phone" if refused else ""))
+                        reason or "")
+            # 2026-11-26: the owner got 502 with provider_code null; the provider's HTTP status and message are now in
+            # `details` too, so the reason shows in the browser without opening the server log
+            details = {"provider_code": code or None, "provider_http": r.status_code, "provider_message": reason}
             if code in _SPEEDSMS_CONFIG_CODES or code == "401":
-                raise AppError(503, "SMS_NOT_CONFIGURED", "Dịch vụ SMS chưa sẵn sàng, vui lòng thử lại sau.",
-                               {"provider_code": code})
+                raise AppError(503, "SMS_NOT_CONFIGURED", "Dịch vụ SMS chưa sẵn sàng, vui lòng thử lại sau.", details)
             if code == "500" or r.status_code >= 500:
-                raise AppError(502, "SMS_UNAVAILABLE", "Nhà cung cấp SMS đang lỗi, vui lòng thử lại.", {"provider_code": code})
-            raise AppError(502, "SMS_REJECTED", "Nhà cung cấp SMS từ chối gửi tin, vui lòng thử lại sau.",
-                           {"provider_code": code or None})
+                raise AppError(502, "SMS_UNAVAILABLE", "Nhà cung cấp SMS đang lỗi, vui lòng thử lại.", details)
+            raise AppError(502, "SMS_REJECTED", "Nhà cung cấp SMS từ chối gửi tin, vui lòng thử lại sau.", details)
         log.info("SMS mode=%s to=%s sent tran=%s price=%s", self.mode, mask(phone), body.get("tranId"), body.get("totalPrice"))
 
 
