@@ -25,7 +25,7 @@ from tests.test_api_payments import _approved, _code, _deposit, _hook, _quoted, 
 from tests.test_api_payos import HOOK, _hit, payos  # noqa: F401
 from tests.test_api_payos import _start as _payos_start
 from tests.test_api_scheduling import M, _at, _robot, mgr, robot, tech  # noqa: F401
-from tests.test_api_scheduling import _sched
+from tests.test_api_scheduling import _give, _sched
 from tests.test_api_workshop import _err, _user, cust, policy, staff, store, wcat  # noqa: F401
 
 
@@ -68,6 +68,8 @@ def test_concurrent_requests_cannot_book_one_technician_twice(client, cust, staf
             p = _deposit(client, cust, oid)
             assert client.post(f"{API}/payments/{p['id']}/mock-checkout", headers=cust, json={"result": "SUCCESS"}).status_code == 200
         r1, r2, start = _robot(), _robot(), _at(2 + i, 9)
+        _give(r1, tech[1])
+        _give(r2, tech[1])
 
         def go(args):
             oid, rid = args

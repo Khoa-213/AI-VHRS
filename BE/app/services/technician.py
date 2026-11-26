@@ -15,6 +15,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core import production_signing as ps
@@ -98,6 +99,8 @@ class TechnicianJobService:
                            {"job_status": job.status.value, "allowed": [s.value for s in allowed]})
 
     def _robot_runnable(self, job: ProductionJob) -> Robot:
+        if job.robot_id is None:
+            raise AppError(409, "ROBOT_NOT_SELECTED", "Hãy chọn một robot của bạn cho job trước khi chuẩn bị.")
         robot = self.robots.get(job.robot_id, lock=True)
         if robot is None or robot.status not in RUNNABLE_ROBOT:
             raise AppError(409, "ROBOT_UNAVAILABLE",
@@ -249,6 +252,41 @@ class TechnicianJobService:
                 "ink_name": ink.name if ink else None, "ink_hex": ink.hex_code if ink else None,
                 "approach_note": sketch.approach_note, "preview_url": preview,
                 "snapshot": snapshot, "material_drift": drift}
+
+    # ------------------------------------------------------------------ 0032: the technician picks one of their robots
+    def choose_robot(self, job_id: int, robot_id: int) -> ProductionJob:
+        """Pick (or change) the robot of a job that is still SCHEDULED: only a robot given to me, in service, that fits the
+        order's pen and is free in the job's slot (the exclusion constraint decides races)."""
+        job = self._job(job_id, lock=True)
+        order = self._order(job)
+        self._require_open(job, order)
+        self._require_status(job, JobStatus.SCHEDULED, what="Chỉ chọn robot")
+        if self.robots.owner_id(robot_id) != self.tech.id:
+            raise AppError(404, "ROBOT_NOT_FOUND", "Không tìm thấy robot trong danh sách robot được giao cho bạn.")
+        robot = self.robots.get(robot_id, lock=True)
+        if robot.status not in RUNNABLE_ROBOT:
+            raise AppError(409, "ROBOT_UNAVAILABLE", f"Robot {robot.code} đang {robot.status.value}.")
+        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        if robot.supported_pen_categories and (pen.category if pen else None) not in robot.supported_pen_categories:
+            raise AppError(422, "ROBOT_NOT_SUITABLE", f"Robot {robot.code} không phù hợp loại bút của đơn (BR-18).")
+        if job.robot_id == robot.id:
+            return job
+        old = job.robot_id
+        robot_code = robot.code
+        sp = self.session.begin_nested()
+        try:
+            job.robot_id = robot.id
+            self.session.flush()
+            sp.commit()
+        except IntegrityError as exc:
+            sp.rollback()
+            if "ex_job_robot_overlap" in str(exc.orig):
+                raise AppError(409, "SLOT_CONFLICT", f"Robot {robot_code} đã có job khác trong khung giờ này (BR-18).",
+                               {"resource": "robot"}) from exc
+            raise
+        audit.record(self.session, actor_id=self.tech.id, action="JOB_ROBOT_CHOOSE", entity_type="production_job",
+                     entity_id=job.id, old={"robot_id": old}, new={"robot_id": robot.id}, ip=self.ip)
+        return job
 
     # ------------------------------------------------------------------ UC-33: prepare and calibrate
     def prepare(self, job_id: int) -> ProductionJob:

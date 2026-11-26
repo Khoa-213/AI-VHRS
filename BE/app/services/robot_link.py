@@ -286,6 +286,8 @@ class RobotLinkService:
         job = None
         if job_id is not None:
             job = self.ops._own_job(job_id)
+            if job.robot_id is None:
+                raise AppError(409, "ROBOT_NOT_SELECTED", "Job chưa có robot: hãy chọn một robot của bạn cho job trước.")
             if robot_id is not None and robot_id != job.robot_id:
                 raise AppError(422, "ROBOT_JOB_MISMATCH", "Job không thuộc robot này.")
             robot_id = job.robot_id
@@ -353,7 +355,8 @@ class RobotLinkService:
 
     def job_commands(self, job_id: int, limit: int = 50) -> list[RobotCommand]:
         job = self.ops._own_job(job_id)
-        self._expire(job.robot_id)
+        if job.robot_id is not None:
+            self._expire(job.robot_id)
         return list(self.session.scalars(select(RobotCommand).where(RobotCommand.job_id == job.id)
                                          .order_by(RobotCommand.created_at.desc()).limit(limit)))
 

@@ -62,7 +62,16 @@ def mgr(client):
     return _user(client, "MANAGER")[0]
 
 
+def _give(robot_id: int, tech_id: int) -> None:
+    """The Manager's fixed assignment (0032), written directly: a robot belongs to one technician."""
+    _sql("""insert into technician_robots (robot_id, technician_id)
+            select r.id, a.id from robots r, accounts a where r.id = :r and a.id = :t
+            on conflict (robot_id) do update set technician_id = excluded.technician_id returning 1""", r=robot_id, t=tech_id)
+
+
 def _sched(client, mgr, oid, robot_id, tech_id, start, **kw):
+    if robot_id is not None:
+        _give(robot_id, tech_id)
     return client.post(f"{M}/orders/{oid}/schedule", headers=mgr,
                        json={"robot_id": robot_id, "technician_id": tech_id, "slot_start": _iso(start), **kw})
 
@@ -123,7 +132,9 @@ def test_queue_suggestion_and_schedule_validation(client, cust, staff, mgr, wcat
 
     # robot suitability (BR-18): a fountain-pen-only robot does not fit a gel-pen order
     fountain_only = _robot("FOUNTAIN")
-    _robot(status="BROKEN")
+    _give(robot, tech[1])                                   # 0032: only robots given to a technician are suggested
+    _give(fountain_only, _user(client, "TECHNICAL_STAFF")[1])
+    _give(_robot(status="BROKEN"), _user(client, "TECHNICAL_STAFF")[1])
     r = client.get(f"{M}/orders/{oid}/schedule-suggestion", headers=mgr)
     assert r.status_code == 200, r.text
     s = r.json()
@@ -244,6 +255,10 @@ def test_reschedule_and_unschedule(client, cust, staff, mgr, wcat, robot, tech):
     oid, _, _ = _paid(client, cust, staff[0], wcat)
     job = _sched(client, mgr, oid, robot, tech[1], _at(1, 9)).json()
     robot2, tech2 = _robot(), _user(client, "TECHNICAL_STAFF")[1]
+    r = client.post(f"{M}/jobs/{job['id']}/reschedule", headers=mgr,                     # 0032: robot2 is nobody's yet
+                    json={"robot_id": robot2, "technician_id": tech2, "slot_start": _iso(_at(2, 10)), "reason": "x"})
+    assert r.status_code == 422 and _err(r) == "ROBOT_NOT_ASSIGNED"
+    _give(robot2, tech2)
 
     assert client.post(f"{M}/jobs/{job['id']}/reschedule", headers=mgr, json={"robot_id": robot2}).status_code == 422   # reason required
     r = client.post(f"{M}/jobs/{job['id']}/reschedule", headers=mgr,
@@ -307,6 +322,7 @@ def test_robot_out_of_service_lists_the_jobs_to_move(client, cust, staff, mgr, w
     r = client.patch(f"{M}/robots/{robot}", headers=mgr, json={"status": "BROKEN"})
     assert r.status_code == 200 and r.json()["affected_job_ids"] == [job["id"]]
     spare = _robot()
+    _give(spare, tech[1])
     moved = client.post(f"{M}/jobs/{job['id']}/reschedule", headers=mgr, json={"robot_id": spare, "reason": "Robot hỏng"})
     assert moved.status_code == 200 and moved.json()["robot_id"] == spare
     assert client.patch(f"{M}/robots/{robot}", headers=mgr, json={"status": "MAINTENANCE"}).json()["affected_job_ids"] == []

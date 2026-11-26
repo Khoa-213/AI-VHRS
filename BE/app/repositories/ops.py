@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.ops import (ACTIVE_JOB_STATUSES, LIVE_SHIPMENT_STATUSES, Calibration, Carrier, Incident, JobEvent, JobEventType, JobStatus,
                             Payment, PaymentGateway, PaymentStatus, PaymentType, ProductionJob, ProductPhoto, Robot, RobotStatus,
-                            Shipment)
+                            Shipment, TechnicianRobot)
 
 
 class PaymentRepository:
@@ -111,6 +111,44 @@ class RobotRepository:
         if status is not None:
             stmt = stmt.where(Robot.status == status)
         return list(self.s.scalars(stmt))
+
+    # ---- fixed assignment (migration 0032)
+    def assignment(self, robot_id: int, *, lock: bool = False) -> TechnicianRobot | None:
+        stmt = select(TechnicianRobot).where(TechnicianRobot.robot_id == robot_id)
+        return self.s.scalar(stmt.with_for_update() if lock else stmt)
+
+    def owner_id(self, robot_id: int) -> int | None:
+        return self.s.scalar(select(TechnicianRobot.technician_id).where(TechnicianRobot.robot_id == robot_id))
+
+    def owners(self) -> dict[int, int]:
+        """robot_id -> technician_id for every assigned robot."""
+        return {r: t for r, t in self.s.execute(select(TechnicianRobot.robot_id, TechnicianRobot.technician_id)).all()}
+
+    def of_technician(self, technician_id: int, status: RobotStatus | None = None) -> list[Robot]:
+        stmt = (select(Robot).join(TechnicianRobot, TechnicianRobot.robot_id == Robot.id)
+                .where(TechnicianRobot.technician_id == technician_id).order_by(Robot.code))
+        if status is not None:
+            stmt = stmt.where(Robot.status == status)
+        return list(self.s.scalars(stmt))
+
+    def assign(self, robot_id: int, technician_id: int, by: int) -> TechnicianRobot:
+        row = self.assignment(robot_id, lock=True)
+        if row is None:
+            row = TechnicianRobot(robot_id=robot_id, technician_id=technician_id, assigned_by=by)
+            self.s.add(row)
+        else:
+            row.technician_id, row.assigned_by, row.assigned_at = technician_id, by, datetime.now(timezone.utc)
+        self.s.flush()
+        self.s.refresh(row)
+        return row
+
+    def unassign(self, robot_id: int) -> bool:
+        row = self.assignment(robot_id, lock=True)
+        if row is None:
+            return False
+        self.s.delete(row)
+        self.s.flush()
+        return True
 
 
 class JobRepository:

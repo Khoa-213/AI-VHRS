@@ -168,6 +168,25 @@ class RobotStatusOut(BaseModel):
     open_run: RunOut | None
     open_alerts: list[AlertOut]
     calibration_age_minutes: float | None
+    robot_status: str = Field(default="AVAILABLE", description="Manager's status: AVAILABLE | BUSY | MAINTENANCE | BROKEN.")
+    station: str | None = None
+    is_simulated: bool = False
+    supported_pen_categories: list[str] | None = None
+    technician_id: int | None = Field(default=None, description="Technical Staff the robot is given to (0032).")
+    active: bool = Field(default=False, description="Working now: a run is open or its job is WRITING / PAUSED.")
+    enabled_modes: list[str] = Field(default=[], description="Modes the online agent allows (MOCK / SIM / REAL); [] when offline.")
+    agent_busy: bool = Field(default=False, description="The online agent is executing a command.")
+
+
+class MyRobotsOut(BaseModel):
+    total: int = Field(description="Robots given to me.")
+    online: int = Field(description="Of those, how many have their Robot Agent connected (heartbeat within 15 s).")
+    active: int = Field(description="Of those, how many are working now.")
+    robots: list[RobotStatusOut]
+
+
+class ChooseRobotIn(BaseModel):
+    robot_id: int
 
 
 class HealthOut(BaseModel):
