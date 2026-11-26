@@ -94,3 +94,19 @@ def test_cors_allows_configured_origin_only(client):
     bad = client.options(f"{API}/auth/login", headers={
         "Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
     assert bad.status_code == 400 and "access-control-allow-origin" not in bad.headers
+
+
+def test_refused_preflight_logs_its_origin_once(client, caplog):
+    import app.main as main
+    main._cors_logged.clear()
+    path = f"{API}/me/notifications/stream"
+    with caplog.at_level("WARNING", logger="app.cors"):
+        for _ in range(3):
+            r = client.options(path, headers={"Origin": "https://pytest-preview.example", "Access-Control-Request-Method": "GET",
+                                              "Access-Control-Request-Headers": "authorization"})
+            assert r.status_code == 400
+        client.options(path, headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"})
+        client.options(path, headers={"Origin": "https://pytest-preview.example"})          # not a preflight: no line
+    lines = [r.getMessage() for r in caplog.records if r.name == "app.cors"]
+    assert len(lines) == 1, lines
+    assert "'https://pytest-preview.example'" in lines[0] and "/me/notifications/stream" in lines[0]
