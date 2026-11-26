@@ -9,6 +9,7 @@ import '../../../auth/presentation/auth_notifier.dart';
 import '../../data/providers.dart';
 import '../../domain/job.dart';
 import '../../i18n/tech_strings.dart';
+import '../screens/agent_screen.dart';
 import 'alert_bell.dart';
 import 'notification_bell.dart';
 import 'estop.dart';
@@ -72,7 +73,7 @@ class TechShell extends ConsumerWidget {
               ],
             ),
           );
-    final body = Column(children: [const EstopBand(), Expanded(child: frame)]);
+    final body = AgentAutoStart(child: Column(children: [const EstopBand(), Expanded(child: frame)]));
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyR, control: true): () => reloadTechData(ref),

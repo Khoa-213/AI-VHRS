@@ -90,7 +90,7 @@ void main() {
     await tester.enterText(find.byType(TextFormField).at(1), 'ChangeMe@123');
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
-    expect(find.text('My jobs'), findsOneWidget);
+    expect(find.text(const T(Lang.en)('dk.agent.err.notFound')), findsOneWidget); // Overview: the Robot Agent only
     expect(tester.takeException(), isNull);
   });
 }

@@ -80,6 +80,7 @@ final desktopRouterProvider = Provider<GoRouter>((ref) {
               return NoTransitionPage(key: ValueKey('photos-$id'), child: JobPhotosScreen(key: ValueKey(id), jobId: id));
             },
           ),
+          GoRoute(path: '/tech/agent', redirect: (_, _) => '/tech'), // the agent now lives in Overview
           GoRoute(path: '/settings', pageBuilder: (_, _) => const NoTransitionPage(child: SettingsScreen())),
         ],
       ),

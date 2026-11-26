@@ -10,7 +10,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const store = {
   get(k) { try { return sessionStorage.getItem(k) || ''; } catch (e) { return ''; } },
   set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* private mode */ } },
-  clear() { try { ['vhrs_token', 'vhrs_role', 'vhrs_name'].forEach((k) => sessionStorage.removeItem(k)); } catch (e) { /* private mode */ } },
+  clear() { try { ['vhrs_token', 'vhrs_role', 'vhrs_name', 'vhrs_app'].forEach((k) => sessionStorage.removeItem(k)); } catch (e) { /* private mode */ } },
 };
 
 // ─── State ───────────────────────────────────────────────────────────
@@ -45,6 +45,8 @@ const ERR = {
   CALIBRATION_REQUIRED: 'Job chưa có hiệu chuẩn (bước 4).',
   MODE_DISABLED: 'Máy này không bật chế độ chạy đó.',
   AGENT_BUSY: 'Agent đang chạy một job: đợi xong hoặc DỪNG trước.',
+  ROBOT_UNREACHABLE: 'Robot thật không phản hồi: REAL KHÔNG bật. Kiểm tra nguồn robot, controller sẵn sàng, dây mạng tới 192.168.58.2 rồi thử lại.',
+  ROBOT_CONFIG_MISMATCH: '',                    // the agent's own message names what differs (tool slot, work object, ...)
   NO_RUN_ACTIVE: 'Chưa có lần chạy nào đang diễn ra.',
   BACKEND_UNREACHABLE: 'Agent không gọi được máy chủ. Kiểm tra mạng.',
   NETWORK: 'Không gọi được agent trên máy này.',
@@ -359,7 +361,10 @@ Mã xác nhận: <span class="mono">${esc(String(l.authorization_token).slice(0,
       if (!(a.modes || []).includes('real')) return '<p class="hint">Agent của máy này không có chế độ REAL (agent.json): máy không nối robot thật, nút bị ẩn.</p>';
       if (on) return `<p class="err"><b>REAL đang bật cho job này tới ${fmt(a.real_enabled.expires_at)}.</b>${a.real_enabled.waive_dry_run ? ' Đã BỎ chạy thử nhấc bút.' : ''}</p>
         <div class="row">${btn('realOff', 'Tắt REAL', { tone: 'danger' })}</div>`;
+      const rc = S.realCheck && S.realCheck.job === id ? S.realCheck : null;
       return `<p class="hint">Chỉ cho job đã nạp ở máy này. Vẫn cần mã xác nhận của kế hoạch và một lần chạy thử REAL đạt (trừ khi bỏ chạy thử).</p>
+        <p class="hint">Bấm "Bật REAL": máy kiểm tra kết nối tới robot thật trước (chỉ đọc, robot không chuyển động). Robot không phản hồi thì REAL <b>không</b> bật.</p>
+        ${rc ? `<p class="err">Lần kiểm tra lúc ${fmt(rc.at)}: ${rc.code === 'ROBOT_CONFIG_MISMATCH' ? 'robot có trả lời nhưng cấu hình chưa khớp' : 'robot không phản hồi'}, REAL chưa bật. ${esc(rc.msg)}</p>` : ''}
         <div class="row"><label class="row">Số phút <input data-f="realmin" type="number" min="1" max="${a.max_minutes || 120}" value="${esc(val('realmin', '30'))}" style="width:90px"></label>
         <label class="chk"><input type="checkbox" data-f="waive" ${checked('waive')}> Bỏ chạy thử nhấc bút</label></div>
         ${S.f.waive ? '<div class="warnbox" style="margin-top:8px">Bỏ chạy thử: bút chạm giấy ngay nét đầu, không có lần đi thử trên robot thật. Đứng sẵn ở nút E-Stop.</div>' : ''}
@@ -565,9 +570,20 @@ const ACTIONS = {
   dryRun: () => act(() => api(`/api/jobs/${S.sel}/dry-run`, { method: 'POST', body: { mode: S.f.mode, ...authFor(S.sel, S.f.mode) } }),
     { confirm: S.f.mode === 'real' ? 'Chạy thử trên robot THẬT (bút nhấc)? Đứng cạnh nút E-Stop, vùng robot trống.' : null, ok: 'Đã bắt đầu chạy thử.' }),
   realOn: () => {
-    const minutes = parseInt(S.f.realmin, 10);
-    act(() => api(`/api/jobs/${S.sel}/real-enable`, { method: 'POST', body: { minutes, ...(S.f.waive ? { waive_dry_run: true, confirm_waive: 'SKIP-DRY-RUN' } : {}) } }),
-      { confirm: S.f.waive ? `Bật REAL ${minutes} phút và BỎ chạy thử nhấc bút? Bút chạm giấy ngay nét đầu.` : `Bật REAL cho job ${S.sel} trong ${minutes} phút?`, ok: 'REAL đã bật cho job này.' });
+    const minutes = parseInt(S.f.realmin, 10), id = S.sel;
+    act(async () => {
+      toast('Đang kiểm tra kết nối tới robot thật…');
+      try {
+        const r = await api(`/api/jobs/${id}/real-enable`, { method: 'POST', body: { minutes, ...(S.f.waive ? { waive_dry_run: true, confirm_waive: 'SKIP-DRY-RUN' } : {}) } });
+        S.realCheck = null;
+        const c = (r && r.robot_check) || {}, v = (c.controller && c.controller.controller_version) || '';
+        toast(`Robot phản hồi${v ? ' (controller ' + v + ')' : ''}: REAL đã bật cho job này.`);
+        return r;
+      } catch (e) {
+        if (e && (e.code === 'ROBOT_UNREACHABLE' || e.code === 'ROBOT_CONFIG_MISMATCH')) S.realCheck = { job: id, at: Date.now() / 1000, code: e.code, msg: e.message || '' };
+        throw e;
+      }
+    }, { confirm: S.f.waive ? `Bật REAL ${minutes} phút và BỎ chạy thử nhấc bút? Bút chạm giấy ngay nét đầu.` : `Bật REAL cho job ${id} trong ${minutes} phút?` });
   },
   realOff: () => act(() => api('/api/real-enable', { method: 'DELETE' }), { ok: 'Đã tắt REAL.' }),
   write: () => {
@@ -783,6 +799,21 @@ async function start() {
   S.agent = await fetch('/api/agent').then((r) => r.json()).catch(() => ({ modes: [], auth_required: true }));
   if (!S.f.mode) S.f.mode = (S.agent.modes || []).includes('sim') ? 'sim' : (S.agent.modes || [])[0] || '';
   renderHeader();
+  // Opened by the desktop app (#code=...): sign in as the technician signed in to the app, no second login.
+  const code = new URLSearchParams(location.hash.slice(1)).get('code');
+  // Inside the desktop app the screen is the whole page: no scroll bar of its own (the wheel still scrolls; the STOP bar stays pinned).
+  if (code || store.get('vhrs_app') === '1') document.documentElement.classList.add('in-app');
+  if (code) {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* keep the hash */ }
+    // Always take the app's account: a token left from an earlier agent run would expire without a refresh here.
+    try {
+      const d = await api('/api/screen-login', { method: 'POST', body: { code } });
+      store.set('vhrs_token', d.access_token); store.set('vhrs_role', d.role || ''); store.set('vhrs_name', d.name || '');
+      store.set('vhrs_app', '1');
+      location.reload();
+      return;
+    } catch (err) { /* fall back to the login form */ }
+  }
   if (!S.bearer && !S.viewerToken) {
     $('login').hidden = false; $('controlbar').hidden = true;
     $('loginform').onsubmit = async (e) => {
@@ -796,7 +827,7 @@ async function start() {
     return;
   }
   $('who').textContent = S.name ? S.name + (S.role === 'MANAGER' ? ' (Manager)' : '') : '';
-  $('logout').hidden = !S.bearer;
+  $('logout').hidden = !S.bearer || store.get('vhrs_app') === '1';     // the app signs out for the screen
   $('app').hidden = false;
   connectWs();
   loop(async () => { try { S.agent = await api('/api/agent'); } catch (e) { /* keep the last */ } renderHeader(); renderDetail(); }, () => 2000);

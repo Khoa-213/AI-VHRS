@@ -140,3 +140,7 @@ dl.tele dt { color:var(--muted); } dl.tele dd { margin:0; font-variant-numeric:t
   #controlbar button.stopbtn { flex:1.4; min-width:0; }
   #toast { bottom:136px; }
 }
+
+/* Opened inside the desktop app: one page from top to bottom, no visible scroll bar (wheel and keys still scroll). */
+html.in-app { scrollbar-width: none; }
+html.in-app::-webkit-scrollbar, html.in-app body::-webkit-scrollbar { display: none; width: 0; height: 0; }
