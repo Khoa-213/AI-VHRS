@@ -45,7 +45,7 @@
 @media(max-width:560px){.entry-register-card h1{font-size:30px}.entry-register-card{width:100%}.entry-register-switch{min-height:44px}}
 /* Forgot password: six boxes for the emailed code. */
 .entry-otp-label{font-size:12px;font-weight:600;color:var(--t3)}
-.entry-otp{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:clamp(6px,2vw,10px);margin:4px 0 6px}
+.entry-login .entry-otp{margin:4px 0 6px}
 .entry-login .entry-otp input{min-height:56px;margin:0;padding:0;text-align:center;font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;caret-color:var(--t1)}
 .entry-login .entry-otp input:focus-visible{outline:2px solid var(--t3);outline-offset:2px}
 .entry-login .entry-otp input[aria-invalid='true']{border-color:var(--danger)}

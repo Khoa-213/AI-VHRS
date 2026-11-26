@@ -1,0 +1,15 @@
+/* Phone verification (PhoneVerify.tsx): the note, the six boxes and the actions. Tokens only, so it fits the account page
+   and the sign-in style dialog in both themes. */
+.phv{display:flex;flex-direction:column;gap:12px;min-width:0}
+.phv-note{margin:0;font-size:13px;line-height:1.6;color:var(--t4)}
+.phv-note--warn{color:var(--warn)}
+.phv-error{margin:0;font-size:13px;line-height:1.6;color:var(--danger)}
+.phv-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px}
+.phv-link{padding:0;border:0;background:none;font:inherit;font-size:13px;cursor:pointer}
+.phv-link:disabled{opacity:.55;cursor:not-allowed}
+/* On the account page the panel is a box under the phone field. */
+.phv--page{padding:16px;border:1px solid var(--line-strong);border-radius:14px;background:var(--tray)}
+.phv--page .entry-otp{max-width:340px}
+/* In the dialog the actions stack like the other dialog forms. */
+.phv--dialog .phv-actions{flex-direction:column;align-items:stretch;gap:4px}
+.phv--dialog .entry-login-link{align-self:center}

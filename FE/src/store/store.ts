@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { Order, Profile, OrderStatus, User } from '../types'
 import { getTokens, onSessionExpired } from '../services/api'
-import { apiGoogleLogin, apiLogin, apiLogout, apiMe, apiUpdateMe } from '../services/auth'
+import { apiGoogleLogin, apiLogin, apiLogout, apiMe, apiUpdateMe, apiVerifyPhone, type PhoneReminder, type SignedIn } from '../services/auth'
 
 /**
  * App state in small subscribable stores. The signed-in user comes from the
@@ -113,11 +113,15 @@ const expiredStore = createStore<boolean>(
   },
 )
 
+/** The reminder of the last sign-in (add or verify the phone number), until it is answered or put off. Not kept. */
+const reminderStore = createStore<PhoneReminder | null>(() => null, () => undefined)
+
 // ---------- hooks ----------
 
 export const useOrders = () => useSyncExternalStore(ordersStore.subscribe, ordersStore.get)
 export const useUser = () => useSyncExternalStore(userStore.subscribe, userStore.get)
 export const useSessionExpired = () => useSyncExternalStore(expiredStore.subscribe, expiredStore.get)
+export const usePhoneReminder = () => useSyncExternalStore(reminderStore.subscribe, reminderStore.get)
 /** Profile of the signed-in user. Missing fields fall back to the account name. */
 export function useProfile(): Profile {
   const all = useSyncExternalStore(profilesStore.subscribe, profilesStore.get)
@@ -160,23 +164,28 @@ export function useOrder(id: string | null): Order | null {
 
 /** Signs in against the backend. Throws an `ApiError` (see `authErrorKey`). */
 export async function signInWithPassword(email: string, password: string): Promise<User> {
-  const user = await apiLogin(email.trim(), password)
+  return enter(await apiLogin(email.trim(), password))
+}
+
+function enter({ user, reminder }: SignedIn): User {
   expiredStore.set(false)
   userStore.set(user)
+  reminderStore.set(reminder)
   return user
 }
 
+/** "Later", or the reminder was dealt with. It stays in the notification bell. */
+export const dismissPhoneReminder = () => reminderStore.set(null)
+
 /** Signs in with a Google ID token (customers). Throws an `ApiError`. */
 export async function signInWithGoogle(idToken: string): Promise<User> {
-  const user = await apiGoogleLogin(idToken)
-  expiredStore.set(false)
-  userStore.set(user)
-  return user
+  return enter(await apiGoogleLogin(idToken))
 }
 
 /** Signs out here at once and revokes the session on the server in the background. */
 export function signOut() {
   void apiLogout()
+  reminderStore.set(null)
   userStore.set(null)
 }
 
@@ -231,6 +240,13 @@ export async function saveAccount(patch: { fullName?: string; phone?: string | n
     ...(patch.fullName !== undefined ? { full_name: patch.fullName } : {}),
     ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
   })
+  userStore.set(u)
+  return u
+}
+
+/** Confirms the SMS code for the account's number (`POST /me/phone/verify`). Throws an `ApiError`. */
+export async function verifyPhone(code: string) {
+  const u = await apiVerifyPhone(code)
   userStore.set(u)
   return u
 }
