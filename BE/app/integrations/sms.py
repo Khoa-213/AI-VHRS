@@ -127,7 +127,9 @@ class SpeedSms:
         code, body = str(data.get("code", "")), data.get("data") if isinstance(data.get("data"), dict) else {}
         refused = to in (body.get("invalidPhone") or []) or to in (data.get("invalidPhone") or [])
         if r.status_code in (401, 403):
-            code = code or "401"
+            # a wrong / pasted-wrong token: SpeedSMS answers HTTP 401 {"name": "Unauthorized", "code": 0, "status": 401}
+            # (seen 2026-11-26); "0" is not empty, so `code or "401"` let it through as SMS_REJECTED (502)
+            code = "401"
         if data.get("status") != "success" or code != "00" or refused:
             log.warning("SMS mode=%s to=%s rejected: http=%s code=%s %s", self.mode, mask(phone), r.status_code, code or "-",
                         data.get("message") or ("invalid phone" if refused else ""))
@@ -171,7 +173,7 @@ def get_sms_sender() -> SmsSender:
     if not sms_configured():
         raise AppError(503, "SMS_NOT_CONFIGURED", "Dịch vụ SMS chưa được cấu hình trên máy chủ.")
     if s.sms_mode == "speedsms":
-        return SpeedSms(access_token=s.speedsms_access_token, base_url=s.speedsms_base_url, sms_type=s.speedsms_sms_type,
+        return SpeedSms(access_token=s.speedsms_access_token.strip(), base_url=s.speedsms_base_url, sms_type=s.speedsms_sms_type,
                         sender=s.speedsms_sender or "", timeout=s.sms_timeout_seconds)
     return EsmsSms(api_key=s.esms_api_key, secret_key=s.esms_secret_key, brandname=s.esms_brandname,
                    base_url=s.esms_base_url, sandbox=s.esms_sandbox, sms_type=s.esms_sms_type,

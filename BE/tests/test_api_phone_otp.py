@@ -329,6 +329,9 @@ def test_speedsms_posts_json_with_basic_auth_and_keeps_secrets_out_of_url_and_lo
     (httpx.Response(200, json={"status": "error", "code": "300", "message": "balance not enough"}), 503, "SMS_NOT_CONFIGURED"),
     (httpx.Response(200, json={"status": "error", "code": "009", "message": "not allowed"}), 503, "SMS_NOT_CONFIGURED"),
     (httpx.Response(401, json={"status": "error", "message": "unauthorized"}), 503, "SMS_NOT_CONFIGURED"),
+    # SpeedSMS's real answer to a wrong token (2026-11-26): code 0 used to slip through as 502 SMS_REJECTED
+    (httpx.Response(401, json={"name": "Unauthorized", "message": "Your request was made with invalid credentials.",
+                               "code": 0, "status": 401}), 503, "SMS_NOT_CONFIGURED"),
     (httpx.Response(200, json={"status": "error", "code": "105", "invalidPhone": ["84901234567"]}), 502, "SMS_REJECTED"),
     (httpx.Response(200, json={"status": "success", "code": "00",
                                "data": {"totalSMS": 0, "invalidPhone": ["84901234567"]}}), 502, "SMS_REJECTED"),
