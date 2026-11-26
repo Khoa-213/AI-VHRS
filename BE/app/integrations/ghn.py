@@ -15,8 +15,8 @@ secret travels in a custom header (`X-Webhook-Secret`) configured in the Develop
 5xx/408/429 and gives up on any other 4xx; it may repeat a callback, and the waybill state machine ignores repeats and older states.
 
 VERIFICATION: preview, create (with `client_order_code` idempotency), cancel and the A5 label token were run against GHN's staging
-API on 2026-10-26 with this shop (see PROJECT_STATUS.md). The callback and the status vocabulary follow GHN's published pages; no
-real GHN callback has reached this server yet.
+API on 2026-10-26 with this shop (see PROJECT_STATUS.md). The status vocabulary follows GHN's published pages. On 2026-11-26 real staging
+callbacks (create, cancel) reached the Render service with the shared secret; one that moves a real order is not yet seen.
 """
 from __future__ import annotations
 

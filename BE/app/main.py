@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -103,9 +104,34 @@ _VIEWER_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cd
                "img-src 'self' data: blob:; connect-src 'self'; worker-src blob:")
 
 
+_cors_log = logging.getLogger("app.cors")
+_CORS_LOG_EVERY = 600.0                  # seconds between two lines for the same refused origin
+_cors_logged: dict[str, float] = {}
+
+
+def _log_refused_preflight(request: Request, status: int) -> None:
+    """CORSMiddleware answers a preflight from an unlisted origin with a bare 400 and logs nothing; the access log has no Origin.
+    Say which origin was refused (once per origin per 10 min) so it can be added to CORS_ORIGINS / CORS_ORIGIN_REGEX."""
+    if status != 400 or request.method != "OPTIONS" or "access-control-request-method" not in request.headers:
+        return
+    origin = request.headers.get("origin")
+    if not origin:
+        return
+    origin = origin[:200]
+    now = time.monotonic()
+    if now - _cors_logged.get(origin, -_CORS_LOG_EVERY) < _CORS_LOG_EVERY:
+        return
+    if len(_cors_logged) >= 500:                                 # anyone can send any Origin: keep the memory bounded
+        _cors_logged.clear()
+    _cors_logged[origin] = now
+    _cors_log.warning("CORS preflight refused: origin=%r path=%s (not in CORS_ORIGINS / CORS_ORIGIN_REGEX)",
+                      origin, request.url.path[:200])
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
+    _log_refused_preflight(request, response.status_code)
     h = response.headers
     path = request.url.path
     h["X-Content-Type-Options"] = "nosniff"
