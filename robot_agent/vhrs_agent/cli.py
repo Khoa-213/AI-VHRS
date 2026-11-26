@@ -162,16 +162,17 @@ def cmd_serve(a: argparse.Namespace) -> int:                                  # 
 
 
 def cmd_real_enable(a: argparse.Namespace) -> int:
-    """A person at the workstation allows ONE job to run on the real robot for a limited time. A remote API call cannot do this."""
+    """At the workstation: allow ONE job to run on the real robot for a limited time (the desktop screen's 'Bật REAL' button does
+    the same; no backend command can)."""
     import getpass
     import json
     import time
-    from vhrs_agent.server import REAL_ENABLE_MAX_MINUTES, ServerConfig
+    from vhrs_agent.server import REAL_ENABLE_FILE, REAL_ENABLE_MAX_MINUTES, ServerConfig, write_real_enable
     if not 1 <= a.minutes <= REAL_ENABLE_MAX_MINUTES:
         print(f"--minutes must be 1..{REAL_ENABLE_MAX_MINUTES}", file=sys.stderr)
         return 2
     cfg = ServerConfig.from_file(a.config)
-    f = cfg.run_dir / "REAL_ENABLED.json"
+    f = cfg.run_dir / REAL_ENABLE_FILE
     if a.off:
         f.unlink(missing_ok=True)
         print("REAL disabled.")
@@ -186,9 +187,7 @@ def cmd_real_enable(a: argparse.Namespace) -> int:
         if input("Type SKIP-DRY-RUN to accept that risk (anything else cancels): ").strip() != "SKIP-DRY-RUN":
             print("Not enabled.")
             return 1
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps({"job_id": a.job, "expires_at": time.time() + a.minutes * 60, "enabled_by": getpass.getuser(),
-                             "enabled_at": time.time(), "waive_dry_run": waive}), encoding="utf-8")
+    write_real_enable(cfg.run_dir, a.job, a.minutes, "workstation:" + getpass.getuser(), waive_dry_run=waive)
     print("Enabled until", time.strftime("%H:%M:%S", time.localtime(time.time() + a.minutes * 60)))
     return 0
 

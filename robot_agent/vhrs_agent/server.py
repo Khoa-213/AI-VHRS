@@ -10,7 +10,9 @@ and uses the role the backend reports. Nothing is trusted from the client.
 
 Running the REAL robot through the API needs three independent things, so a remote caller can never start it alone:
   1. the agent was started with "real" in `modes` (only on the workstation wired to the robot);
-  2. a person at the workstation ran `python -m vhrs_agent.cli real-enable --job N --minutes M` (an expiring file for THAT job);
+  2. REAL was enabled for THAT job for a limited time (an expiring file), at the workstation only: the desktop screen's button
+     (`POST /api/jobs/{id}/real-enable`, the technician who loaded the job, no typed YES: owner decision 2026-11-26 c1) or the CLI
+     `python -m vhrs_agent.cli real-enable --job N --minutes M`. No backend command can set it;
   3. the caller sends the plan-bound authorization token (see runner.authorization_token) AND the job passes the dry-run requirement.
 """
 from __future__ import annotations
@@ -27,7 +29,7 @@ import httpx
 import numpy as np
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from starlette.requests import HTTPConnection
 
@@ -49,6 +51,7 @@ ROLE_CONTROL = {"TECHNICAL_STAFF", "MANAGER"}
 ROLE_OPERATE = {"TECHNICAL_STAFF"}
 LEVEL_ROLES = {"view": ROLE_VIEW, "control": ROLE_CONTROL, "operate": ROLE_OPERATE}
 REAL_ENABLE_MAX_MINUTES = 120
+REAL_ENABLE_FILE = "REAL_ENABLED.json"
 
 
 class ApiError(Exception):
@@ -138,6 +141,16 @@ class RunIn(Body):
     speed: float | None = Field(default=None, gt=0, le=1000, description="SIM only: simulation speed factor (1 = real time)")
 
 
+class RealEnableIn(Body):
+    minutes: int = Field(default=30, ge=1, le=REAL_ENABLE_MAX_MINUTES)
+    waive_dry_run: bool = False
+    confirm_waive: str | None = Field(default=None, max_length=20, description="SKIP-DRY-RUN when waive_dry_run is true")
+
+
+class ConfirmIn(Body):
+    confirm: str = Field(max_length=20)
+
+
 class DryRunIn(Body):
     mode: str = Field(default="sim", pattern="^(mock|sim|real)$")
     authorization: str | None = Field(default=None, max_length=200)
@@ -221,6 +234,20 @@ class AgentService:
             return sess.access
 
         return current
+
+    # ---- technician API proxy: the desktop screen is the technician's only workspace (owner 2026-11-26), it reaches the backend's
+    # /technician/* through the agent with the person's own token, so the backend needs no CORS entry for the workstation.
+    def proxy_technician(self, method: str, path: str, token: str, *, params: list[tuple[str, str]], content: bytes,
+                         content_type: str | None) -> tuple[int, bytes, str]:
+        headers = {"Authorization": f"Bearer {self.provider(token)()}"}
+        if content_type:
+            headers["Content-Type"] = content_type
+        br = self.bridge(token)
+        try:
+            r = br.http.request(method, "/" + path.lstrip("/"), params=params, content=content or None, headers=headers, timeout=60.0)
+        except httpx.HTTPError as exc:
+            raise ApiError(503, "BACKEND_UNREACHABLE", f"Không gọi được máy chủ: {exc}") from exc
+        return r.status_code, r.content, r.headers.get("content-type", "application/json")
 
     # ---- login proxy: the browser never needs the backend's CORS
     def login(self, email: str, password: str) -> dict[str, Any]:
@@ -416,9 +443,58 @@ class AgentService:
         return self.hub.runner
 
     # ---- REAL gate
+    def real_state(self) -> dict[str, Any] | None:
+        """The REAL switch as reported to the backend: None when off, broken or expired."""
+        f = self.cfg.run_dir / REAL_ENABLE_FILE
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            exp = float(data.get("expires_at", 0))
+        except (OSError, ValueError, TypeError, AttributeError):
+            return None
+        if exp < time.time():
+            return None
+        return {"job_id": data.get("job_id"), "expires_at": exp, "enabled_by": data.get("enabled_by"),
+                "waive_dry_run": bool(data.get("waive_dry_run"))}
+
+    def enable_real(self, job_id: int, minutes: int, by: str, *, waive_dry_run: bool = False) -> dict[str, Any]:
+        if "real" not in self.cfg.modes:
+            raise ApiError(403, "MODE_DISABLED", "Agent này không bật chế độ REAL (agent.json, modes): máy này không nối với robot thật.")
+        if self._busy and (self.current or {}).get("job_id") not in (None, job_id):
+            raise ApiError(409, "AGENT_BUSY", "Agent đang chạy job khác.", self.current)
+        write_real_enable(self.cfg.run_dir, job_id, minutes, by, waive_dry_run=waive_dry_run)
+        return {"real_enabled": self.real_state(), "minutes": int(minutes)}
+
+    def disable_real(self) -> dict[str, Any]:
+        (self.cfg.run_dir / REAL_ENABLE_FILE).unlink(missing_ok=True)
+        return {"real_enabled": None}
+
+    def reset_progress(self, job_id: int) -> dict[str, Any]:
+        """Next run starts from the first stroke (the operator confirmed a NEW blank sheet). Keeps a backup of the old progress."""
+        if self._busy:
+            raise ApiError(409, "AGENT_BUSY", "Agent đang chạy: dừng hẳn trước khi đặt lại tiến độ.", self.current)
+        path = self.cfg.run_dir / f"job{job_id}" / "progress.json"
+        if not path.exists():
+            return {"reset": False, "reason": "NO_PROGRESS"}
+        raw = path.read_text(encoding="utf-8")
+        d = json.loads(raw)
+        before = {"state": d.get("state"), "completed": d.get("completed")}
+        backup = path.with_name(path.name + ".bak-" + time.strftime("%Y%m%d-%H%M%S"))
+        backup.write_text(raw, encoding="utf-8")
+        d.update({"state": "IDLE", "completed": 0, "interrupted": None, "resume_at": 0})
+        path.write_text(json.dumps(d, indent=1), encoding="utf-8")
+        return {"reset": True, "before": before, "backup": backup.name}
+
+    def job_log(self, job_id: int, tail: int = 200) -> dict[str, Any]:
+        # Names contain a random suffix: lexical order is not chronological for
+        # multiple runs started within the same second (including refusals).
+        files = sorted((self.cfg.run_dir / f"job{job_id}").glob("run-*.jsonl"), key=lambda p: p.stat().st_mtime_ns)
+        lines = files[-1].read_text(encoding="utf-8").splitlines()[-max(1, min(int(tail), 2000)):] if files else []
+        return {"file": files[-1].name if files else None, "lines": [json.loads(x) for x in lines]}
+
     def real_gate(self, job_id: int) -> dict[str, Any]:
-        f = self.cfg.run_dir / "REAL_ENABLED.json"
-        hint = f"Người vận hành tại máy trạm chạy: python -m vhrs_agent.cli real-enable --job {job_id} --minutes 30"
+        f = self.cfg.run_dir / REAL_ENABLE_FILE
+        hint = ("Bấm 'Bật REAL' cho job này trên màn hình máy trạm, hoặc chạy: "
+                f"python -m vhrs_agent.cli real-enable --job {job_id} --minutes 30")
         if not f.exists():
             raise ApiError(403, "REAL_NOT_ENABLED_ON_SITE", "Chạy robot thật cần người ở máy trạm bật cho đúng job này. " + hint)
         try:
@@ -578,7 +654,44 @@ def create_server_app(service: AgentService) -> FastAPI:
             pass
         return {"version": __version__, "auth_required": True, "backend_url": service.cfg.backend_url, "modes": list(service.cfg.modes),
                 "busy": service._busy, "current": service.current, "last": service.last, "joint_model_available": sim_model,
-                "real_requires": "real-enable at the workstation + plan authorization token + a finished dry run"}
+                "real_requires": "REAL switch for the job at this workstation + plan authorization token + a finished dry run",
+                "real_enabled": service.real_state()}
+
+    @app.get("/api/real")
+    def real(request: Request) -> dict[str, Any]:
+        service.guard("view", request)
+        return {"real_enabled": service.real_state(), "real_available": "real" in service.cfg.modes,
+                "max_minutes": REAL_ENABLE_MAX_MINUTES}
+
+    @app.post("/api/jobs/{job_id}/real-enable")
+    def real_enable(job_id: int, body: RealEnableIn, request: Request) -> dict[str, Any]:
+        who = service.user(request)
+        service.ctx(job_id, who)                                              # only the technician who loaded this job here
+        if body.waive_dry_run and body.confirm_waive != "SKIP-DRY-RUN":
+            raise ApiError(422, "CONFIRM_REQUIRED", "Bỏ chạy thử nhấc bút: gửi confirm_waive = SKIP-DRY-RUN (bút chạm giấy ngay nét đầu).")
+        return service.enable_real(job_id, body.minutes, "desktop:" + str(who.get("name") or who.get("id")),
+                                   waive_dry_run=body.waive_dry_run)
+
+    @app.delete("/api/real-enable")
+    def real_disable(request: Request) -> dict[str, Any]:
+        service.guard("control", request)                                     # anyone who may stop the robot may also turn REAL off
+        return service.disable_real()
+
+    @app.post("/api/jobs/{job_id}/reset-progress")
+    def reset_progress(job_id: int, body: ConfirmIn, request: Request) -> dict[str, Any]:
+        who = service.user(request)
+        service.ctx(job_id, who)
+        if body.confirm != "NEW_SHEET":
+            raise ApiError(422, "CONFIRM_REQUIRED", "Gửi confirm = NEW_SHEET: tờ giấy là tờ MỚI, trắng, kẹp đúng vị trí cũ.")
+        return service.reset_progress(job_id)
+
+    @app.api_route("/api/technician/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    async def technician_proxy(path: str, request: Request) -> Response:
+        service.guard("view", request)                                        # the backend checks the technician role itself
+        status, content, ctype = service.proxy_technician(
+            request.method, path, service.token_of(request), params=list(request.query_params.multi_items()),
+            content=await request.body(), content_type=request.headers.get("content-type"))
+        return Response(content=content, status_code=status, media_type=ctype)
 
     @app.post("/api/login")
     def login(body: LoginIn) -> dict[str, Any]:
@@ -630,13 +743,22 @@ def create_server_app(service: AgentService) -> FastAPI:
     @app.get("/api/jobs/{job_id}/log")
     def log(job_id: int, request: Request, tail: int = 200) -> dict[str, Any]:
         service.guard("view", request)
-        # Names contain a random suffix: lexical order is not chronological for
-        # multiple runs started within the same second (including refusals).
-        files = sorted((service.cfg.run_dir / f"job{job_id}").glob("run-*.jsonl"), key=lambda p: p.stat().st_mtime_ns)
-        lines = files[-1].read_text(encoding="utf-8").splitlines()[-max(1, min(tail, 2000)):] if files else []
-        return {"file": files[-1].name if files else None, "lines": [json.loads(x) for x in lines]}
+        return service.job_log(job_id, tail)
 
     return app
+
+
+def write_real_enable(run_dir: Path, job_id: int, minutes: int, by: str, *, waive_dry_run: bool = False) -> dict[str, Any]:
+    """The one writer of the REAL switch (the CLI at the workstation and the REAL_ENABLE command from the web)."""
+    if not 1 <= int(minutes) <= REAL_ENABLE_MAX_MINUTES:
+        raise ApiError(422, "MINUTES_OUT_OF_RANGE", f"Số phút phải từ 1 tới {REAL_ENABLE_MAX_MINUTES}.")
+    now = time.time()
+    data = {"job_id": int(job_id), "expires_at": now + int(minutes) * 60, "enabled_by": str(by)[:80], "enabled_at": now,
+            "waive_dry_run": bool(waive_dry_run)}
+    f = Path(run_dir) / REAL_ENABLE_FILE
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(data), encoding="utf-8")
+    return data
 
 
 def serve(cfg: ServerConfig) -> None:                                         # pragma: no cover - starts a real server

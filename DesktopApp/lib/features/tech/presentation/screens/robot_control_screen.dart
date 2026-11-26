@@ -171,6 +171,8 @@ class _RobotControlScreenState extends ConsumerState<RobotControlScreen> with Jo
     final locked = disabled || _pending != null || !online || !realEnabled;
     final canLoad = _loadable.contains(j.status) && (d.calibration?.isValid ?? false);
     final simRecorded = j.simulationPassed == true;
+    // A PAUSED job calibrated again needs a new simulation before RUN / RESUME (the backend answers SIMULATION_STALE).
+    final simStale = j.status == JobStatus.paused && simulationStale(ref.watch(jobEventsProvider(j.id)).valueOrNull ?? const []);
     final writing = j.status == JobStatus.writing || j.status == JobStatus.paused;
     final paused = agentState == 'PAUSED';
     final pct = (frame?.progressPct ?? j.progress ?? 0).clamp(0, 100).round();
@@ -247,7 +249,7 @@ class _RobotControlScreenState extends ConsumerState<RobotControlScreen> with Jo
     });
 
     final stopEnabled = online && !_controlBusy && busy;
-    final goEnabled = !locked && !busy && loaded != null && writing && authValid;
+    final goEnabled = !locked && !busy && loaded != null && writing && authValid && !simStale;
     final runButtons = Row(
       children: [
         Expanded(
@@ -280,7 +282,7 @@ class _RobotControlScreenState extends ConsumerState<RobotControlScreen> with Jo
                   bg: AppColors.surface,
                   fg: AppColors.textPrimary,
                   border: AppColors.border,
-                  onTap: stopEnabled ? () => _control(CommandKind.resume) : null,
+                  onTap: stopEnabled && !simStale ? () => _control(CommandKind.resume) : null,
                 )
               : _BigButton(
                   label: t('rb.do.PAUSE'),
@@ -503,15 +505,22 @@ class _RobotControlScreenState extends ConsumerState<RobotControlScreen> with Jo
           stepRow(
             3,
             t('rb.recordSim'),
-            j.simulationPassed == null ? null : simRecorded,
+            j.simulationPassed == null ? null : simRecorded && !simStale,
             Tooltip(
               message: t('rb.help.record'),
               child: TechButton(
                 t('rb.do.record'),
                 small: true,
-                onPressed: disabled || _pending != null || j.status != JobStatus.preparing || pre == null || loaded == null ? null : recordSimulation,
+                onPressed: disabled ||
+                        _pending != null ||
+                        !(j.status == JobStatus.preparing || j.status == JobStatus.paused) ||
+                        pre == null ||
+                        loaded == null
+                    ? null
+                    : recordSimulation,
               ),
             ),
+            result: simStale ? resultText(t('rb.simStale'), bad: true) : null,
           ),
           stepRow(
             4,

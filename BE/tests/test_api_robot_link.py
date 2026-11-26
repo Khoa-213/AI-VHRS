@@ -313,6 +313,21 @@ def test_one_controlling_app_per_robot_nobody_is_pushed_out(client, cust, staff,
     assert client.post(f"{A}/sync", headers=bearer(c["key"]), json={}).status_code == 401           # released keys are dead
 
 
+def test_another_technicians_app_holds_the_robot_but_anyone_on_it_may_still_halt_it(client, cust, staff, mgr, wcat, robot, tech):
+    oid, jid = _job(client, cust, staff, mgr, wcat, robot, tech)
+    a = session_key(client, tech, robot, "app-instance-0001")
+    sync(client, bearer(a["key"]))
+    # the app online for this robot now belongs to someone else
+    _sql("update robot_agents set account_id = :o where key_prefix = :p returning 1", o=staff[1], p=a["key_prefix"])
+    r = client.post(f"{T}/robot-commands", headers=tech[0], json={"kind": "LOAD", "job_id": jid})
+    assert r.status_code == 409 and _err(r) == "ROBOT_IN_USE"                              # starting work stays with the holder
+    r = client.post(f"{T}/robot-commands", headers=tech[0], json={"kind": "RESUME", "job_id": jid})
+    assert r.status_code == 409 and _err(r) == "ROBOT_IN_USE"
+    for kind in ("STOP", "PAUSE"):                                                         # halting never waits for the holder
+        r = client.post(f"{T}/robot-commands", headers=tech[0], json={"kind": kind, "robot_id": robot})
+        assert r.status_code == 201 and r.json()["kind"] == kind, r.text
+
+
 def test_a_workstation_key_from_the_manager_also_holds_the_robot(client, cust, staff, mgr, wcat, robot, tech):
     _job(client, cust, staff, mgr, wcat, robot, tech)
     _, ah = key_for(client, mgr, robot)

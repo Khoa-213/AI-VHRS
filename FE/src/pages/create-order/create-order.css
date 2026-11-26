@@ -205,3 +205,14 @@
 .co-preview .opv-img,.co-preview .opv-svg{flex:0 1 auto;min-width:0;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;box-shadow:0 10px 20px var(--sh-5)}
 .co-preview .opv-svg{height:100%}
 .co-preview .opv-text{font-size:14px;max-height:100%;overflow:hidden}
+
+/* Upload mode: the restored strokes, drawn by the backend from the photos, under the photo rows. */
+.co-restore{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--line-strong);border-radius:16px}
+.co-restore-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px}
+.co-restore-copy{display:flex;flex-direction:column;gap:4px;flex:1 1 240px;min-width:0}
+.co-restore-title{margin:0;font-size:15px;font-weight:600;color:var(--t1)}
+.co-restore-copy .co-hint{margin:0}
+.co-restore-stage{position:relative;display:flex;justify-content:center;min-height:160px;border-radius:12px;background:var(--tray)}
+.co-restore-stage .oa-view-img{max-height:min(60vh,520px);max-width:100%}
+.co-restore-notes{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--t3)}
+.co-restore-notes ul{margin:0;padding-left:18px}

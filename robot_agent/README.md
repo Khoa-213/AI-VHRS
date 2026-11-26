@@ -36,7 +36,8 @@ Mở `http://<IP máy trạm>:8765/`: đăng nhập bằng **tài khoản hệ t
 - **HTTPS**: đặt `tls_certfile`/`tls_keyfile` (hoặc đặt sau Caddy/nginx). Không có TLS thì mật khẩu đăng nhập đi trong mạng LAN dạng chữ thường: chỉ dùng trong mạng tin cậy.
 - **Tự khởi động**: Task Scheduler "At startup" chạy lệnh `serve` ở thư mục `robot_agent` (hoặc NSSM làm dịch vụ Windows). Máy trạm cần tới được `backend_url` (Render) để đăng nhập và tải job.
 - **Chỉ mô phỏng** (không nối robot): chạy ở bất kỳ máy nào với `modes: ["mock","sim"]`; nhiều người cùng xem một bản 3D.
-- **Chạy robot THẬT qua API cần cả ba**: (1) `"real"` nằm trong `modes` của máy trạm nối robot; (2) **người ở máy trạm** chạy `.simenv\python.exe -m vhrs_agent.cli real-enable --config agent.json --job N --minutes 30` (gõ YES; file hết hạn, chỉ cho đúng job đó); (3) người gọi gửi mã xác nhận gắn với kế hoạch và job đã qua chạy thử pen-up. Một lệnh từ xa không thể tự bật robot thật.
+- **Chạy robot THẬT qua API cần cả ba**: (1) `"real"` nằm trong `modes` của máy trạm nối robot; (2) **bật REAL cho đúng job tại máy trạm**: nút "Bật REAL" trên màn desktop (`POST /api/jobs/{id}/real-enable`, người đã nạp job, không gõ YES: chủ dự án chọn 2026-11-26) hoặc `.simenv\python.exe -m vhrs_agent.cli real-enable --config agent.json --job N --minutes 30`; file hết hạn, chỉ cho đúng job đó, tắt bằng `DELETE /api/real-enable`; (3) người gọi gửi mã xác nhận gắn với kế hoạch và job đã qua chạy thử pen-up. Một lệnh từ xa (qua BE) không thể tự bật robot thật.
+- **Màn desktop là nơi làm việc duy nhất của kỹ thuật viên** (2026-11-26): nó gọi BE `/technician/*` qua proxy `/api/technician/...` của agent; đặt lại tiến độ `POST /api/jobs/{id}/reset-progress {"confirm":"NEW_SHEET"}`; xem `../BE/docs/FE_TECH_WORKSPACE_HANDOFF.md` mục 2.
 
 ## Chạy thử không cần robot
 

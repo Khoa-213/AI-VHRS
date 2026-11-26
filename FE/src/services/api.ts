@@ -207,6 +207,9 @@ export function authErrorKey(e: unknown): string {
     case 'VALIDATION_ERROR': return 'auth.err.validation'
     case 'TOKEN_EXPIRED':
     case 'TOKEN_INVALID': return 'auth.err.link'
+    case 'OTP_INVALID': return 'auth.err.otpInvalid'
+    case 'OTP_EXPIRED': return 'auth.err.otpExpired'
+    case 'OTP_TOO_MANY_ATTEMPTS': return 'auth.err.otpTries'
     case 'TIMEOUT': return 'auth.err.timeout'
     case 'NETWORK': return 'auth.err.network'
   }

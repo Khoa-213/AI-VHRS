@@ -13,9 +13,20 @@ import '../../domain/robot.dart';
 import '../../i18n/tech_strings.dart';
 import 'job_widgets.dart';
 
-/// Alerts that tell the operator to press the E-Stop and that nobody has acknowledged yet.
-List<RobotAlert> pendingEstops(List<RobotStatus>? robots) =>
-    (robots ?? const <RobotStatus>[]).expand((r) => r.alerts).where((a) => a.estopAdvised && a.acknowledgedAt == null).toList();
+/// Alerts that tell the operator to press the E-Stop and that nobody has acknowledged since they last happened. A repeat of an
+/// acknowledged alert takes the screen over again. [answered] holds the occurrences acknowledged in this session
+/// ([RobotAlert.occurrenceKey]), so the screen does not come back while the server still reports the older acknowledgement.
+List<RobotAlert> pendingEstops(List<RobotStatus>? robots, [Set<String> answered = const {}]) => (robots ?? const <RobotStatus>[])
+    .expand((r) => r.alerts)
+    .where((a) => a.estopAdvised && a.needsAck && !answered.contains(a.occurrenceKey))
+    .toList();
+
+/// Occurrences of E-Stop alerts the signed-in operator acknowledged in this session. It starts empty for every sign-in, so a
+/// person who signs in after someone else still gets the takeover for an alert only the other person answered.
+final estopAnsweredProvider = StateProvider<Set<String>>((ref) {
+  ref.watch(authNotifierProvider.select((s) => s is AuthAuthenticated ? s.userId : null));
+  return const {};
+});
 
 String _robotCode(List<RobotStatus> robots, int id) =>
     robots.where((r) => r.robotId == id).firstOrNull?.robotCode ?? '$id';
@@ -31,7 +42,7 @@ class EstopGate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     if (ref.watch(authNotifierProvider) is! AuthAuthenticated) return child;
     final robots = ref.watch(robotStatusProvider).valueOrNull;
-    final pending = pendingEstops(robots);
+    final pending = pendingEstops(robots, ref.watch(estopAnsweredProvider));
     if (pending.isEmpty) return child;
     return Stack(
       children: [
@@ -95,6 +106,7 @@ class _EstopTakeoverState extends ConsumerState<EstopTakeover> with SingleTicker
         final api = ref.read(robotApiProvider);
         for (final a in widget.alerts) {
           await api.ackAlert(a.id);
+          ref.read(estopAnsweredProvider.notifier).update((s) => {...s, a.occurrenceKey});
         }
         ref.invalidate(robotStatusProvider);
       });
@@ -276,7 +288,7 @@ class EstopBand extends ConsumerWidget {
     final robots = ref.watch(robotStatusProvider).valueOrNull ?? const <RobotStatus>[];
     final open = robots.expand((r) => r.alerts).where((a) => a.estopAdvised || a.level >= 4).toList();
     if (open.isEmpty) return const SizedBox.shrink();
-    final a = open.firstWhere((x) => x.acknowledgedAt != null, orElse: () => open.first);
+    final a = open.firstWhere((x) => !x.needsAck, orElse: () => open.first);
     final code = _robotCode(robots, a.robotId);
     return Semantics(
       container: true,
@@ -293,7 +305,7 @@ class EstopBand extends ConsumerWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    a.acknowledgedAt != null
+                    !a.needsAck
                         ? t('dk.estop.band', {'robot': code, 'time': jobStamp(t, a.acknowledgedAt!)})
                         : t('dk.estop.bandNew', {'robot': code}),
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.3, color: Colors.white),

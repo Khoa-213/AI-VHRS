@@ -26,9 +26,15 @@ accounts get in. Customers and office staff are refused and their session is rev
 
 ## Flow
 
-Dashboard → Jobs (list and open job: package with SHA-256 check, prepare, events, incidents, writing
-finished) → Robot control (3D view, commands, live data) → QC photos (upload, pass or fail, submit).
-An unacknowledged E-Stop alert covers the whole app until it is acknowledged.
+Dashboard → Jobs (list and open job: package with SHA-256 check, signed package and material drift, prepare,
+events, incidents, writing finished) → Robot control (3D view, commands, live data) → QC photos (upload, pass or
+fail, Service G quality check against the sketch, submit). The header has the notifications bell (`/me/notifications`:
+job assigned or cancelled) and the robot alert bell.
+
+An E-Stop alert covers the whole app until it is acknowledged, and again when it happens again after the
+acknowledgement (`last_raised_at` newer than `acknowledged_at`). A PAUSED job calibrated again needs a new passed
+simulation before Write or Resume (backend `SIMULATION_STALE`); Robot control reads that from the event log and opens
+"Record simulation result" on the PAUSED job.
 
 Everything runs on the real API (`lib/features/tech/data/`), the same calls as the web FE. Commands go
 to the backend, and the Robot Agent on the workstation pulls and runs them on the real arm.

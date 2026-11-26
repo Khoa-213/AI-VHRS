@@ -85,7 +85,15 @@ export const apiChangePassword = (current_password: string, new_password: string
 export const apiRequestReset = (email: string) =>
   api('/auth/password-reset/request', { method: 'POST', body: { email }, auth: false })
 
-/** `POST /auth/password-reset/confirm`: the token comes from the emailed link. Signs out every device. */
+/**
+ * `POST /auth/password-reset/confirm` with the 6-digit code from the email (`BE/docs/FE_API_GUIDE.md`, 2026-11-26): the code
+ * is checked and the password set in one call. Errors: `OTP_INVALID` (`details.attempts_left`), `OTP_EXPIRED`,
+ * `OTP_TOO_MANY_ATTEMPTS`. Signs out every device.
+ */
+export const apiConfirmResetCode = (email: string, code: string, new_password: string) =>
+  api('/auth/password-reset/confirm', { method: 'POST', body: { email, code, new_password }, auth: false })
+
+/** `POST /auth/password-reset/confirm`: the token comes from the emailed link or the phone reset. Signs out every device. */
 export const apiConfirmReset = (token: string, new_password: string) =>
   api('/auth/password-reset/confirm', { method: 'POST', body: { token, new_password }, auth: false })
 

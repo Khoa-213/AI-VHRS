@@ -33,6 +33,7 @@ Cho tới khi có, nguồn thực tế là trigger DB `fn_order_state_guard` và
 | Cổng thanh toán VNPay/MoMo, GHN/GHTK thật | **MOCK** có nhãn `mode=MOCK` (phiếu đăng ký cho phép fallback mock) | mục 5 |
 | Robot thật FR3 + Robot Agent + IoT | Thuộc phạm vi BE nhưng **chưa làm; chỉ làm khi chủ dự án yêu cầu rõ** (2026-10-18). Trước đó Technical Staff làm "web scope A": bản ghi/trạng thái, client báo kết quả lên | mục 3, 5 |
 | UC-41 / FR-40: Manager gán job cho robot **và** kỹ thuật viên; UC-31: kỹ thuật viên xem job "theo robot và ca" | **Giao robot cố định** (chủ dự án chọn 2026-11-26, migration 0032): Manager giao mỗi robot cho tối đa một kỹ thuật viên; xếp lịch giao job cho **kỹ thuật viên + giờ**, robot tuỳ chọn; kỹ thuật viên **tự chọn robot của mình** trước khi Chuẩn bị và chỉ thấy robot được giao | `PROJECT_STATUS.md` mục 9, `docs/FE_API_GUIDE.md` 7.3 / 7b.0 |
+| FR-43 (Flutter App) / màn `/tech` web cho Technical Staff; chạy REAL cần người vận hành tại máy trạm xác nhận | **Bỏ giao diện kỹ thuật viên trên web; màn desktop của Robot Agent ở máy trạm là nơi làm việc duy nhất.** Bật REAL bằng nút trên màn desktop, **không còn bắt xác nhận "có người cạnh E-Stop"** (chủ dự án chọn c1 2026-11-26, đã được báo rủi ro bật từ máy khác trong LAN); không bật được từ xa qua BE | `docs/FE_TECH_WORKSPACE_HANDOFF.md` |
 
 ## Quyết định bổ sung của chủ dự án (2026-10-18, cho Phase 4)
 | Vấn đề tài liệu không nói rõ | Quyết định |

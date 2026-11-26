@@ -10,8 +10,9 @@ Lost link while writing (decided by the owner): after `link_loss_grace_s` withou
 is on, lifts the pen and pauses (no motion command is ever re-sent), shows an orange alert locally and reports it to the backend as
 soon as the link is back. The agent cannot stop a robot it cannot talk to: the physical E-Stop stays the real safety.
 
-REAL runs are unchanged: the agent still requires `real` in its modes, the on-site `real-enable` file for that job, the plan-bound
-authorization token and a finished dry run. A command from the backend cannot bypass any of them.
+REAL runs: the agent still requires `real` in its modes, the REAL switch file for that job, the plan-bound authorization token and a
+finished dry run. The switch is set ONLY at the workstation (the desktop screen's button or the `real-enable` CLI, owner decision
+2026-11-26 c1): no backend command can set it. The status sent on every sync carries `real_enabled` so others can see it is on.
 """
 from __future__ import annotations
 
@@ -78,7 +79,8 @@ class LinkClient:
         snap["t"] = round(time.time(), 3)
         status = {"mode": (snap.get("mode") or ("SIM" if "sim" in self.svc.cfg.modes else "MOCK")).upper(), "busy": self.svc._busy,
                   "current": self.svc.current, "last": self.svc.last, "state": snap["state"], "level": snap["level"],
-                  "enabled_modes": [m.upper() for m in self.svc.cfg.modes], "agent_version": __version__}
+                  "enabled_modes": [m.upper() for m in self.svc.cfg.modes], "agent_version": __version__,
+                  "real_enabled": self.svc.real_state()}
         body = {"status": status, "frames": [snap] if (self.svc._busy or snap["state"] != "IDLE" or snap["joints_deg"]) else [],
                 **{k: v for k, v in self.versions.items() if v}}
         try:

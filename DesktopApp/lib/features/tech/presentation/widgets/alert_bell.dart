@@ -175,7 +175,7 @@ class _AlertListState extends ConsumerState<AlertList> {
                     Text(a.action, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)),
                     Text(a.code, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     const SizedBox(height: 8),
-                    if (a.acknowledgedAt == null)
+                    if (a.needsAck)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: TechButton(t('rb.ack'), small: true, style: CustomButtonStyle.outline, onPressed: _busy == a.id ? null : () => _act(a, resolve: false)),

@@ -261,4 +261,28 @@ void main() {
     expect(techErrorText(t, const ConflictException('Lỗi lạ', 'SOME_NEW_CODE')), 'Lỗi lạ');
     expect(techErrorText(t, const ServerException('x', 500)), 'The server had a problem. Try again later.');
   });
+
+  test('a PAUSED job calibrated again is stale until a new simulation is recorded', () {
+    JobEvent e(int id, String type) => JobEvent(id: id, eventType: type, occurredAt: DateTime.utc(2026, 11, 26, 0, id));
+    // Latest first, as TechApi.allEvents returns them.
+    expect(simulationStale([e(3, 'CALIBRATED'), e(2, 'PAUSE'), e(1, 'SIMULATED')]), isTrue);
+    expect(simulationStale([e(4, 'SIMULATED'), e(3, 'CALIBRATED'), e(1, 'SIMULATED')]), isFalse);
+    expect(simulationStale([e(2, 'PROGRESS')]), isFalse);
+  });
+
+  test('the simulation can be recorded while PAUSED, as the backend allows after a recalibration', () {
+    TechJobDetail paused(JobStatus s) => TechJobDetail(
+          job: TechJob(
+            id: 1, orderId: 2, orderCode: 'V', robotId: 46, robotCode: 'R', technicianId: 4, technicianName: 'T', status: s,
+            isRewrite: false, slotStart: DateTime.utc(2026), slotEnd: DateTime.utc(2026), durationMin: 5, packageHash: 'abc',
+            downloadedAt: DateTime.utc(2026), simulationPassed: true,
+          ),
+          orderType: 'OT3_TEMPLATE', quantity: 1, canStart: false, incidents: const [],
+          calibration: Calibration(id: 9, isValid: true, createdAt: DateTime.utc(2026)),
+        );
+    expect(paused(JobStatus.paused).permissions('abc').simulate, isTrue);
+    expect(paused(JobStatus.preparing).permissions('abc').simulate, isTrue);
+    expect(paused(JobStatus.writing).permissions('abc').simulate, isFalse);
+    expect(paused(JobStatus.paused).permissions('other').simulate, isFalse);
+  });
 }
