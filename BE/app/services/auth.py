@@ -15,6 +15,7 @@ from app.models.account import Account, AccountStatus, AuthSession, RoleCode
 from app.repositories.accounts import AccountRepository
 from app.repositories.sessions import SessionRepository
 from app.services import audit
+from app.services import phone_reminders
 from app.services.phone_otp import EMAIL_OTP_SECONDS, EMAIL_RESET, PhoneOtpService, email_key
 
 log = logging.getLogger("app.auth")
@@ -40,6 +41,7 @@ class AuthService:
         self.sessions = SessionRepository(session)
         self.mailer = mailer
         self.cfg = get_settings()
+        self.reminders: list[str] = []          # set by a sign-in: the phone reminders just created
 
     # UC-05 / BR-01: customers self-register; internal roles are created by Admin.
     def register_customer(self, *, email: str, password: str, full_name: str, phone: str | None) -> Account:
@@ -76,6 +78,7 @@ class AuthService:
     def _open_session(self, acc: Account, now: datetime, ip: str | None,
                       user_agent: str | None) -> tuple[Account, str, str]:
         acc.failed_login_count, acc.locked_until, acc.last_login_at = 0, None, now
+        self.reminders = phone_reminders.on_sign_in(self.session, acc)       # add / verify the phone number (2026-11-26)
         sid = self.sessions.add(AuthSession(
             account_id=acc.id, expires_at=now + timedelta(days=self.cfg.refresh_token_ttl_days),
             ip_address=ip, user_agent=(user_agent or "")[:255] or None)).id

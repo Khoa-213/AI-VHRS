@@ -1,6 +1,6 @@
 """API request/response schemas (kept separate from ORM models)."""
 from datetime import datetime
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -138,6 +138,11 @@ class TokenOut(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     account: AccountOut
+    reminders: list[Literal["ADD_PHONE", "VERIFY_PHONE"]] = Field(
+        default_factory=list,
+        description="nhắc nhở vừa tạo ở lần đăng nhập này (cũng có trong thông báo): ADD_PHONE = chưa có số điện thoại "
+                    "(một lần cho mỗi tài khoản); VERIFY_PHONE = có số nhưng chưa xác minh (tối đa 7 ngày một lần). "
+                    "Rỗng ở /auth/refresh. FE mở hộp nhắc khi danh sách không rỗng.")
 
 
 class ProfileUpdateIn(BaseModel):

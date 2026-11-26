@@ -127,6 +127,13 @@ CATALOG: dict[str, _T] = {
                       lambda p: f"Khách đã đánh giá đơn {p['code']}: {p.get('rating')}/5 sao."),
     "INCIDENT_REPORTED": ("SYSTEM", None, False, False, lambda p: f"Sự cố: đơn {p['code']}",
                           lambda p: f"Kỹ thuật viên báo sự cố khi viết đơn {p['code']}."),
+    # Account reminders (services/phone_reminders.py, owner request 2026-11-26); not tied to an order.
+    "ADD_PHONE": ("SYSTEM", "PHONE_ADD", False, False, lambda p: "Thêm số điện thoại cho tài khoản",
+                  lambda p: "Tài khoản của bạn chưa có số điện thoại. Hãy thêm số ở Tài khoản > Hồ sơ rồi xác minh bằng mã "
+                            "SMS, để xưởng liên hệ khi cần và để bạn lấy lại mật khẩu bằng SMS khi quên."),
+    "VERIFY_PHONE": ("SYSTEM", "PHONE_VER", False, False, lambda p: "Xác minh số điện thoại",
+                     lambda p: f"Số điện thoại {p.get('phone') or 'của bạn'} chưa được xác minh. Vào Tài khoản > Hồ sơ, bấm "
+                               "Xác minh và nhập mã 6 số gửi qua SMS. Chỉ số đã xác minh mới dùng được để lấy lại mật khẩu."),
 }
 
 

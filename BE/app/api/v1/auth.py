@@ -40,7 +40,7 @@ def register(body: RegisterIn, svc: Svc) -> AccountOut:
 def login(body: LoginIn, svc: Svc, request: Request) -> TokenOut:
     acc, access, refresh = svc.login(body.email, body.password, ip=client_ip(request),
                                      user_agent=request.headers.get("user-agent"))
-    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc))
+    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc), reminders=svc.reminders)
 
 
 @router.post("/google", response_model=TokenOut, summary="UC-01 Đăng nhập bằng Google (khách hàng; gửi Google ID token)",
@@ -52,7 +52,7 @@ def login_google(body: GoogleLoginIn, svc: Svc, request: Request,
                  verifier: Annotated[GoogleVerifier, Depends(get_google_verifier)]) -> TokenOut:
     identity = verifier.verify(body.id_token)
     acc, access, refresh = svc.login_google(identity, ip=client_ip(request), user_agent=request.headers.get("user-agent"))
-    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc))
+    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc), reminders=svc.reminders)
 
 
 @router.post("/token", response_model=OAuthTokenOut, include_in_schema=True,

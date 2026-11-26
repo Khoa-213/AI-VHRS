@@ -124,7 +124,7 @@ Bản nháp (`DRAFT`) chỉ chủ đơn thấy; xưởng không thấy cho tới
 
 ```
 POST /auth/register     {email, password(≥8, đủ mạnh), full_name, phone?}  → AccountOut
-POST /auth/login        {email, password}  → {access_token, refresh_token, token_type, account{id,role,...}}
+POST /auth/login        {email, password}  → {access_token, refresh_token, token_type, account{id,role,...}, reminders[]}
 POST /auth/google       {id_token}         → cùng dạng như /auth/login (chỉ khách hàng, xem 3.1)
 POST /auth/refresh      {refresh_token}    → cặp token mới
 POST /auth/logout       (Bearer)           → thu hồi phiên hiện tại
@@ -148,6 +148,11 @@ POST /me/phone/otp, POST /me/phone/verify, POST /auth/phone-reset/request|verify
 1. Hồ sơ có `phone` và `phone_verified=false` → nút "Xác minh". `POST /me/phone/otp` (không body) → `202 {phone_masked, expires_in: 300, resend_after: 60, mode}`.
 2. Ô nhập 6 chữ số → `POST /me/phone/verify {code}` → `AccountOut` với `phone_verified=true` (số được lưu dạng `0xxxxxxxxx` dù khách nhập `+84...`).
 3. Đổi số bằng `PATCH /me` thì `phone_verified` về `false`, phải xác minh lại.
+
+**Nhắc thêm / xác minh số (2026-11-26):** kết quả `POST /auth/login` và `/auth/google` có `reminders` (mảng, thường rỗng; `/auth/refresh` luôn rỗng):
+- `"ADD_PHONE"`: tài khoản chưa có số điện thoại. Chỉ **một lần** cho mỗi tài khoản (lần đăng nhập đầu tiên không có số). FE mở hộp nhắc "Thêm số điện thoại" (ô số → `PATCH /me {phone}` → luồng xác minh ở trên; có nút "Để sau").
+- `"VERIFY_PHONE"`: có số nhưng chưa xác minh. Tối đa 7 ngày một lần và không gửi thêm khi tin nhắc cũ chưa đọc. FE mở hộp nhắc "Xác minh số" (→ `POST /me/phone/otp`).
+- Mỗi nhắc nhở cũng là một **thông báo trong chuông** (`type: "SYSTEM"`, `order_id: null`, `msg_code`: `PHONE_ADD` / `PHONE_VER`, không gửi email); bấm vào thì mở Tài khoản > Hồ sơ. Đổi số bằng `PATCH /me` cũng tạo ngay thông báo `PHONE_VER` (trừ khi tin cũ chưa đọc). Số trong nội dung đã che (`090****123`).
 
 **Quên mật khẩu bằng số điện thoại** (chưa đăng nhập; chỉ dùng được với số **đã xác minh**):
 1. `POST /auth/phone-reset/request {phone}` → **luôn `202`** (kể cả số không tồn tại, chưa xác minh, đang phải chờ, hết lượt), nên FE luôn chuyển sang ô nhập mã với câu "Nếu số đã được xác minh, mã đã được gửi".

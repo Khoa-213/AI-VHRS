@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 7
     # FR-01: temporary lock after 5 wrong passwords. Lock length is an assumption.
     max_failed_logins: int = 5
+    # 2026-11-26: bell reminders to add / verify the phone number at sign-in and on a phone change (services/phone_reminders.py)
+    phone_reminders_enabled: bool = True
     lockout_minutes: int = 15
     cors_origins: list[str] = ["http://localhost:5173"]
     # Optional regex for dynamic origins such as Vercel preview URLs:
