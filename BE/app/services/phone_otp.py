@@ -37,6 +37,22 @@ _BAD_CODE = "Mã OTP không đúng hoặc đã hết hạn."
 _TAKEN = "Số điện thoại này đã được xác minh cho một tài khoản khác."
 VERIFY_SMS = ("AI-VHRS: ma xac minh so dien thoai cua ban la {code}, hieu luc {minutes} phut. "
               "Khong chia se ma nay cho bat ky ai.")
+# 2026-11-26: the password-reset e-mail carries a 6-digit code (same table and rules; the "phone" column holds this key)
+EMAIL_OTP_SECONDS = 900
+EMAIL_RESET = ("Xin chào,\n\n"
+               "Mã đặt lại mật khẩu AI-VHRS của bạn là: {code}\n\n"
+               "Nhập mã này ở trang đặt lại mật khẩu. Mã hết hạn sau {minutes} phút và chỉ dùng được một lần; "
+               "đừng chia sẻ mã cho bất kỳ ai.\n\n"
+               "Hoặc bấm liên kết sau để đặt mật khẩu mới:\n{link}\n\n"
+               "Nếu bạn không yêu cầu, hãy bỏ qua email này: mật khẩu của bạn không đổi.\n\n"
+               "Xưởng Nét Việt")
+
+
+def email_key(account_id: int) -> str:
+    """The `phone_otps.phone` value of an e-mailed code (never a phone number)."""
+    return f"email:{account_id}"
+
+
 RESET_SMS = ("AI-VHRS: ma dat lai mat khau cua ban la {code}, hieu luc {minutes} phut. "
              "Neu ban khong yeu cau, hay bo qua tin nhan nay.")
 
@@ -73,7 +89,7 @@ class PhoneOtpService:
         return self.session.execute(select(Account).where(
             Account.phone.in_(phone_variants(phone)), Account.phone_verified_at.is_not(None))).scalars().first()
 
-    def _issue(self, account_id: int, phone: str, text: str) -> dict:
+    def _issue(self, account_id: int, phone: str, text: str, deliver=None, ttl_seconds: int | None = None) -> dict:
         """Create and send a code. The account row is locked first so two clicks cannot both pass the resend wait."""
         self._lock_account(account_id)
         now = _now()
@@ -90,10 +106,14 @@ class PhoneOtpService:
                              .values(used_at=now))                     # a new code closes the older ones
         code = f"{secrets.randbelow(10 ** CODE_DIGITS):0{CODE_DIGITS}d}"
         self.session.add(PhoneOtp(account_id=account_id, phone=phone, otp_hash=_digest(account_id, phone, code),
-                                  expires_at=now + timedelta(seconds=self.cfg.otp_ttl_seconds), attempt_count=0,
+                                  expires_at=now + timedelta(seconds=ttl_seconds or self.cfg.otp_ttl_seconds), attempt_count=0,
                                   max_attempts=self.cfg.otp_max_attempts, created_at=now))
         self.session.flush()
-        self.sms.send(phone, text.format(code=code, minutes=max(1, self.cfg.otp_ttl_seconds // 60)))
+        message = text.format(code=code, minutes=max(1, (ttl_seconds or self.cfg.otp_ttl_seconds) // 60))
+        if deliver is not None:                                         # e-mail (password reset)
+            deliver(message)
+            return {}
+        self.sms.send(phone, message)
         return {"phone_masked": mask(phone), "expires_in": self.cfg.otp_ttl_seconds,
                 "resend_after": self.cfg.otp_resend_seconds, "mode": self.sms.mode}
 

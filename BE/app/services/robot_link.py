@@ -40,6 +40,9 @@ KINDS = ("LOAD", "PREFLIGHT", "DRY_RUN", "RUN", "PAUSE", "RESUME", "STOP", "PAPE
 JOB_KINDS = ("LOAD", "PREFLIGHT", "DRY_RUN", "RUN", "PAPER_CHANGED", "ALIGN_START")
 CONTROL_KINDS = ("PAUSE", "RESUME", "STOP")
 MANAGER_KINDS = ("PAUSE", "RESUME", "STOP")             # a Manager may watch and pause/stop, never start a run
+# Safety (owner decision 2026-11-26): a technician who holds a live job on the robot may always halt it, even while another
+# technician's app holds the robot. Starting or resuming motion stays with the holder (ROBOT_IN_USE).
+HALT_KINDS = ("PAUSE", "STOP")
 TTL_S = {"CONTROL": 20, "DEFAULT": 60}
 AUTH_CACHE_S = 60.0
 FRAME_KEEP = 300                                        # ~75 s at 4 frames/s
@@ -322,7 +325,7 @@ class RobotLinkService:
                            "(nếu đang có nguy hiểm: nhấn nút E-Stop vật lý).", {"robot_id": robot.id})
         holder = self._online_holder(robot.id)
         if (holder is not None and holder.account_id is not None and self.actor and not self.is_manager
-                and holder.account_id != self.actor.id):
+                and holder.account_id != self.actor.id and kind not in HALT_KINDS):
             raise AppError(409, "ROBOT_IN_USE", "Robot đang do kỹ thuật viên khác điều khiển.", {"robot_id": robot.id})
         ttl = TTL_S["CONTROL"] if kind in CONTROL_KINDS else TTL_S["DEFAULT"]
         cmd = RobotCommand(id=str(uuid.uuid4()), robot_id=robot.id, job_id=job_id, kind=kind, params=params, status="PENDING",

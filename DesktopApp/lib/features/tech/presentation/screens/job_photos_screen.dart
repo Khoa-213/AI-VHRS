@@ -15,6 +15,7 @@ import '../../data/tech_api.dart';
 import '../../domain/job.dart';
 import '../../i18n/tech_strings.dart';
 import '../widgets/job_flow.dart';
+import '../widgets/job_quality.dart';
 import '../widgets/job_widgets.dart';
 import '../widgets/tech_shell.dart';
 import '../widgets/tech_ui.dart';
@@ -303,6 +304,10 @@ class _JobPhotosScreenState extends ConsumerState<JobPhotosScreen> with JobRunne
         JobFeedback(loading: !photosQ.hasValue && photosQ.isLoading, error: photosQ.hasError ? photosQ.error : null, retry: () => ref.invalidate(jobPhotosProvider(id))),
         FlowMessages(busy: flowBusy, error: flowError, notice: flowNotice),
         if (photos.isNotEmpty) grid,
+        if (photos.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          JobQualityCard(jobId: id, photos: photos, disabled: blocked),
+        ],
         if (photosQ.hasValue && !photosQ.hasError && photos.isEmpty)
           EmptyCard(title: t('td.flow.photos'), body: t('td.flow.noPhotos')),
         if (j?.status == JobStatus.photoUploaded) ...[

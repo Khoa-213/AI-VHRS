@@ -7,7 +7,7 @@ ADMIN get 403. Another Staff's order answers 404.
 """
 import logging
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
@@ -270,8 +270,16 @@ def list_quotations(order_id: int, svc: Quotes) -> list[QuotationOut]:
 
 @router.get("/orders/{order_id}/material-suggestions",
             summary="Các tổ hợp giấy-bút-mực Staff còn có thể đề xuất (giữ lựa chọn của khách, đúng luật tương thích)")
-def material_suggestions(order_id: int, svc: Quotes) -> dict:
-    return svc.material_candidates(order_id)
+def material_suggestions(order_id: int, svc: Quotes,
+                         paper_type_id: Annotated[int | None, Query(description="chỉ tổ hợp có giấy này")] = None,
+                         pen_type_id: Annotated[int | None, Query(description="chỉ tổ hợp có bút này")] = None,
+                         size: Annotated[Literal["A4", "A5", "A6"] | None, Query(description="khổ giấy")] = None,
+                         surface: Annotated[Literal["PLAIN", "ART", "GLOSSY", "COATED", "CARD", "OTHER"] | None,
+                                            Query(description="mặt giấy")] = None,
+                         limit: Annotated[int, Query(ge=1, le=500)] = 200,
+                         offset: Annotated[int, Query(ge=0)] = 0) -> dict:
+    return svc.material_candidates(order_id, limit, offset, paper_type_id=paper_type_id, pen_type_id=pen_type_id,
+                                   size=size, surface=surface)
 
 
 @router.get("/quotations/{quotation_id}", response_model=QuotationOut, summary="Chi tiết báo giá")

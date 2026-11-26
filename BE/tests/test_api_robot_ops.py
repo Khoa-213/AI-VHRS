@@ -174,6 +174,20 @@ def test_acknowledge_resolve_and_who_may_close_a_red_alert(client, cust, staff, 
     assert raise_alert(client, tech, robot, "STROKE_LOST", job_id=jid).json()["id"] != orange["id"]
 
 
+
+def test_a_red_alert_that_happens_again_after_the_acknowledgement_can_be_acknowledged_again(client, cust, staff, mgr, wcat, robot, tech):
+    from datetime import datetime
+    at = datetime.fromisoformat                                                           # the API writes Z or +07:00
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    red = raise_alert(client, tech, robot, "TRACKING_ERROR", job_id=jid).json()
+    first = at(client.post(f"{T}/alerts/{red['id']}/ack", headers=tech[0]).json()["acknowledged_at"])
+    assert at(client.post(f"{T}/alerts/{red['id']}/ack", headers=tech[0]).json()["acknowledged_at"]) == first   # nothing new: unchanged
+    again = raise_alert(client, tech, robot, "TRACKING_ERROR", job_id=jid).json()
+    assert again["id"] == red["id"] and again["occurrences"] == 2 and at(again["last_raised_at"]) > first   # the app sees a repeat
+    second = client.post(f"{T}/alerts/{red['id']}/ack", headers=tech[0]).json()
+    assert at(second["acknowledged_at"]) >= at(again["last_raised_at"]) and second["resolved_at"] is None   # answered again, still open
+
+
 # ---------------------------------------------------------------- heartbeat and status
 def test_status_in_plain_words_follows_the_alerts_and_the_heartbeat(client, cust, staff, mgr, wcat, robot, tech):
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)

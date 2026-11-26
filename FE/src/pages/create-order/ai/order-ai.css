@@ -1,20 +1,49 @@
-/* The AI assistant inside Create Order: a side chat where the conversation gets the space and the composer stays small. */
+/* The AI assistant inside Create Order, in the Untitled UI assistant style: a white card with a hairline border, a header
+   with the assistant's avatar and icon actions, messages with an avatar, a name and a time, a bordered composer with its
+   toolbar under the text. Tokens only, so dark mode follows the theme. */
 
-.oa{display:flex;flex-direction:column;min-width:0;background:var(--tray);border-radius:20px;overflow:hidden}
-.oa-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px 10px;font-size:15px;color:var(--t1)}
-.oa-tools{display:flex;gap:4px}
-.oa-tool{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:0;border-radius:999px;background:transparent;color:var(--t3);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
-.oa-tool:hover:not(:disabled){background:var(--fx-04);color:var(--t1)}
+.oa{position:relative;display:flex;flex-direction:column;min-width:0;background:var(--surface);border:1px solid var(--line-strong);border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(10,13,18,.05),0 12px 24px -16px rgba(10,13,18,.18)}
+.oa-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Header: avatar, title and the conversation's name, icon actions. */
+.oa-head{display:flex;align-items:center;gap:10px;padding:12px 12px 12px 16px;border-bottom:1px solid var(--line-strong);color:var(--t1)}
+.oa-avatar{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--btn-inv-bg);color:var(--accent);font-size:18px;box-shadow:0 0 0 4px color-mix(in srgb,var(--t1) 6%,transparent)}
+.oa-avatar--sm{width:30px;height:30px;font-size:15px;box-shadow:none}
+.oa-head-text{flex:1;display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.oa-head-text b{font-size:15px;font-weight:600}
+.oa-head-text span{font-size:12.5px;color:var(--t5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oa-tools{flex:none;display:flex;align-items:center;gap:2px}
+.oa-tools-sep{width:1px;height:20px;margin:0 4px;background:var(--line-strong)}
+.oa-tool{display:inline-grid;place-items:center;grid-auto-flow:column;gap:6px;min-width:32px;height:32px;padding:0 7px;border:0;border-radius:8px;background:transparent;color:var(--t4);font-family:inherit;font-size:16px;cursor:pointer;transition:background .15s,color .15s}
+.oa-tool:hover:not(:disabled),.oa-tool.on{background:var(--tray);color:var(--t1)}
 .oa-tool:disabled{opacity:.4;cursor:not-allowed}
-.oa-tool:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.oa-tool:focus-visible{outline:2px solid var(--t1);outline-offset:1px}
+.oa-tool--new{margin-left:4px;padding:0 11px;border:1px solid var(--line-strong);background:var(--surface);color:var(--t2);box-shadow:0 1px 2px rgba(10,13,18,.05)}
+.oa-tool-label{font-size:13px;font-weight:600;white-space:nowrap}
+
+/* Who the panel talks to: the assistant or the workshop staff. */
+.oa-tools[hidden],.oa-foot[hidden]{display:none}
+.oa-who{display:flex;gap:4px;margin:12px 16px 0;padding:4px;border-radius:10px;background:var(--tray)}
+.oa-who button{flex:1 1 0;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0;min-height:34px;padding:6px 10px;border:0;border-radius:7px;background:transparent;color:var(--t3);font-family:inherit;font-size:13px;font-weight:600;line-height:1.3;text-align:center;cursor:pointer;transition:background .15s,color .15s}
+.oa-who button svg{flex:none;font-size:15px}
+.oa-who button:hover{color:var(--t1)}
+.oa-who button.on{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.oa-who button:focus-visible{outline:2px solid var(--t1);outline-offset:1px}
+
+/* The staff side: a note about the draft, the chats of the sent orders, then one thread. */
+.oa-staff{flex:1 1 auto;display:flex;flex-direction:column;gap:10px;min-height:220px;max-height:min(70vh,680px);padding:14px 16px 16px;overflow-y:auto}
+.oa-staff-note{margin:0;padding:10px 12px;border:1px solid var(--line-strong);border-radius:10px;background:var(--bg);font-size:13px;line-height:1.5;color:var(--t3)}
+.oa-staff-list{display:flex;flex-direction:column;gap:2px}
+.oa-staff-head{display:flex;align-items:center;gap:8px;min-width:0;font-size:14px;color:var(--t1)}
+.oa-staff-view{margin-left:auto;font-size:13px;white-space:nowrap}
 
 /* The estimated price: one line, opens to the details. */
-.oa-est{margin:0 16px 8px;border-radius:12px;background:color-mix(in srgb,var(--t1) 5%,var(--bg))}
-.oa-est > summary{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 12px;font-size:13px;color:var(--t3);cursor:pointer;list-style:none}
+.oa-est{margin:12px 16px 0;border:1px solid var(--line-strong);border-radius:12px;background:var(--bg)}
+.oa-est > summary{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 12px;font-size:13px;color:var(--t4);cursor:pointer;list-style:none}
 .oa-est > summary::-webkit-details-marker{display:none}
 .oa-est > summary::after,.oa-prop > summary::after{content:'';flex:none;align-self:center;width:6px;height:6px;margin:0 2px 3px 2px;border-right:1.5px solid var(--t4);border-bottom:1.5px solid var(--t4);transform:rotate(45deg);transition:transform .2s}
 .oa-est[open] > summary::after,.oa-prop[open] > summary::after{margin-bottom:-3px;transform:rotate(-135deg)}
-.oa-est > summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:12px}
+.oa-est > summary:focus-visible{outline:2px solid var(--t1);outline-offset:-2px;border-radius:12px}
 .oa-est-total{margin-left:auto;font-size:16px;font-weight:700;letter-spacing:-.01em;color:var(--t1);text-align:right;overflow-wrap:anywhere}
 .oa-est[open]{padding-bottom:10px}
 .oa-est > :not(summary){margin-inline:12px}
@@ -24,33 +53,78 @@
 .oa-est-lines dd{margin:0;color:var(--t2);font-weight:600;overflow-wrap:anywhere}
 
 /* The conversation takes every pixel left. */
-.oa-list{flex:1 1 auto;display:flex;flex-direction:column;gap:12px;min-height:220px;max-height:min(58vh,560px);padding:8px 16px 12px;overflow-y:auto;scroll-behavior:smooth}
+.oa-list{flex:1 1 auto;display:flex;flex-direction:column;gap:18px;min-height:220px;max-height:min(58vh,560px);padding:16px;overflow-y:auto;scroll-behavior:smooth}
+.oa-hero{display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px 8px 4px;text-align:center}
+.oa-hero-title{font-size:18px;font-weight:600;letter-spacing:-.01em;color:var(--t1)}
+.oa-row{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.oa-row--me{justify-content:flex-end}
+.oa-col{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.oa-row--me .oa-col{flex:0 1 auto;align-items:flex-end;max-width:85%}
+.oa-turn{gap:8px}
+.oa-by{display:flex;align-items:baseline;gap:8px;font-size:13px;line-height:1.3}
+.oa-by b{font-weight:600;color:var(--t2)}
+.oa-time{font-size:12px;color:var(--t5)}
 .oa-msg{margin:0;font-size:14px;line-height:1.55;word-break:break-word}
-.oa-msg--bot{align-self:stretch;color:var(--t2)}
+.oa-msg--bot{align-self:stretch;padding:10px 14px;border:1px solid var(--line-strong);border-radius:2px 12px 12px 12px;background:var(--bg);color:var(--t2)}
 .oa-msg--bot p{margin:0 0 6px}
 .oa-msg--bot p:last-child{margin-bottom:0}
 .oa-msg--bot ul,.oa-msg--bot ol{margin:4px 0 6px;padding-left:20px}
 .oa-msg--bot li{margin:2px 0}
 .oa-msg--bot strong{color:var(--t1);font-weight:700}
-.oa-msg--me{align-self:flex-end;max-width:85%;padding:8px 13px;border-radius:16px 16px 4px 16px;background:var(--accent);color:var(--on-accent);white-space:pre-wrap}
+.oa-msg--me{padding:10px 14px;border-radius:12px 2px 12px 12px;background:var(--btn-inv-bg);color:var(--btn-inv-fg);white-space:pre-wrap}
 .oa-msg.failed{color:var(--warn)}
-.oa-turn{display:flex;flex-direction:column;gap:8px;min-width:0}
-.oa-try{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Suggestions on an empty chat. */
+.oa-try{display:flex;flex-direction:column;gap:8px;padding-left:40px}
+.oa-suggest{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--t2);font-family:inherit;font-size:13.5px;font-weight:500;line-height:1.4;text-align:left;cursor:pointer;box-shadow:0 1px 2px rgba(10,13,18,.05);transition:background .15s,border-color .15s}
+.oa-suggest:hover:not(:disabled){background:var(--bg);border-color:var(--t4)}
+.oa-suggest:focus-visible{outline:2px solid var(--t1);outline-offset:2px}
+.oa-suggest:disabled{opacity:.5;cursor:not-allowed}
+.oa-suggest-icon{flex:none;display:grid;place-items:center;width:30px;height:30px;padding:7px;box-sizing:border-box;border-radius:8px;background:var(--tray);color:var(--t2)}
 .oa-fine{font-size:12px;color:var(--t5)}
 
 /* While the assistant works: three dots and the last step. */
-.oa-wait{display:flex;align-items:center;gap:10px}
-.oa-typing{display:inline-flex;gap:3px}
+.oa-wait{display:flex;align-items:center;gap:12px}
+/* The assistant's turn while it is answered, as a row of the conversation: a ball rises from the send button and opens
+   into a sphere of dots in the text colour, with the current step beside it; it turns green, collapses into a green ball
+   and the ball settles where the answer's avatar is. ThinkingStage writes positions, sizes and opacities each frame. */
+.oa-think{position:relative;flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:118px}
+.oa-think-orb{flex:none;display:block;color:var(--t1);outline:0 solid var(--good)}
+.oa-think-ball{position:absolute;left:0;top:0;z-index:1;width:30px;height:30px;border-radius:50%;opacity:0;background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--t1) 26%,var(--surface)),color-mix(in srgb,var(--t1) 10%,var(--surface)));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--t1) 18%,transparent),0 10px 26px -10px color-mix(in srgb,var(--t1) 50%,transparent);will-change:transform,width,height}
+.oa-think-green,.oa-think-ring{position:absolute;left:0;top:0;width:42px;height:42px;border-radius:50%;opacity:0;will-change:transform,opacity}
+.oa-think-green{background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--good) 65%,#fff),var(--good));box-shadow:0 0 24px color-mix(in srgb,var(--good) 50%,transparent)}
+.oa-think-ring{border:2px solid var(--good)}
+.oa-think .oa-wait{justify-content:center;min-width:0;max-width:100%;min-height:20px;opacity:0;text-align:center}
+/* The message just sent slides up from the message box. */
+.oa-row--sent{animation:oa-sent .36s cubic-bezier(.22,1,.36,1)}
+@keyframes oa-sent{from{opacity:0;transform:translateY(14px) scale(.96)}}
+/* The answer that just arrived: the avatar takes over from the green ball, the bubble opens from its corner, the words
+   come in one after the other (their delays are set by RichText), then what it changed. */
+.oa-row--fresh .oa-avatar{animation:oa-avatar-in .5s cubic-bezier(.22,1,.36,1)}
+.oa-row--fresh .oa-by{animation:oa-fade-in .3s ease-out both}
+.oa-row--fresh .oa-msg--bot{transform-origin:0 0;animation:oa-bubble-in .42s cubic-bezier(.22,1,.36,1) both}
+.oa-row--fresh .oa-prop{animation:oa-fade-up .4s cubic-bezier(.22,1,.36,1) .9s both}
+.oa-w{display:inline-block;animation:oa-word .34s cubic-bezier(.22,1,.36,1) both}
+@keyframes oa-avatar-in{from{background:var(--good);color:transparent;transform:scale(.92)}}
+@keyframes oa-bubble-in{from{opacity:0;transform:scale(.9) translateY(-4px)}}
+@keyframes oa-fade-in{from{opacity:0}}
+@keyframes oa-fade-up{from{opacity:0;transform:translateY(6px)}}
+@keyframes oa-word{from{opacity:0;transform:translateY(4px);filter:blur(4px)}}
+@keyframes oa-label-in{from{opacity:0;transform:translateY(6px)}}
+.oa-wait-text{font-size:13px;font-weight:500;line-height:1.4;color:var(--t4);background:linear-gradient(90deg,var(--t4) 0%,var(--t4) 35%,var(--t1) 50%,var(--t4) 65%,var(--t4) 100%) 150% 0/250% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:oa-shimmer 2.2s linear infinite,oa-label-in .32s cubic-bezier(.22,1,.36,1)}
+.oa-wait-text.done{background:none;-webkit-text-fill-color:currentColor;color:var(--good);font-weight:600;animation:oa-label-in .32s cubic-bezier(.22,1,.36,1)}
+@keyframes oa-shimmer{from{background-position:150% 0}to{background-position:-100% 0}}
+.oa-typing{display:inline-flex;gap:3px;padding:9px 12px;border:1px solid var(--line-strong);border-radius:2px 12px 12px 12px;background:var(--bg)}
 .oa-typing i{width:6px;height:6px;border-radius:50%;background:var(--t5);animation:oa-blink 1.2s infinite ease-in-out}
 .oa-typing i:nth-child(2){animation-delay:.15s}
 .oa-typing i:nth-child(3){animation-delay:.3s}
 @keyframes oa-blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
 
 /* What an answer changed: one line, opens to the list. */
-.oa-prop{border-radius:12px;background:var(--fx-04);font-size:13px}
+.oa-prop{border:1px solid var(--line-strong);border-radius:10px;background:var(--surface);font-size:13px}
 .oa-prop > summary{display:flex;align-items:center;gap:8px;padding:8px 12px;color:var(--t2);cursor:pointer;list-style:none}
 .oa-prop > summary::-webkit-details-marker{display:none}
-.oa-prop > summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:12px}
+.oa-prop > summary:focus-visible{outline:2px solid var(--t1);outline-offset:-2px;border-radius:10px}
 .oa-prop[open]{padding-bottom:10px}
 .oa-prop > :not(summary){margin-inline:12px}
 .oa-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--t5)}
@@ -66,30 +140,57 @@
 .oa-after{color:var(--t1);font-weight:700}
 .oa-blocked{margin:6px 0 0;font-size:13px;line-height:1.45;color:var(--warn)}
 
-/* The bottom: short notes, consent, the composer and one meta line. */
-.oa-foot{display:flex;flex-direction:column;gap:8px;padding:8px 16px 12px;border-top:1px solid var(--fx-08)}
+/* Chat history: the order's conversations in place of the messages. */
+.oa-history{flex:1 1 auto;display:flex;flex-direction:column;gap:10px;min-height:220px;padding:12px 12px 14px;overflow-y:auto}
+.oa-history-head{display:flex;align-items:center;gap:8px;padding:0 4px 0 0;font-size:14px;color:var(--t1)}
+.oa-history-head b{flex:1;font-weight:600}
+.oa-sessions{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none}
+.oa-session{display:flex;align-items:center;gap:2px;padding:2px 4px 2px 2px;border:1px solid transparent;border-radius:10px;transition:background .15s}
+.oa-session:hover{background:var(--bg)}
+.oa-session.on{background:var(--bg);border-color:var(--line-strong)}
+.oa-session-open{flex:1;display:flex;align-items:flex-start;gap:10px;min-width:0;padding:8px;border:0;border-radius:8px;background:none;color:inherit;font-family:inherit;text-align:left;cursor:pointer}
+.oa-session-open:focus-visible{outline:2px solid var(--t1);outline-offset:-2px}
+.oa-session-icon{flex:none;margin-top:1px;font-size:18px;color:var(--t4)}
+.oa-session-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.oa-session-text b,.oa-session-text span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oa-session-text b{font-size:13.5px;font-weight:600;color:var(--t1)}
+.oa-session-text span{font-size:12.5px;color:var(--t4)}
+.oa-session-text small{font-size:11.5px;color:var(--t5)}
+.oa-session-ask{flex:1;display:flex;flex-direction:column;gap:8px;padding:10px;font-size:13px;line-height:1.45;color:var(--t2)}
+.oa-session-ask-btns{display:flex;justify-content:flex-end;gap:8px}
+.oa-history-empty{margin:8px 4px;font-size:13px;color:var(--t4)}
+.oa-history-new{align-self:flex-start;margin-top:auto}
+.oa-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 1px 2px rgba(10,13,18,.05)}
+.oa-btn:disabled{opacity:.5;cursor:not-allowed}
+.oa-btn:focus-visible{outline:2px solid var(--t1);outline-offset:2px}
+.oa-btn--line{border:1px solid var(--line-strong);background:var(--surface);color:var(--t2)}
+.oa-btn--line:hover:not(:disabled){background:var(--bg)}
+.oa-btn--danger{border:1px solid #d92d20;background:#d92d20;color:#fff}
+.oa-btn--danger:hover:not(:disabled){background:#b42318;border-color:#b42318}
+
+/* The bottom: short notes, consent and the composer. */
+.oa-foot{display:flex;flex-direction:column;gap:10px;padding:12px 16px 14px}
 .oa-note{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:12px;line-height:1.45;color:var(--t3)}
 .oa-note span{flex:1 1 180px}
 .oa-note--warn{color:var(--warn)}
 .oa-link{padding:0;border:0;background:none;color:var(--accent-text);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .oa-link:disabled{opacity:.5;cursor:not-allowed}
-.oa-consent{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.45;color:var(--t3)}
-.oa-consent input{margin-top:2px;flex:none;accent-color:var(--accent)}
 
-.oa-composer{display:flex;flex-direction:column;gap:6px;padding:6px 6px 6px 14px;border:1px solid var(--line-strong);border-radius:18px;background:var(--bg);transition:border-color .2s}
-.oa-composer:focus-within{border-color:var(--t1)}
+.oa-composer{display:flex;flex-direction:column;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);box-shadow:0 1px 2px rgba(10,13,18,.05);transition:border-color .15s,box-shadow .15s}
+.oa-composer:focus-within{border-color:var(--t3);box-shadow:0 1px 2px rgba(10,13,18,.05),0 0 0 4px color-mix(in srgb,var(--t1) 8%,transparent)}
 .oa-composer.busy{opacity:.7}
-.oa-chips{display:flex;flex-wrap:wrap;gap:6px;padding-top:4px}
+.oa-chips{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px 0}
 .oa-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 10px;border-radius:999px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent-text);font-size:12px;font-weight:700}
 .oa-chip button{display:grid;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
 .oa-chip button:hover{background:color-mix(in srgb,var(--accent) 20%,transparent)}
-.oa-input{display:flex;align-items:flex-end;gap:8px}
-.oa-input textarea{flex:1;min-width:0;max-height:160px;padding:7px 0;border:0;outline:0;background:transparent;color:var(--t1);font-family:inherit;font-size:14px;line-height:1.45;resize:none;overflow-y:auto}
+.oa-input{display:flex}
+.oa-input textarea{flex:1;min-width:0;max-height:160px;padding:12px 14px 4px;border:0;outline:0;background:transparent;color:var(--t1);font-family:inherit;font-size:14px;line-height:1.45;resize:none;overflow-y:auto}
 .oa-input textarea::placeholder{color:var(--t5)}
-.oa-send{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:50%;background:var(--btn-inv-bg);color:var(--btn-inv-fg);font-size:16px;cursor:pointer;transition:opacity .2s}
+.oa-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:4px 8px 8px 14px}
+.oa-quota{margin-right:auto;font-size:12px;color:var(--t5)}
+.oa-send{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:9px;background:var(--btn-inv-bg);color:var(--btn-inv-fg);font-size:16px;cursor:pointer;transition:opacity .2s}
 .oa-send:disabled{opacity:.3;cursor:not-allowed}
-.oa-send:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.oa-meta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:11px;color:var(--t5)}
+.oa-send:focus-visible{outline:2px solid var(--t1);outline-offset:2px}
 
 /* The form is held still while the assistant works. */
 .co-lock{display:flex;flex-direction:column;gap:inherit;border:0;margin:0;padding:0;min-width:0}
@@ -125,16 +226,50 @@
 /* With the assistant on (`.co-shell--ai`): the chat takes the estimate box's place on the right and carries the price;
    the order's sketch takes the chat's old place under the form and follows every answer. */
 .co-root .co-shell--ai{grid-template-columns:minmax(0,1fr) minmax(340px,440px)}
-.co-side--ai .oa{height:calc(100vh - 96px - 84px);min-height:520px}
-.co-side--ai .oa-list{min-height:0;max-height:none}
+.co-side--ai .oa{flex:1;min-height:0}
+.co-side--ai .oa-list,.co-side--ai .oa-history{min-height:0;max-height:none}
 
 .co-sketch{display:flex;flex-direction:column;gap:14px;padding:clamp(18px,2.4vw,26px);border-radius:20px;background:linear-gradient(135deg,transparent,var(--tray))}
-.co-sketch-head{display:flex;flex-direction:column;gap:2px}
+.co-sketch-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 16px}
+.co-sketch-head .co-h3{margin-block:6px 0}
+.co-sketch .oa-est{flex:0 1 340px;min-width:min(100%,240px);margin:0;background:var(--surface)}
 .co-sketch-stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:clamp(260px,42vh,520px);border-radius:14px;background:var(--stage);transition:opacity .2s}
 .co-sketch-stage.busy{opacity:.55}
 .co-sketch-stage .oa-view{padding:16px;gap:10px}
 .co-sketch-stage .oa-view-img{max-height:min(60vh,560px);max-width:100%}
 
+/* Wide screens, one full-height workspace:
+   row 1   title + progress | step pills           | assistant (spans every row, pinned under the fixed header)
+   row 2   callout (only when the workshop asked for changes)
+   row 3   step content (step 1: heading left, AI / by myself switch right)
+   row 4   sketch, grows to fill what is left of the screen
+   row 5-6 error, back / continue
+   `.co-shell` and `.co-main` are flattened into `.co--ai`'s grid. The workspace is one viewport tall (header 96px, 24px air
+   below), starts exactly where the sticky column sticks, and the frame's bottom padding is dropped so the column's grid area
+   ends 24px above the page bottom: the assistant never moves, scrolling down or up. */
+@media (min-width:1101px){
+  .co-root .co-frame:has(.co--ai){padding:calc(96px - clamp(8px,1.1vw,16px)) clamp(20px,2.6vw,40px) 0}
+  .co.co--ai{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(380px,460px);grid-template-rows:auto auto auto minmax(0,1fr) auto auto;column-gap:clamp(20px,2.4vw,36px);row-gap:0;min-height:max(560px,calc(100vh - 96px - 24px));padding-bottom:8px;box-sizing:border-box}
+  .co--ai>.co-shell--ai,.co--ai .co-main{display:contents}
+
+  .co--ai>.co-head{grid-column:1;grid-row:1;align-self:center;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+  .co--ai .co-h1{font-size:clamp(30px,2.8vw,42px)}
+  .co--ai .co-steps{grid-column:2;grid-row:1;align-self:center;flex-wrap:nowrap}
+  .co--ai>.co-callout{grid-column:1 / 3;grid-row:2;margin-top:16px}
+  .co--ai .co-body{grid-column:1 / 3;grid-row:3;margin-top:20px}
+  .co--ai .co-lock:has(>.co-how){flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px}
+  .co--ai .co-how{flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 14px}
+  .co--ai .co-intro .co-h2{margin:0}
+  .co--ai .co-sketch{grid-column:1 / 3;grid-row:4;margin-top:20px;min-height:0}
+  .co--ai .co-sketch-stage{flex:1;min-height:clamp(320px,46vh,560px)}
+  .co--ai .co-sketch-stage .oa-view-img{max-height:max(280px,calc(100vh - 470px))}
+  .co--ai .co-main>.lg-error{grid-column:1 / 3;grid-row:5;margin-top:16px}
+  .co--ai .co-nav{grid-column:1 / 3;grid-row:6;margin-top:20px;padding-top:0}
+
+  .co--ai .co-side--ai{grid-column:3;grid-row:1 / 7;align-self:start;height:calc(100vh - 96px - 24px);min-height:560px;gap:12px}
+  .co--ai .oa-msg{font-size:15px}
+  .co--ai .oa-input textarea{font-size:15px}
+}
 @media (max-width:1100px){
   .co-root .co-shell--ai{grid-template-columns:minmax(0,1fr)}
   .co-side--ai .oa{height:auto;min-height:0}
@@ -143,5 +278,56 @@
 @media (prefers-reduced-motion:reduce){
   .oa-list{scroll-behavior:auto}
   .oa-typing i{animation:none;opacity:.6}
+  .oa-wait-text,.oa-wait-text.done,.oa-row--sent,.oa-w,.oa-row--fresh .oa-avatar,.oa-row--fresh .oa-by,.oa-row--fresh .oa-msg--bot,.oa-row--fresh .oa-prop{animation:none}
+  .oa-wait-text{background:none;-webkit-text-fill-color:currentColor}
   .oa-est > summary::after,.oa-prop > summary::after{transition:none}
 }
+
+/* ---------- AI chat data policy: asked each time the customer turns the assistant on ---------- */
+.oap{position:fixed;inset:0;margin:auto;width:min(600px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--line-strong);border-radius:16px;background:var(--surface,var(--bg));color:var(--t1);box-shadow:0 24px 48px -12px rgba(10,13,18,.18),0 4px 8px rgba(10,13,18,.04);overflow:hidden}
+.oap[open]{display:flex;animation:oap-in .2s ease-out}
+.oap::backdrop{background:rgba(10,13,18,.55);backdrop-filter:blur(6px)}
+@keyframes oap-in{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+.oap-card{display:flex;flex-direction:column;width:100%;min-height:0;max-height:calc(100dvh - 32px)}
+.oap-head{display:flex;align-items:flex-start;gap:14px;padding:20px 20px 0 24px}
+.oap-titles{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.oap-eyebrow{font-size:12px;font-weight:600;color:var(--t4)}
+.oap-head h2{margin:0;font-size:18px;line-height:1.3;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.oap-ver{align-self:flex-start;margin-top:6px;padding:2px 8px;border:1px solid var(--line-strong);border-radius:999px;font-size:12px;font-weight:600;color:var(--t3)}
+.oap-lede{margin:12px 24px 0;font-size:14px;line-height:1.55;color:var(--t3)}
+.oap-facts{display:flex;flex-direction:column;gap:6px;margin:14px 24px 0;padding:12px 14px;list-style:none;border-radius:10px;background:var(--bg);font-size:13px;line-height:1.45;color:var(--t2)}
+.oap-facts li{display:flex;gap:8px;align-items:flex-start}
+.oap-facts svg{flex:none;margin-top:2px;font-size:15px;color:var(--t4)}
+.oap-facts b{color:var(--t1)}
+.oap-body{flex:1 1 auto;min-height:140px;margin-top:16px;padding:16px 24px;overflow:auto;border-top:1px solid var(--line-strong);font-size:14px;line-height:1.65;color:var(--t3);overscroll-behavior:contain}
+.oap-body:focus-visible{outline:2px solid var(--t1);outline-offset:-2px}
+.oap-sec+.oap-sec{margin-top:18px}
+.oap-sec h3{margin:0 0 6px;font-size:14px;font-weight:700;color:var(--t1)}
+.oap-body p{margin:0 0 8px;white-space:pre-line}
+.oap-body ul{margin:0 0 8px;padding-left:20px}
+.oap-body li{margin-bottom:3px}
+.oap-lang{display:flex;gap:8px;align-items:flex-start;padding:8px 12px;border-radius:8px;background:var(--bg);font-size:13px;color:var(--t2)}
+.oap-lang svg{flex:none;margin-top:3px}
+.oap-state{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.oap-state p{margin:0}
+.oap-skel{display:block;width:100%;height:12px;border-radius:6px;background:var(--line-strong);animation:oap-pulse 1.2s ease-in-out infinite alternate}
+.oap-skel--short{width:60%}
+@keyframes oap-pulse{from{opacity:.45}to{opacity:1}}
+.oap-foot{display:flex;flex-direction:column;gap:10px;padding:14px 24px 20px;border-top:1px solid var(--line-strong);background:var(--surface,var(--bg))}
+.oap-agree{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line-strong);border-radius:10px;font-size:14px;font-weight:600;line-height:1.45;color:var(--t1);cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.oap-agree:hover:not(.busy){border-color:var(--t3)}
+.oap-agree:focus-within{box-shadow:0 0 0 4px color-mix(in srgb,var(--t1) 8%,transparent)}
+.oap-agree:has(input:disabled){cursor:not-allowed}
+.oap-agree input{flex:none;width:18px;height:18px;margin:1px 0 0;accent-color:var(--t1);cursor:inherit}
+.oap-agree.busy{border-color:var(--t1)}
+.oap-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.oap-hint{flex:1 1 220px;margin:0;font-size:12px;color:var(--t4)}
+.oap-hint--err{color:#d92d20}
+@media (max-width:560px){
+  .oap{width:100%;max-height:calc(100dvh - 16px);margin:auto 0 0;border-radius:16px 16px 0 0}
+  .oap-card{max-height:calc(100dvh - 16px)}
+  .oap-head{padding:18px 16px 0}
+  .oap-lede,.oap-facts{margin-left:16px;margin-right:16px}
+  .oap-body,.oap-foot{padding-left:16px;padding-right:16px}
+}
+@media (prefers-reduced-motion:reduce){.oap[open],.oap-skel{animation:none}}

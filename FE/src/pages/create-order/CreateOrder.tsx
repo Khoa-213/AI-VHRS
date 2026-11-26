@@ -15,10 +15,11 @@ import { useUser } from '../../store/store'
 import type { InputMode } from '../../types'
 import { fmt } from '../../utils/format'
 import { ApiError } from '../../services/api'
-import { aiStatus, emptySelection, getSketchInfo, type AiSelection, type SketchInfo } from '../../services/orderAi'
+import { aiStatus, emptySelection, getSketchInfo, redrawSketch, type AiSelection, type SketchInfo } from '../../services/orderAi'
 import { draftPathFor, drawPathFor } from './draft'
 import { Sparkle } from '@phosphor-icons/react'
 import OrderAssistant from './ai/OrderAssistant'
+import AiPolicyDialog from './ai/AiPolicyDialog'
 import SketchView from './ai/SketchView'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
@@ -32,16 +33,6 @@ import './order-entry.css'
 import './co-home.css'
 import './ai/order-ai.css'
 
-const AI_KEY = 'aivhrs-co-ai'
-/** The customer's choice stays between visits: the assistant is on unless they turned it off. */
-function readWantAi(): boolean {
-  try {
-    return localStorage.getItem(AI_KEY) !== 'off'
-  } catch {
-    return true
-  }
-}
-
 const MODES: InputMode[] = ['text', 'upload', 'draw']
 const STEPS = ['co.step.0', 'co.step.1', 'co.step.2']
 const ALIGNMENTS: Alignment[] = ['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY']
@@ -54,10 +45,10 @@ function initialMode(): InputMode | null {
   return (m?.[1] as InputMode | undefined) ?? null
 }
 
-/** Same shell as the homepage: floating navbar, one rounded surface, framed footer. */
+/** Same shell as the homepage (floating navbar, one rounded surface), without the footer: this is the order flow. */
 function Frame({ children, narrow = false }: { children: ReactNode; narrow?: boolean }) {
   return (
-    <CustomerFrame label="Create Order" narrow={narrow}>{children}</CustomerFrame>
+    <CustomerFrame label="Create Order" narrow={narrow} footer={false}>{children}</CustomerFrame>
   )
 }
 
@@ -92,11 +83,19 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [uploading, setUploading] = useState(0)
   const [est, setEst] = useState<Estimate | null>(null)
   // The AI assistant: on or off by the customer's choice; `aiBusy` keeps the form still while it works.
-  const [wantAi, setWantAi] = useState(readWantAi)
+  // Create Order always opens on "By myself". The assistant opens only after the customer ticks the AI chat data policy,
+  // asked again on every visit (owner decision 2026-11-24, Quang).
+  const [wantAi, setWantAi] = useState(false)
+  const [aiAccepted, setAiAccepted] = useState(false)
+  const [policyOpen, setPolicyOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
   const [sketch, setSketch] = useState<SketchInfo | null>(null)
   // What the customer picked on the sketch for the assistant; ids belong to one revision, so a new revision clears it.
   const [selection, setSelection] = useState<AiSelection>(emptySelection)
+  // Upload mode: the customer asks the backend to restore the photos (OT-1 engine) and sees the result before sending.
+  const [restoring, setRestoring] = useState(false)
+  // The photos (ids, rotation, crop) the shown restoration was drawn from; null when it was only read back from the server.
+  const [restoredFor, setRestoredFor] = useState<string | null>(null)
 
   const aiState = useAsync(aiStatus, [])
   const aiAvailable = !!aiState.data?.available
@@ -340,14 +339,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     return (await enqueue(ensure)).id
   }, [enqueue, ensure, idle])
 
-  const pickAi = (on: boolean) => {
-    setWantAi(on)
-    try {
-      localStorage.setItem(AI_KEY, on ? 'on' : 'off')
-    } catch {
-      // Storage blocked: the choice lasts until the page closes.
-    }
-  }
+  const pickAi = (on: boolean) => setWantAi(on)
 
   const sketchRev = sketch?.revisionId ?? null
   useEffect(() => {
@@ -361,13 +353,18 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
       setSketch(null)
       return
     }
-    if (!aiAvailable) return
+    // Upload mode shows the restoration made earlier, with or without the assistant. Without the assistant the other modes
+    // show their own preview, never a restoration drawn in upload mode.
+    if (!aiAvailable && mode !== 'upload') {
+      setSketch(null)
+      return
+    }
     let live = true
     getSketchInfo(orderId).then((s) => live && setSketch(s)).catch(() => undefined)
     return () => {
       live = false
     }
-  }, [orderId, aiAvailable])
+  }, [orderId, aiAvailable, mode])
 
   // ---------- content mode ----------
 
@@ -400,9 +397,32 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   }
 
   /** The first choice of step 1: the assistant writes from text, so choosing it moves to the text mode. */
-  const chooseHow = async (ai: boolean) => {
+  /** "AI assistant" opens the data policy first; the chat opens once the customer ticks it. */
+  const chooseHow = async (ai: boolean, accepted = aiAccepted) => {
+    if (ai && !accepted) {
+      setPolicyOpen(true)
+      return
+    }
     if (ai && mode !== 'text' && !(await chooseMode('text'))) return
     pickAi(ai)
+  }
+
+  const policyAccepted = () => {
+    setAiAccepted(true)
+    setPolicyOpen(false)
+    void chooseHow(true, true)
+  }
+
+  /** Closed without ticking: back to (or staying on) "By myself". */
+  const policyDeclined = () => {
+    setPolicyOpen(false)
+    pickAi(false)
+  }
+
+  /** The backend refused a message for want of consent (withdrawn or a new policy version). */
+  const consentNeeded = () => {
+    setAiAccepted(false)
+    setPolicyOpen(true)
   }
 
   const openCanvas = async () => {
@@ -495,6 +515,31 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   const photos = order?.inputs.filter((i) => i.kind === 'ORIGINAL_IMAGE') ?? []
   const canvas = order?.inputs.find((i) => i.kind === 'CANVAS')
+  // The backend restores JPG / PNG only: one PDF among the photos and the engine refuses the order (PDF_NOT_SUPPORTED_AI).
+  const hasPdf = photos.some((p) => p.mime === 'application/pdf')
+  const photoSig = photos.map((p) => `${p.id}:${p.rotation}:${JSON.stringify(p.cropBox)}`).join('|')
+  const canRestore = !!order && !restoring && !busy && uploading === 0 && !hasPdf && photos.some((p) => p.quality !== null)
+  // The server's own flag covers a reload; the local one covers photos changed in this visit.
+  const restoreStale = !!sketch && !sketch.inputsChanged && restoredFor !== null && restoredFor !== photoSig
+
+  /** Draws the working sketch from the photos (the same engine the workshop uses) and shows it under them. */
+  const restore = async () => {
+    const id = orderRef.current?.id
+    if (!id || !canRestore) return
+    const sig = photoSig
+    setErr('')
+    setRestoring(true)
+    try {
+      await idle() // an upload, rotation or crop still on its way must reach the server first
+      // An upload order has no sketch edits of its own: edits left from another mode belong to content that is gone.
+      setSketch(await redrawSketch(id, true))
+      setRestoredFor(sig)
+    } catch (e) {
+      fail(e)
+    } finally {
+      setRestoring(false)
+    }
+  }
   const strokes = canvas?.canvas?.strokes.length ?? 0
   const materialsOk = suggest || !!(paperId && penId && inkId)
 
@@ -536,7 +581,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
       else if (fields.includes('materials')) goTo(1)
       else if (e instanceof ApiError && e.code === 'SKETCH_OUTDATED' && mode === 'text') {
         // The text or the paper changed after the assistant drew the sketch: the assistant panel can draw it again.
-        if (aiAvailable) pickAi(true)
+        if (aiAvailable) void chooseHow(true)
         goTo(0)
       }
       fail(e)
@@ -640,9 +685,9 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   return (
     <Frame>
-      <div className="co">
+      <div className={`co${aiOn ? ' co--ai' : ''}`}>
+        {policyOpen && <AiPolicyDialog onAccepted={policyAccepted} onDecline={policyDeclined} />}
         <header className="co-head">
-          <span className="co-eyebrow">{order ? `${t('co.eyebrow')} · ${order.code}` : t('co.eyebrow')}</span>
           <h1 className="co-h1">{t('co.h1')}</h1>
           <div className="co-head-row">
             <span className="co-progress">{t('co.progress', { n: step + 1, total: STEPS.length })}</span>
@@ -685,7 +730,6 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                 <>
                   <div className="co-intro">
                     <h2 className="co-h2">{t('co.s1.title')}</h2>
-                    <p className="co-lede">{t('co.s1.lede')}</p>
                   </div>
 
                   <div className="co-how">
@@ -701,9 +745,11 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                         {t('oa.manual')}
                       </button>
                     </div>
-                    <p className="co-how-hint" role="status">
-                      {aiState.loading ? t('oa.checking') : !aiAvailable ? t('oa.unavailable') : t(aiPicked ? 'oa.ai.sub' : 'oa.manual.sub')}
-                    </p>
+                    {!(aiPicked && aiAvailable && !aiState.loading) && (
+                      <p className="co-how-hint" role="status">
+                        {aiState.loading ? t('oa.checking') : !aiAvailable ? t('oa.unavailable') : t('oa.manual.sub')}
+                      </p>
+                    )}
                   </div>
 
                   {!aiPicked && (
@@ -859,6 +905,33 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                           onRemove={() => removeInput(p.id)}
                         />
                       ))}
+                      {order && photos.length > 0 && (
+                        <section className="co-restore" aria-labelledby="co-restore-h" aria-busy={restoring}>
+                          <div className="co-restore-head">
+                            <div className="co-restore-copy">
+                              <h3 id="co-restore-h" className="co-restore-title">{t('co.restore.title')}</h3>
+                              <p className="co-hint">{t(sketch ? 'co.restore.ready' : 'co.restore.intro')}</p>
+                            </div>
+                            <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={!canRestore} onClick={() => void restore()}>
+                              {t(restoring ? 'co.restore.working' : sketch ? 'co.restore.again' : 'co.restore.run')}
+                            </button>
+                          </div>
+                          {hasPdf && <p className="co-hint">{t('co.restore.pdf')}</p>}
+                          {restoring && <p className="co-hint" role="status">{t('co.restore.wait')}</p>}
+                          {sketch && (
+                            <div className="co-restore-stage">
+                              <SketchView orderId={order.id} sketch={sketch} outdatedKey="co.restore.stale" />
+                              {restoreStale && <span className="oa-stale" role="status">{t('co.restore.stale')}</span>}
+                            </div>
+                          )}
+                          {sketch && sketch.warnings.length > 0 && (
+                            <div className="co-restore-notes">
+                              <b>{t('co.restore.notes')}</b>
+                              <ul>{sketch.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                            </div>
+                          )}
+                        </section>
+                      )}
                     </>
                   )}
 
@@ -1032,7 +1105,18 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
               <section className="co-sketch" aria-labelledby="co-sketch-t">
                 <div className="co-sketch-head">
                   <h3 id="co-sketch-t" className="co-h3">{t('oa.sketchTitle')}</h3>
-                  <p className="co-sub-hint">{t('oa.sketchSub')}</p>
+                  <details className="oa-est">
+                    <summary>
+                      <span>{t('co.range')}</span>
+                      <b className="oa-est-total">{range}</b>
+                    </summary>
+                    <dl className="oa-est-lines">
+                      <div><dt>{t('co.sum.materials')}</dt><dd>{materialsLabel}</dd></div>
+                      <div><dt>{t('co.sum.qty')}</dt><dd>{qty}</dd></div>
+                      {est && <div><dt>{t('co.minDeposit')}</dt><dd>{est.minDepositPct}%</dd></div>}
+                    </dl>
+                    <span className="oa-fine">{t(est && !est.materialsPriced ? 'co.pickMaterialsHint' : 'co.fine')}</span>
+                  </details>
                 </div>
                 <div className={`co-sketch-stage${aiBusy ? ' busy' : ''}`} aria-busy={aiBusy}>
                   {order && sketch ? (
@@ -1068,30 +1152,17 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                 orderId={orderId}
                 ensureOrder={ensureOrderId}
                 sketch={sketch}
-                canDraw={!!order && text.trim().length > 0 && templateId !== null}
                 selection={selection}
                 onClearSelection={() => setSelection(emptySelection())}
                 onChanged={aiChanged}
                 onBusy={setAiBusy}
-                summary={
-                  <details className="oa-est">
-                    <summary>
-                      <span>{t('co.range')}</span>
-                      <b className="oa-est-total">{range}</b>
-                    </summary>
-                    <dl className="oa-est-lines">
-                      <div><dt>{t('co.sum.materials')}</dt><dd>{materialsLabel}</dd></div>
-                      <div><dt>{t('co.sum.qty')}</dt><dd>{qty}</dd></div>
-                      {est && <div><dt>{t('co.minDeposit')}</dt><dd>{est.minDepositPct}%</dd></div>}
-                    </dl>
-                    <span className="oa-fine">{t(est && !est.materialsPriced ? 'co.pickMaterialsHint' : 'co.fine')}</span>
-                  </details>
-                }
+                onConsentNeeded={consentNeeded}
               />
             ) : (
               <aside className="co-rail">
                 <div className="co-preview">
-                  {order && sketch ? (
+                  {/* In upload mode the restoration sits under the photos; this box keeps the original for comparison. */}
+                  {order && sketch && mode !== 'upload' ? (
                     <SketchView orderId={order.id} sketch={sketch} />
                   ) : mode === 'text' && previewSrc ? (
                     <img className="co-preview-img" src={previewSrc} alt={t('co.previewAlt')} />
