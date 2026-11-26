@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import PrincipalDep, SessionDep, client_ip
 from app.api.schemas import (AccountOut, GoogleLoginIn, LoginIn, MessageOut, OAuthTokenOut, PasswordResetConfirmIn,
-                             PasswordResetRequestIn, PhoneResetRequestIn, PhoneResetTokenOut, PhoneResetVerifyIn, RefreshIn,
+                             PasswordResetRequestIn, PhoneResetRequestIn, RefreshIn,
                              RegisterIn, TokenOut, account_out)
 from app.core.ratelimit import rate_limit
 from app.integrations.google_auth import GoogleVerifier, get_google_verifier
@@ -40,7 +40,7 @@ def register(body: RegisterIn, svc: Svc) -> AccountOut:
 def login(body: LoginIn, svc: Svc, request: Request) -> TokenOut:
     acc, access, refresh = svc.login(body.email, body.password, ip=client_ip(request),
                                      user_agent=request.headers.get("user-agent"))
-    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc))
+    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc), reminders=svc.reminders)
 
 
 @router.post("/google", response_model=TokenOut, summary="UC-01 Đăng nhập bằng Google (khách hàng; gửi Google ID token)",
@@ -52,7 +52,7 @@ def login_google(body: GoogleLoginIn, svc: Svc, request: Request,
                  verifier: Annotated[GoogleVerifier, Depends(get_google_verifier)]) -> TokenOut:
     identity = verifier.verify(body.id_token)
     acc, access, refresh = svc.login_google(identity, ip=client_ip(request), user_agent=request.headers.get("user-agent"))
-    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc))
+    return TokenOut(access_token=access, refresh_token=refresh, account=account_out(acc), reminders=svc.reminders)
 
 
 @router.post("/token", response_model=OAuthTokenOut, include_in_schema=True,
@@ -91,14 +91,14 @@ def password_reset_request(body: PasswordResetRequestIn, svc: Svc) -> MessageOut
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT,
              dependencies=[Depends(rate_limit("reset_confirm", 10, 900))],
-             summary="UC-03 Đặt mật khẩu mới bằng mã 6 số trong email {email, code, new_password} (đăng xuất mọi thiết bị)",
-             description="Luồng email chỉ dùng mã 6 số (không còn link chứa token, 2026-11-26). `token` chỉ dành cho "
-                         "`reset_token` của luồng SMS (`/auth/phone-reset/verify`).",
-             responses={401: {"description": "TOKEN_INVALID (luồng SMS): token hết hạn hoặc đã dùng"},
-                        400: {"description": "OTP_INVALID (details.attempts_left) / OTP_EXPIRED / OTP_TOO_MANY_ATTEMPTS"}})
-def password_reset_confirm(body: PasswordResetConfirmIn, svc: Svc) -> Response:
-    if body.token:
-        svc.confirm_password_reset(body.token, body.new_password)
+             summary="UC-03 / UC-54 Đặt mật khẩu mới bằng mã 6 số: {email, code, new_password} hoặc {phone, code, new_password}",
+             description="Mã của mail đặt lại mật khẩu (`email`) hoặc của SMS tới số đã xác minh (`phone`), một trong hai. "
+                         "Kiểm mã và đặt mật khẩu trong một lần gọi, không có token (2026-11-26); mọi thiết bị bị đăng xuất. "
+                         "Mật khẩu yếu: 422 và mã chưa bị dùng.",
+             responses={400: {"description": "OTP_INVALID (details.attempts_left) / OTP_EXPIRED / OTP_TOO_MANY_ATTEMPTS"}})
+def password_reset_confirm(body: PasswordResetConfirmIn, svc: Svc, request: Request) -> Response:
+    if body.phone is not None:
+        svc.confirm_password_reset_phone(body.phone, body.code, body.new_password, ip=client_ip(request))
     else:
         svc.confirm_password_reset_code(str(body.email), body.code, body.new_password)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -109,18 +109,9 @@ def password_reset_confirm(body: PasswordResetConfirmIn, svc: Svc) -> Response:
              dependencies=[Depends(rate_limit("phone_reset_request", 5, 900))],
              summary="UC-54 Quên mật khẩu: gửi OTP tới số điện thoại đã xác minh",
              description="Luôn trả 202 (chống dò số). Chỉ gửi khi số đã được xác minh cho một tài khoản đang hoạt động; "
-                         "chờ 60 giây giữa hai mã, tối đa 5 mã mỗi số trong 24 giờ.")
+                         "chờ 60 giây giữa hai mã, tối đa 5 mã mỗi số trong 24 giờ. Đặt mật khẩu mới bằng "
+                         "`POST /auth/password-reset/confirm {phone, code, new_password}`.")
 def phone_reset_request(body: PhoneResetRequestIn, session: SessionDep, request: Request) -> MessageOut:
     PhoneOtpService(session, get_sms_sender(), client_ip(request)).request_reset(body.phone)
     return MessageOut(message="Nếu số điện thoại đã được xác minh, mã OTP đã được gửi qua SMS.")
 
-
-@router.post("/phone-reset/verify", response_model=PhoneResetTokenOut,
-             dependencies=[Depends(rate_limit("phone_reset_verify", 10, 900))],
-             summary="UC-54 Đổi mã OTP lấy reset token",
-             description="Đúng mã thì trả `reset_token`; đặt mật khẩu mới bằng `POST /auth/password-reset/confirm` "
-                         "(`token` = `reset_token`), mọi thiết bị bị đăng xuất.",
-             responses={400: {"description": "OTP_INVALID (details.attempts_left) / OTP_EXPIRED / OTP_TOO_MANY_ATTEMPTS"}})
-def phone_reset_verify(body: PhoneResetVerifyIn, session: SessionDep, request: Request) -> PhoneResetTokenOut:
-    token, ttl = PhoneOtpService(session, get_sms_sender(), client_ip(request)).verify_reset(body.phone, body.code)
-    return PhoneResetTokenOut(reset_token=token, expires_in=ttl)

@@ -109,7 +109,7 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
 
 ## Forgot password
 
-"Forgot password" stays in the sign-in dialog (`pages/login/ForgotPassword.tsx`, opened from `SignInPanel.tsx`): email, then six boxes for the emailed 6-digit code (typing moves on, a paste fills them, the last digit sends), then the new password, then back to sign in with the email filled in. Calls (`BE/docs/FE_API_GUIDE.md`, 2026-11-26): `POST /auth/password-reset/request {email}` (the mail has a 6-digit code, 15 minutes, 5 tries, 60 s between two codes), then `POST /auth/password-reset/confirm {email, code, new_password}`: the backend checks the code with the new password in one call, so `OTP_INVALID`, `OTP_EXPIRED` and `OTP_TOO_MANY_ATTEMPTS` come after the password step and bring the six boxes back. The page `/reset-password` (`ResetPassword.tsx`) still takes the long token from an emailed link. Check with `node scripts/check-forgot-password-browser.mjs` after building.
+"Forgot password" stays in the sign-in dialog (`pages/login/ForgotPassword.tsx`, opened from `SignInPanel.tsx`): email, then six boxes for the emailed 6-digit code (typing moves on, a paste fills them, the last digit sends), then the new password, then back to sign in with the email filled in. Calls (`BE/docs/FE_API_GUIDE.md`, 2026-11-26): `POST /auth/password-reset/request {email}` (the mail has a 6-digit code, 15 minutes, 5 tries, 60 s between two codes), then `POST /auth/password-reset/confirm {email, code, new_password}`: the backend checks the code with the new password in one call, so `OTP_INVALID`, `OTP_EXPIRED` and `OTP_TOO_MANY_ATTEMPTS` come after the password step and bring the six boxes back. The first step has a switch "Email | Phone number" (`entry-seg`): by phone the code goes by SMS to the number verified on the account (`POST /auth/phone-reset/request {phone}`, always 202, so the next screen only says "if the number is verified"; the code lasts 5 minutes) and the same confirm call takes `{phone, code, new_password}` (email or phone, never both). There is no reset token and no `/auth/phone-reset/verify` any more. The email flow is code only: the backend dropped the token link (2026-11-26), so nothing reads `?token=`. The page `/reset-password` (`ResetPassword.tsx`), which the email's short link opens, has the same fields on one screen: the email (filled from `?email=`), the six boxes and the new password, with "Send a new code". The boxes are `pages/login/OtpBoxes.tsx`. Check with `node scripts/check-forgot-password-browser.mjs` after building.
 
 ## Account area
 
@@ -117,6 +117,14 @@ Everything that belongs to the signed-in user lives under `/account` (`src/pages
 (theme, language), order history, drafts, payment methods. The top bar and the landing page are for browsing only:
 no order history, drafts or cart there. A new user-owned feature gets a section in `Account.tsx`, not a new top bar item.
 The avatar in the top bar opens `/account`; sign out lives in the account navigation.
+
+## Phone number: verification and reminders
+
+The account's phone number must be verified before "forgot password by SMS" works (`BE/docs/FE_API_GUIDE.md` 3.2).
+- **Account > Profile** (`ProfileSection` in `pages/account/Account.tsx`) is read only until "Edit profile" is pressed; "Update profile" saves and locks it again, "Cancel" puts back what was saved. The photo has its own "Change photo" button. Under the phone field a chip says "Verified" or "Not verified" (icon and word); "Verify" opens `components/account/PhoneVerify.tsx`: `POST /me/phone/otp` (the click sends the SMS), the six boxes (`pages/login/OtpBoxes.tsx`, the sixth digit sends), `POST /me/phone/verify`. It shows the masked number, the 60 s resend wait, the tries left, and says so when the server answers `mode: "MOCK"` (no real SMS). A changed number has to be saved before it can be verified.
+- **After sign-in** `POST /auth/login` and `/auth/google` may return `reminders` (`ADD_PHONE` or `VERIFY_PHONE`): `services/auth.ts` passes the first one to the store (`usePhoneReminder`, in memory only) and `components/account/PhoneReminderDialog.tsx` (mounted in `App.tsx`, every role) opens: `ADD_PHONE` asks for the number (`PATCH /me`) and goes on to the verification with the code sent at once; `VERIFY_PHONE` goes straight to the verification and waits for "Send the code". "Later" closes it.
+- **Bell**: a notification with `msg_code` `PHONE_ADD` or `PHONE_VER` opens `/account/profile`, for every role.
+- Text lives under `ph.`. Check with `node scripts/check-phone-verify-browser.mjs` after building.
 
 ## Admin area
 

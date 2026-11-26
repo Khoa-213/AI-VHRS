@@ -18,6 +18,7 @@ tests with a mocked transport only. No call to eSMS (sandbox or live) has been m
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Protocol
 
@@ -96,6 +97,24 @@ def intl_phone(phone: str) -> str:
     return "84" + p[1:] if p.startswith("0") else p
 
 
+_LONG_NUMBER = re.compile(r"\d{8,}")
+
+
+def _reason(data) -> str | None:
+    """The provider's explanation, whatever its shape: {"message": ...}, or a list of field errors
+    [{"field": ..., "message": ...}]. Long digit runs (phone numbers) are masked; at most 200 characters."""
+    if isinstance(data, dict):
+        parts = [data.get("message"), data.get("error")]
+    elif isinstance(data, list):
+        parts = [f"{x.get('field')}: {x.get('message')}" if isinstance(x, dict) and x.get("field") else
+                 (x.get("message") if isinstance(x, dict) else x) for x in data]
+    else:
+        parts = [data]
+    text = "; ".join(str(p) for p in parts if p not in (None, "", []))
+    text = _LONG_NUMBER.sub(lambda m: m.group(0)[:3] + "****" + m.group(0)[-3:], text)
+    return text[:200] or None
+
+
 # SpeedSMS error codes (speedsms.vn/sms-api-service, read 2026-11-17) that mean the account or server setup is wrong.
 _SPEEDSMS_CONFIG_CODES = {"007": "IP bị khoá", "008": "tài khoản bị khoá", "009": "tài khoản chưa được gọi API",
                           "300": "tài khoản không đủ tiền"}
@@ -115,30 +134,76 @@ class SpeedSms:
 
     def send(self, phone: str, text: str) -> None:
         to = intl_phone(phone)
-        payload = {"to": [to], "content": text, "sms_type": self.sms_type, "sender": self.sender}
+        # `sms_type` as in SpeedSMS's NodeJS sample, `type` as in its curl example: the owner kept getting "sender not found"
+        # (2026-11-26), as if the type were not read and an own Brandname assumed; an unknown extra field is ignored
+        payload = {"to": [to], "content": text, "sms_type": self.sms_type, "type": self.sms_type, "sender": self.sender}
+        body = self._post("/sms/send", payload, phone, to)
+        log.info("SMS mode=%s to=%s sent tran=%s price=%s", self.mode, mask(phone), body.get("tranId"), body.get("totalPrice"))
+
+    def _post(self, path: str, payload: dict, phone: str, to: str) -> dict:
+        """POST to SpeedSMS; the `data` object of a success, or a clean AppError (the reasons are logged, never the text)."""
         try:
             with httpx.Client(transport=self._transport, timeout=self.timeout) as http:
-                r = http.post(self.base + "/sms/send", json=payload, auth=(self._token, "x"))
+                r = http.post(self.base + path, json=payload, auth=(self._token, "x"))
             data = r.json()
         except (httpx.HTTPError, ValueError) as exc:
             log.warning("SMS mode=%s to=%s failed: %s", self.mode, mask(phone), type(exc).__name__)
             raise AppError(502, "SMS_UNAVAILABLE", "Không kết nối được tới nhà cung cấp SMS, vui lòng thử lại.") from exc
+        reason = _reason(data)                                       # SpeedSMS's own words, numbers masked
         data = data if isinstance(data, dict) else {}
-        code, body = str(data.get("code", "")), data.get("data") if isinstance(data.get("data"), dict) else {}
+        code, body = str(data.get("code") or ""), data.get("data") if isinstance(data.get("data"), dict) else {}
         refused = to in (body.get("invalidPhone") or []) or to in (data.get("invalidPhone") or [])
         if r.status_code in (401, 403):
-            code = code or "401"
+            # a wrong / pasted-wrong token: SpeedSMS answers HTTP 401 {"name": "Unauthorized", "code": 0, "status": 401}
+            # (seen 2026-11-26); "0" is not empty, so `code or "401"` let it through as SMS_REJECTED (502)
+            code = "401"
         if data.get("status") != "success" or code != "00" or refused:
+            reason = reason or ("invalid phone" if refused else None)
             log.warning("SMS mode=%s to=%s rejected: http=%s code=%s %s", self.mode, mask(phone), r.status_code, code or "-",
-                        data.get("message") or ("invalid phone" if refused else ""))
+                        reason or "")
+            # 2026-11-26: the owner got 502 with provider_code null; the provider's HTTP status and message are now in
+            # `details` too, so the reason shows in the browser without opening the server log
+            details = {"provider_code": code or None, "provider_http": r.status_code, "provider_message": reason}
             if code in _SPEEDSMS_CONFIG_CODES or code == "401":
-                raise AppError(503, "SMS_NOT_CONFIGURED", "Dịch vụ SMS chưa sẵn sàng, vui lòng thử lại sau.",
-                               {"provider_code": code})
+                raise AppError(503, "SMS_NOT_CONFIGURED", "Dịch vụ SMS chưa sẵn sàng, vui lòng thử lại sau.", details)
             if code == "500" or r.status_code >= 500:
-                raise AppError(502, "SMS_UNAVAILABLE", "Nhà cung cấp SMS đang lỗi, vui lòng thử lại.", {"provider_code": code})
-            raise AppError(502, "SMS_REJECTED", "Nhà cung cấp SMS từ chối gửi tin, vui lòng thử lại sau.",
-                           {"provider_code": code or None})
-        log.info("SMS mode=%s to=%s sent tran=%s price=%s", self.mode, mask(phone), body.get("tranId"), body.get("totalPrice"))
+                raise AppError(502, "SMS_UNAVAILABLE", "Nhà cung cấp SMS đang lỗi, vui lòng thử lại.", details)
+            raise AppError(502, "SMS_REJECTED", "Nhà cung cấp SMS từ chối gửi tin, vui lòng thử lại sau.", details)
+        return body
+
+
+class SpeedSms2fa(SpeedSms):
+    """SpeedSMS 2FA (speedsms.vn/2-factor-authentication, read 2026-11-26): POST {base}/pin/create {to, content, app_id}.
+    SpeedSMS makes the PIN, puts it in place of `{pin_code}` in the content, sends it from the "Verify" brandname chosen
+    on the 2FA app (connect.speedsms.vn > Verification; needs no brandname registration, unlike /sms/send, which answered
+    "sender not found" for an account with no sender) and returns it in `data.pin_code`. The backend stores only its HMAC
+    and checks it itself, as for every other provider (its own TTL, attempts and resend rules), so /pin/verify is not used.
+    `to` is the domestic form 0xxxxxxxxx. The 2FA app's own settings should be as loose as ours or looser."""
+    mode = "SPEEDSMS_2FA"
+    issues_code = True                                  # phone_otp: the provider makes the code
+
+    def __init__(self, *, access_token: str, base_url: str, app_id: str, timeout: float = 10.0,
+                 transport: httpx.BaseTransport | None = None):
+        super().__init__(access_token=access_token, base_url=base_url, timeout=timeout, transport=transport)
+        self.app_id = app_id
+
+    def send(self, phone: str, text: str) -> None:               # only codes go through a 2FA app
+        raise AppError(503, "SMS_NOT_CONFIGURED", "Dịch vụ SMS hiện chỉ gửi được mã xác minh.")
+
+    def send_pin(self, phone: str, template: str) -> str:
+        """Send a PIN; `template` holds `{pin_code}`. Returns the PIN SpeedSMS made (never logged)."""
+        to = phone if phone.startswith("0") else "0" + intl_phone(phone)[2:]
+        body = self._post("/pin/create", {"to": to, "content": template, "app_id": self.app_id}, phone, to)
+        pin = str(body.get("pin_code") or "")
+        if not re.fullmatch(r"\d{6}", pin):        # the API and the web app take 6 digits: the 2FA app must be Numeric, 6
+            log.warning("SMS mode=%s to=%s: pin_code is not 6 digits (set the 2FA app to Numeric, length 6)", self.mode,
+                        mask(phone))
+            raise AppError(503, "SMS_NOT_CONFIGURED", "Dịch vụ SMS chưa sẵn sàng, vui lòng thử lại sau.",
+                           {"provider_code": None, "provider_http": 200,
+                            "provider_message": "pin_code is not 6 digits: set the 2FA app to Numeric, length 6"})
+        log.info("SMS mode=%s to=%s pin sent tran=%s price=%s", self.mode, mask(phone), body.get("tranId"),
+                 body.get("totalPrice"))
+        return pin
 
 
 _mock = MockSms()
@@ -154,13 +219,21 @@ def speedsms_configured() -> bool:
     return bool(s.speedsms_access_token) and (s.speedsms_sms_type not in (3, 5) or bool(s.speedsms_sender))
 
 
+def speedsms_2fa_configured() -> bool:
+    s = get_settings()
+    return bool((s.speedsms_access_token or "").strip() and (s.speedsms_2fa_app_id or "").strip())
+
+
 def sms_configured() -> bool:
     mode = get_settings().sms_mode
-    return mode == "mock" or (mode == "esms" and esms_configured()) or (mode == "speedsms" and speedsms_configured())
+    return (mode == "mock" or (mode == "esms" and esms_configured()) or (mode == "speedsms" and speedsms_configured())
+            or (mode == "speedsms2fa" and speedsms_2fa_configured()))
 
 
 def sms_mode_label() -> str:
     s = get_settings()
+    if s.sms_mode == "speedsms2fa":
+        return "SPEEDSMS_2FA"
     return "ESMS_SANDBOX" if s.sms_mode == "esms" and s.esms_sandbox else s.sms_mode.upper()
 
 
@@ -170,8 +243,11 @@ def get_sms_sender() -> SmsSender:
         return _mock
     if not sms_configured():
         raise AppError(503, "SMS_NOT_CONFIGURED", "Dịch vụ SMS chưa được cấu hình trên máy chủ.")
+    if s.sms_mode == "speedsms2fa":
+        return SpeedSms2fa(access_token=s.speedsms_access_token.strip(), base_url=s.speedsms_base_url,
+                           app_id=s.speedsms_2fa_app_id.strip(), timeout=s.sms_timeout_seconds)
     if s.sms_mode == "speedsms":
-        return SpeedSms(access_token=s.speedsms_access_token, base_url=s.speedsms_base_url, sms_type=s.speedsms_sms_type,
+        return SpeedSms(access_token=s.speedsms_access_token.strip(), base_url=s.speedsms_base_url, sms_type=s.speedsms_sms_type,
                         sender=s.speedsms_sender or "", timeout=s.sms_timeout_seconds)
     return EsmsSms(api_key=s.esms_api_key, secret_key=s.esms_secret_key, brandname=s.esms_brandname,
                    base_url=s.esms_base_url, sandbox=s.esms_sandbox, sms_type=s.esms_sms_type,

@@ -44,7 +44,14 @@
 .entry-register-card .entry-login-panel{border-radius:26px}
 @media(max-width:560px){.entry-register-card h1{font-size:30px}.entry-register-card{width:100%}.entry-register-switch{min-height:44px}}
 /* Forgot password: six boxes for the emailed code. */
-.entry-otp{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:clamp(6px,2vw,10px);margin:4px 0 6px}
+.entry-otp-label{font-size:12px;font-weight:600;color:var(--t3)}
+.entry-login .entry-otp{margin:4px 0 6px}
 .entry-login .entry-otp input{min-height:56px;margin:0;padding:0;text-align:center;font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;caret-color:var(--t1)}
 .entry-login .entry-otp input:focus-visible{outline:2px solid var(--t3);outline-offset:2px}
 .entry-login .entry-otp input[aria-invalid='true']{border-color:var(--danger)}
+/* Forgot password: the code goes to the email or to the verified phone number. */
+.entry-seg{display:flex;gap:4px;padding:4px;margin-bottom:6px;border-radius:14px;background:var(--fx-04);box-shadow:inset 0 0 0 1px var(--line-strong)}
+.entry-seg button{flex:1 1 0;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:0;min-height:40px;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:var(--t3);font:inherit;font-size:13px;font-weight:600;line-height:1.3;text-align:center;cursor:pointer;transition:background .15s,color .15s}
+.entry-seg button:hover:not(:disabled){color:var(--t1)}
+.entry-seg button.on{background:var(--btn-inv-bg);color:var(--btn-inv-fg)}
+.entry-seg button:focus-visible{outline:2px solid var(--t3);outline-offset:2px}

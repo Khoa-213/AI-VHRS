@@ -178,25 +178,26 @@ def test_forgotten_password_is_reset_with_the_verified_phone(client, sms, mailbo
     assert client.post(f"{API}/auth/phone-reset/request", json={"phone": phone}).status_code == 202
     assert len(sms) == 1                                          # resend wait: silently nothing, same answer
 
-    wrong = "000000" if _code(sms) != "000000" else "111111"
-    r = client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": wrong})
-    assert r.status_code == 400 and _err(r) == "OTP_INVALID"
-    r = client.post(f"{API}/auth/phone-reset/verify", json={"phone": _phone(), "code": _code(sms)})
+    url, code = f"{API}/auth/password-reset/confirm", _code(sms)
+    wrong = "000000" if code != "000000" else "111111"
+    r = client.post(url, json={"phone": phone, "code": wrong, "new_password": "Brandn3wPass"})
+    assert r.status_code == 400 and _err(r) == "OTP_INVALID" and r.json()["error"]["details"]["attempts_left"] == 4
+    r = client.post(url, json={"phone": _phone(), "code": code, "new_password": "Brandn3wPass"})
     assert r.status_code == 400 and _err(r) == "OTP_INVALID"     # a number nobody verified
-    r = client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": _code(sms)})
-    assert r.status_code == 200, r.text
-    token = r.json()["reset_token"]
-    assert r.json()["expires_in"] == 1800
-    assert client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": _code(sms)}).status_code == 400
+    r = client.post(url, json={"phone": phone, "code": code, "new_password": "short"})
+    assert r.status_code == 422                                   # weak password: the code is not used up
+    assert client.post(url, json={"phone": phone, "email": email, "code": code, "new_password": "Brandn3wPass"}).status_code == 422
+    assert client.post(url, json={"token": "x", "new_password": "Brandn3wPass"}).status_code == 422   # no token any more
+    assert client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": code}).status_code in (404, 405)
 
     mailbox.clear()
-    ok = client.post(f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "Brandn3wPass"})
-    assert ok.status_code == 204
+    ok = client.post(url, json={"phone": "+84" + phone[1:], "code": code, "new_password": "Brandn3wPass"})
+    assert ok.status_code == 204, ok.text
     assert client.get(f"{API}/me", headers=h).status_code == 401  # every device signed out
     login(client, email, "Brandn3wPass")
     assert [m[0] for m in mailbox] == [email] and "đã được đổi" in mailbox[0][1]
-    again = client.post(f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "Another1234"})
-    assert again.status_code == 401                               # the token dies with the old password
+    again = client.post(url, json={"phone": phone, "code": code, "new_password": "Another1234"})
+    assert again.status_code == 400 and _err(again) == "OTP_INVALID"   # single use
     assert _sql("select count(*) from audit_logs where action='PASSWORD_RESET_PHONE' and entity_id = "
                 "(select id from accounts where email=:e)", e=email) == 1
 
@@ -209,7 +210,7 @@ def test_a_disabled_account_cannot_be_recovered_by_phone(client, sms):
     _sql("update accounts set status='DISABLED' where email=:e returning 1", e=email)
     assert client.post(f"{API}/auth/phone-reset/request", json={"phone": phone}).status_code == 202
     assert sms == []
-    r = client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": "123456"})
+    r = client.post(f"{API}/auth/password-reset/confirm", json={"phone": phone, "code": "123456", "new_password": "Brandn3wPass"})
     assert r.status_code == 400 and _err(r) == "OTP_INVALID"
 
 
@@ -217,7 +218,8 @@ def test_otp_endpoints_need_a_login_and_valid_input(client):
     assert client.post(f"{API}/me/phone/otp").status_code == 401
     assert client.post(f"{API}/me/phone/verify", json={"code": "123456"}).status_code == 401
     assert client.post(f"{API}/auth/phone-reset/request", json={"phone": "12345"}).status_code == 422
-    assert client.post(f"{API}/auth/phone-reset/verify", json={"phone": "0901234567", "code": "1234"}).status_code == 422
+    assert client.post(f"{API}/auth/password-reset/confirm",
+                       json={"phone": "0901234567", "code": "1234", "new_password": "Brandn3wPass"}).status_code == 422
 
 
 def test_sms_is_listed_with_the_integrations(client):
@@ -318,7 +320,8 @@ def test_speedsms_posts_json_with_basic_auth_and_keeps_secrets_out_of_url_and_lo
     assert str(req.url) == "https://speedsms.test/index.php/sms/send" and "tok" not in str(req.url)
     assert req.headers["authorization"] == "Basic " + base64.b64encode(b"tok:x").decode()
     body = json.loads(req.content)
-    assert body == {"to": ["84901234567"], "content": "AI-VHRS: ma xac minh cua ban la 654321", "sms_type": 4, "sender": ""}
+    assert body == {"to": ["84901234567"], "content": "AI-VHRS: ma xac minh cua ban la 654321", "sms_type": 4, "type": 4,
+                    "sender": ""}
     assert "654321" not in caplog.text and "0901234567" not in caplog.text and "tran=77" in caplog.text
     assert intl_phone("+84901234567") == "84901234567" and intl_phone("84901234567") == "84901234567"
 
@@ -327,6 +330,9 @@ def test_speedsms_posts_json_with_basic_auth_and_keeps_secrets_out_of_url_and_lo
     (httpx.Response(200, json={"status": "error", "code": "300", "message": "balance not enough"}), 503, "SMS_NOT_CONFIGURED"),
     (httpx.Response(200, json={"status": "error", "code": "009", "message": "not allowed"}), 503, "SMS_NOT_CONFIGURED"),
     (httpx.Response(401, json={"status": "error", "message": "unauthorized"}), 503, "SMS_NOT_CONFIGURED"),
+    # SpeedSMS's real answer to a wrong token (2026-11-26): code 0 used to slip through as 502 SMS_REJECTED
+    (httpx.Response(401, json={"name": "Unauthorized", "message": "Your request was made with invalid credentials.",
+                               "code": 0, "status": 401}), 503, "SMS_NOT_CONFIGURED"),
     (httpx.Response(200, json={"status": "error", "code": "105", "invalidPhone": ["84901234567"]}), 502, "SMS_REJECTED"),
     (httpx.Response(200, json={"status": "success", "code": "00",
                                "data": {"totalSMS": 0, "invalidPhone": ["84901234567"]}}), 502, "SMS_REJECTED"),
@@ -337,6 +343,22 @@ def test_speedsms_failures_become_clean_errors(reply, status, code):
     with pytest.raises(AppError) as err:
         _speedsms(lambda req: reply).send("0901234567", "x")
     assert err.value.status == status and err.value.code == code
+
+
+def test_speedsms_rejection_tells_why_without_leaking_the_number():
+    """2026-11-26: a 502 came back with provider_code null; the provider's status and words are now in the details."""
+    replies = [httpx.Response(422, json=[{"field": "sender", "message": "Sender is invalid."}]),
+               httpx.Response(400, json={"status": "error", "message": "Phone 84853643832 is not allowed"}),
+               httpx.Response(200, json={"status": "error", "code": "101", "message": "Invalid or missing parameters"})]
+    seen = []
+    for reply in replies:
+        with pytest.raises(AppError) as err:
+            _speedsms(lambda req, reply=reply: reply).send("0853643832", "x")
+        assert err.value.code == "SMS_REJECTED"
+        seen.append(err.value.details)
+    assert seen[0] == {"provider_code": None, "provider_http": 422, "provider_message": "sender: Sender is invalid."}
+    assert seen[1]["provider_message"] == "Phone 848****832 is not allowed" and "84853643832" not in str(seen[1])
+    assert seen[2]["provider_code"] == "101" and seen[2]["provider_http"] == 200
 
 
 def test_speedsms_mode_needs_a_token_and_a_sender_for_own_brandname(monkeypatch):
@@ -354,3 +376,86 @@ def test_speedsms_mode_needs_a_token_and_a_sender_for_own_brandname(monkeypatch)
     monkeypatch.setattr(s, "speedsms_sender", None)
     with pytest.raises(AppError):
         get_sms_sender()
+
+
+def test_speedsms_sms_type_is_read_from_the_environment_as_a_number(monkeypatch):
+    """Render deploy 2026-11-26 crashed: env values are strings and Literal[2, 3, 4, 5] refused "4"."""
+    import pytest
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    monkeypatch.setenv("SPEEDSMS_SMS_TYPE", "4")
+    assert Settings().speedsms_sms_type == 4
+    monkeypatch.setenv("SPEEDSMS_SMS_TYPE", "7")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+# ---- SpeedSMS 2FA (SMS_MODE=speedsms2fa, 2026-11-26). Mocked transport only: nothing reaches SpeedSMS. -----------------------
+from app.integrations.sms import SpeedSms2fa
+
+
+def _speedsms_2fa(handler) -> SpeedSms2fa:
+    return SpeedSms2fa(access_token="tok", base_url="https://speedsms.test/index.php", app_id="app-1",
+                       transport=httpx.MockTransport(handler))
+
+
+def test_speedsms_2fa_asks_speedsms_for_the_pin_and_keeps_it_out_of_the_log(caplog):
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(200, json={"status": "success", "code": "00",
+                                         "data": {"pin_code": "482913", "tranId": "t1", "totalPrice": 600}})
+
+    caplog.set_level("INFO", logger="app.sms")
+    pin = _speedsms_2fa(handler).send_pin("+84853643832", "AI-VHRS: ma xac minh la {pin_code}, hieu luc 5 phut.")
+    req = seen[0]
+    assert pin == "482913" and str(req.url) == "https://speedsms.test/index.php/pin/create"
+    assert req.headers["authorization"] == "Basic " + base64.b64encode(b"tok:x").decode()
+    assert json.loads(req.content) == {"to": "0853643832", "app_id": "app-1",
+                                       "content": "AI-VHRS: ma xac minh la {pin_code}, hieu luc 5 phut."}
+    assert "482913" not in caplog.text and "0853643832" not in caplog.text and "pin sent" in caplog.text
+
+
+@pytest.mark.parametrize("reply, status, code", [
+    (httpx.Response(200, json={"status": "success", "code": "00", "data": {"pin_code": "4829"}}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(200, json={"status": "error", "code": "300", "message": "balance"}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(200, json={"status": "error", "code": "105", "message": "Phone number invalid"}), 502, "SMS_REJECTED"),
+])
+def test_speedsms_2fa_failures(reply, status, code):
+    with pytest.raises(AppError) as err:
+        _speedsms_2fa(lambda req: reply).send_pin("0853643832", "{pin_code}")
+    assert err.value.status == status and err.value.code == code
+
+
+def test_phone_is_verified_with_the_pin_speedsms_made(client, monkeypatch):
+    from app.api.v1 import me as me_api
+    from app.core.config import get_settings
+    sent = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(req.content))
+        return httpx.Response(200, json={"status": "success", "code": "00", "data": {"pin_code": "582614"}})
+
+    monkeypatch.setattr(me_api, "get_sms_sender", lambda: _speedsms_2fa(handler))
+    phone = _phone()
+    _, h = _customer(client, phone)
+    r = client.post(f"{API}/me/phone/otp", headers=h)
+    assert r.status_code == 202, r.text
+    assert r.json()["mode"] == "SPEEDSMS_2FA"
+    assert sent[0]["to"] == phone and "{pin_code}" in sent[0]["content"]
+    wrong = client.post(f"{API}/me/phone/verify", headers=h, json={"code": "000000"})
+    assert _err(wrong) == "OTP_INVALID"
+    ok = client.post(f"{API}/me/phone/verify", headers=h, json={"code": "582614"})
+    assert ok.status_code == 200 and ok.json()["phone_verified"] is True
+    # settings: the mode needs the token and the App ID
+    s = get_settings()
+    from app.integrations.sms import get_sms_sender, sms_mode_label
+    monkeypatch.setattr(s, "sms_mode", "speedsms2fa")
+    monkeypatch.setattr(s, "speedsms_access_token", "tok")
+    monkeypatch.setattr(s, "speedsms_2fa_app_id", None)
+    with pytest.raises(AppError):
+        get_sms_sender()
+    monkeypatch.setattr(s, "speedsms_2fa_app_id", " app-1 ")
+    sender = get_sms_sender()
+    assert isinstance(sender, SpeedSms2fa) and sender.app_id == "app-1" and sms_mode_label() == "SPEEDSMS_2FA"

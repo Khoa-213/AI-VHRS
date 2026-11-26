@@ -150,6 +150,8 @@ export interface User {
   id?: number
   email?: string
   phone?: string | null
+  /** True once the number was confirmed by an SMS code (needed to reset the password by SMS). */
+  phoneVerified?: boolean
   /** Backend role code: CUSTOMER, STAFF, TECHNICAL_STAFF, MANAGER or ADMIN. */
   apiRole?: string
 }

@@ -1,0 +1,7 @@
+/* Six boxes for a 6-digit code (OtpBoxes.tsx). Self-contained, so they look the same in the sign-in dialog, on the reset
+   page and on the account page; the dialog only adjusts the height. */
+.entry-otp{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:clamp(6px,2vw,10px)}
+.entry-otp input{width:100%;min-width:0;min-height:52px;margin:0;padding:0;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface,var(--bg));color:var(--t1);font:inherit;font-size:22px;font-weight:600;text-align:center;font-variant-numeric:tabular-nums;caret-color:var(--t1)}
+.entry-otp input:focus-visible{outline:2px solid var(--t3);outline-offset:2px}
+.entry-otp input[aria-invalid='true']{border-color:var(--danger)}
+.entry-otp input:disabled{opacity:.55;cursor:wait}

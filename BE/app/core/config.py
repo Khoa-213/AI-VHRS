@@ -3,7 +3,7 @@ from functools import lru_cache
 from typing import Literal
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -20,9 +20,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_min: int = 30
     refresh_token_ttl_days: int = 7
-    reset_token_ttl_min: int = 30
     # FR-01: temporary lock after 5 wrong passwords. Lock length is an assumption.
     max_failed_logins: int = 5
+    # 2026-11-26: bell reminders to add / verify the phone number at sign-in and on a phone change (services/phone_reminders.py)
+    phone_reminders_enabled: bool = True
     lockout_minutes: int = 15
     cors_origins: list[str] = ["http://localhost:5173"]
     # Optional regex for dynamic origins such as Vercel preview URLs:
@@ -92,15 +93,26 @@ class Settings(BaseSettings):
     smtp_timeout_seconds: float = 10.0
     # ---- SMS (Phase 5e, FR-53 OTP). mock = nothing leaves the server (default; tests and local work). esms = eSMS.vn
     # (integrations/sms.py). OTP rules are assumptions approved with the 5e plan (2026-11-11).
-    sms_mode: Literal["mock", "esms", "speedsms"] = "mock"
+    sms_mode: Literal["mock", "esms", "speedsms", "speedsms2fa"] = "mock"
     # SpeedSMS (personal account, no business licence). No sandbox: speedsms mode sends REAL, paid SMS.
     # sms_type 4 = SpeedSMS's default Brandname (Verify / Notify); 2 = random number; 3 = own Brandname and 5 = their
     # Android app both need SPEEDSMS_SENDER (the Brandname / the device id).
     speedsms_access_token: str | None = None
-    speedsms_sms_type: Literal[2, 3, 4, 5] = 4
+    speedsms_sms_type: int = 4                # 2, 3, 4 or 5; an int (env values are strings: Literal[2, 3, 4, 5] refused "4")
     speedsms_sender: str | None = None
     speedsms_base_url: str = "https://api.speedsms.vn/index.php"
+    # SMS_MODE=speedsms2fa (2026-11-26): codes through a SpeedSMS 2FA app (brandname "Verify", no own sender needed);
+    # the App ID shown at connect.speedsms.vn > Verification. Uses SPEEDSMS_ACCESS_TOKEN too.
+    speedsms_2fa_app_id: str | None = None
     sms_timeout_seconds: float = 10.0
+
+    @field_validator("speedsms_sms_type")
+    @classmethod
+    def _speedsms_type(cls, v: int) -> int:
+        if v not in (2, 3, 4, 5):
+            raise ValueError("SPEEDSMS_SMS_TYPE must be 2, 3, 4 or 5")
+        return v
+
     esms_api_key: str | None = None
     esms_secret_key: str | None = None
     esms_brandname: str | None = None     # registered with the carriers through eSMS; the OTP texts must match its templates

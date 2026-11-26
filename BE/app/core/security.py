@@ -1,5 +1,4 @@
 """Password hashing and signed tokens (JWT)."""
-import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -11,7 +10,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError
 
 BCRYPT_MAX_BYTES = 72
-ACCESS, REFRESH, RESET = "access", "refresh", "reset"
+ACCESS, REFRESH = "access", "refresh"   # no reset token since 2026-11-26: resets use a 6-digit code
 _PASSWORD_RULE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,}$")  # assumption: >= 8, letter + digit
 
 
@@ -30,11 +29,6 @@ def verify_password(password: str, password_hash: str) -> bool:
         return bcrypt.checkpw(password.encode()[:BCRYPT_MAX_BYTES], password_hash.encode())
     except ValueError:
         return False
-
-
-def password_fingerprint(password_hash: str) -> str:
-    """Short digest embedded in reset tokens so a token dies once the password changes."""
-    return hashlib.sha256(password_hash.encode()).hexdigest()[:16]
 
 
 def create_token(subject: int, token_type: str, ttl: timedelta, **claims: Any) -> str:
