@@ -81,7 +81,7 @@ export default function ResetPassword() {
     if (Object.keys(next).length) return
     void run(async () => {
       try {
-        await apiConfirmResetCode(form.email.trim(), form.code, form.password)
+        await apiConfirmResetCode({ email: form.email.trim() }, form.code, form.password)
         setDone(true)
       } catch (e) {
         // A wrong, expired or used-up code: the boxes are cleared, the rest of the form is kept.

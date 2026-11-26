@@ -86,16 +86,20 @@ export const apiRequestReset = (email: string) =>
   api('/auth/password-reset/request', { method: 'POST', body: { email }, auth: false })
 
 /**
- * `POST /auth/password-reset/confirm` with the 6-digit code from the email (`BE/docs/FE_API_GUIDE.md`, 2026-11-26): the code
- * is checked and the password set in one call. Errors: `OTP_INVALID` (`details.attempts_left`), `OTP_EXPIRED`,
- * `OTP_TOO_MANY_ATTEMPTS`. Signs out every device.
+ * `POST /auth/phone-reset/request`: a code by SMS to a number verified on an active account. Always answers 202 (unknown
+ * or unverified number, resend wait, daily limit, SMS failure), so nothing tells whether the number has an account.
  */
-export const apiConfirmResetCode = (email: string, code: string, new_password: string) =>
-  api('/auth/password-reset/confirm', { method: 'POST', body: { email, code, new_password }, auth: false })
+export const apiRequestPhoneReset = (phone: string) =>
+  api('/auth/phone-reset/request', { method: 'POST', body: { phone }, auth: false })
 
-/** `POST /auth/password-reset/confirm` with a token: only the `reset_token` of the SMS flow (`/auth/phone-reset/verify`); the email flow uses the code. Signs out every device. */
-export const apiConfirmReset = (token: string, new_password: string) =>
-  api('/auth/password-reset/confirm', { method: 'POST', body: { token, new_password }, auth: false })
+/**
+ * `POST /auth/password-reset/confirm` with the 6-digit code that went to the email or to the phone
+ * (`BE/docs/FE_API_GUIDE.md`, 2026-11-26): the code is checked and the password set in one call; send the email or the
+ * phone, never both. Errors: `OTP_INVALID` (`details.attempts_left`), `OTP_EXPIRED`, `OTP_TOO_MANY_ATTEMPTS`.
+ * Signs out every device. There is no reset token any more.
+ */
+export const apiConfirmResetCode = (to: { email: string } | { phone: string }, code: string, new_password: string) =>
+  api('/auth/password-reset/confirm', { method: 'POST', body: { ...to, code, new_password }, auth: false })
 
 /** Same rules as the backend. */
 export const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/
