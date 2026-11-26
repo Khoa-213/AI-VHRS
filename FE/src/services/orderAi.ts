@@ -309,6 +309,8 @@ export interface SketchInfo {
   inputsChanged: boolean
   /** The strokes, words, lines and paragraphs the customer can pick for the assistant. */
   document: SketchPage[]
+  /** The engine's notes on a drawing just made (Vietnamese, shown as received). Empty when the sketch was only read back. */
+  warnings: string[]
 }
 
 interface RawBox { bbox: [number, number, number, number] }
@@ -317,6 +319,7 @@ interface RawSketch {
   can_undo: boolean
   can_redo: boolean
   inputs_changed: boolean
+  warnings?: string[]
   document: {
     pages: {
       no: number; width_mm: number; height_mm: number
@@ -335,6 +338,7 @@ const toInfo = (s: RawSketch): SketchInfo => {
     canUndo: s.can_undo,
     canRedo: s.can_redo,
     inputsChanged: s.inputs_changed,
+    warnings: s.warnings ?? [],
     document: pages.map((p) => ({
       no: p.no, width: p.width_mm, height: p.height_mm,
       strokes: (p.strokes ?? []).map((x) => ({ id: x.id, kind: x.kind, points: x.points, word: x.word ?? null })),

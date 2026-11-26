@@ -191,7 +191,8 @@ class TechJobDetail {
     return JobPermissions(
       download: previewJobStatuses.contains(s),
       prepare: s == JobStatus.scheduled && verified && job.downloadedAt != null,
-      simulate: s == JobStatus.preparing && verified && calibrated,
+      // PAUSED too: after a recalibration the backend wants a new passed simulation before writing on (SIMULATION_STALE).
+      simulate: (s == JobStatus.preparing || s == JobStatus.paused) && verified && calibrated,
       start: s == JobStatus.preparing &&
           verified &&
           job.downloadedAt != null &&
@@ -265,6 +266,12 @@ class JobPackage {
   final PackagePen? pen;
   final String? previewUrl;
 
+  /// U1: the package is a signed production snapshot (materials locked). False for an older job with only the hash.
+  final bool signed;
+
+  /// U1: catalog changes made after the materials were locked (backend sentences, Vietnamese). The job keeps the locked values.
+  final List<String> materialDrift;
+
   const JobPackage({
     required this.jobId,
     required this.orderCode,
@@ -276,6 +283,8 @@ class JobPackage {
     this.paper,
     this.pen,
     this.previewUrl,
+    this.signed = false,
+    this.materialDrift = const [],
   });
 
   factory JobPackage.fromJson(Map<String, dynamic> j) => JobPackage(
@@ -289,6 +298,8 @@ class JobPackage {
         paper: j['paper'] == null ? null : PackagePaper.fromJson(j['paper'] as Map<String, dynamic>),
         pen: j['pen'] == null ? null : PackagePen.fromJson(j['pen'] as Map<String, dynamic>),
         previewUrl: j['preview_url'] as String?,
+        signed: j['snapshot'] is Map,
+        materialDrift: [for (final d in (j['material_drift'] as List<dynamic>? ?? const [])) '$d'],
       );
 }
 
@@ -330,6 +341,16 @@ enum ClientEvent {
         forceSummary => s == JobStatus.writing || s == JobStatus.paused || s == JobStatus.written,
         _ => s == JobStatus.writing || s == JobStatus.paused,
       };
+}
+
+/// True when the job was calibrated again after its last recorded simulation ([events] latest first). The backend then
+/// refuses RUN and RESUME on a PAUSED job (`SIMULATION_STALE`) until a new passed simulation is recorded.
+bool simulationStale(List<JobEvent> events) {
+  for (final e in events) {
+    if (e.eventType == 'SIMULATED') return false;
+    if (e.eventType == 'CALIBRATED') return true;
+  }
+  return false;
 }
 
 class JobEvent {
@@ -447,3 +468,64 @@ bool photosReady(List<ProductPhoto> photos) =>
     photos.any((p) => p.kind == PhotoKind.overall) &&
     photos.any((p) => p.kind == PhotoKind.closeUp) &&
     photos.every((p) => p.qcResult == QcResult.pass);
+
+// ─── Quality evaluation (Service G) ──────────────────────────────────
+
+/// One Service G result (`QualityOut`): a product photo compared with a page of the approved sketch. [verdict] is PASS,
+/// NEEDS_REVIEW or FAIL as the backend decided with thresholds it marks unvalidated; the app shows it and never derives its
+/// own. [advisory] is Vietnamese text from the backend. It does not change the photo's QC result.
+class QualityEvaluation {
+  final int id;
+  final int photoId;
+  final int jobId;
+  final int page;
+  final String method;
+  final String verdict;
+  final Map<String, dynamic> metrics;
+  final String? overlayUrl;
+  final DateTime createdAt;
+  final String advisory;
+
+  const QualityEvaluation({
+    required this.id,
+    required this.photoId,
+    required this.jobId,
+    required this.page,
+    required this.method,
+    required this.verdict,
+    required this.metrics,
+    required this.createdAt,
+    required this.advisory,
+    this.overlayUrl,
+  });
+
+  factory QualityEvaluation.fromJson(Map<String, dynamic> j) => QualityEvaluation(
+        id: j['id'] as int,
+        photoId: j['photo_id'] as int,
+        jobId: j['job_id'] as int,
+        page: j['page'] as int? ?? 1,
+        method: j['method'] as String? ?? '',
+        verdict: j['verdict'] as String? ?? '',
+        metrics: j['metrics'] as Map<String, dynamic>? ?? const {},
+        overlayUrl: j['overlay_url'] as String?,
+        createdAt: DateTime.parse(j['created_at'] as String),
+        advisory: j['advisory'] as String? ?? '',
+      );
+
+  /// Measurements shown, in this order, when the backend sent them as numbers: (key, unit).
+  static const shownMetrics = [
+    ('coverage_pct', '%'),
+    ('extra_ink_pct', '%'),
+    ('chamfer_mm', 'mm'),
+    ('hd95_mm', 'mm'),
+    ('hausdorff_mm', 'mm'),
+    ('tol_mm', 'mm'),
+  ];
+
+  List<(String, num, String)> get numbers => [
+        for (final (k, unit) in shownMetrics)
+          if (metrics[k] case final num v) (k, v, unit),
+      ];
+
+  List<String> get warnings => [for (final w in (metrics['warnings'] as List<dynamic>? ?? const [])) if (w is String) w];
+}

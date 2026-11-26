@@ -187,6 +187,23 @@ export const postJobEvent = (id: number, body: EventInput) => {
 export async function jobEvents(id: number, page = 1, pageSize = 50) {
   return techApi<{ items: JobEvent[]; total: number; page: number; page_size: number }>(`/technician/jobs/${id}/events?page=${page}&page_size=${pageSize}`)
 }
+/**
+ * True when the job was calibrated again after its last recorded simulation (`CALIBRATED` newer than `SIMULATED`). The backend then
+ * refuses RUN / RESUME on a PAUSED job (`SIMULATION_STALE`) until a new passed simulation is recorded. It reads the event log from the
+ * newest page back and stops at the first of the two.
+ */
+export async function simulationStale(id: number): Promise<boolean> {
+  const size = 200
+  const first = await jobEvents(id, 1, 1)
+  for (let page = Math.ceil(first.total / size); page >= 1; page--) {
+    const items = (await jobEvents(id, page, size)).items
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].event_type === 'SIMULATED') return false
+      if (items[i].event_type === 'CALIBRATED') return true
+    }
+  }
+  return false
+}
 /** The whole history of a job, latest event first (the backend pages it oldest first). */
 export const allJobEvents = async (id: number) =>
   newestFirst(await allPages((page) => jobEvents(id, page, 500), 500), (e) => e.occurred_at)
@@ -243,7 +260,8 @@ export function jobPermissions(job: TechJobDetail, hash?: string) {
   return {
     download: PREVIEW_JOB_STATUSES.includes(job.status),
     prepare: job.status === 'SCHEDULED' && verified && !!job.downloadedAt,
-    simulate: job.status === 'PREPARING' && verified && !!job.calibration?.is_valid,
+    // PAUSED too: after a recalibration the backend wants a new passed simulation before writing on (SIMULATION_STALE).
+    simulate: (job.status === 'PREPARING' || job.status === 'PAUSED') && verified && !!job.calibration?.is_valid,
     start: job.status === 'PREPARING' && verified && !!job.downloadedAt && !!job.calibration?.is_valid && job.simulationPassed === true && job.canStart,
     finish: job.status === 'WRITING',
     incident: ['PREPARING', 'WRITING', 'PAUSED'].includes(job.status),

@@ -43,7 +43,7 @@ export function SketchImage({ orderId, revisionId, page = 1, className }: { orde
  * The sketch the order will be sent with, in the preview box beside the form. Follows the order's current revision (never a
  * proposal that is not applied). With `selection` the customer can pick parts of it for the assistant.
  */
-export default function SketchView({ orderId, sketch, selection, onSelection, pickLocked = false }: {
+export default function SketchView({ orderId, sketch, selection, onSelection, pickLocked = false, outdatedKey = 'oa.outdated' }: {
   orderId: number
   sketch: SketchInfo
   /** Offered only while the assistant is on. */
@@ -51,6 +51,8 @@ export default function SketchView({ orderId, sketch, selection, onSelection, pi
   onSelection?: (s: AiSelection) => void
   /** The assistant is working or a proposal waits: the pick would apply to a sketch that is about to change. */
   pickLocked?: boolean
+  /** What the notice says when the order changed after this drawing (upload mode speaks of the photos). */
+  outdatedKey?: string
 }) {
   const t = useT()
   const [page, setPage] = useState(1)
@@ -74,7 +76,7 @@ export default function SketchView({ orderId, sketch, selection, onSelection, pi
           {picked ? t('oa.pick.openN', { n: picked }) : t('oa.pick.open')}
         </button>
       )}
-      {sketch.inputsChanged && <span className="oa-stale" role="status">{t('oa.outdated')}</span>}
+      {sketch.inputsChanged && <span className="oa-stale" role="status">{t(outdatedKey)}</span>}
       {picking && selection && onSelection && (
         <SketchPicker sketch={sketch} selection={selection} onChange={onSelection} onClose={() => setPicking(false)} />
       )}

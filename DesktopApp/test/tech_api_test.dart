@@ -307,6 +307,19 @@ void main() {
       );
     });
 
+    test('a signed package and its material drift are read; an older package is unsigned', () {
+      final signed = JobPackage.fromJson({
+        ..._package('x'),
+        'snapshot': {'snapshot_id': 3, 'package_id': 'p', 'schema': 'vhrs-production-snapshot/1', 'payload': '{}', 'payload_sha256': 'a', 'signature': 's', 'key_id': 'k'},
+        'material_drift': ['Giấy A5: giá đã đổi'],
+      });
+      expect(signed.signed, isTrue);
+      expect(signed.materialDrift, ['Giấy A5: giá đã đổi']);
+      final legacy = JobPackage.fromJson(_package('x'));
+      expect(legacy.signed, isFalse);
+      expect(legacy.materialDrift, isEmpty);
+    });
+
     test('a package off the expected shape is refused', () {
       final info = JobPackage.fromJson(_package('x'));
       Matcher invalid = throwsA(isA<TechFlowError>().having((e) => e.key, 'key', 'td.flow.invalidPackage'));

@@ -15,7 +15,7 @@ import { useUser } from '../../store/store'
 import type { InputMode } from '../../types'
 import { fmt } from '../../utils/format'
 import { ApiError } from '../../services/api'
-import { aiStatus, emptySelection, getSketchInfo, type AiSelection, type SketchInfo } from '../../services/orderAi'
+import { aiStatus, emptySelection, getSketchInfo, redrawSketch, type AiSelection, type SketchInfo } from '../../services/orderAi'
 import { draftPathFor, drawPathFor } from './draft'
 import { Sparkle } from '@phosphor-icons/react'
 import OrderAssistant from './ai/OrderAssistant'
@@ -92,6 +92,10 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [sketch, setSketch] = useState<SketchInfo | null>(null)
   // What the customer picked on the sketch for the assistant; ids belong to one revision, so a new revision clears it.
   const [selection, setSelection] = useState<AiSelection>(emptySelection)
+  // Upload mode: the customer asks the backend to restore the photos (OT-1 engine) and sees the result before sending.
+  const [restoring, setRestoring] = useState(false)
+  // The photos (ids, rotation, crop) the shown restoration was drawn from; null when it was only read back from the server.
+  const [restoredFor, setRestoredFor] = useState<string | null>(null)
 
   const aiState = useAsync(aiStatus, [])
   const aiAvailable = !!aiState.data?.available
@@ -349,13 +353,18 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
       setSketch(null)
       return
     }
-    if (!aiAvailable) return
+    // Upload mode shows the restoration made earlier, with or without the assistant. Without the assistant the other modes
+    // show their own preview, never a restoration drawn in upload mode.
+    if (!aiAvailable && mode !== 'upload') {
+      setSketch(null)
+      return
+    }
     let live = true
     getSketchInfo(orderId).then((s) => live && setSketch(s)).catch(() => undefined)
     return () => {
       live = false
     }
-  }, [orderId, aiAvailable])
+  }, [orderId, aiAvailable, mode])
 
   // ---------- content mode ----------
 
@@ -506,6 +515,31 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   const photos = order?.inputs.filter((i) => i.kind === 'ORIGINAL_IMAGE') ?? []
   const canvas = order?.inputs.find((i) => i.kind === 'CANVAS')
+  // The backend restores JPG / PNG only: one PDF among the photos and the engine refuses the order (PDF_NOT_SUPPORTED_AI).
+  const hasPdf = photos.some((p) => p.mime === 'application/pdf')
+  const photoSig = photos.map((p) => `${p.id}:${p.rotation}:${JSON.stringify(p.cropBox)}`).join('|')
+  const canRestore = !!order && !restoring && !busy && uploading === 0 && !hasPdf && photos.some((p) => p.quality !== null)
+  // The server's own flag covers a reload; the local one covers photos changed in this visit.
+  const restoreStale = !!sketch && !sketch.inputsChanged && restoredFor !== null && restoredFor !== photoSig
+
+  /** Draws the working sketch from the photos (the same engine the workshop uses) and shows it under them. */
+  const restore = async () => {
+    const id = orderRef.current?.id
+    if (!id || !canRestore) return
+    const sig = photoSig
+    setErr('')
+    setRestoring(true)
+    try {
+      await idle() // an upload, rotation or crop still on its way must reach the server first
+      // An upload order has no sketch edits of its own: edits left from another mode belong to content that is gone.
+      setSketch(await redrawSketch(id, true))
+      setRestoredFor(sig)
+    } catch (e) {
+      fail(e)
+    } finally {
+      setRestoring(false)
+    }
+  }
   const strokes = canvas?.canvas?.strokes.length ?? 0
   const materialsOk = suggest || !!(paperId && penId && inkId)
 
@@ -871,6 +905,33 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                           onRemove={() => removeInput(p.id)}
                         />
                       ))}
+                      {order && photos.length > 0 && (
+                        <section className="co-restore" aria-labelledby="co-restore-h" aria-busy={restoring}>
+                          <div className="co-restore-head">
+                            <div className="co-restore-copy">
+                              <h3 id="co-restore-h" className="co-restore-title">{t('co.restore.title')}</h3>
+                              <p className="co-hint">{t(sketch ? 'co.restore.ready' : 'co.restore.intro')}</p>
+                            </div>
+                            <button type="button" className="co-btn co-btn--line co-btn--sm" disabled={!canRestore} onClick={() => void restore()}>
+                              {t(restoring ? 'co.restore.working' : sketch ? 'co.restore.again' : 'co.restore.run')}
+                            </button>
+                          </div>
+                          {hasPdf && <p className="co-hint">{t('co.restore.pdf')}</p>}
+                          {restoring && <p className="co-hint" role="status">{t('co.restore.wait')}</p>}
+                          {sketch && (
+                            <div className="co-restore-stage">
+                              <SketchView orderId={order.id} sketch={sketch} outdatedKey="co.restore.stale" />
+                              {restoreStale && <span className="oa-stale" role="status">{t('co.restore.stale')}</span>}
+                            </div>
+                          )}
+                          {sketch && sketch.warnings.length > 0 && (
+                            <div className="co-restore-notes">
+                              <b>{t('co.restore.notes')}</b>
+                              <ul>{sketch.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                            </div>
+                          )}
+                        </section>
+                      )}
                     </>
                   )}
 
@@ -1100,7 +1161,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
             ) : (
               <aside className="co-rail">
                 <div className="co-preview">
-                  {order && sketch ? (
+                  {/* In upload mode the restoration sits under the photos; this box keeps the original for comparison. */}
+                  {order && sketch && mode !== 'upload' ? (
                     <SketchView orderId={order.id} sketch={sketch} />
                   ) : mode === 'text' && previewSrc ? (
                     <img className="co-preview-img" src={previewSrc} alt={t('co.previewAlt')} />

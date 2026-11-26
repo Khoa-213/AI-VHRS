@@ -226,6 +226,29 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
                 if (current != null) ...[
                   const SizedBox(height: 12),
                   SelectableText(current.hash, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontFeatures: [FontFeature.tabularFigures()])),
+                  const SizedBox(height: 6),
+                  Text(t(current.info.signed ? 'td.pkg.signed' : 'td.pkg.legacy'), style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)),
+                  if (current.info.materialDrift.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Semantics(
+                      liveRegion: true,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(t('td.pkg.drift'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.4)),
+                            for (final d in current.info.materialDrift)
+                              Text('• $d', style: const TextStyle(fontSize: 13, height: 1.4)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   if (current.info.pen case final pen?) ...[
                     const SizedBox(height: 8),
                     FactList([
@@ -290,7 +313,7 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
           ),
           const SizedBox(height: 16),
         ],
-        if (j.status == JobStatus.preparing) ...[
+        if (j.status == JobStatus.preparing || j.status == JobStatus.paused) ...[
           TechCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
