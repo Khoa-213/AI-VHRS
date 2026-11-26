@@ -114,6 +114,10 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   stays as a fallback. A red (level 4) alert shows the E-Stop banner; software STOP never replaces the physical E-Stop.
 
 
+## Forgot password
+
+"Forgot password" stays in the sign-in dialog (`pages/login/ForgotPassword.tsx`, opened from `SignInPanel.tsx`): email, then six boxes for the emailed 6-digit code (typing moves on, a paste fills them, the last digit sends), then the new password, then back to sign in with the email filled in. Calls (`BE/docs/FE_API_GUIDE.md`, 2026-11-26): `POST /auth/password-reset/request {email}` (the mail has a 6-digit code, 15 minutes, 5 tries, 60 s between two codes), then `POST /auth/password-reset/confirm {email, code, new_password}`: the backend checks the code with the new password in one call, so `OTP_INVALID`, `OTP_EXPIRED` and `OTP_TOO_MANY_ATTEMPTS` come after the password step and bring the six boxes back. The page `/reset-password` (`ResetPassword.tsx`) still takes the long token from an emailed link. Check with `node scripts/check-forgot-password-browser.mjs` after building.
+
 ## Account area
 
 Everything that belongs to the signed-in user lives under `/account` (`src/pages/account/`): profile, preferences
