@@ -86,6 +86,7 @@ against its staging API on 2026-10-26; its real callback reached the Render serv
 | `BACKGROUND_JOBS_ENABLED` | `true` on the ONE deployed instance (quotation expiry, deposit deadline, acceptance reminder / auto-accept, e-mail retry, BR-23 photo purge); every 10 minutes (`BACKGROUND_JOBS_INTERVAL_SECONDS`, minimum 60). A Postgres advisory lock stops two runs overlapping |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | notification e-mails (MSG07/08/10/11/12/15) and robot alerts; without them mail is only logged |
 | `SMTP_REPLY_TO` | optional: address replies go to (the project's mailbox), sent as `Reply-To`; the From stays on the verified domain |
+| `SMS_MODE=speedsms2fa`, `SPEEDSMS_ACCESS_TOKEN`, `SPEEDSMS_2FA_APP_ID` | SMS codes through a SpeedSMS 2FA app (connect.speedsms.vn > Verification > Add new: Numeric, length 6, TTL 300, SMS, sender **Verify**; copy its App ID). Use this when the account has no sender for `/sms/send` ("sender not found"). Real, paid SMS |
 | `PHONE_REMINDERS_ENABLED` | default `true`: bell reminders to add a phone number (first sign-in without one) and to verify it (at most weekly); `false` turns them off |
 | `SMTP_HTML` | default `true`: every mail also carries an HTML part with the AI-VHRS logo inline; `false` sends plain text only |
 

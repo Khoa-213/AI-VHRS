@@ -11,13 +11,15 @@ and uses the role the backend reports. Nothing is trusted from the client.
 Running the REAL robot through the API needs three independent things, so a remote caller can never start it alone:
   1. the agent was started with "real" in `modes` (only on the workstation wired to the robot);
   2. REAL was enabled for THAT job for a limited time (an expiring file), at the workstation only: the desktop screen's button
-     (`POST /api/jobs/{id}/real-enable`, the technician who loaded the job, no typed YES: owner decision 2026-11-26 c1) or the CLI
+     (`POST /api/jobs/{id}/real-enable`, the technician who loaded the job, no typed YES: owner decision 2026-11-26 c1; the button
+     first checks the real robot read-only and refuses with ROBOT_UNREACHABLE when it does not answer) or the CLI
      `python -m vhrs_agent.cli real-enable --job N --minutes M`. No backend command can set it;
   3. the caller sends the plan-bound authorization token (see runner.authorization_token) AND the job passes the dry-run requirement.
 """
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import threading
 import time
@@ -51,6 +53,10 @@ ROLE_CONTROL = {"TECHNICAL_STAFF", "MANAGER"}
 ROLE_OPERATE = {"TECHNICAL_STAFF"}
 LEVEL_ROLES = {"view": ROLE_VIEW, "control": ROLE_CONTROL, "operate": ROLE_OPERATE}
 REAL_ENABLE_MAX_MINUTES = 120
+# Refusals from a robot that DID answer (or from agent.json itself): wrong tool slot, work object, model, controller line, TCP,
+# missing settings. Shown as ROBOT_CONFIG_MISMATCH, not as a lost connection, so the operator fixes the setup instead of the cable.
+ROBOT_CONFIG_CODES = frozenset({"TOOL_MISMATCH", "WOBJ_MISMATCH", "WRONG_ROBOT", "CONTROLLER_UNSUPPORTED", "TCP_OFFSET_MISMATCH",
+                                "INVALID_CONFIG", "UNCONFIGURED", "SDK_MISSING"})
 REAL_ENABLE_FILE = "REAL_ENABLED.json"
 
 
@@ -129,6 +135,10 @@ class LoginIn(Body):
     password: str = Field(min_length=1, max_length=72)
 
 
+class ScreenLoginIn(Body):
+    code: str = Field(min_length=16, max_length=128)
+
+
 class ModeIn(Body):
     mode: str = Field(default="sim", pattern="^(mock|sim|real)$")
 
@@ -168,6 +178,9 @@ class AgentService:
         self.hub = ViewerHub(guard=self.guard)
         self.jobs: dict[int, JobCtx] = {}
         self.sessions: dict[str, Session] = {}
+        # (code, email, password) set by `serve` when the desktop app started this agent: the app opens the workstation
+        # screen with that code so the technician signed in to the app is signed in to the screen too (no second login).
+        self.screen_login: tuple[str, str, str] | None = None
         self._who: dict[str, tuple[float, dict[str, Any]]] = {}
         self._lock = threading.Lock()
         self._busy = False
@@ -263,6 +276,13 @@ class AgentService:
         self.sessions[hashlib.sha256(out["access_token"].encode()).hexdigest()] = Session(out["access_token"], out["refresh_token"])
         return {"access_token": out["access_token"], "role": role, "name": out["account"]["full_name"]}
 
+    def login_with_code(self, code: str) -> dict[str, Any]:
+        """The desktop app's one-step sign-in: the code it gave this agent at start, for the account it started it with."""
+        sl = self.screen_login
+        if sl is None or not hmac.compare_digest(code.encode(), sl[0].encode()):
+            raise ApiError(401, "SCREEN_CODE_INVALID", "Mã đăng nhập từ ứng dụng không đúng: đăng nhập bằng tài khoản.")
+        return self.login(sl[1], sl[2])
+
     # ---- robots
     def kin(self):
         if self._kin is None:
@@ -319,10 +339,23 @@ class AgentService:
             info = robot.connect()                                            # read-only identification, no motion, no enable
             return {"info": info.as_dict(), "healthy": robot.heartbeat(), "tcp_mm": [round(float(v), 2) for v in robot.read_tcp()],
                     "joints_deg": robot.read_joints()}
+        except RobotError as exc:
+            if exc.code in ROBOT_CONFIG_CODES:                                # it answered: the setup on the robot or in agent.json differs
+                raise ApiError(409, "ROBOT_CONFIG_MISMATCH", f"Robot có trả lời nhưng chưa khớp cấu hình ({exc.code}): {exc.message}",
+                               {"reason": exc.code, "details": exc.details}) from exc
+            raise ApiError(502, "ROBOT_UNREACHABLE", f"{exc.code}: {exc.message}", {"reason": exc.code}) from exc
         except Exception as exc:                                              # noqa: BLE001
             raise ApiError(502, "ROBOT_UNREACHABLE", f"{type(exc).__name__}: {exc}") from exc
         finally:
             robot.disconnect()
+
+    def check_real_robot(self) -> dict[str, Any]:
+        """Read-only: connect to the real controller, ask for a heartbeat and the TCP. No enable, no motion.
+        Raises ROBOT_UNREACHABLE when the robot does not answer, so the REAL switch is never set for a robot that is not there."""
+        r = self.do_identify("real")
+        if not r.get("healthy"):
+            raise ApiError(502, "ROBOT_UNREACHABLE", "Robot có kết nối nhưng không trả lời heartbeat: kiểm tra controller rồi thử lại.", r)
+        return {"ok": True, "controller": r["info"], "tcp_mm": r["tcp_mm"], "checked_at": time.time()}
 
     def do_preflight(self, ctx: "JobCtx", mode: str, token: str) -> dict[str, Any]:
         if self._busy:
@@ -459,10 +492,12 @@ class AgentService:
     def enable_real(self, job_id: int, minutes: int, by: str, *, waive_dry_run: bool = False) -> dict[str, Any]:
         if "real" not in self.cfg.modes:
             raise ApiError(403, "MODE_DISABLED", "Agent này không bật chế độ REAL (agent.json, modes): máy này không nối với robot thật.")
-        if self._busy and (self.current or {}).get("job_id") not in (None, job_id):
-            raise ApiError(409, "AGENT_BUSY", "Agent đang chạy job khác.", self.current)
+        if self._busy:
+            raise ApiError(409, "AGENT_BUSY", "Agent đang chạy: dừng hẳn rồi mới bật REAL (cần kiểm tra kết nối robot trước).", self.current)
+        # The switch is only set when the real robot answers right now (owner 2026-11-26): no answer, no REAL.
+        check = self.check_real_robot()
         write_real_enable(self.cfg.run_dir, job_id, minutes, by, waive_dry_run=waive_dry_run)
-        return {"real_enabled": self.real_state(), "minutes": int(minutes)}
+        return {"real_enabled": self.real_state(), "minutes": int(minutes), "robot_check": check}
 
     def disable_real(self) -> dict[str, Any]:
         (self.cfg.run_dir / REAL_ENABLE_FILE).unlink(missing_ok=True)
@@ -699,6 +734,10 @@ def create_server_app(service: AgentService) -> FastAPI:
     def login(body: LoginIn) -> dict[str, Any]:
         return service.login(body.email, body.password)
 
+    @app.post("/api/screen-login")
+    def screen_login(body: ScreenLoginIn) -> dict[str, Any]:
+        return service.login_with_code(body.code)
+
     @app.get("/api/my-jobs")
     def my_jobs(request: Request) -> Any:
         service.guard("view", request)
@@ -763,7 +802,99 @@ def write_real_enable(run_dir: Path, job_id: int, minutes: int, by: str, *, waiv
     return data
 
 
-def serve(cfg: ServerConfig) -> None:                                         # pragma: no cover - starts a real server
+def stop_safely(service: "AgentService", reason: str, *, wait_s: float = 30.0) -> bool:
+    """Stop whatever moves (a run or an alignment) the normal way: finish the stroke, lift the pen, wait until idle.
+    Returns True when the agent is idle. Used when the desktop app that started the agent closes."""
+    if service.align_ctl is not None:
+        service.align_ctl.request_stop(reason)
+    if service._busy and service.hub.runner is not None:
+        service.hub.runner.stop(reason)
+    end = time.monotonic() + wait_s
+    while service._busy and time.monotonic() < end:
+        time.sleep(0.2)
+    return not service._busy
+
+
+def wait_for_process_exit(pid: int, poll_s: float = 1.0) -> None:
+    """Blocks until process `pid` is gone (Windows: waits on its handle; elsewhere: polls)."""
+    import os
+    import sys
+    if sys.platform == "win32":
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x00100000, False, int(pid))                # SYNCHRONIZE
+        if not h:
+            return                                                    # already gone (or not ours): treat as gone
+        try:
+            k.WaitForSingleObject(h, 0xFFFFFFFF)
+        finally:
+            k.CloseHandle(h)
+        return
+    while True:
+        try:
+            os.kill(int(pid), 0)
+        except OSError:
+            return
+        time.sleep(poll_s)
+
+
+def watch_parent(service: "AgentService", on_exit: Callable[[], None], *, stream: Any = None, parent_pid: int | None = None,
+                 exit_fn: Callable[[int], Any] | None = None, wait_exit: Callable[[int], None] | None = None) -> list[threading.Thread]:
+    """The desktop app runs the agent. It stops it by writing `STOP` on stdin; if the app itself goes away (closed, crashed, killed)
+    its process ends and stdin may close. Any of these: stop safely, give the robot session back, exit. A hard kill would leave the
+    robot held until the backend sees the agent offline. (On Windows a pipe end can outlive the app when another child inherited it,
+    so the app's process id is watched too.)"""
+    import os
+    import sys
+    once = threading.Lock()
+
+    def say(msg: str) -> None:
+        # The app may be gone with its end of our stdout: printing then raises. Nothing here may stop the shutdown.
+        try:
+            print(msg, flush=True)
+        except Exception:                                             # noqa: BLE001
+            pass
+
+    def shutdown(why: str) -> None:
+        if not once.acquire(blocking=False):
+            return
+        try:
+            say(f"{why}: stopping safely")
+            if not stop_safely(service, why):
+                say("Still busy after 30 s: exiting anyway; stand by the E-Stop")
+            on_exit()
+        except Exception as exc:                                      # noqa: BLE001 - exit anyway: an agent left behind holds the robot
+            say(f"Shutdown error: {type(exc).__name__}: {exc}")
+        finally:
+            (exit_fn or os._exit)(0)
+
+    def read_stdin() -> None:
+        src = stream or sys.stdin
+        try:
+            while True:
+                line = src.readline()
+                if not line:
+                    break
+                if line.strip().upper() == "STOP":
+                    shutdown("The desktop app stopped the agent")
+                    return
+        except (OSError, ValueError):
+            pass
+        shutdown("The desktop app closed the agent")
+
+    def watch_pid() -> None:
+        (wait_exit or wait_for_process_exit)(int(parent_pid))
+        shutdown(f"The desktop app (pid {parent_pid}) is gone")
+
+    threads = [threading.Thread(target=read_stdin, daemon=True, name="parent-stdin")]
+    if parent_pid:
+        threads.append(threading.Thread(target=watch_pid, daemon=True, name="parent-pid"))
+    for t in threads:
+        t.start()
+    return threads
+
+
+def serve(cfg: ServerConfig, *, stop_on_stdin_eof: bool = False, parent_pid: int | None = None) -> None:  # pragma: no cover
     import os
 
     import uvicorn
@@ -783,6 +914,9 @@ def serve(cfg: ServerConfig) -> None:                                         # 
         link = LinkClient(service, provider=provider)
         threading.Thread(target=link.run_forever, daemon=True, name="backend-link").start()
         print(f"Backend link ON (session of {email} on robot {provider.robot_id}); the key renews itself")
+        code = os.environ.get("VHRS_SCREEN_CODE", "")
+        if len(code) >= 16:                                           # the app signs the screen in with this code
+            service.screen_login = (code, email, password)
     elif key:
         from vhrs_agent.link import LinkClient
         link = LinkClient(service, key=key)
@@ -790,6 +924,10 @@ def serve(cfg: ServerConfig) -> None:                                         # 
         print(f"Backend link ON: calling out to {cfg.backend_url} (commands from the app arrive here)")
     else:
         print("Backend link OFF: no agent key (VHRS_AGENT_KEY) and no technician login (VHRS_TECH_EMAIL/VHRS_TECH_PASSWORD); only the LAN API")
+    if stop_on_stdin_eof or parent_pid:
+        watch_parent(service, lambda: provider.release() if provider is not None else None, parent_pid=parent_pid)
+    if cfg.lan_server:
+        print(f"Workstation screen on http://{cfg.host}:{cfg.port}/", flush=True)
     if not cfg.lan_server:
         if link is None:
             raise SystemExit("lan_server is false but there is no agent key: nothing to serve.")

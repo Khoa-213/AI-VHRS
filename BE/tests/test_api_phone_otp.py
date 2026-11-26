@@ -320,7 +320,8 @@ def test_speedsms_posts_json_with_basic_auth_and_keeps_secrets_out_of_url_and_lo
     assert str(req.url) == "https://speedsms.test/index.php/sms/send" and "tok" not in str(req.url)
     assert req.headers["authorization"] == "Basic " + base64.b64encode(b"tok:x").decode()
     body = json.loads(req.content)
-    assert body == {"to": ["84901234567"], "content": "AI-VHRS: ma xac minh cua ban la 654321", "sms_type": 4, "sender": ""}
+    assert body == {"to": ["84901234567"], "content": "AI-VHRS: ma xac minh cua ban la 654321", "sms_type": 4, "type": 4,
+                    "sender": ""}
     assert "654321" not in caplog.text and "0901234567" not in caplog.text and "tran=77" in caplog.text
     assert intl_phone("+84901234567") == "84901234567" and intl_phone("84901234567") == "84901234567"
 
@@ -387,3 +388,74 @@ def test_speedsms_sms_type_is_read_from_the_environment_as_a_number(monkeypatch)
     monkeypatch.setenv("SPEEDSMS_SMS_TYPE", "7")
     with pytest.raises(ValidationError):
         Settings()
+
+
+# ---- SpeedSMS 2FA (SMS_MODE=speedsms2fa, 2026-11-26). Mocked transport only: nothing reaches SpeedSMS. -----------------------
+from app.integrations.sms import SpeedSms2fa
+
+
+def _speedsms_2fa(handler) -> SpeedSms2fa:
+    return SpeedSms2fa(access_token="tok", base_url="https://speedsms.test/index.php", app_id="app-1",
+                       transport=httpx.MockTransport(handler))
+
+
+def test_speedsms_2fa_asks_speedsms_for_the_pin_and_keeps_it_out_of_the_log(caplog):
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(200, json={"status": "success", "code": "00",
+                                         "data": {"pin_code": "482913", "tranId": "t1", "totalPrice": 600}})
+
+    caplog.set_level("INFO", logger="app.sms")
+    pin = _speedsms_2fa(handler).send_pin("+84853643832", "AI-VHRS: ma xac minh la {pin_code}, hieu luc 5 phut.")
+    req = seen[0]
+    assert pin == "482913" and str(req.url) == "https://speedsms.test/index.php/pin/create"
+    assert req.headers["authorization"] == "Basic " + base64.b64encode(b"tok:x").decode()
+    assert json.loads(req.content) == {"to": "0853643832", "app_id": "app-1",
+                                       "content": "AI-VHRS: ma xac minh la {pin_code}, hieu luc 5 phut."}
+    assert "482913" not in caplog.text and "0853643832" not in caplog.text and "pin sent" in caplog.text
+
+
+@pytest.mark.parametrize("reply, status, code", [
+    (httpx.Response(200, json={"status": "success", "code": "00", "data": {"pin_code": "4829"}}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(200, json={"status": "error", "code": "300", "message": "balance"}), 503, "SMS_NOT_CONFIGURED"),
+    (httpx.Response(200, json={"status": "error", "code": "105", "message": "Phone number invalid"}), 502, "SMS_REJECTED"),
+])
+def test_speedsms_2fa_failures(reply, status, code):
+    with pytest.raises(AppError) as err:
+        _speedsms_2fa(lambda req: reply).send_pin("0853643832", "{pin_code}")
+    assert err.value.status == status and err.value.code == code
+
+
+def test_phone_is_verified_with_the_pin_speedsms_made(client, monkeypatch):
+    from app.api.v1 import me as me_api
+    from app.core.config import get_settings
+    sent = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(req.content))
+        return httpx.Response(200, json={"status": "success", "code": "00", "data": {"pin_code": "582614"}})
+
+    monkeypatch.setattr(me_api, "get_sms_sender", lambda: _speedsms_2fa(handler))
+    phone = _phone()
+    _, h = _customer(client, phone)
+    r = client.post(f"{API}/me/phone/otp", headers=h)
+    assert r.status_code == 202, r.text
+    assert r.json()["mode"] == "SPEEDSMS_2FA"
+    assert sent[0]["to"] == phone and "{pin_code}" in sent[0]["content"]
+    wrong = client.post(f"{API}/me/phone/verify", headers=h, json={"code": "000000"})
+    assert _err(wrong) == "OTP_INVALID"
+    ok = client.post(f"{API}/me/phone/verify", headers=h, json={"code": "582614"})
+    assert ok.status_code == 200 and ok.json()["phone_verified"] is True
+    # settings: the mode needs the token and the App ID
+    s = get_settings()
+    from app.integrations.sms import get_sms_sender, sms_mode_label
+    monkeypatch.setattr(s, "sms_mode", "speedsms2fa")
+    monkeypatch.setattr(s, "speedsms_access_token", "tok")
+    monkeypatch.setattr(s, "speedsms_2fa_app_id", None)
+    with pytest.raises(AppError):
+        get_sms_sender()
+    monkeypatch.setattr(s, "speedsms_2fa_app_id", " app-1 ")
+    sender = get_sms_sender()
+    assert isinstance(sender, SpeedSms2fa) and sender.app_id == "app-1" and sms_mode_label() == "SPEEDSMS_2FA"
