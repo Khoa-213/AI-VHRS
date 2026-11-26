@@ -243,9 +243,12 @@ class QuotationService:
             picks.append((paper, pen, ink))
         return picks
 
-    def material_candidates(self, order_id: int, limit: int = 60) -> dict:
+    def material_candidates(self, order_id: int, limit: int = 200, offset: int = 0, *, paper_type_id: int | None = None,
+                            pen_type_id: int | None = None, size: str | None = None, surface: str | None = None) -> dict:
         """What Staff may still offer: every paper / pen / ink combination that keeps the customer's choices and
-        obeys the compatibility rules (customer's own picks are shown as `fixed`)."""
+        obeys the compatibility rules (customer's own picks are shown as `fixed`). The catalog outgrew one page (23 papers
+        on 2026-11-26): the list can be narrowed (paper, pen, size, surface) and paged (`offset`, `limit`); `total` counts
+        every combination that matches."""
         order = self.access.order(order_id)
         fixed = {f: getattr(order, f) for f, _ in self._FIELDS}
         papers = [self.catalog.paper(fixed["paper_type_id"])] if fixed["paper_type_id"] else self.catalog.papers()
@@ -253,18 +256,22 @@ class QuotationService:
         for paper in papers:
             if paper is None or not paper.is_active:
                 continue
+            if (paper_type_id and paper.id != paper_type_id) or (size and paper.size.value != size) or \
+                    (surface and paper.surface != surface):
+                continue
             for pen in self.catalog.pens_for_paper(paper.id):
-                if fixed["pen_type_id"] and pen.id != fixed["pen_type_id"]:
+                if (fixed["pen_type_id"] and pen.id != fixed["pen_type_id"]) or (pen_type_id and pen.id != pen_type_id):
                     continue
                 for ink in self.catalog.inks_for_pen(pen.id):
                     if fixed["ink_color_id"] and ink.id != fixed["ink_color_id"]:
                         continue
                     combos.append({"paper_type_id": paper.id, "pen_type_id": pen.id, "ink_color_id": ink.id,
-                                   "paper": paper.name, "pen": pen.name, "ink": ink.name})
+                                   "paper": paper.name, "pen": pen.name, "ink": ink.name,
+                                   "paper_size": paper.size.value, "paper_surface": paper.surface})
         names = {f: (getattr(self.catalog, k)(fixed[f]).name if fixed[f] else None)
                  for f, k in (("paper_type_id", "paper"), ("pen_type_id", "pen"), ("ink_color_id", "ink"))}
         return {"suggest_enabled": order.workshop_suggest_materials, "fixed": {**fixed, **{f"{k}_name": v for k, v in names.items()}},
-                "total": len(combos), "combos": combos[:limit]}
+                "total": len(combos), "offset": offset, "limit": limit, "combos": combos[offset:offset + limit]}
 
     # ---- read ----
     def get(self, quotation_id: int) -> Quotation:

@@ -91,10 +91,14 @@ def password_reset_request(body: PasswordResetRequestIn, svc: Svc) -> MessageOut
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT,
              dependencies=[Depends(rate_limit("reset_confirm", 10, 900))],
-             summary="UC-03 Đặt mật khẩu mới bằng token (đăng xuất mọi thiết bị)",
-             responses={401: {"description": "Token hết hạn hoặc đã dùng"}})
+             summary="UC-03 Đặt mật khẩu mới bằng mã 6 số trong email (email + code) hoặc token (đăng xuất mọi thiết bị)",
+             responses={401: {"description": "TOKEN_INVALID: token hết hạn hoặc đã dùng"},
+                        400: {"description": "OTP_INVALID (details.attempts_left) / OTP_EXPIRED / OTP_TOO_MANY_ATTEMPTS"}})
 def password_reset_confirm(body: PasswordResetConfirmIn, svc: Svc) -> Response:
-    svc.confirm_password_reset(body.token, body.new_password)
+    if body.token:
+        svc.confirm_password_reset(body.token, body.new_password)
+    else:
+        svc.confirm_password_reset_code(str(body.email), body.code, body.new_password)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

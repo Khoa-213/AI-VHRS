@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from tests.conftest import PASSWORD, auth, login, make_account, fresh_email
@@ -93,17 +94,55 @@ def test_change_password(client):
     login(client, email, "NewPassw0rd")
 
 
+def _reset_token(body: str) -> str:
+    """The token of the link in the reset e-mail (/reset-password?token=...)."""
+    m = re.search(r"/reset-password\?token=(\S+)", body)
+    assert m, body
+    return m.group(1)
+
+
 def test_password_reset_flow_token_is_single_use(client, mailbox):
     email = make_account("CUSTOMER")
     assert client.post(f"{API}/auth/password-reset/request", json={"email": email}).status_code == 202
     assert client.post(f"{API}/auth/password-reset/request", json={"email": _email()}).status_code == 202
     assert len(mailbox) == 1  # unknown email sends nothing, yet answers identically
-    token = mailbox[0][2].rsplit(": ", 1)[1]
+    body = mailbox[0][2]
+    assert "đặt lại mật khẩu" in mailbox[0][1] and "http://localhost:5173/reset-password?token=" in body
+    assert re.search(r"là: \d{6}\n", body) and "15 phút" in body and "bỏ qua email này" in body
+    token = _reset_token(mailbox[0][2])
     ok = client.post(f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "Brandn3wPass"})
     assert ok.status_code == 204
     login(client, email, "Brandn3wPass")
     again = client.post(f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "Another1234"})
     assert again.status_code == 401
+
+
+def _reset_code(body: str) -> str:
+    m = re.search(r"là: (\d{6})", body)
+    assert m, body
+    return m.group(1)
+
+
+def test_password_reset_by_the_six_digit_code_in_the_email(client, mailbox):
+    email = make_account("CUSTOMER")
+    url = f"{API}/auth/password-reset/confirm"
+    assert client.post(f"{API}/auth/password-reset/request", json={"email": email}).status_code == 202
+    code = _reset_code(mailbox[0][2])
+    wrong = "000000" if code != "000000" else "111111"
+    r = client.post(url, json={"email": email, "code": wrong, "new_password": "Brandn3wPass"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "OTP_INVALID" and r.json()["error"]["details"]["attempts_left"] == 4
+    r = client.post(url, json={"email": email, "code": code, "new_password": "short"})        # weak password: code kept
+    assert r.status_code == 422
+    assert client.post(url, json={"email": email, "code": code, "new_password": "Brandn3wPass"}).status_code == 204
+    login(client, email, "Brandn3wPass")
+    r = client.post(url, json={"email": email, "code": code, "new_password": "Another1234"})  # single use
+    assert r.status_code == 400 and r.json()["error"]["code"] == "OTP_INVALID"
+    r = client.post(url, json={"email": _email(), "code": code, "new_password": "Another1234"})  # unknown e-mail
+    assert r.status_code == 400 and r.json()["error"]["code"] == "OTP_INVALID"
+    assert client.post(url, json={"code": code, "new_password": "Another1234"}).status_code == 422     # token or email+code
+    # a second request at once is not sent (resend wait), with the same answer
+    assert client.post(f"{API}/auth/password-reset/request", json={"email": email}).status_code == 202
+    assert len(mailbox) == 2                                     # reset + "password changed", no second code
 
 
 def test_admin_creates_internal_account_and_audits(client):
@@ -180,7 +219,7 @@ def test_password_reset_signs_out_every_device(client, mailbox):
     email = make_account("CUSTOMER")
     tok = login(client, email)
     client.post(f"{API}/auth/password-reset/request", json={"email": email})
-    token = mailbox[0][2].rsplit(": ", 1)[1]
+    token = _reset_token(mailbox[0][2])
     assert client.post(f"{API}/auth/password-reset/confirm",
                        json={"token": token, "new_password": "Brandn3wPass"}).status_code == 204
     assert client.get(f"{API}/me", headers=_bearer(tok)).status_code == 401

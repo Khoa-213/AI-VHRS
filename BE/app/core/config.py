@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # Where the gateways send the customer back after paying (a page of the web app). Display only: the order is
     # only ever updated by the gateway's IPN, never by this redirect.
     payment_return_url: str = "http://localhost:5173/payment/result"
+    # Address of the web app, for links in e-mails (password reset). Empty: the origin of PAYMENT_RETURN_URL.
+    public_web_url: str | None = None
     # U8: page of the web app that shows GET /api/v1/verify/{code}; the certificate card's QR code points to {url}/{code}
     public_verify_url: str = "http://localhost:5173/verify"
     # Public base URL of this API (e.g. https://ai-vhrs-be.onrender.com); the gateways call back to {base}/api/v1/webhooks/...
@@ -85,6 +87,8 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from: str | None = None
     smtp_starttls: bool = True
+    smtp_reply_to: str | None = None          # e.g. the project's mailbox; replies to notification mails go there
+    smtp_html: bool = True                    # add the HTML part with the logo (false: plain text only)
     smtp_timeout_seconds: float = 10.0
     # ---- SMS (Phase 5e, FR-53 OTP). mock = nothing leaves the server (default; tests and local work). esms = eSMS.vn
     # (integrations/sms.py). OTP rules are assumptions approved with the 5e plan (2026-11-11).
