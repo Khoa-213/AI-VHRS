@@ -221,7 +221,8 @@ function ProfileSection() {
   const profile = useProfile()
   const [form, setForm] = useState({ fullName: profile.fullName, email: profile.email, phone: profile.phone, address: profile.address, bio: profile.bio })
   const [baseline, setBaseline] = useState(form)
-  // The profile is read only until "Edit profile" is pressed; "Cancel" puts back what was saved.
+  // The profile is locked (fields disabled and dimmed, so they cannot be clicked into) until "Edit profile" is pressed;
+  // "Cancel" puts back what was saved. The email is never editable here.
   const [editing, setEditing] = useState(false)
   const [verifying, setVerifying] = useState(false)
   // The account can arrive or change after this section opened (session check, phone verified, another tab): while nothing
@@ -325,6 +326,10 @@ function ProfileSection() {
             e.target.value = ''
           }}
         />
+        {/* On the row of the photo, at the right end (under "New order"); Save and Cancel take over under the form. */}
+        {!editing && (
+          <button type="button" className="co-btn co-btn--solid co-btn--sm ac-edit-profile" onClick={startEdit}><PencilSimple size={18} aria-hidden />{t('acct.p.editProfile')}</button>
+        )}
       </div>
 
       <form className={`ac-form${locked ? ' ac-form--locked' : ''}`} onSubmit={save}>
@@ -332,12 +337,12 @@ function ProfileSection() {
           <legend>{t('acct.p.sec.contact')}</legend>
           <label className="ac-field">
             <span>{t('acct.p.name')}</span>
-            <input className="vh-input" autoComplete="name" value={form.fullName} readOnly={locked} aria-readonly={locked} onChange={(e) => set({ fullName: e.target.value })} />
+            <input className="vh-input" autoComplete="name" value={form.fullName} disabled={locked} onChange={(e) => set({ fullName: e.target.value })} />
             <small>{t('acct.p.nameHelp')}</small>
           </label>
           <div className="ac-field">
             <label htmlFor="ac-phone">{t('acct.p.phone')}</label>
-            <input id="ac-phone" className="vh-input" inputMode="tel" autoComplete="tel" value={form.phone} readOnly={locked} aria-readonly={locked}
+            <input id="ac-phone" className="vh-input" inputMode="tel" autoComplete="tel" value={form.phone} disabled={locked}
               aria-describedby="ac-phone-help" onChange={(e) => set({ phone: e.target.value })} />
             {accountPhone && (
               <div className="ac-phone-state">
@@ -364,7 +369,7 @@ function ProfileSection() {
           </div>
           <label className="ac-field">
             <span>{t('acct.p.email')}</span>
-            <input className="vh-input" type="email" autoComplete="email" value={form.email} readOnly aria-readonly="true" />
+            <input className="vh-input" type="email" autoComplete="email" value={form.email} disabled />
             <small>{t('acct.p.emailLocked')}</small>
           </label>
         </fieldset>
@@ -373,7 +378,7 @@ function ProfileSection() {
           <legend>{t('acct.p.sec.delivery')}</legend>
           <label className="ac-field">
             <span>{t('acct.p.address')}</span>
-            <input className="vh-input" autoComplete="street-address" value={form.address} readOnly={locked} aria-readonly={locked} onChange={(e) => set({ address: e.target.value })} />
+            <input className="vh-input" autoComplete="street-address" value={form.address} disabled={locked} onChange={(e) => set({ address: e.target.value })} />
             <small>{t('acct.p.addressHelp')}</small>
           </label>
         </fieldset>
@@ -382,7 +387,7 @@ function ProfileSection() {
           <legend>{t('acct.p.sec.about')}</legend>
           <label className="ac-field">
             <span>{t('acct.p.bio')}</span>
-            <textarea className="vh-textarea" rows={3} placeholder={locked ? undefined : t('acct.p.bioPh')} value={form.bio} readOnly={locked} aria-readonly={locked} onChange={(e) => set({ bio: e.target.value })} />
+            <textarea className="vh-textarea" rows={3} placeholder={locked ? undefined : t('acct.p.bioPh')} value={form.bio} disabled={locked} onChange={(e) => set({ bio: e.target.value })} />
           </label>
         </fieldset>
 
@@ -395,7 +400,6 @@ function ProfileSection() {
             </>
           ) : (
             <>
-              <button type="button" className="co-btn co-btn--solid ac-edit" onClick={startEdit}><PencilSimple size={18} aria-hidden />{t('acct.p.editProfile')}</button>
               {saved && <span className="ac-saved" role="status"><Check size={16} weight="bold" aria-hidden />{t('acct.p.saved')}</span>}
             </>
           )}

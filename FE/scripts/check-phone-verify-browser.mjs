@@ -124,7 +124,7 @@ try {
     await evaluate(`localStorage.clear(); localStorage.setItem('aivhrs-lang', '${lang}'); ${signedIn ? `localStorage.setItem('aivhrs-auth', JSON.stringify({ access: 'test-only', refresh: 'test-only' })); localStorage.setItem('aivhrs-user', JSON.stringify({ id: 17, name: 'Mai Tran', email: 'mai@example.com', role: 'customer', apiRole: 'CUSTOMER' }))` : ''}`)
   }
   const profile = async (label) => { await go('/account/profile'); await wait(`!!document.querySelector('.ac-form #ac-phone') && !!document.querySelector('.ac-phone-state')`, `profile: ${label}`) }
-  const readOnly = () => evaluate(`[...document.querySelectorAll('.ac-form input:not([type=email]), .ac-form textarea')].map(i => i.readOnly)`)
+  const readOnly = () => evaluate(`[...document.querySelectorAll('.ac-form input:not([type=email]), .ac-form textarea')].map(i => i.disabled)`)
 
   await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
 
@@ -140,7 +140,7 @@ try {
   assert.match(await text('#ac-phone-help'), /reset your password by SMS/, 'the reason to verify is said')
   await shot('profile-locked-1440.png')
 
-  await click('.ac-actions', 'Edit profile')
+  await click('.ac-photo', 'Edit profile')
   assert.deepEqual(await readOnly(), [false, false, false, false], 'the fields open for editing')
   assert.equal(await evaluate(`(${button('.ac-phone-state', 'Verify')}).disabled`), true, 'no verification while editing')
   assert.equal(await evaluate(`(${button('.ac-actions', 'Update profile')}).disabled`), true, 'nothing to save yet')
@@ -150,7 +150,7 @@ try {
   assert.deepEqual(await readOnly(), [true, true, true, true], 'Cancel locks the profile again')
   assert.equal(log.includes('PATCH /me'), false, 'Cancel saves nothing')
 
-  await click('.ac-actions', 'Edit profile')
+  await click('.ac-photo', 'Edit profile')
   await setInput('.ac-form input', 'Mai Tran Thi')
   await click('.ac-actions', 'Update profile')
   await wait(`/Profile updated/.test(document.querySelector('.ac-actions').innerText)`, 'the profile is saved')
@@ -177,7 +177,7 @@ try {
   assert.equal(await evaluate(`!!(${button('.ac-phone-state', 'Verify')})`), false, 'no Verify button once verified')
 
   // A changed number is unverified again and asks to be verified.
-  await click('.ac-actions', 'Edit profile')
+  await click('.ac-photo', 'Edit profile')
   await setInput('#ac-phone', '0912 345 678')
   await click('.ac-actions', 'Update profile')
   await wait(`/Not verified/.test(document.querySelector('.ac-phone-state').innerText)`, 'the new number is not verified')
