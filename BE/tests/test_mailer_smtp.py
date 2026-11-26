@@ -45,7 +45,7 @@ def test_no_login_without_credentials_and_starttls_can_be_off():
 
 
 BODY = ("Xin chào,\n\nMã đặt lại mật khẩu AI-VHRS của bạn là: 482913\n\n"
-        "Hoặc bấm liên kết sau để đặt mật khẩu mới:\nhttps://www.example.com/reset-password?token=a&b=1\n\n"
+        "Theo dõi đơn:\nhttps://www.example.com/orders?id=a&b=1\n\n"
         "Xem đơn tại https://www.example.com/orders/7 <script>\n\nXưởng Nét Việt")
 
 
@@ -59,13 +59,20 @@ def test_html_part_with_the_inline_logo_and_reply_to():
     page = m.get_body(("html",)).get_content()
     assert f'src="cid:{mail_html.LOGO_CID}"' in page
     assert "letter-spacing:8px" in page and ">482913</div>" in page                    # the code, large
-    assert 'href="https://www.example.com/reset-password?token=a&amp;b=1"' in page and mail_html.BUTTON_LABEL in page
+    assert 'href="https://www.example.com/orders?id=a&amp;b=1"' in page and f">{mail_html.BUTTON_LABEL}</a>" in page
     assert '<a href="https://www.example.com/orders/7"' in page and "&lt;script&gt;" in page and "<script>" not in page
-    logo = [p for p in m.walk() if p.get_content_type() == "image/png"]
-    assert len(logo) == 1 and logo[0]["Content-ID"] == f"<{mail_html.LOGO_CID}>"
-    assert logo[0].get_content_disposition() == "inline" and logo[0].get_content() == mail_html.logo_bytes()
+    assert f'src="cid:{mail_html.LOGO_DARK_CID}"' in page and "prefers-color-scheme: dark" in page   # white logo in dark mode
+    logos = {p["Content-ID"]: p for p in m.walk() if p.get_content_type() == "image/png"}
+    assert set(logos) == {f"<{mail_html.LOGO_CID}>", f"<{mail_html.LOGO_DARK_CID}>"}
+    assert all(p.get_content_disposition() == "inline" for p in logos.values())
+    assert logos[f"<{mail_html.LOGO_CID}>"].get_content() == mail_html.logo_bytes()
 
 
 def test_no_reply_to_and_plain_text_only_when_switched_off():
     m = SmtpMailer("h", 25, None, None, "a@b.c", factory=FakeSMTP, reply_to="  ", html=False).build("x@y.z", "s", "b")
     assert m["Reply-To"] is None and m.get_content_type() == "text/plain"
+
+
+def test_the_reset_page_link_is_a_reset_button():
+    page = mail_html.render("Trang đặt lại mật khẩu:\nhttps://www.example.com/reset-password", "s", with_logo=False)
+    assert ">Đặt lại mật khẩu</a>" in page and "cid:" not in page

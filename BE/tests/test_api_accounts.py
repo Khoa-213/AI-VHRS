@@ -94,27 +94,15 @@ def test_change_password(client):
     login(client, email, "NewPassw0rd")
 
 
-def _reset_token(body: str) -> str:
-    """The token of the link in the reset e-mail (/reset-password?token=...)."""
-    m = re.search(r"/reset-password\?token=(\S+)", body)
-    assert m, body
-    return m.group(1)
-
-
-def test_password_reset_flow_token_is_single_use(client, mailbox):
+def test_password_reset_mail_has_the_code_and_a_short_link_but_no_token(client, mailbox):
     email = make_account("CUSTOMER")
     assert client.post(f"{API}/auth/password-reset/request", json={"email": email}).status_code == 202
     assert client.post(f"{API}/auth/password-reset/request", json={"email": _email()}).status_code == 202
     assert len(mailbox) == 1  # unknown email sends nothing, yet answers identically
     body = mailbox[0][2]
-    assert "đặt lại mật khẩu" in mailbox[0][1] and "http://localhost:5173/reset-password?token=" in body
+    assert "đặt lại mật khẩu" in mailbox[0][1] and "\nhttp://localhost:5173/reset-password\n" in body
+    assert "token" not in body and "?" not in body.split("reset-password", 1)[1].split("\n", 1)[0]
     assert re.search(r"là: \d{6}\n", body) and "15 phút" in body and "bỏ qua email này" in body
-    token = _reset_token(mailbox[0][2])
-    ok = client.post(f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "Brandn3wPass"})
-    assert ok.status_code == 204
-    login(client, email, "Brandn3wPass")
-    again = client.post(f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "Another1234"})
-    assert again.status_code == 401
 
 
 def _reset_code(body: str) -> str:
@@ -219,9 +207,9 @@ def test_password_reset_signs_out_every_device(client, mailbox):
     email = make_account("CUSTOMER")
     tok = login(client, email)
     client.post(f"{API}/auth/password-reset/request", json={"email": email})
-    token = _reset_token(mailbox[0][2])
+    code = _reset_code(mailbox[0][2])
     assert client.post(f"{API}/auth/password-reset/confirm",
-                       json={"token": token, "new_password": "Brandn3wPass"}).status_code == 204
+                       json={"email": email, "code": code, "new_password": "Brandn3wPass"}).status_code == 204
     assert client.get(f"{API}/me", headers=_bearer(tok)).status_code == 401
     assert client.post(f"{API}/auth/refresh", json={"refresh_token": tok["refresh_token"]}).status_code == 401
 

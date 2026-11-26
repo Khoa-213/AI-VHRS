@@ -43,7 +43,7 @@ EMAIL_RESET = ("Xin chào,\n\n"
                "Mã đặt lại mật khẩu AI-VHRS của bạn là: {code}\n\n"
                "Nhập mã này ở trang đặt lại mật khẩu. Mã hết hạn sau {minutes} phút và chỉ dùng được một lần; "
                "đừng chia sẻ mã cho bất kỳ ai.\n\n"
-               "Hoặc bấm liên kết sau để đặt mật khẩu mới:\n{link}\n\n"
+               "Trang đặt lại mật khẩu:\n{link}\n\n"
                "Nếu bạn không yêu cầu, hãy bỏ qua email này: mật khẩu của bạn không đổi.\n\n"
                "Xưởng Nét Việt")
 
