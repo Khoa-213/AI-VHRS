@@ -122,7 +122,7 @@ Ba chỗ làm việc trong bước này:
 | B2 | [WEB] | **Chuẩn bị** | Job **SCHEDULED → PREPARING** |
 | B3 | [MT] | Gửi hiệu chuẩn (3 điểm giấy, giới hạn chuyển động, hộp an toàn từ `calibration.json`): `.\.simenv\python.exe -X utf8 scripts\robot_console.py calibrate` | Thành công; trên [WEB] mục Hiệu chuẩn thành **Đạt**. Nếu báo còn giá trị `<ĐO>` thì phải đo và điền trước |
 | B4 | [WEB] | Khung "Điều khiển robot", bước 1 **Nạp job (LOAD)** | Số trang, số nét, thời gian ước tính; `validation` không có lỗi; ô "Mã xác nhận" hiện gợi ý dạng `AUTHORIZE-<job>-xxxxxxxx` |
-| B5 | [MT] | Mở khoá chạy thật cho đúng job này, 30 phút: `.\.simenv\python.exe -X utf8 -m vhrs_agent.cli real-enable --config agent.json --job <JOB_ID> --minutes 30` → gõ `YES` | Báo đã bật REAL cho job, kèm giờ hết hạn. Hết hạn thì chạy lại lệnh này |
+| B5 | [MT] | Mở khoá chạy thật cho đúng job này, 30 phút: khi màn desktop có nút "Bật REAL" thì bấm nút đó (từ 2026-11-26, không cần gõ YES); trước khi có màn đó: `.\.simenv\python.exe -X utf8 -m vhrs_agent.cli real-enable --config agent.json --job <JOB_ID> --minutes 30` → gõ `YES` | Báo đã bật REAL cho job, kèm giờ hết hạn. Hết hạn thì chạy lại lệnh này |
 | B6 | [WEB] | Bước 2 **Kiểm tra trước (PREFLIGHT REAL)** | `ok`, số lần di chuyển. Robot **không** động. Lỗi `START_ORIENTATION_MISMATCH` → làm B6b |
 | B6b | [RB]+[MT] | (Chỉ khi cần) Dùng tay đưa bút tới gần điểm bắt đầu, rồi: `.\.simenv\python.exe -X utf8 scripts\robot_console.py align-start --mode REAL` → `YES` (**robot di chuyển chậm**), rồi làm lại B6 | PREFLIGHT `ok` |
 | B7 | [WEB] | Bước 3 **Ghi kết quả mô phỏng** | Mục Mô phỏng thành **Đạt**. BE tự dựng lại kế hoạch và có thể đổi thành **Không đạt** → đọc lỗi, dừng |

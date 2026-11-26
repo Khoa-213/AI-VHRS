@@ -533,7 +533,7 @@ App kỹ thuật viên ──POST robot-commands──▶ BE (Render) ◀──P
 `mode` là `MOCK` / `SIM` / `REAL`. `FAILED` kèm `error_code` của agent: `REAL_NOT_ENABLED_ON_SITE`, `MODE_DISABLED`, `AGENT_BUSY`, `JOB_NOT_LOADED`, `VALIDATION_FAILED`, `DRY_RUN_REQUIRED`, `PARTIAL_JOB_EXISTS`, `NO_RUN_ACTIVE`, ... (hiện `error_message` cho người dùng).
 Lỗi tạo lệnh: `409 ROBOT_IN_USE` (robot đang do kỹ thuật viên khác điều khiển; **2026-11-26: không áp cho `STOP` và `PAUSE`**: kỹ thuật viên đang giữ job hoạt động trên robot luôn dừng được, kể cả khi app của người khác đang giữ robot; `RESUME` và mọi lệnh khởi động vẫn bị chặn), `409 AGENT_OFFLINE` (máy trạm chưa kết nối: **không** xếp hàng; hiện "robot không liên lạc được, nếu nguy hiểm hãy nhấn E-Stop vật lý"), `409 JOB_STATE_CONFLICT` (sai trạng thái job), `409 JOB_NOT_ACTIVE`, `409 IDEMPOTENCY_KEY_REUSED`, `422 MODE_REQUIRED`, `422 AUTHORIZATION_REQUIRED` (RUN chạy REAL cần `authorization: "AUTHORIZE-<job>-<mã>"` lấy từ kết quả `LOAD`), `422 JOB_REQUIRED`, `404` khi không có job trên robot đó (BR-19), `403` khi Manager gửi lệnh khác PAUSE/RESUME/STOP.
 Gửi `idempotency_key` (UUID mới cho mỗi lần bấm) để bấm đúp / mạng chập chờn không tạo hai lệnh.
-**Chạy robot THẬT** vẫn cần ba điều độc lập mà lệnh từ xa không thay được: (1) `real` nằm trong `modes` của agent ở máy trạm; (2) **người ở máy trạm** chạy `cli real-enable --job N --minutes M` (gõ YES; file hết hạn, đúng job đó); (3) mã `AUTHORIZE-…` gắn kế hoạch + đã chạy thử pen-up. Quy trình đầy đủ: `docs/ROBOT_REAL_TEST_RUNBOOK.md`.
+**Chạy robot THẬT** vẫn cần ba điều độc lập mà lệnh từ xa không thay được: (1) `real` nằm trong `modes` của agent ở máy trạm; (2) **bật REAL cho đúng job tại máy trạm**: nút "Bật REAL" trên màn desktop (`POST /api/jobs/{id}/real-enable` của agent, không cần gõ YES: chủ dự án chọn c1 2026-11-26) hoặc `cli real-enable --job N --minutes M`; file hết hạn, đúng job đó; **không lệnh BE nào bật được** (`REAL_ENABLE` không phải kind hợp lệ), agent báo trạng thái trong `live.status.real_enabled` và `RobotStatusOut.real_enabled`; (3) mã `AUTHORIZE-…` gắn kế hoạch + đã chạy thử pen-up. Quy trình đầy đủ: `docs/ROBOT_REAL_TEST_RUNBOOK.md`.
 
 **Trình tự một job (app kỹ thuật viên):** `package` → `prepare` → `calibration` → `simulation` → `LOAD` → `PREFLIGHT` → `DRY_RUN` → (người vận hành xác nhận tại máy trạm khi chạy THẬT) → `POST /jobs/{id}/start` → `RUN` → theo dõi `live` → tới khi `status.busy=false` → `POST /jobs/{id}/finish` → ảnh QC.
 
@@ -646,13 +646,15 @@ chính người đó); không gửi thì job có `robot_id = null` và **kỹ th
 ## 7b. Luồng Technical Staff (`/technician/*`) – Phase 4a
 
 ### 7b.0 Robot của tôi và chọn robot cho job (migration 0032, 2026-11-26)
+> **2026-11-26: bỏ giao diện kỹ thuật viên trên web.** Kỹ thuật viên chỉ làm việc trên **màn desktop của Robot Agent ở máy trạm**; màn này gọi các API `/technician/*` dưới đây qua proxy của agent (`/api/technician/...`). Việc cần làm: `docs/FE_TECH_WORKSPACE_HANDOFF.md`.
+
 ```
 GET /technician/robots                  {total, online, active, robots: RobotStatusOut[]}  chỉ robot Manager giao cho tôi
 PUT /technician/jobs/{id}/robot {robot_id}   chọn / đổi robot cho job còn SCHEDULED → JobOut
 ```
 - `online` = số robot có Robot Agent gửi heartbeat trong 15 giây gần nhất; `active` = số robot đang làm việc (có lần chạy đang mở hoặc job WRITING/PAUSED).
 - Mỗi robot (`RobotStatusOut`) có thêm: `robot_status` (AVAILABLE/BUSY/MAINTENANCE/BROKEN), `station`, `is_simulated`, `supported_pen_categories`,
-  `technician_id`, `active`, `enabled_modes` (chế độ agent cho phép, `[]` khi offline), `agent_busy`; cùng các trường cũ
+  `technician_id`, `active`, `enabled_modes` (chế độ agent cho phép, `[]` khi offline), `agent_busy`, `real_enabled` (`{job_id, expires_at, enabled_by, waive_dry_run}` khi máy trạm đang bật REAL, ngược lại `null`); cùng các trường cũ
   (`connection_state` ONLINE/OFFLINE/UNKNOWN, `state`, `headline_vi`, `level`, `job_id`, `job_status`, `open_alerts`, ...).
 - Chọn robot: chỉ robot của tôi (khác → `404 ROBOT_NOT_FOUND`), robot `AVAILABLE`/`BUSY` (khác → `409 ROBOT_UNAVAILABLE`), hợp bút
   (`422 ROBOT_NOT_SUITABLE`), rảnh trong khung giờ của job (`409 SLOT_CONFLICT`), job còn `SCHEDULED` (`409 JOB_STATE_CONFLICT`).

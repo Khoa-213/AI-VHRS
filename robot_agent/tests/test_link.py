@@ -230,3 +230,19 @@ def test_a_configured_start_point_is_used_for_align_and_the_return(tmp_path):
     cid = be.send("ALIGN_START", mode="SIM")
     link.tick()
     assert be.results[cid]["ok"] is False and be.results[cid]["error_code"] == "INVALID_CONFIG"
+
+
+
+def test_the_backend_cannot_switch_real_on_and_the_status_shows_the_switch(tmp_path):
+    """Owner 2026-11-26: REAL is switched on only at the workstation (desktop button or CLI). A command from the backend cannot."""
+    svc, link, be, _ = make(tmp_path, modes=("mock", "sim", "real"))
+    link.tick()
+    assert be.last_status["real_enabled"] is None
+    cid = be.send("REAL_ENABLE", minutes=30)
+    link.tick()
+    assert be.results[cid]["ok"] is False                                  # refused (not a command the agent knows)
+    assert not (tmp_path / "REAL_ENABLED.json").exists()
+    svc.enable_real(12, 30, "desktop:Ky Thuat")
+    link.tick()
+    st = be.last_status["real_enabled"]
+    assert st["job_id"] == 12 and st["enabled_by"] == "desktop:Ky Thuat" and st["waive_dry_run"] is False

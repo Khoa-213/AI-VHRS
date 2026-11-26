@@ -160,7 +160,7 @@ Nếu muốn **truy vấn lịch sử theo robot** (tổng giờ chạy, số l�
 - **Trạng thái sống** (khớp, TCP, lực, mức cảnh báo) nằm trong bộ nhớ BE (1 worker uvicorn, theo Dockerfile): `GET /technician/robots/{id}/live`. Chỉ các sự thật cần lưu (lần chạy, cảnh báo, sự kiện job, kết quả lệnh) vào DB.
 - **3D**: trang `/viewer/robot.html` do BE phục vụ, vé chỉ-đọc 60 phút (`POST .../view-ticket`); mô hình URDF/STL của hãng nằm trong Storage (`robot-models/fr3/`) và được phục vụ ở `/api/v1/robot-model/...`; three.js r160 + urdf-loader 0.12.1 tải từ jsDelivr ở phiên bản ghim. FE nhúng bằng WebView/iframe.
 - **Mất liên lạc agent ↔ BE khi đang viết** (đã chốt): sau `link_loss_grace_s` (mặc định 6 giây, là chính sách chứ không phải số vật lý) agent viết nốt nét, nhấc bút, tạm dừng, cảnh báo cam `BACKEND_LINK_LOST` (mức 3) tại chỗ rồi báo lên BE khi nối lại; **không tự tiếp tục**. E-Stop vật lý là an toàn thật.
-- **Giữ nguyên cổng chạy THẬT tại chỗ** (`real-enable` + mã xác nhận gắn kế hoạch + đã chạy thử); lệnh từ BE không thay được.
+- **Giữ nguyên cổng chạy THẬT tại chỗ** (`real-enable` + mã xác nhận gắn kế hoạch + đã chạy thử); lệnh từ BE không thay được. 2026-11-26 (chủ dự án chọn c1): `real-enable` bấm được bằng nút trên màn desktop của agent, không còn bắt gõ YES (bỏ kiểm tra "có người cạnh E-Stop"); vẫn chỉ tại máy trạm nối robot.
 - **Đã chạy thật (MOCK/SIM) toàn đường**: BE thật (uvicorn) + agent thật (PyBullet + URDF FR3) + Supabase Storage thật + DB cục bộ: LOAD → PREFLIGHT → DRY_RUN → RUN, 35/35 nét, xem 3D qua trang của BE. Chưa chạm robot thật.
 - Quy trình cho buổi test thật và danh sách việc cần đo: **`ROBOT_REAL_TEST_RUNBOOK.md`**.
 

@@ -183,3 +183,27 @@ def test_rescheduling_to_another_technician_drops_a_robot_that_is_not_theirs(cli
     keep = client.post(f"{M}/jobs/{r.json()['id']}/reschedule", headers=mgr, json={"slot_start": _iso(_at(2, 9)), "reason": "Giờ"})
     assert keep.status_code == 200 and keep.json()["robot_id"] is None
     _sql("update robots set status='MAINTENANCE' where id=:r returning 1", r=spare)
+
+
+# ---- the REAL switch is set at the workstation only; the backend just shows it (owner 2026-11-26) --------------------
+def test_the_real_switch_reported_by_the_agent_is_shown_and_cannot_be_set_through_the_backend(client, mgr, robot, tech):
+    from app.services.robot_link import hub
+    from tests.test_api_robot_link import key_for
+    hub.reset()
+    try:
+        _give(robot, tech[1])
+        _, ah = key_for(client, mgr, robot)
+        switch = {"job_id": 12, "expires_at": 1_900_000_000.0, "enabled_by": "desktop:Ky Thuat", "waive_dry_run": False}
+        r = client.post(f"{API}/agent/sync", headers=ah,
+                        json={"status": {"mode": "SIM", "enabled_modes": ["SIM", "REAL"], "real_enabled": switch}})
+        assert r.status_code == 200, r.text
+        row = next(x for x in client.get(f"{T}/robots", headers=tech[0]).json()["robots"] if x["robot_id"] == robot)
+        assert row["real_enabled"] == switch and row["enabled_modes"] == ["SIM", "REAL"]
+        for kind in ("REAL_ENABLE", "REAL_DISABLE"):                      # no command can switch REAL on (or off) remotely
+            r = client.post(f"{T}/robot-commands", headers=tech[0], json={"kind": kind, "robot_id": robot})
+            assert r.status_code == 422, r.text
+        client.post(f"{API}/agent/sync", headers=ah, json={"status": {"mode": "SIM", "real_enabled": None}})
+        row = next(x for x in client.get(f"{T}/robots", headers=tech[0]).json()["robots"] if x["robot_id"] == robot)
+        assert row["real_enabled"] is None
+    finally:
+        hub.reset()
