@@ -83,16 +83,18 @@ class PasswordResetRequestIn(BaseModel):
 
 
 class PasswordResetConfirmIn(BaseModel):
-    """`email` + `code` (the 6 digits of the reset e-mail), or `token` = the `reset_token` of the SMS flow only."""
-    token: str | None = Field(default=None, description="chỉ cho luồng SMS: `reset_token` của POST /auth/phone-reset/verify")
-    email: EmailStr | None = None
-    code: str | None = Field(default=None, pattern=r"^\d{6}$", examples=["123456"])
+    """The 6-digit code and where it was sent: `email` (reset e-mail) or `phone` (SMS to the verified number), one of the
+    two. No token any more (owner 2026-11-26): the code is checked and the password set in this one call."""
+    email: EmailStr | None = Field(default=None, description="luồng email: email đã nhận mã")
+    phone: str | None = Field(default=None, pattern=_PHONE, examples=["0901234567"],
+                              description="luồng SMS: số đã xác minh đã nhận mã")
+    code: str = Field(pattern=r"^\d{6}$", examples=["123456"])
     new_password: str = Field(min_length=8, max_length=72)
 
     @model_validator(mode="after")
     def _one_way(self):
-        if not self.token and not (self.email and self.code):
-            raise ValueError("Cần token, hoặc email cùng mã 6 số.")
+        if (self.email is None) == (self.phone is None):
+            raise ValueError("Gửi email hoặc phone (một trong hai) cùng mã 6 số.")
         return self
 
 
@@ -104,22 +106,12 @@ class PhoneResetRequestIn(BaseModel):
     phone: str = Field(pattern=_PHONE, examples=["0901234567"])
 
 
-class PhoneResetVerifyIn(BaseModel):
-    phone: str = Field(pattern=_PHONE, examples=["0901234567"])
-    code: str = Field(pattern=r"^\d{6}$", examples=["123456"])
-
-
 class OtpSentOut(BaseModel):
     phone_masked: str = Field(examples=["090****567"])
     expires_in: int = Field(description="Giây tới khi mã hết hạn")
     resend_after: int = Field(description="Giây phải chờ trước khi xin mã mới")
     mode: str = Field(description="MOCK: không gửi SMS thật; ESMS_SANDBOX: gọi eSMS ở chế độ thử (không giao tin); "
                                   "ESMS: gửi SMS thật qua eSMS; SPEEDSMS: gửi SMS thật qua SpeedSMS")
-
-
-class PhoneResetTokenOut(BaseModel):
-    reset_token: str = Field(description="Gửi kèm mật khẩu mới tới POST /auth/password-reset/confirm (trường `token`)")
-    expires_in: int
 
 
 class ChangePasswordIn(BaseModel):

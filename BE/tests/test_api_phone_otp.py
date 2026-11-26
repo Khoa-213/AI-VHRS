@@ -178,25 +178,26 @@ def test_forgotten_password_is_reset_with_the_verified_phone(client, sms, mailbo
     assert client.post(f"{API}/auth/phone-reset/request", json={"phone": phone}).status_code == 202
     assert len(sms) == 1                                          # resend wait: silently nothing, same answer
 
-    wrong = "000000" if _code(sms) != "000000" else "111111"
-    r = client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": wrong})
-    assert r.status_code == 400 and _err(r) == "OTP_INVALID"
-    r = client.post(f"{API}/auth/phone-reset/verify", json={"phone": _phone(), "code": _code(sms)})
+    url, code = f"{API}/auth/password-reset/confirm", _code(sms)
+    wrong = "000000" if code != "000000" else "111111"
+    r = client.post(url, json={"phone": phone, "code": wrong, "new_password": "Brandn3wPass"})
+    assert r.status_code == 400 and _err(r) == "OTP_INVALID" and r.json()["error"]["details"]["attempts_left"] == 4
+    r = client.post(url, json={"phone": _phone(), "code": code, "new_password": "Brandn3wPass"})
     assert r.status_code == 400 and _err(r) == "OTP_INVALID"     # a number nobody verified
-    r = client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": _code(sms)})
-    assert r.status_code == 200, r.text
-    token = r.json()["reset_token"]
-    assert r.json()["expires_in"] == 1800
-    assert client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": _code(sms)}).status_code == 400
+    r = client.post(url, json={"phone": phone, "code": code, "new_password": "short"})
+    assert r.status_code == 422                                   # weak password: the code is not used up
+    assert client.post(url, json={"phone": phone, "email": email, "code": code, "new_password": "Brandn3wPass"}).status_code == 422
+    assert client.post(url, json={"token": "x", "new_password": "Brandn3wPass"}).status_code == 422   # no token any more
+    assert client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": code}).status_code in (404, 405)
 
     mailbox.clear()
-    ok = client.post(f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "Brandn3wPass"})
-    assert ok.status_code == 204
+    ok = client.post(url, json={"phone": "+84" + phone[1:], "code": code, "new_password": "Brandn3wPass"})
+    assert ok.status_code == 204, ok.text
     assert client.get(f"{API}/me", headers=h).status_code == 401  # every device signed out
     login(client, email, "Brandn3wPass")
     assert [m[0] for m in mailbox] == [email] and "đã được đổi" in mailbox[0][1]
-    again = client.post(f"{API}/auth/password-reset/confirm", json={"token": token, "new_password": "Another1234"})
-    assert again.status_code == 401                               # the token dies with the old password
+    again = client.post(url, json={"phone": phone, "code": code, "new_password": "Another1234"})
+    assert again.status_code == 400 and _err(again) == "OTP_INVALID"   # single use
     assert _sql("select count(*) from audit_logs where action='PASSWORD_RESET_PHONE' and entity_id = "
                 "(select id from accounts where email=:e)", e=email) == 1
 
@@ -209,7 +210,7 @@ def test_a_disabled_account_cannot_be_recovered_by_phone(client, sms):
     _sql("update accounts set status='DISABLED' where email=:e returning 1", e=email)
     assert client.post(f"{API}/auth/phone-reset/request", json={"phone": phone}).status_code == 202
     assert sms == []
-    r = client.post(f"{API}/auth/phone-reset/verify", json={"phone": phone, "code": "123456"})
+    r = client.post(f"{API}/auth/password-reset/confirm", json={"phone": phone, "code": "123456", "new_password": "Brandn3wPass"})
     assert r.status_code == 400 and _err(r) == "OTP_INVALID"
 
 
@@ -217,7 +218,8 @@ def test_otp_endpoints_need_a_login_and_valid_input(client):
     assert client.post(f"{API}/me/phone/otp").status_code == 401
     assert client.post(f"{API}/me/phone/verify", json={"code": "123456"}).status_code == 401
     assert client.post(f"{API}/auth/phone-reset/request", json={"phone": "12345"}).status_code == 422
-    assert client.post(f"{API}/auth/phone-reset/verify", json={"phone": "0901234567", "code": "1234"}).status_code == 422
+    assert client.post(f"{API}/auth/password-reset/confirm",
+                       json={"phone": "0901234567", "code": "1234", "new_password": "Brandn3wPass"}).status_code == 422
 
 
 def test_sms_is_listed_with_the_integrations(client):

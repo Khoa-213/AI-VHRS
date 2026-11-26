@@ -4,9 +4,9 @@ Two flows on the same `phone_otps` table:
 * verification (signed in): `send_verification` -> `confirm_verification` sets `accounts.phone_verified_at`. One number can be
   verified for one account only (unique index `ux_accounts_verified_phone`, answered 409 `PHONE_TAKEN`).
 * recovery (signed out): `request_reset` sends a code only to a VERIFIED number of an ACTIVE account and always answers the
-  same way, so numbers cannot be enumerated; `verify_reset` turns a right code into the same reset token the e-mail flow
-  uses, and the password is set with `POST /auth/password-reset/confirm` (strength check, every device signed out,
-  token single use).
+  same way, so numbers cannot be enumerated; `confirm_reset` checks the code inside
+  `POST /auth/password-reset/confirm {phone, code, new_password}`, which sets the password in the same call (strength
+  checked first, every device signed out). No reset token since 2026-11-26 (owner: "bỏ token giống email").
 
 Rules (assumptions: the SRS text of FR-53 is not in the repo; approved with the 5e plan on 2026-11-11), all in settings:
 6 digits, only an HMAC stored, 5 minutes, 5 wrong guesses then burned, a new code closes the older ones, 60 s between two
@@ -24,7 +24,6 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core import security
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.integrations.sms import SmsSender, mask
@@ -182,13 +181,12 @@ class PhoneOtpService:
         except AppError as exc:
             log.info("phone reset not sent to %s: %s", mask(phone), exc.code)
 
-    def verify_reset(self, phone: str, code: str) -> tuple[str, int]:
+    def confirm_reset(self, phone: str, code: str) -> Account:
+        """The account whose verified number got this code (the code is used up). The caller sets the password."""
         acc = self._reset_owner(phone)
         if acc is None:
             raise AppError(400, "OTP_INVALID", _BAD_CODE)
         self._check(acc.id, normalize_phone(acc.phone or phone), code)
         audit.record(self.session, actor_id=acc.id, action="PASSWORD_RESET_PHONE", entity_type="account", entity_id=acc.id,
                      ip=self.ip)
-        ttl = timedelta(minutes=self.cfg.reset_token_ttl_min)
-        token = security.create_token(acc.id, security.RESET, ttl, fp=security.password_fingerprint(acc.password_hash))
-        return token, int(ttl.total_seconds())
+        return acc
