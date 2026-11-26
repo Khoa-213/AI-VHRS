@@ -13,7 +13,7 @@ const outDir = 'lib/features/tech/i18n/gen';
 
 /// The key areas the technician app reads. `n.` holds catalog names, `skip` is a whole key.
 const prefixes = [
-  'common.', 'err.', 'js.', 'lang.', 'login.', 'n.', 'ot.', 'po.', 'rail.', 'rb.', 'role.', 'td.', 'wk.',
+  'common.', 'err.', 'js.', 'lang.', 'login.', 'n.', 'nt.', 'ot.', 'po.', 'rail.', 'rb.', 'role.', 'td.', 'tq.', 'wk.',
 ];
 const wholeKeys = ['skip', 'co.loading'];
 

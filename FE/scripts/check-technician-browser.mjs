@@ -75,7 +75,7 @@ try {
       }
       if (!u.pathname.startsWith('/api/v1/')) { await fulfill(requestId, {}, 200); return }
       const path = u.pathname.slice('/api/v1'.length), body = JSON.parse(request.postData || '{}')
-      if (request.method !== 'GET') writes.push(path)
+      if (request.method !== 'GET' && !path.endsWith('/view-ticket')) writes.push(path) // a read-only 3D ticket is not production data
       let data
       if (path === '/me') data = { id: 17, email: 'test@example.test', full_name: 'Browser Test', phone: null, role: 'TECHNICAL_STAFF', status: 'ACTIVE', addresses: [], created_at: now }
       else if (path === '/technician/jobs') data = { items: u.searchParams.has('status') && !u.searchParams.getAll('status').includes(job.status) ? [] : [job], total: u.searchParams.has('status') && !u.searchParams.getAll('status').includes(job.status) ? 0 : 1, page: 1, page_size: Number(u.searchParams.get('page_size') || 50) }

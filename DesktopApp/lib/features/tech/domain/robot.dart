@@ -266,6 +266,9 @@ class RobotAlert {
   final bool estopAdvised;
   final int occurrences;
   final DateTime raisedAt;
+
+  /// The latest time the same alert happened again (the backend counts repeats on the open alert).
+  final DateTime? lastRaisedAt;
   final DateTime? acknowledgedAt;
 
   const RobotAlert({
@@ -279,8 +282,20 @@ class RobotAlert {
     required this.occurrences,
     required this.raisedAt,
     this.jobId,
+    this.lastRaisedAt,
     this.acknowledgedAt,
   });
+
+  /// Not acknowledged yet, or it happened again after it was acknowledged: the operator has to answer it again.
+  bool get needsAck {
+    final ack = acknowledgedAt;
+    if (ack == null) return true;
+    final last = lastRaisedAt;
+    return last != null && last.isAfter(ack);
+  }
+
+  /// One occurrence of this alert: the operator's answer covers this one, not a later repeat.
+  String get occurrenceKey => '$id@${(lastRaisedAt ?? raisedAt).toUtc().toIso8601String()}';
 
   factory RobotAlert.fromJson(Map<String, dynamic> j) => RobotAlert(
         id: j['id'] as int,
@@ -293,6 +308,7 @@ class RobotAlert {
         estopAdvised: j['estop_advised'] as bool? ?? false,
         occurrences: j['occurrences'] as int? ?? 1,
         raisedAt: DateTime.parse(j['raised_at'] as String),
+        lastRaisedAt: _time(j['last_raised_at']),
         acknowledgedAt: _time(j['acknowledged_at']),
       );
 }

@@ -91,9 +91,9 @@ export default function JobWorkflow({ job, refresh, stale }: { job: TechJobDetai
     {job.status === 'SCHEDULED' && <section className="panel"><h2>{t('td.flow.prepare')}</h2><p className="sub">{t('td.flow.prepareHelp')}</p>
       <button type="button" className="sd-btn" disabled={disabled || !gates.prepare} onClick={() => void run(() => prepareJob(job.id))}>{t('td.flow.prepare')}</button>
     </section>}
-    {job.status === 'PREPARING' && <JobPreparation job={job} disabled={disabled} gates={gates} run={run} />}
+    {['PREPARING', 'PAUSED'].includes(job.status) && <JobPreparation job={job} disabled={disabled} gates={gates} run={run} />}
     {['SCHEDULED', 'PREPARING', 'WRITING', 'PAUSED'].includes(job.status) && <RobotView3D robotId={job.robotId} robotCode={job.robotCode} />}
-    {['PREPARING', 'WRITING', 'PAUSED'].includes(job.status) && <RobotConsole job={job} refresh={refresh} run={run} verified={!!current} disabled={disabled} />}
+    {['PREPARING', 'WRITING', 'PAUSED'].includes(job.status) && <RobotConsole job={job} refresh={refresh} run={run} verified={!!current} disabled={disabled} revision={revision} />}
     <JobEvents job={job} disabled={disabled} run={run} />
     {gates.finish && <section className="panel"><h2>{t('td.flow.finish')}</h2><p className="sub">{t('td.flow.finishHelp')}</p>
       <button type="button" className="sd-btn" disabled={disabled} onClick={() => void run(() => finishJob(job.id), t('td.flow.confirmFinish'))}>{t('td.flow.finish')}</button>

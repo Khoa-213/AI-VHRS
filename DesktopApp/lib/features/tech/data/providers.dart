@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/network/network_exceptions.dart';
 import '../domain/job.dart';
+import '../domain/notification.dart';
 import '../domain/robot.dart';
+import 'notification_api.dart';
 import 'robot_api.dart';
 import 'tech_api.dart';
 
@@ -19,6 +21,15 @@ final techApiProvider = Provider<TechApi>(
 );
 
 final robotApiProvider = Provider<RobotApi>((ref) => RobotApi(client: ref.watch(dioClientProvider)));
+
+final notificationApiProvider = Provider<NotificationApi>((ref) => NotificationApi(client: ref.watch(dioClientProvider)));
+
+/// The latest notifications and the unread count, every 30 seconds while the app is in view.
+final notificationsProvider = StreamProvider.autoDispose<NotificationPage>((ref) => pollStream(
+      ref,
+      ref.watch(notificationApiProvider).list,
+      next: (_) => const Duration(seconds: 30),
+    ));
 
 // ─── App visibility ──────────────────────────────────────────────────
 
@@ -126,6 +137,10 @@ final jobPhotosProvider = StreamProvider.autoDispose.family<List<ProductPhoto>, 
       () => ref.read(techApiProvider).photos(id),
       next: (_) => const Duration(seconds: 30),
     ));
+
+final jobQualityProvider = FutureProvider.autoDispose.family<List<QualityEvaluation>, int>(
+  (ref, id) => ref.watch(techApiProvider).quality(id),
+);
 
 final jobEventsProvider = FutureProvider.autoDispose.family<List<JobEvent>, int>(
   (ref, id) => ref.watch(techApiProvider).allEvents(id),

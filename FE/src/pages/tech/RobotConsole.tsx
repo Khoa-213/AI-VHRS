@@ -9,7 +9,7 @@ import {
   type CommandKind, type Live, type LiveFrame, type RobotCommand,
 } from '../../services/robot'
 import { useRobotStatus } from '../../store/robotStatus'
-import { simulateJob, startJob, type TechJobDetail } from '../../services/technician'
+import { simulateJob, simulationStale, startJob, type TechJobDetail } from '../../services/technician'
 import { flowError, type TechRun } from './flow'
 
 /** The workshop runs the real arm only; MOCK and SIM stay on the workstation for testing. */
@@ -72,14 +72,19 @@ interface Props {
   /** The job package was downloaded and its hash checked in this browser. */
   verified: boolean
   disabled: boolean
+  /** Bumped after every action of the job page (the manual simulation form included), so the stale check is read again. */
+  revision?: number
 }
 
-export default function RobotConsole({ job, refresh, run, verified, disabled }: Props) {
+export default function RobotConsole({ job, refresh, run, verified, disabled, revision = 0 }: Props) {
   const t = useT()
   const locale = useLocale()
   const { live, frame, error: liveError } = useLive(job.robotId)
   const status = useRobotStatus()
   const history = useAsync(() => jobCommands(job.id), [job.id])
+  // A PAUSED job calibrated again needs a new simulation before RUN / RESUME (the backend answers SIMULATION_STALE otherwise).
+  const stale = useAsync(() => (job.status === 'PAUSED' ? simulationStale(job.id) : Promise.resolve(false)), [job.id, job.status, job.calibration?.id, revision])
+  const simStale = stale.data === true
   const row = status.data?.find((r) => r.robotId === job.robotId) ?? null
   const [auth, setAuth] = useState('')
   const [resumeFrom, setResumeFrom] = useState('')
@@ -113,7 +118,7 @@ export default function RobotConsole({ job, refresh, run, verified, disabled }: 
   const level = Math.max(row?.level ?? 1, frame?.level ?? 1)
 
   const finish = async () => {
-    await Promise.all([history.reload(), refresh()])
+    await Promise.all([history.reload(), refresh(), stale.reload()])
   }
 
   /** A command that takes time (load, check, run). One at a time; it is followed until the agent answers. */
@@ -179,6 +184,7 @@ export default function RobotConsole({ job, refresh, run, verified, disabled }: 
     })
     // The server rebuilds the plan and may turn a claimed pass into a fail.
     if (passed && saved.simulationPassed === false) throw new Error('td.flow.simServerRejected')
+    await stale.reload()
   })
 
   /** Backend and agent codes we have words for; anything new is shown as it came. */
@@ -239,13 +245,13 @@ export default function RobotConsole({ job, refresh, run, verified, disabled }: 
 
         <div className="rb-run" role="group" aria-label={t('rb.controls')}>
           <button type="button" className="rb-big rb-go" title={t(writing ? 'rb.help.RUN' : 'rb.help.runBlocked')}
-            disabled={locked || busy || !loaded || !writing || !authValid}
+            disabled={locked || busy || !loaded || !writing || !authValid || simStale}
             onClick={() => void exec('RUN', modeParams({
               ...(resumeFrom.trim() !== '' && Number.isInteger(Number(resumeFrom)) ? { resume_from: Number(resumeFrom) } : {}),
               ...(confirmUnknown ? { confirm_unknown: true } : {}),
             }), t('rb.confirmReal'))}><Play size={20} weight="fill" aria-hidden />{t('rb.kind.RUN')}</button>
           {paused
-            ? <button type="button" className="rb-big" disabled={!online || controlBusy || !busy} onClick={() => void control('RESUME')}><Play size={20} aria-hidden />{t('rb.do.RESUME')}</button>
+            ? <button type="button" className="rb-big" disabled={!online || controlBusy || !busy || simStale} onClick={() => void control('RESUME')}><Play size={20} aria-hidden />{t('rb.do.RESUME')}</button>
             : <button type="button" className="rb-big" disabled={!online || controlBusy || !busy} onClick={() => void control('PAUSE')}><Pause size={20} weight="fill" aria-hidden />{t('rb.do.PAUSE')}</button>}
           <button type="button" className="rb-big rb-stop" title={t('rb.estopNote')} disabled={!online || controlBusy || !busy} onClick={() => void control('STOP', t('rb.confirmStop'))}><Stop size={20} weight="fill" aria-hidden />{t('rb.do.STOP')}</button>
           {agentState === 'AWAITING_PAPER' && <button type="button" className="rb-big rb-wide" disabled={!online || controlBusy} onClick={() => void control('PAPER_CHANGED')}>{t('rb.do.PAPER_CHANGED')}</button>}
@@ -279,8 +285,9 @@ export default function RobotConsole({ job, refresh, run, verified, disabled }: 
         pre ? (pre.ok ? <p className="rb-res">{t('rb.preflightOk', { n: pre.moves ?? 0, mode: MODE })}</p> : <p className="rb-res lg-error">{pre.code}: {pre.message}</p>)
           : preflight && <p className="rb-res lg-error">{commandError(preflight, t)}</p>)}
 
-      {step(3, t('rb.recordSim'), job.simulationPassed === null ? null : simRecorded,
-        <button type="button" className="sd-btn" title={t('rb.help.record')} disabled={disabled || !!pending || job.status !== 'PREPARING' || !pre || !loaded} onClick={() => void recordSimulation()}>{t('rb.do.record')}</button>)}
+      {step(3, t('rb.recordSim'), job.simulationPassed === null ? null : simRecorded && !simStale,
+        <button type="button" className="sd-btn" title={t('rb.help.record')} disabled={disabled || !!pending || !['PREPARING', 'PAUSED'].includes(job.status) || !pre || !loaded} onClick={() => void recordSimulation()}>{t('rb.do.record')}</button>,
+        simStale ? <p className="rb-res lg-error" role="alert">{t('rb.simStale')}</p> : undefined)}
 
       {step(4, t('rb.kind.DRY_RUN'), null,
         <button type="button" className="sd-btn" title={t('rb.help.DRY_RUN')} disabled={locked || busy || !loaded || !['PREPARING', 'PAUSED'].includes(job.status) || !authValid}

@@ -10,6 +10,7 @@ import '../../data/providers.dart';
 import '../../domain/job.dart';
 import '../../i18n/tech_strings.dart';
 import 'alert_bell.dart';
+import 'notification_bell.dart';
 import 'estop.dart';
 import 'tech_ui.dart';
 
@@ -319,7 +320,7 @@ class TechPage extends ConsumerWidget {
       spacing: 12,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
-      children: [...actions, const AlertBell(), const LanguageToggle()],
+      children: [...actions, const NotificationBell(), const AlertBell(), const LanguageToggle()],
     );
     final header = Padding(
       padding: EdgeInsets.fromLTRB(side, compact ? 20 : 36, side, compact ? 16 : 28),

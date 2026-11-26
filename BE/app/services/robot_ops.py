@@ -273,8 +273,10 @@ class RobotOpsService:
         return alert
 
     def acknowledge(self, alert_id: int) -> RobotAlert:
+        """Records the operator's answer. An open alert that happened again after it was acknowledged (`last_raised_at` newer) is
+        acknowledged again, so an app can tell a repeat (E-Stop takeover) from an alert already answered."""
         alert = self._alert(alert_id)
-        if alert.acknowledged_at is None:
+        if alert.acknowledged_at is None or (alert.last_raised_at is not None and alert.last_raised_at > alert.acknowledged_at):
             alert.acknowledged_by, alert.acknowledged_at = self.actor.id, _now()
         return alert
 

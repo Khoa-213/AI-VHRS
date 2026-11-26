@@ -20,7 +20,7 @@ import 'package:ai_vhrs_mobile/features/tech/i18n/tech_strings.dart';
 import 'package:ai_vhrs_mobile/features/tech/presentation/widgets/alert_bell.dart';
 import 'package:ai_vhrs_mobile/features/tech/presentation/widgets/estop.dart';
 
-RobotAlert _alert(int id, {bool estop = true, int level = 4, DateTime? ack}) => RobotAlert(
+RobotAlert _alert(int id, {bool estop = true, int level = 4, DateTime? ack, DateTime? last}) => RobotAlert(
       id: id,
       robotId: 46,
       code: 'CODE_$id',
@@ -30,6 +30,7 @@ RobotAlert _alert(int id, {bool estop = true, int level = 4, DateTime? ack}) => 
       estopAdvised: estop,
       occurrences: 1,
       raisedAt: DateTime.utc(2026, 10, 23, 6, 23),
+      lastRaisedAt: last,
       acknowledgedAt: ack,
     );
 
@@ -86,7 +87,11 @@ Future<void> _pump(WidgetTester tester, List<RobotAlert> alerts, _RobotApi api, 
   SharedPreferences.setMockInitialValues({'aivhrs-lang': 'en'});
   final prefs = await SharedPreferences.getInstance();
   var current = alerts;
-  api.onAck = () => current = [for (final a in current) _alert(a.id, estop: a.estopAdvised, level: a.level, ack: a.acknowledgedAt ?? DateTime.utc(2026, 10, 23, 6, 24))];
+  // Like the backend before 2026-11-26: a second acknowledge keeps the first time.
+  api.onAck = () => current = [
+        for (final a in current)
+          _alert(a.id, estop: a.estopAdvised, level: a.level, ack: a.acknowledgedAt ?? DateTime.utc(2026, 10, 23, 6, 24), last: a.lastRaisedAt),
+      ];
   await tester.pumpWidget(ProviderScope(
     overrides: [
       prefsProvider.overrideWithValue(prefs),
@@ -179,6 +184,31 @@ void main() {
     await _pump(tester, [_alert(1, estop: false, level: 3), _alert(2, ack: DateTime.utc(2026))], _RobotApi());
     expect(find.text('I pressed the E-Stop'), findsNothing);
     expect(find.text('the page behind'), findsOneWidget);
+    await _leave(tester);
+  });
+
+  test('a repeat after the acknowledgement needs an answer again; the answer covers that occurrence only', () {
+    final acked = DateTime.utc(2026, 10, 23, 6, 30);
+    final once = _alert(1, ack: acked, last: DateTime.utc(2026, 10, 23, 6, 23));
+    final again = _alert(1, ack: acked, last: DateTime.utc(2026, 10, 23, 6, 40));
+    expect(pendingEstops([_status([once])]), isEmpty);
+    expect(pendingEstops([_status([again])]).map((a) => a.id), [1]);
+    expect(pendingEstops([_status([again])], {again.occurrenceKey}), isEmpty);
+    final third = _alert(1, ack: acked, last: DateTime.utc(2026, 10, 23, 6, 50));
+    expect(pendingEstops([_status([third])], {again.occurrenceKey}).map((a) => a.id), [1]);
+  });
+
+  testWidgets('an acknowledged E-Stop alert that happened again takes the screen over again', (tester) async {
+    final api = _RobotApi();
+    await _pump(tester, [_alert(1, ack: DateTime.utc(2026, 10, 23, 6, 30), last: DateTime.utc(2026, 10, 23, 6, 40))], api);
+    expect(find.text('I pressed the E-Stop'), findsOneWidget);
+    await tester.tap(find.text('I pressed the E-Stop'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(api.acked, [1]);
+    // The server may still report the first acknowledgement; this session's answer covers the repeat.
+    expect(find.text('I pressed the E-Stop'), findsNothing);
     await _leave(tester);
   });
 

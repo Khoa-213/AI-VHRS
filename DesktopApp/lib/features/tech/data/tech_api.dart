@@ -216,6 +216,16 @@ class TechApi {
         )));
   }
 
+  /// Service G: compares the photo with page [page] (1 to 10) of the approved sketch.
+  Future<QualityEvaluation> evaluatePhoto(int id, int photoId, {int page = 1}) async =>
+      QualityEvaluation.fromJson(await _post('${_job(id)}/photos/$photoId/evaluate', {'page': page}));
+
+  /// Every Service G result of the job, newest first.
+  Future<List<QualityEvaluation>> quality(int id) async {
+    final r = await _guard(() => _client.get<List<dynamic>>('${_job(id)}/quality'));
+    return [for (final q in r) QualityEvaluation.fromJson(q as Map<String, dynamic>)];
+  }
+
   Future<void> removePhoto(int id, int photoId) => _guard(() => _client.delete<void>('${_job(id)}/photos/$photoId'));
   Future<TechJob> submitPhotos(int id) => _action(id, 'photos/submit');
   Future<TechJob> failQc(int id, String note) => _action(id, 'qc-fail', {'note': note.trim()});
