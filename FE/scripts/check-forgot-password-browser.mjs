@@ -1,5 +1,5 @@
 // Real Edge DOM test of "Forgot password" inside the sign-in dialog, with every API call intercepted (no backend, no mail).
-// Covers: email, then the six code boxes (typing, paste, wrong code, resend wait), the new password, and the way back to
+// Covers: email or phone, then the six code boxes (typing, paste, wrong code, resend wait), the new password, and the way back to
 // sign in with the email filled in; the three languages at 1440 and 390; and the page the email links to (/reset-password).
 // Run `npm run build` first.
 import assert from 'node:assert/strict'
@@ -26,9 +26,10 @@ const bodies = []
 function answer(method, path, body) {
   const json = body ? JSON.parse(body) : null
   if (json) bodies.push({ path, ...json })
-  if (path === '/auth/password-reset/request') return [{ message: 'ok' }, 202]
+  if (path === '/auth/password-reset/request' || path === '/auth/phone-reset/request') return [{ message: 'ok' }, 202]
   if (path === '/auth/password-reset/confirm') {
-    assert.equal('token' in json, false, 'the email flow never sends a token')
+    assert.equal('token' in json, false, 'no reset token is ever sent')
+    assert.equal('email' in json && 'phone' in json, false, 'the email or the phone, never both')
     if (json.code !== CODE) return [{ error: { code: 'OTP_INVALID', message: 'Sai mã', details: { attempts_left: 4 } } }, 400]
     return [null, 204]
   }
@@ -170,6 +171,49 @@ try {
   assert.equal(await evaluate(`document.querySelector('#entry-email').value`), EMAIL, 'the email is already filled in')
   assert.match(await panel(), /Your password has been changed/)
 
+  // 3b. By phone: the switch, the number verified on the account, the code by SMS, the same confirm call with the phone.
+  await openForgot('phone')
+  const via = (n) => `document.querySelectorAll('.entry-seg button')[${n}]`
+  assert.equal(await evaluate(`${via(0)}.getAttribute('aria-checked')`), 'true', 'email is the default')
+  await evaluate(`${via(1)}.click()`)
+  await wait(`!!document.querySelector('#forgot-phone')`, 'the phone field')
+  assert.equal(await evaluate(`!!document.querySelector('#forgot-email')`), false, 'one field at a time')
+  assert.match(await panel(), /verified/, 'the screen says the number must be verified')
+  await sleep(250)
+  assert.equal(await evaluate(`${via(1)}.classList.contains('on') && !${via(0)}.classList.contains('on') && ${via(1)}.getAttribute('aria-checked') === 'true'`), true, 'the phone choice is the selected one')
+  await shot('forgot-phone-1440.png')
+  await setInput('#forgot-phone', '12345')
+  await evaluate(`document.querySelector('.entry-login form .entry-login-submit').click()`)
+  await wait(`!!document.querySelector('.entry-login-error')`, 'a bad number is refused')
+  assert.equal(log.includes('POST /auth/phone-reset/request'), false, 'no request with a bad number')
+  await setInput('#forgot-phone', '090 123 4567')
+  await evaluate(`document.querySelector('.entry-login form .entry-login-submit').click()`)
+  await wait(`document.querySelectorAll('.entry-otp input').length === 6`, 'the six boxes after the number')
+  assert.deepEqual(bodies.at(-1), { path: '/auth/phone-reset/request', phone: '0901234567' }, 'spaces are dropped from the number')
+  assert.match(await panel(), /If 0901234567 is verified/, 'nothing says whether the number has an account')
+  await typeKeys(CODE)
+  await wait(`!!document.querySelector('#forgot-password')`, 'the new password after the SMS code')
+  await setInput('#forgot-password', 'Newpass123')
+  await setInput('#forgot-confirm', 'Newpass123')
+  await click('Save new password')
+  await wait(`!!(${button('Sign in')})`, 'the reset by phone is done')
+  assert.deepEqual(bodies.at(-1), { path: '/auth/password-reset/confirm', phone: '0901234567', code: CODE, new_password: 'Newpass123' })
+  await click('Sign in')
+  await wait(`!!document.querySelector('#entry-email')`, 'back to sign in after the phone reset')
+  assert.match(await panel(), /Your password has been changed/)
+  // Vietnamese, narrow: the switch and the phone field fit.
+  await evaluate(`localStorage.setItem('aivhrs-lang','vi')`)
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
+  await openForgot('phone vi 390')
+  await evaluate(`${via(1)}.click()`)
+  await wait(`!!document.querySelector('#forgot-phone')`, 'the phone field, vi 390')
+  await noOverflow('phone vi 390')
+  assert.equal(await evaluate(`(() => { const d = document.querySelector('.entry-login').getBoundingClientRect(); return [...document.querySelectorAll('.entry-seg button')].every(b => { const r = b.getBoundingClientRect(); return r.left >= d.left && r.right <= d.right && b.scrollWidth <= b.clientWidth + 1 }) })()`), true, 'the switch fits: vi 390')
+  await sleep(250)
+  await shot('forgot-phone-vi-390.png')
+  await evaluate(`localStorage.setItem('aivhrs-lang','en')`)
+  await command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
+
   // 4. Vietnamese and Japanese, wide and narrow: the six boxes fit.
   for (const [lang, heading] of [['vi', 'Nhập mã xác nhận'], ['ja', '確認コードを入力']]) {
     for (const width of [1440, 390]) {
@@ -235,7 +279,7 @@ try {
   await shot('reset-page-vi-390.png')
 
   assert.deepEqual(errors, [])
-  console.log('PASS: email then six code boxes in the dialog (no page change), focus and one-time-code, Backspace, six digits move on, new password rules, confirm with email + code + password, wrong code brings the boxes back, paste, back to sign in with the email filled in, vi/ja at 1440 and 390; the /reset-password page (email + code + password, ?email=, wrong code, no token read or sent). All API calls intercepted.')
+  console.log('PASS: email then six code boxes in the dialog (no page change), focus and one-time-code, Backspace, six digits move on, new password rules, confirm with email + code + password, wrong code brings the boxes back, paste, back to sign in with the email filled in, by phone (switch, number rule, SMS request, confirm with the phone), vi/ja at 1440 and 390; the /reset-password page (email + code + password, ?email=, wrong code, no token read or sent). All API calls intercepted.')
 } finally {
   ws?.close(); browser?.kill(); server.closeAllConnections(); server.close()
 }

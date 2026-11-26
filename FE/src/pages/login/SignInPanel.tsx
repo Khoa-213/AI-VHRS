@@ -69,8 +69,8 @@ export default function SignInPanel({ onSuccess: finish, onClose, initialMode = 
               setReset(false)
               setError('')
               setPassword('')
-              if (changed) {
-                setEmail(changed)
+              if (changed !== undefined) {
+                if (changed) setEmail(changed)
                 setNotice(t('reset.done'))
               }
             }}
