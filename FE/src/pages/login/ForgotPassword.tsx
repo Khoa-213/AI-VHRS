@@ -1,83 +1,12 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Eye, EyeSlash, LockKey } from '@phosphor-icons/react'
 import { useT } from '../../i18n'
 import { ApiError, authErrorKey } from '../../services/api'
 import { PASSWORD_RULE, apiConfirmResetCode, apiRequestReset } from '../../services/auth'
+import OtpBoxes, { OTP_DIGITS as DIGITS } from './OtpBoxes'
 
-const DIGITS = 6
 /** Seconds before another code may be asked for (the backend keeps the same wait between two codes). */
 const RESEND_S = 60
-
-/** Six boxes for the emailed code. Typing moves on, Backspace moves back, and a pasted or autofilled code fills them all. */
-function OtpBoxes({ value, disabled, invalid, onChange }: {
-  value: string
-  disabled: boolean
-  invalid: boolean
-  onChange: (code: string) => void
-}) {
-  const t = useT()
-  const boxes = useRef<(HTMLInputElement | null)[]>([])
-  const focus = (i: number) => boxes.current[Math.max(0, Math.min(DIGITS - 1, i))]?.focus()
-
-  useEffect(() => {
-    boxes.current[0]?.focus()
-  }, [])
-
-  /** Writes `digits` from box `at` on, over what was there. */
-  const put = (at: number, digits: string) => {
-    const next = (value.slice(0, at) + digits + value.slice(at + digits.length)).slice(0, DIGITS)
-    onChange(next)
-    focus(Math.min(at + digits.length, DIGITS - 1))
-  }
-
-  const key = (i: number, e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace') {
-      e.preventDefault()
-      if (value[i]) onChange(value.slice(0, i))
-      else if (i > 0) {
-        onChange(value.slice(0, i - 1))
-        focus(i - 1)
-      }
-    } else if (e.key === 'ArrowLeft') focus(i - 1)
-    else if (e.key === 'ArrowRight') focus(i + 1)
-  }
-
-  const paste = (e: ClipboardEvent<HTMLInputElement>) => {
-    const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, DIGITS)
-    if (!digits) return
-    e.preventDefault()
-    onChange(digits)
-    focus(digits.length)
-  }
-
-  return (
-    <div className="entry-otp" role="group" aria-label={t('reset.otpLabel')}>
-      {Array.from({ length: DIGITS }, (_, i) => (
-        <input
-          key={i}
-          ref={(el) => { boxes.current[i] = el }}
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          autoComplete={i === 0 ? 'one-time-code' : 'off'}
-          maxLength={DIGITS}
-          value={value[i] ?? ''}
-          disabled={disabled}
-          aria-label={t('reset.otpDigit', { n: i + 1 })}
-          aria-invalid={invalid}
-          onFocus={(e) => e.target.select()}
-          onKeyDown={(e) => key(i, e)}
-          onPaste={paste}
-          onChange={(e) => {
-            const digits = e.target.value.replace(/\D/g, '')
-            // Boxes fill in order: a digit typed further along goes to the first empty box.
-            if (digits) put(Math.min(i, value.length), digits)
-          }}
-        />
-      ))}
-    </div>
-  )
-}
 
 type Step = 'email' | 'otp' | 'password' | 'done'
 type Job = { (): Promise<void> }
