@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { useT } from '../../i18n'
+import './otp-boxes.css'
 
 /** The emailed reset code has this many digits. */
 export const OTP_DIGITS = 6

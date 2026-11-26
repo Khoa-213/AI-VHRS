@@ -24,6 +24,7 @@ import TechDesktopOnly from './pages/TechDesktopOnly'
 
 import RequireStaff from './pages/staff/RequireStaff'
 import ChatDock from './components/ui/ChatDock'
+import PhoneReminderDialog from './components/account/PhoneReminderDialog'
 import Delivery from './pages/order/Delivery'
 import Deposit from './pages/order/Deposit'
 import OrderReview from './pages/order/OrderReview'
@@ -138,5 +139,5 @@ function Routes() {
 export default function App() {
   useInterceptLinks()
   const auth = useAuthDialog()
-  return <><Routes /><ChatDock />{auth && <SignInDialog initialMode={auth.mode} next={auth.next} onClose={closeAuth} />}</>
+  return <><Routes /><ChatDock />{auth ? <SignInDialog initialMode={auth.mode} next={auth.next} onClose={closeAuth} /> : <PhoneReminderDialog />}</>
 }

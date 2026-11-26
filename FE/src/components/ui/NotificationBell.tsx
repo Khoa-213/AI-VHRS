@@ -25,9 +25,11 @@ const ICONS: Record<string, ReactNode> = {
 
 /**
  * Where a notification leads. A new chat message opens the chat thread of that order (so it works even when the order page
- * is already open); a refund for the workshop opens the refunds desk; everything else opens the order page that fits the role.
+ * is already open); a phone reminder opens Account > Profile; a refund for the workshop opens the refunds desk; everything else opens the order page that fits the role.
  */
 function target(n: AppNotification, role?: string): { to?: string; chat?: number } | null {
+  // Account reminders (add or verify the phone number) are for every role and open the profile.
+  if (n.msgCode === 'PHONE_ADD' || n.msgCode === 'PHONE_VER') return { to: '/account/profile' }
   if (role === 'technician') return { to: '/tech' }
   if (role === 'admin' || n.orderId == null) return null
   if (n.type === 'NEW_MESSAGE') return { chat: n.orderId }

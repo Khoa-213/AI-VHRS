@@ -181,3 +181,15 @@
 .ac-workspace-back{display:inline-flex;align-items:center;gap:8px;width:fit-content;margin-bottom:20px;padding:8px 0;color:var(--t3);font-size:14px;font-weight:600}
 .ac-workspace-back:hover{color:var(--t1)}
 .ac-workspace-back:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:4px}
+/* Profile: read only until "Edit profile"; the phone number shows whether it is verified, with a word and an icon. */
+.ac-field>label{font-size:14px;font-weight:700;color:var(--t1)}
+.ac-field .vh-textarea[readonly]{background:var(--tray);color:var(--t4)}
+.ac-form--locked .vh-input,.ac-form--locked .vh-textarea{cursor:default}
+.ac-phone-state{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.ac-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.3}
+.ac-chip--ok{background:var(--good-1);color:var(--good)}
+.ac-chip--warn{background:var(--st-pending-bg);color:var(--t1)}
+.ac-chip--warn svg{color:var(--warn)}
+.ac-fine{font-size:13px;color:var(--t4)}
+.co-root .ac-verify{min-height:34px;padding:0 16px}
+.ac-edit{display:inline-flex;align-items:center;gap:8px}

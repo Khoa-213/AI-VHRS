@@ -118,6 +118,14 @@ Everything that belongs to the signed-in user lives under `/account` (`src/pages
 no order history, drafts or cart there. A new user-owned feature gets a section in `Account.tsx`, not a new top bar item.
 The avatar in the top bar opens `/account`; sign out lives in the account navigation.
 
+## Phone number: verification and reminders
+
+The account's phone number must be verified before "forgot password by SMS" works (`BE/docs/FE_API_GUIDE.md` 3.2).
+- **Account > Profile** (`ProfileSection` in `pages/account/Account.tsx`) is read only until "Edit profile" is pressed; "Update profile" saves and locks it again, "Cancel" puts back what was saved. The photo has its own "Change photo" button. Under the phone field a chip says "Verified" or "Not verified" (icon and word); "Verify" opens `components/account/PhoneVerify.tsx`: `POST /me/phone/otp` (the click sends the SMS), the six boxes (`pages/login/OtpBoxes.tsx`, the sixth digit sends), `POST /me/phone/verify`. It shows the masked number, the 60 s resend wait, the tries left, and says so when the server answers `mode: "MOCK"` (no real SMS). A changed number has to be saved before it can be verified.
+- **After sign-in** `POST /auth/login` and `/auth/google` may return `reminders` (`ADD_PHONE` or `VERIFY_PHONE`): `services/auth.ts` passes the first one to the store (`usePhoneReminder`, in memory only) and `components/account/PhoneReminderDialog.tsx` (mounted in `App.tsx`, every role) opens: `ADD_PHONE` asks for the number (`PATCH /me`) and goes on to the verification with the code sent at once; `VERIFY_PHONE` goes straight to the verification and waits for "Send the code". "Later" closes it.
+- **Bell**: a notification with `msg_code` `PHONE_ADD` or `PHONE_VER` opens `/account/profile`, for every role.
+- Text lives under `ph.`. Check with `node scripts/check-phone-verify-browser.mjs` after building.
+
 ## Admin area
 
 Admin screens (`src/pages/admin/`) do not use the workshop `Shell`. They use `components/admin/AdminFrame.tsx`, which renders the same workspace as Staff (`.ws.ws-staff` from `components/ws/staff-ui.css`, `staff-theme.css`, `staff-depth.css`): a sticky header (logo, notifications, shared `AppearanceSwitch`, language, profile link), a labelled sidebar (four areas, a count for locked accounts, a drawer on small screens) and the page with its title and back link. Dark and light follow the shared theme. `components/admin/admin-shell.css` only maps the Admin tokens (`--t1`, `--fx-*`, `--accent`) onto the Staff palette and holds the chart colours; `admin-ui.css` holds the blocks (all under `.adm`: white cards, one dark KPI first and one soft KPI last like Staff), `AdminViz.tsx` the tiles and charts (`Kpi`, `Card`, `DayColumns`, `Donut`, `Ring`, `Attention`). Admin logic and routes do not depend on the look.

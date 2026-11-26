@@ -1,6 +1,9 @@
 import { openAuth } from '../../store/authDialog'
-import { ArrowLeft, Check, ClockCounterClockwise, NotePencil, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon } from '@phosphor-icons/react'
-import { useRef, useState } from 'react'
+import {
+  ArrowLeft, Check, CheckCircle, ClockCounterClockwise, NotePencil, PencilSimple, Plus, SignOut, SlidersHorizontal, SquaresFour, User as UserIcon, WarningCircle,
+} from '@phosphor-icons/react'
+import { useEffect, useRef, useState } from 'react'
+import PhoneVerify from '../../components/account/PhoneVerify'
 import CustomerFrame from '../../components/layout/CustomerFrame'
 import { ORDER_HREF } from '../../constants'
 import { STATUS_COLOR, orderLink } from '../../constants/orderStatus'
@@ -218,6 +221,19 @@ function ProfileSection() {
   const profile = useProfile()
   const [form, setForm] = useState({ fullName: profile.fullName, email: profile.email, phone: profile.phone, address: profile.address, bio: profile.bio })
   const [baseline, setBaseline] = useState(form)
+  // The profile is read only until "Edit profile" is pressed; "Cancel" puts back what was saved.
+  const [editing, setEditing] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  // The account can arrive or change after this section opened (session check, phone verified, another tab): while nothing
+  // is being edited the fields follow it, so they never show an older name or number.
+  const { fullName, email, phone, address, bio } = profile
+  useEffect(() => {
+    if (editing) return
+    const next = { fullName, email, phone, address, bio }
+    setForm(next)
+    setBaseline(next)
+  }, [editing, fullName, email, phone, address, bio])
+  const [verified, setVerified] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const file = useRef<HTMLInputElement>(null)
@@ -230,7 +246,7 @@ function ProfileSection() {
   const [formError, setFormError] = useState('')
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (saving) return
+    if (saving || !editing) return
     const phone = cleanPhone(form.phone)
     if (phone && !PHONE_RULE.test(phone)) {
       setFormError(t('reg.errPhone'))
@@ -243,14 +259,27 @@ function ProfileSection() {
       const fullName = form.fullName.trim() || user?.name || ''
       if (fullName !== user?.name || phone !== (user?.phone ?? '')) await saveAccount({ fullName, phone: phone || null })
       updateProfile({ address: form.address, bio: form.bio })
-      setBaseline({ ...form, phone: phone || '' })
-      setForm((f) => ({ ...f, phone: phone || '' }))
+      setBaseline({ ...form, fullName, phone: phone || '' })
+      setForm((f) => ({ ...f, fullName, phone: phone || '' }))
       setSaved(true)
+      setVerified(false)
+      setEditing(false)
     } catch (err) {
       setFormError(t(authErrorKey(err)))
     } finally {
       setSaving(false)
     }
+  }
+  const startEdit = () => {
+    setEditing(true)
+    setVerifying(false)
+    setSaved(false)
+    setFormError('')
+  }
+  const cancelEdit = () => {
+    setForm(baseline)
+    setEditing(false)
+    setFormError('')
   }
   const pick = async (f: File | undefined) => {
     if (!f) return
@@ -263,6 +292,10 @@ function ProfileSection() {
   }
 
   const dirty = (Object.keys(form) as (keyof typeof form)[]).some((k) => form[k] !== baseline[k])
+  const locked = !editing
+  // The verification is about the number saved on the account, not about what is being typed.
+  const accountPhone = user?.phone ?? ''
+  const phoneVerified = !!user?.phoneVerified
 
   return (
     <>
@@ -294,19 +327,41 @@ function ProfileSection() {
         />
       </div>
 
-      <form className="ac-form" onSubmit={save}>
+      <form className={`ac-form${locked ? ' ac-form--locked' : ''}`} onSubmit={save}>
         <fieldset className="ac-group">
           <legend>{t('acct.p.sec.contact')}</legend>
           <label className="ac-field">
             <span>{t('acct.p.name')}</span>
-            <input className="vh-input" autoComplete="name" value={form.fullName} onChange={(e) => set({ fullName: e.target.value })} />
+            <input className="vh-input" autoComplete="name" value={form.fullName} readOnly={locked} aria-readonly={locked} onChange={(e) => set({ fullName: e.target.value })} />
             <small>{t('acct.p.nameHelp')}</small>
           </label>
-          <label className="ac-field">
-            <span>{t('acct.p.phone')}</span>
-            <input className="vh-input" inputMode="tel" autoComplete="tel" value={form.phone} onChange={(e) => set({ phone: e.target.value })} />
-            <small>{t('acct.p.phoneHelp')}</small>
-          </label>
+          <div className="ac-field">
+            <label htmlFor="ac-phone">{t('acct.p.phone')}</label>
+            <input id="ac-phone" className="vh-input" inputMode="tel" autoComplete="tel" value={form.phone} readOnly={locked} aria-readonly={locked}
+              aria-describedby="ac-phone-help" onChange={(e) => set({ phone: e.target.value })} />
+            {accountPhone && (
+              <div className="ac-phone-state">
+                {phoneVerified ? (
+                  <span className="ac-chip ac-chip--ok"><CheckCircle size={16} weight="fill" aria-hidden />{t('ph.verified')}</span>
+                ) : (
+                  <>
+                    <span className="ac-chip ac-chip--warn"><WarningCircle size={16} weight="fill" aria-hidden />{t('ph.unverified')}</span>
+                    {!verifying && (
+                      <button type="button" className="co-btn co-btn--line co-btn--sm ac-verify" disabled={editing} onClick={() => { setVerifying(true); setVerified(false) }}>{t('ph.verify')}</button>
+                    )}
+                  </>
+                )}
+                {verified && phoneVerified && <span className="ac-fine" role="status">{t('ph.done')}</span>}
+              </div>
+            )}
+            <small id="ac-phone-help">
+              {accountPhone && !phoneVerified ? t(editing ? 'ph.saveFirst' : 'ph.why') : t('acct.p.phoneHelp')}
+            </small>
+            {verifying && accountPhone && !phoneVerified && !editing && (
+              <PhoneVerify look="page" autoSend cancelLabel={t('acct.p.cancel')} onCancel={() => setVerifying(false)}
+                onVerified={() => { setVerifying(false); setVerified(true) }} />
+            )}
+          </div>
           <label className="ac-field">
             <span>{t('acct.p.email')}</span>
             <input className="vh-input" type="email" autoComplete="email" value={form.email} readOnly aria-readonly="true" />
@@ -318,7 +373,7 @@ function ProfileSection() {
           <legend>{t('acct.p.sec.delivery')}</legend>
           <label className="ac-field">
             <span>{t('acct.p.address')}</span>
-            <input className="vh-input" autoComplete="street-address" value={form.address} onChange={(e) => set({ address: e.target.value })} />
+            <input className="vh-input" autoComplete="street-address" value={form.address} readOnly={locked} aria-readonly={locked} onChange={(e) => set({ address: e.target.value })} />
             <small>{t('acct.p.addressHelp')}</small>
           </label>
         </fieldset>
@@ -327,14 +382,23 @@ function ProfileSection() {
           <legend>{t('acct.p.sec.about')}</legend>
           <label className="ac-field">
             <span>{t('acct.p.bio')}</span>
-            <textarea className="vh-textarea" rows={3} placeholder={t('acct.p.bioPh')} value={form.bio} onChange={(e) => set({ bio: e.target.value })} />
+            <textarea className="vh-textarea" rows={3} placeholder={locked ? undefined : t('acct.p.bioPh')} value={form.bio} readOnly={locked} aria-readonly={locked} onChange={(e) => set({ bio: e.target.value })} />
           </label>
         </fieldset>
 
         <div className="ac-actions">
-          <button type="submit" className="co-btn co-btn--solid" disabled={saving || !dirty}>{t(saving ? 'acct.p.saving' : saved && !dirty ? 'acct.p.savedShort' : 'acct.p.save')}</button>
-          {saved && !dirty && <span className="ac-saved" role="status"><Check size={16} weight="bold" aria-hidden />{t('acct.p.saved')}</span>}
-          {dirty && !saving && <span className="ac-unsaved">{t('acct.p.unsaved')}</span>}
+          {editing ? (
+            <>
+              <button type="submit" className="co-btn co-btn--solid" disabled={saving || !dirty}>{t(saving ? 'acct.p.saving' : 'acct.p.save')}</button>
+              <button type="button" className="co-btn co-btn--line" disabled={saving} onClick={cancelEdit}>{t('acct.p.cancel')}</button>
+              {dirty && !saving && <span className="ac-unsaved">{t('acct.p.unsaved')}</span>}
+            </>
+          ) : (
+            <>
+              <button type="button" className="co-btn co-btn--solid ac-edit" onClick={startEdit}><PencilSimple size={18} aria-hidden />{t('acct.p.editProfile')}</button>
+              {saved && <span className="ac-saved" role="status"><Check size={16} weight="bold" aria-hidden />{t('acct.p.saved')}</span>}
+            </>
+          )}
           {formError && <span className="ac-error" role="alert">{formError}</span>}
         </div>
       </form>
