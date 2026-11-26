@@ -416,3 +416,16 @@ def test_the_desktop_reaches_the_technician_api_through_the_agent_with_the_perso
     r = c.put("/api/technician/jobs/99/robot", headers=auth(), json={"robot_id": 3})
     assert r.status_code == 404 and be.calls[-1] == ("PUT", "/technician/jobs/99/robot", {"robot_id": 3})   # the backend's answer, as is
     assert c.get("/api/technician/jobs/12").status_code == 401                                              # no token: refused here
+
+
+def test_the_desktop_workspace_page_and_its_assets_are_served_and_the_agent_says_which_robot_it_drives(tmp_path):
+    svc, c, _ = make(tmp_path)
+    page = c.get("/")
+    assert page.status_code == 200 and "/assets/app.js" in page.text and "/assets/app.css" in page.text
+    js = c.get("/assets/app.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"] and "/api/technician/" in js.text
+    assert c.get("/assets/app.css").status_code == 200
+    assert c.get("/assets/../server.py").status_code == 404                     # the mount stays inside static/assets
+    assert c.get("/api/agent").json()["robot_id"] is None                       # not configured: the page learns it from a loaded job
+    svc.cfg.robot_id = 46
+    assert c.get("/api/agent").json()["robot_id"] == 46

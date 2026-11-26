@@ -1,4 +1,4 @@
-import { ArrowLeft, ChartBar, ChatCircleText, List, X, Money, Truck, CalendarCheck, ClipboardText, House, Package, PlayCircle, Receipt, Robot, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
+import { ArrowLeft, ChartBar, ChatCircleText, List, X, Money, Truck, CalendarCheck, ClipboardText, House, Package, Receipt, Robot, Scroll, SealCheck, SignOut, SquaresFour, Users } from '@phosphor-icons/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useT } from '../../i18n'
@@ -8,14 +8,12 @@ import { workshopRefunds } from '../../services/refunds'
 import { managerAlerts } from '../../services/managerOps'
 import { useOnNotification } from '../../store/notifications'
 
-import { listTechJobs } from '../../services/technician'
 
 import { signOut, useUser } from '../../store/store'
 import ChatDock from '../ui/ChatDock'
 import LanguageToggle from '../ui/LanguageToggle'
 import NotificationBell from '../ui/NotificationBell'
 import SkipLink from '../ui/SkipLink'
-import RobotAlertBell from './RobotAlertBell'
 import BrandLogo from '../ui/BrandLogo'
 import AppearanceSwitch from '../ui/AppearanceSwitch'
 import './ws.css'
@@ -25,11 +23,10 @@ import './staff-theme.css'
 import './staff-depth.css'
 import './staff-queue.css'
 import './manager-ui.css'
-import './tech-ui.css'
 import './staff-glass.css'
 
-export type Area = 'staff' | 'manager' | 'tech' | 'admin'
-export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'preview' | 'qc' | 'accounts' | 'audit' | 'refunds' | 'reports' | 'robots' | 'reviews'
+export type Area = 'staff' | 'manager' | 'admin'
+export type RailKey = 'dashboard' | 'fulfillment' | 'review' | 'approvals' | 'schedule' | 'catalog' | 'pricing' | 'accounts' | 'audit' | 'refunds' | 'reports' | 'robots' | 'reviews'
 
 interface Item {
   key: RailKey
@@ -61,20 +58,17 @@ const openAlertCount = async () => {
   }
 }
 
-/** Counts that wait for this person, all from the API: the workshop queues, or a technician's written jobs. */
+/** Counts that wait for this person, all from the API: the workshop queues. */
 function useCounts(area: Area) {
   const api = useAsync(
     async () => (area === 'admin'
       ? null
-      : area === 'tech'
-        ? { intake: 0, approvals: 0, schedule: 0, refunds: 0, alerts: 0, qc: (await listTechJobs({ status: ['WRITTEN'], pageSize: 1 })).total }
-        : {
+      : {
           intake: (await listWork({ status: 'SUBMITTED', pageSize: 1 })).total,
           approvals: area === 'manager' ? (await pendingApprovals()).total : 0,
           schedule: area === 'manager' ? (await scheduleQueue()).total : 0,
           refunds: await pendingRefundCount(),
           alerts: area === 'manager' ? await openAlertCount() : 0,
-          qc: 0,
         }),
     [area],
     area === 'admin' ? undefined : 60000,
@@ -85,12 +79,12 @@ function useCounts(area: Area) {
     window.addEventListener('staff-queue-changed', reload)
     return () => window.removeEventListener('staff-queue-changed', reload)
   }, [api.reload])
-  return api.data ?? { intake: 0, approvals: 0, schedule: 0, refunds: 0, alerts: 0, qc: 0 }
+  return api.data ?? { intake: 0, approvals: 0, schedule: 0, refunds: 0, alerts: 0 }
 
 }
 
 /**
- * Frame of every workshop screen: the icon pill on the left and the page header. Staff, Manager and Technician share it;
+ * Frame of every workshop screen: the icon pill on the left and the page header. Staff and Manager share it;
  * the pill shows what that role can open. Counts on the icons are what waits for the person.
  */
 export default function Shell({
@@ -140,12 +134,6 @@ export default function Shell({
         { key: 'accounts', to: '/admin/accounts', label: t('rail.accounts'), icon: icon(Users) },
         { key: 'audit', to: '/admin/audit', label: t('rail.audit'), icon: icon(Scroll) },
       ]
-      : area === 'tech'
-      ? [
-        { key: 'dashboard', to: '/tech', label: t('rail.dashboard'), icon: icon(SquaresFour) },
-        { key: 'preview', to: '/tech/preview', label: t('rail.preview'), icon: icon(PlayCircle) },
-        { key: 'qc', to: '/tech/qc', label: t('rail.qc'), icon: icon(ClipboardText), count: c.qc },
-      ]
       : area === 'manager'
       ? [
         { key: 'dashboard', to: '/staff', label: t('rail.dashboard'), icon: icon(SquaresFour) },
@@ -168,22 +156,21 @@ export default function Shell({
       ]
 
   const name = user?.name ?? ''
-  const role = area === 'manager' ? t('wk.roleManager') : area === 'tech' ? t('role.technician') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
+  const role = area === 'manager' ? t('wk.roleManager') : area === 'admin' ? t('role.admin') : t('wk.roleStaff')
 
-  // Staff, Manager and Technician share the Staff frame (header, sidebar, drawer, light/dark); each role has its own destinations.
-  const tech = area === 'tech'
-  const home = tech ? '/tech' : '/staff'
-  const navLabel = t(area === 'manager' ? 'mgr.navAria' : tech ? 'rail.tech' : 'rail.staff')
-  if (area === 'staff' || area === 'manager' || tech) return (
-    <div className={`ws ws-staff${area === 'staff' && user?.apiRole === 'STAFF' ? ' ws-staff-glass' : ''}${area === 'manager' ? ' ws-manager' : ''}${tech ? ' ws-tech' : ''}${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
+  // Staff and Manager share the Staff frame (header, sidebar, drawer, light/dark); each role has its own destinations.
+  // Technicians work in the desktop app (2026-11-26), not here.
+  const home = '/staff'
+  const navLabel = t(area === 'manager' ? 'mgr.navAria' : 'rail.staff')
+  if (area === 'staff' || area === 'manager') return (
+    <div className={`ws ws-staff${area === 'staff' && user?.apiRole === 'STAFF' ? ' ws-staff-glass' : ''}${area === 'manager' ? ' ws-manager' : ''}${sidebarOpen ? ' staff-sidebar-open' : ''}${active === 'fulfillment' ? ' ws-fulfillment' : ''}`}>
       <SkipLink />
       <header className="staff-header">
         <div className="staff-header-brand">
           <button ref={menuButton} type="button" className="staff-sidebar-menu" aria-label={t('adm.menuOpen')} aria-expanded={sidebarOpen} aria-controls="staff-sidebar" onClick={() => setSidebarOpen(true)}><List size={22} aria-hidden /></button>
-          <Link to={home} className="staff-brand" aria-label={t(tech ? 'rail.techMark' : 'rail.staffMark')}><BrandLogo /></Link>
+          <Link to={home} className="staff-brand" aria-label={t('rail.staffMark')}><BrandLogo /></Link>
         </div>
         <div className="staff-header-tools">
-          {tech && <RobotAlertBell />}
           <NotificationBell variant="ws" />
           <AppearanceSwitch className="staff-theme" />
           <LanguageToggle />
@@ -216,7 +203,6 @@ export default function Shell({
             <div className="t">
               {active !== 'dashboard' && <Link to={home} className="staff-back"><ArrowLeft size={15} aria-hidden />{t('adm.backOverview')}</Link>}
               <h1>{title}</h1>
-              {tech && lede && <p className="staff-lede">{lede}</p>}
             </div>
             {tools && <div className="staff-page-actions">{tools}</div>}
             {pinned && <div className="hd-pinned">{pinned}</div>}
@@ -224,7 +210,7 @@ export default function Shell({
           {children}
         </main>
       </div>
-      {!tech && <ChatDock side="workshop" />}
+      <ChatDock side="workshop" />
     </div>
   )
 

@@ -329,7 +329,8 @@ export interface Job {
   id: number
   orderId: number
   orderCode: string
-  robotId: number
+  /** Null while the technician has not picked one of their robots (migration 0032). */
+  robotId: number | null
   robotCode: string
   technicianId: number
   technicianName: string
@@ -341,7 +342,7 @@ export interface Job {
 }
 
 interface RawJob {
-  id: number; order_id: number; order_code?: string; robot_id: number; robot_code?: string; technician_id: number
+  id: number; order_id: number; order_code?: string; robot_id: number | null; robot_code?: string; technician_id: number
   technician_name?: string; status: JobStatus; is_rewrite: boolean; slot_start: string; slot_end: string
   estimated_duration_min: number
 }
@@ -498,7 +499,8 @@ export async function scheduleSuggestion(orderId: number): Promise<SuggestionSet
   }
 }
 
-export const scheduleOrder = async (orderId: number, body: { robot_id: number; technician_id: number; slot_start: string; note?: string }) =>
+/** `robot_id` is optional: without it the technician picks one of their robots before preparing. */
+export const scheduleOrder = async (orderId: number, body: { robot_id?: number; technician_id: number; slot_start: string; note?: string }) =>
   toJob(await api<RawJob>(`/manager/orders/${orderId}/schedule`, { method: 'POST', body }))
 
 export const unscheduleJob = async (jobId: number, reason: string) =>
@@ -607,21 +609,41 @@ export interface Robot {
   status: 'AVAILABLE' | 'BUSY' | 'MAINTENANCE' | 'BROKEN'
   isSimulated: boolean
   penCategories: string[]
+  /** The technician this robot is given to (migration 0032); null = nobody. */
+  technicianId: number | null
+  technicianName: string | null
 }
 
-export const listRobots = async (): Promise<Robot[]> =>
-  (await api<{ id: number; code: string; station: string | null; status: Robot['status']; is_simulated: boolean; supported_pen_categories: string[] | null }[]>('/manager/robots')).map((r) => ({
-    id: r.id, code: r.code, station: r.station, status: r.status, isSimulated: r.is_simulated, penCategories: r.supported_pen_categories ?? [],
-  }))
+interface RawRobot {
+  id: number; code: string; station: string | null; status: Robot['status']; is_simulated: boolean; supported_pen_categories: string[] | null
+  technician_id?: number | null; technician_name?: string | null
+}
+const toRobot = (r: RawRobot): Robot => ({
+  id: r.id, code: r.code, station: r.station, status: r.status, isSimulated: r.is_simulated, penCategories: r.supported_pen_categories ?? [],
+  technicianId: r.technician_id ?? null, technicianName: r.technician_name ?? null,
+})
+
+export const listRobots = async (): Promise<Robot[]> => (await api<RawRobot[]>('/manager/robots')).map(toRobot)
+
+/** Give a robot to a technician for good (one technician per robot); giving it again moves it. `409 ROBOT_HAS_ACTIVE_JOBS` lists the jobs to move first. */
+export const assignRobot = async (robotId: number, technicianId: number) =>
+  toRobot(await api<RawRobot>(`/manager/robots/${robotId}/technician`, { method: 'PUT', body: { technician_id: technicianId } }))
+export const unassignRobot = async (robotId: number) =>
+  toRobot(await api<RawRobot>(`/manager/robots/${robotId}/technician`, { method: 'DELETE' }))
+
+export interface TechnicianRobot { id: number; code: string; status: Robot['status'] }
 
 export interface Technician {
   id: number
   fullName: string
   email: string
   activeJobs: number
+  /** Robots given to this technician (migration 0032). */
+  robots: TechnicianRobot[]
 }
 
 export const listTechnicians = async (): Promise<Technician[]> =>
-  (await api<{ id: number; full_name: string; email: string; active_jobs: number }[]>('/manager/technicians')).map((x) => ({
-    id: x.id, fullName: x.full_name, email: x.email, activeJobs: x.active_jobs,
+  (await api<{ id: number; full_name: string; email: string; active_jobs: number; robots?: TechnicianRobot[] }[]>('/manager/technicians')).map((x) => ({
+    id: x.id, fullName: x.full_name, email: x.email, activeJobs: x.active_jobs, robots: x.robots ?? [],
   }))
+

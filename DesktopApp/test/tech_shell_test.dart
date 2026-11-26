@@ -11,6 +11,7 @@ import 'package:ai_vhrs_mobile/features/auth/domain/models/user.dart';
 import 'package:ai_vhrs_mobile/features/auth/presentation/auth_notifier.dart';
 import 'package:ai_vhrs_mobile/features/tech/data/prefs.dart';
 import 'package:ai_vhrs_mobile/features/tech/data/providers.dart';
+import 'package:ai_vhrs_mobile/features/tech/domain/notification.dart';
 import 'package:ai_vhrs_mobile/features/tech/presentation/screens/settings_screen.dart';
 import 'package:ai_vhrs_mobile/features/tech/presentation/widgets/tech_shell.dart';
 
@@ -66,6 +67,8 @@ Future<_FakeAuth> _pump(WidgetTester tester, Size size) async {
   await tester.pumpWidget(ProviderScope(
     overrides: [
       prefsProvider.overrideWithValue(prefs),
+      // The header's notification bell: no call to the real backend from a test.
+      notificationsProvider.overrideWith((ref) => Stream.value(const NotificationPage(items: [], unreadCount: 0))),
       authRepositoryProvider.overrideWithValue(fake),
       techJobsProvider.overrideWith((ref) => Stream.value(const [])),
       robotStatusProvider.overrideWith((ref) => Stream.value(const [])),

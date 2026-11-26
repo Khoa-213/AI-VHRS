@@ -6,11 +6,11 @@ import { useLocale, useT } from '../../i18n'
 import { Link, navigate } from '../../router/router'
 import { orderErrorKey, errText } from '../../services/orders'
 import {
-  listJobs, listRobots, listTechnicians, orderJobs, rescheduleJob, scheduleQueue, unscheduleJob, type Job,
+  listJobs, listTechnicians, orderJobs, rescheduleJob, scheduleQueue, unscheduleJob, type Job,
 } from '../../services/workshop'
 import ScheduleCalendar from './ScheduleCalendar'
 
-/** Manager only: paid orders waiting for a robot, a technician and a time slot (FR-40 to FR-42). This only writes the schedule; nothing contacts a robot. */
+/** Manager only: paid orders waiting for a technician and a time slot, the robot optional (FR-40 to FR-42, migration 0032). This only writes the schedule; nothing contacts a robot. */
 export default function Schedule({ id }: { id?: number }) {
   const t = useT()
   const queue = useAsync(() => scheduleQueue(), [], 30000)
@@ -82,7 +82,6 @@ function UpcomingJobs({ version, onChanged }: { version: number; onChanged: () =
 function JobList({ jobs, onChanged }: { jobs: Job[]; onChanged: () => void }) {
   const t = useT()
   const locale = useLocale()
-  const robots = useAsync(listRobots, [])
   const techs = useAsync(listTechnicians, [])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -122,7 +121,7 @@ function JobList({ jobs, onChanged }: { jobs: Job[]; onChanged: () => void }) {
           <li key={j.id} className="wk-job">
             <span className="wk-job-main">
               <span>
-                <b>{j.orderCode}</b> · {j.robotCode} · {j.technicianName}{j.isRewrite ? ` · ${t('wk.rewrite')}` : ''}
+                <b>{j.orderCode}</b> · {j.robotCode || t('tw.noRobot')} · {j.technicianName}{j.isRewrite ? ` · ${t('wk.rewrite')}` : ''}
                 <br />
                 <span className="sd-sub">{when(j.slotStart)} → {when(j.slotEnd)} · {t(`js.${j.status}`)}</span>
               </span>
@@ -138,17 +137,19 @@ function JobList({ jobs, onChanged }: { jobs: Job[]; onChanged: () => void }) {
                 {asking.kind === 'move' && (
                   <>
                     <label className="vh-label">
-                      {t('wk.robot')}
-                      <select className="vh-select" value={robotId} onChange={(e) => setRobotId(e.target.value)}>
+                      {t('wk.technician')}
+                      <select className="vh-select" value={techId} onChange={(e) => { setTechId(e.target.value); setRobotId('') }}>
                         <option value="">{t('wk.keep')}</option>
-                        {(robots.data ?? []).map((r) => <option key={r.id} value={r.id} disabled={r.status === 'MAINTENANCE' || r.status === 'BROKEN'}>{r.code} · {t(`rs.${r.status}`)}</option>)}
+                        {(techs.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.fullName} · {x.robots.map((r) => r.code).join(', ') || t('wk.cal.noRobotShort')}</option>)}
                       </select>
                     </label>
                     <label className="vh-label">
-                      {t('wk.technician')}
-                      <select className="vh-select" value={techId} onChange={(e) => setTechId(e.target.value)}>
-                        <option value="">{t('wk.keep')}</option>
-                        {(techs.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.fullName}</option>)}
+                      {t('wk.robot')}
+                      <select className="vh-select" value={robotId} onChange={(e) => setRobotId(e.target.value)}>
+                        {/* Another technician: the old robot is dropped unless it is theirs too (the backend decides). */}
+                        <option value="">{t(techId && Number(techId) !== j.technicianId ? 'wk.cal.techPicks' : 'wk.keep')}</option>
+                        {((techs.data ?? []).find((x) => x.id === (techId ? Number(techId) : j.technicianId))?.robots ?? []).map((r) =>
+                          <option key={r.id} value={r.id} disabled={r.status === 'MAINTENANCE' || r.status === 'BROKEN'}>{r.code} · {t(`rs.${r.status}`)}</option>)}
                       </select>
                     </label>
                     <label className="vh-label">

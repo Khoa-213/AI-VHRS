@@ -143,13 +143,24 @@ class _RobotControlScreenState extends ConsumerState<RobotControlScreen> with Jo
       return TechPage(title: t('rb.title'), body: feedback);
     }
     final j = d.job;
+    final robotId = j.robotId;
+    if (robotId == null) {
+      // A SCHEDULED job without a robot yet (migration 0032): it is picked on the job page first.
+      return TechPage(
+        title: t('rb.title'),
+        actions: [
+          TechButton(t('td.api.back'), small: true, style: CustomButtonStyle.outline, icon: Icons.arrow_back_rounded, onPressed: () => context.go(jobPath(j.id))),
+        ],
+        body: EmptyCard(title: t('tw.noRobot'), body: t('tw.why.robot')),
+      );
+    }
     final disabled = flowBusy || q.hasError || q.isLoading;
-    final liveQ = ref.watch(robotLiveProvider(j.robotId));
+    final liveQ = ref.watch(robotLiveProvider(robotId));
     final view = liveQ.valueOrNull;
     final live = view?.live;
     final frame = view?.frame;
     final status = ref.watch(robotStatusProvider).valueOrNull;
-    final row = status?.where((r) => r.robotId == j.robotId).firstOrNull;
+    final row = status?.where((r) => r.robotId == robotId).firstOrNull;
     final commands = ref.watch(jobCommandsProvider(j.id)).valueOrNull ?? const <RobotCommand>[];
     final verifiedPack = ref.watch(verifiedPackageProvider(j.id));
     final verified = verifiedPack != null && verifiedPack.hash == j.packageHash;
@@ -219,7 +230,7 @@ class _RobotControlScreenState extends ConsumerState<RobotControlScreen> with Jo
         ],
       ),
     );
-    final viewer = RobotView3D(robotId: j.robotId, robotCode: j.robotCode, height: compact ? 220 : 420, footer: ColoredBox(color: AppColors.inkSoft, child: strip));
+    final viewer = RobotView3D(robotId: robotId, robotCode: j.robotCode, height: compact ? 220 : 420, footer: ColoredBox(color: AppColors.inkSoft, child: strip));
 
     Widget tile(String label, String value) => TechCard(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),

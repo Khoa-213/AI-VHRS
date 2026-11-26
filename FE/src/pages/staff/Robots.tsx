@@ -12,6 +12,7 @@ import {
 } from '../../services/managerOps'
 import { errText, orderErrorKey } from '../../services/orders'
 import { Chip, LevelChip, Panel, Period, StateChip, type Tone } from './managerKit'
+import RobotAssignments from './RobotAssignments'
 
 const HEALTH_DAYS = [7, 30, 90] as const
 const ROLES = ['TECHNICAL_STAFF', 'MANAGER', 'STAFF'] as const
@@ -123,6 +124,7 @@ export default function Robots() {
             <button key={r.robotId} type="button" className={`mgr-robot${r.robotId === robotId ? ' on' : ''}`} aria-pressed={r.robotId === robotId} onClick={() => { setPicked(r.robotId); setRunPage(1) }}>
               <span className="mgr-robot-top"><b>{r.robotCode}</b><StateChip state={r.state} /></span>
               {r.alerts.length > 0 && <span className="mgr-robot-top"><LevelChip level={r.level} /><span className="sub">{t('mgr.robots.alerts', { n: r.alerts.length })}</span></span>}
+              {r.realEnabled && <span className="mgr-robot-top"><Chip tone="bad">{t(r.realEnabled.waiveDryRun ? 'mgr.rb.realOnWaived' : 'mgr.rb.realOn', { id: r.realEnabled.jobId, time: new Date(r.realEnabled.expiresAt * 1000).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) })}</Chip></span>}
               <dl>
                 <dt>{t('mgr.rb.mode')}</dt><dd>{r.mode ? t(`rb.mode.${r.mode}`) : '–'}</dd>
                 <dt>{t('mgr.rb.link')}</dt><dd>{r.connection === 'ONLINE' ? t('rb.online') : t('rb.offline')}</dd>
@@ -136,6 +138,8 @@ export default function Robots() {
           ))}
         </div>
       </Panel>
+
+      <RobotAssignments />
 
       {robot && (
         <Panel

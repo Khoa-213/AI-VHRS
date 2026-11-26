@@ -124,3 +124,8 @@
 .ws.ws-manager .ol-scope button{flex:1;min-width:0}
 .ws.ws-manager .ol-filter{width:100%}
 .ws.ws-manager .ol-filter .adm-select-trigger{min-height:42px}
+/* Robot assignment (migration 0032): robot, its technician, change. */
+.ws.ws-manager .mgr-assign th b{color:var(--ink)}
+.ws.ws-manager .mgr-assign-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ws.ws-manager .mgr-assign-row .vh-select{min-width:0;flex:1 1 150px}
+@media(max-width:560px){.ws.ws-manager .mgr-assign thead{display:none}.ws.ws-manager .mgr-assign tr{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line)}.ws.ws-manager .mgr-assign th,.ws.ws-manager .mgr-assign td{border:0}.ws.ws-manager .mgr-assign td:last-child{grid-column:1/-1}}

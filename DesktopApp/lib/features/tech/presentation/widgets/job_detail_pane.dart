@@ -12,6 +12,7 @@ import '../../domain/job.dart';
 import '../../i18n/tech_strings.dart';
 import 'job_flow.dart';
 import 'job_sections.dart';
+import 'job_setup.dart';
 import 'job_widgets.dart';
 import 'tech_shell.dart';
 import 'tech_ui.dart';
@@ -107,7 +108,8 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
             children: [
               Text(code, style: Theme.of(context).textTheme.headlineLarge),
               JobStatusPill(j.status),
-              if (canControl)
+              // A job without a robot yet has nothing to control: the robot is chosen below first.
+              if (canControl && j.robotId != null)
                 TechButton(t('rb.title'), small: true, onPressed: () => context.go('${jobPath(j.id)}/control')),
               if (hasPhotos)
                 TechButton(t('td.flow.photos'), small: true, onPressed: () => context.go('/tech/qc/${j.id}')),
@@ -133,7 +135,7 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
               runSpacing: 12,
               children: [
                 for (final f in [
-                  fact(t('po.robot'), j.robotCode.isEmpty ? '${j.robotId}' : j.robotCode),
+                  fact(t('po.robot'), jobRobotLabel(t, j)),
                   fact(t('td.api.slotStart'), jobStamp(t, j.slotStart)),
                   fact(t('td.api.slotEnd'), jobStamp(t, j.slotEnd)),
                   fact(t('po.time'), t('td.min', {'n': j.durationMin})),
@@ -278,6 +280,8 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
         feedback,
         summary,
         const SizedBox(height: 16),
+        JobStepList(detail: d, verified: current != null),
+        const SizedBox(height: 16),
         LayoutBuilder(builder: (context, c) {
           if (c.maxWidth < 640) {
             return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [materials, const SizedBox(height: 16), steps]);
@@ -292,6 +296,10 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
         const SizedBox(height: 12),
         FlowMessages(busy: flowBusy, error: flowError, notice: flowNotice),
         if (package != null) ...[package, const SizedBox(height: 16)],
+        if (gates.chooseRobot) ...[
+          ChooseRobotCard(job: j, disabled: disabled, run: run),
+          const SizedBox(height: 16),
+        ],
         if (j.status == JobStatus.scheduled) ...[
           TechCard(
             child: Column(
@@ -311,6 +319,10 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+        ],
+        if (gates.calibrate) ...[
+          CalibrationCard(detail: d, disabled: disabled, run: run),
           const SizedBox(height: 16),
         ],
         if (j.status == JobStatus.preparing || j.status == JobStatus.paused) ...[

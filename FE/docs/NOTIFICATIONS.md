@@ -72,7 +72,7 @@ Manager không nhận `MESSAGE` hay các thông báo hoàn tiền của Staff. C
 | `JOB_ASSIGNED` | `PRODUCTION_STATUS_CHANGED` | Được Manager giao viết đơn, kèm giờ bắt đầu |
 | `JOB_CANCELLED` | `PRODUCTION_STATUS_CHANGED` | Đơn bị hủy nên job của mình cũng bị hủy |
 
-Cảnh báo robot của Technician đi theo hệ thống cảnh báo riêng: chuông đỏ `RobotAlertBell` (poll `GET /technician/robot-status`) và banner E-Stop mức 4, không phải bảng thông báo này. Cảnh báo mức 4 còn được backend gửi email.
+Cảnh báo robot của Technician đi theo hệ thống cảnh báo riêng, nay nằm trong ứng dụng Desktop (`DesktopApp/`: chuông cảnh báo poll `GET /technician/robot-status`, màn E-Stop toàn màn hình ở mức 4), không phải bảng thông báo này; web không còn trang kỹ thuật viên. Cảnh báo mức 4 còn được backend gửi email.
 
 ## Admin (ADMIN)
 

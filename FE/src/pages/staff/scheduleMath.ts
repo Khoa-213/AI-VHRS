@@ -1,4 +1,4 @@
-import type { Job, Robot, ScheduleConfig } from '../../services/workshop'
+import type { Job, ScheduleConfig, Technician } from '../../services/workshop'
 
 /** Calendar maths for the schedule page, in the workshop's clock from `GET /manager/schedule/config`. Mirrors `BE/app/domain/scheduling_rules.py`; the backend still decides on booking. */
 
@@ -67,21 +67,34 @@ export function inDay(c: ScheduleConfig, start: number, end: number, key: string
 
 export type Verdict =
   | { kind: 'ok' }
-  | { kind: 'closed' | 'past' }
-  | { kind: 'robot'; status: Robot['status'] }
-  | { kind: 'robotBusy' | 'techBusy'; code: string }
+  | { kind: 'noRobot' }
+  | { kind: 'robot'; status: string }
+  | { kind: 'closed' }
+  | { kind: 'past' }
+  | { kind: 'robotBusy'; code: string }
+  | { kind: 'allRobotsBusy' }
+  | { kind: 'techBusy'; code: string }
 
-/** The checks `SchedulingService.schedule` runs, so a clash shows before the request is sent. */
-export function checkSlot(c: ScheduleConfig, robot: Robot, techId: number, start: number, minutes: number, jobs: Job[], now: number): Verdict {
-  if (robot.status !== 'AVAILABLE') return { kind: 'robot', status: robot.status }
+/**
+ * Can this technician take the job at `start` (migration 0032)? With `robotId` the chosen robot (one of theirs) must be in service
+ * and free; without it at least one of their robots in service must be free, and the technician picks it later. The backend
+ * also checks the pen fits the robot (`ROBOT_NOT_SUITABLE`), which the calendar does not know.
+ */
+export function checkSlot(c: ScheduleConfig, tech: Technician, robotId: number | null, start: number, minutes: number, jobs: Job[], now: number): Verdict {
+  const usable = tech.robots.filter((r) => r.status === 'AVAILABLE')
+  if (!usable.length) return { kind: 'noRobot' }
+  const robot = robotId === null ? null : tech.robots.find((r) => r.id === robotId)
+  if (robot && robot.status !== 'AVAILABLE') return { kind: 'robot', status: robot.status }
   if (!isOpen(c, start)) return { kind: 'closed' }
   if (start < now - MINUTE) return { kind: 'past' }
   const end = addWorkingMinutes(c, start, minutes)
   const live = jobs.filter((j) => Date.parse(j.slotEnd) > now && Date.parse(j.slotStart) < end && start < Date.parse(j.slotEnd))
-  const robotClash = live.find((j) => j.robotId === robot.id)
-  if (robotClash) return { kind: 'robotBusy', code: robotClash.orderCode }
-  const techClash = live.find((j) => j.technicianId === techId)
+  const techClash = live.find((j) => j.technicianId === tech.id)
   if (techClash) return { kind: 'techBusy', code: techClash.orderCode }
+  if (robot) {
+    const robotClash = live.find((j) => j.robotId === robot.id)
+    if (robotClash) return { kind: 'robotBusy', code: robotClash.orderCode }
+  } else if (usable.every((r) => live.some((j) => j.robotId === r.id))) return { kind: 'allRobotsBusy' }
   return { kind: 'ok' }
 }
 

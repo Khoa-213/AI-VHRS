@@ -19,9 +19,7 @@ import Schedule from './pages/staff/Schedule'
 import Workbench from './pages/staff/Workbench'
 import ManagerDashboard from './pages/staff/ManagerDashboard'
 import StaffDashboard from './pages/staff/StaffDashboard'
-import TechDashboard from './pages/tech/TechDashboard'
-import TechJobDetail from './pages/tech/JobDetail'
-import PreviewOrders from './pages/tech/PreviewOrders'
+import TechDesktopOnly from './pages/TechDesktopOnly'
 
 
 import RequireStaff from './pages/staff/RequireStaff'
@@ -118,12 +116,8 @@ function Routes() {
   if (path === '/admin/audit') return <RequireStaff role="admin"><AuditLog /></RequireStaff>
   if (path === '/admin/settings') return <RequireStaff role="admin"><Settings /></RequireStaff>
 
-  if (path === '/tech') return <RequireStaff role="technician"><TechDashboard /></RequireStaff>
-  // /tech/preview/:id and /tech/qc/:id are aliases of the job screen.
-  const techJob = /^\/tech\/(?:jobs|preview|qc)\/(\d+)\/?$/.exec(path)
-  if (techJob) return <RequireStaff role="technician"><TechJobDetail key={techJob[1]} id={Number(techJob[1])} /></RequireStaff>
-  if (path === '/tech/preview') return <RequireStaff role="technician"><PreviewOrders mode="preview" /></RequireStaff>
-  if (path === '/tech/qc') return <RequireStaff role="technician"><PreviewOrders mode="qc" /></RequireStaff>
+  // Technicians work only in the desktop app (2026-11-26): /tech and the old job, preview and QC links say so.
+  if (path === '/tech' || path.startsWith('/tech/')) return <RequireStaff role="technician"><TechDesktopOnly /></RequireStaff>
   if (import.meta.env.DEV && path === '/dev/privacy') return <PrivacyPreview />
   // VNPay, MoMo and payOS bring the customer back here after paying (PAYMENT_RETURN_URL on the backend).
   if (path === '/payment/result') return <PaymentResult />

@@ -376,3 +376,6 @@ body:has(.ws){background:#ebe9e4}
 .ws .wc-verdict.risk{background:#fff3dc;color:#6f3f04}
 .ws .wc-verdict.bad{background:#fdecec;color:#a31717}
 .ws .wc-actions{display:flex;justify-content:flex-end;gap:8px}
+/* A job the technician has not picked a robot for yet (migration 0032): dashed edge, the same fill. */
+.ws a.wc-ev.norobot{border-left-style:dashed}
+.ws .wc-legend i.sched.norobot{border-left:3px dashed #59636c}

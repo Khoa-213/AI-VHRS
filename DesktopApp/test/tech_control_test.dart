@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:ai_vhrs_mobile/features/tech/data/prefs.dart';
 import 'package:ai_vhrs_mobile/features/tech/data/providers.dart';
+import 'package:ai_vhrs_mobile/features/tech/domain/notification.dart';
 import 'package:ai_vhrs_mobile/features/tech/data/robot_api.dart';
 import 'package:ai_vhrs_mobile/features/tech/data/tech_api.dart';
 import 'package:ai_vhrs_mobile/features/tech/domain/job.dart';
@@ -101,6 +102,8 @@ Future<_Robot> _pumpControl(
   await tester.pumpWidget(ProviderScope(
     overrides: [
       prefsProvider.overrideWithValue(prefs),
+      // The header's notification bell: no call to the real backend from a test.
+      notificationsProvider.overrideWith((ref) => Stream.value(const NotificationPage(items: [], unreadCount: 0))),
       robotApiProvider.overrideWithValue(robot),
       techJobProvider.overrideWith((ref, id) => Stream.value(_detail(status))),
       techJobsProvider.overrideWith((ref) => Stream.value(const [])),
@@ -218,6 +221,8 @@ void main() {
           key: ValueKey(size),
           overrides: [
             prefsProvider.overrideWithValue(prefs),
+            // The header's notification bell: no call to the real backend from a test.
+            notificationsProvider.overrideWith((ref) => Stream.value(const NotificationPage(items: [], unreadCount: 0))),
             techJobProvider.overrideWith((ref, id) => Stream.value(_detail(JobStatus.written))),
             robotStatusProvider.overrideWith((ref) => Stream.value(const [])),
             jobPhotosProvider.overrideWith((ref, id) => Stream.value([

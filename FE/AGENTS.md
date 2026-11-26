@@ -50,7 +50,7 @@ const locale = useLocale() // dates and numbers: date.toLocaleDateString(locale,
 
 - Put `<LanguageToggle />` right after every `<ThemeToggle ... />` (any header or top bar). It styles itself
   (`components/ui/language.css`, the landing page's look) so it is the same button everywhere: do not restyle it per page.
-- Staff, Manager and Technician pages render inside `components/ws/Shell.tsx` (header and labelled sidebar); Admin pages inside `AdminFrame`.
+- Staff and Manager pages render inside `components/ws/Shell.tsx` (header and labelled sidebar); Admin pages inside `AdminFrame`.
 - Keep layout working at the longest language: Vietnamese and Japanese text can be longer or wrap differently.
   Do not give buttons a fixed width that clips them.
 
@@ -70,7 +70,7 @@ Text that stays English is a bug unless it is in the exceptions list above.
 - No em dash or en dash in user-facing copy. Use a comma, colon or period.
 - Icons come from `@phosphor-icons/react`. Colours come from CSS variables in `src/styles/theme.css`.
 
-- Customer, workshop (Staff, Manager) and technician data all come from the API. The localStorage store in `src/store/store.ts` only keeps the signed-in user and profile.
+- Customer and workshop (Staff, Manager) data all come from the API. The localStorage store in `src/store/store.ts` only keeps the signed-in user and profile.
 
 
 ## Customer orders come from the API
@@ -97,21 +97,14 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
 - The workshop side lives in `src/pages/staff/` and `src/services/workshop.ts`: dashboard, `Workbench` (intake, sketch, quotation, chat),
   `Approvals`, `Schedule` and `Catalog` (Manager only, via `services/manage.ts`: templates, robots, price list, and `Materials.tsx`, where paper, pens, ink colors and paper-pen compatibility are one list-and-detail view because the customer only sees the chain paper → compatible active pen → that pen's active inks; a new paper is created with its pens, a new pen with its inks and papers, and anything a customer cannot order is flagged). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
 - Errors from the API go through `orderErrorKey` / `errText` (`services/orders.ts`): known codes have translated text, any other code shows the backend's own message. Add a code to `ERROR_KEYS` and `err.*` when you want it translated.
-- Workshop screens (Staff, Manager, Technician) all render inside `components/ws/Shell.tsx`. All three render the Staff frame (`.ws.ws-staff`, see "Staff presentation"), on top of `components/ws/ws.css` and `workshop.css`; the accent is the `--acc` variable. Use the shared pieces in `components/ws/parts.tsx` and `charts.tsx` before adding new markup.
+- Workshop screens (Staff, Manager) render inside `components/ws/Shell.tsx`. Both render the Staff frame (`.ws.ws-staff`, see "Staff presentation"), on top of `components/ws/ws.css` and `workshop.css`; the accent is the `--acc` variable. Use the shared pieces in `components/ws/parts.tsx` and `charts.tsx` before adding new markup.
 - The order chat (`components/ui/Chat.tsx`) is shared by the customer and the workshop, and is reached only through the floating
   `components/ui/ChatDock.tsx`: `side="customer"` in `App.tsx`, `side="workshop"` in `Shell.tsx` (Staff, Manager). The list and badge come from
   `services/chat.ts` (`/me/conversations`, `/workshop/conversations`, `.../unread-count`). Opening the customer chat from an order sends
   an `ORDER_CARD` message (the backend returns the same card within 10 minutes); both sides render it from `order_card`.
   Read only only when the order is `REJECTED` or `CANCELLED` (a `COMPLETED` order stays open for complaints), or for a Staff who has not
   claimed the order. Contract: `BE/docs/FE_API_GUIDE.md` section 5.4.
-- The technician screens (`src/pages/tech/`) run on the API (`services/technician.ts`): jobs, the job screen (`JobDetail` and its workflow, preparation, events and photo parts, also reached at `/tech/preview/:id` and `/tech/qc/:id`). Details in `docs/TECHNICAL_STAFF_INTEGRATION.md`.
-- Robot control and simulation (`pages/tech/RobotConsole.tsx`, `services/robot.ts`, contract in `BE/docs/FE_API_GUIDE.md` 7f and 7g) never talk to the
-  workstation: they create commands (`POST /technician/robot-commands`: LOAD, PREFLIGHT, DRY_RUN, RUN, PAUSE, RESUME, STOP, PAPER_CHANGED, ALIGN_START,
-  each with a fresh `idempotency_key`) that the Robot Agent pulls and runs on the real arm (mode REAL only: the web offers no MOCK/SIM; every DRY_RUN/RUN/ALIGN_START carries the operator's `AUTHORIZE-…` code), and follow them with `GET .../robot-commands/{id}`.
-  Live frames come from `/technician/robots/{id}/live` (4 per second while running), status and alerts from `/technician/robot-status`, and the 3D view
-  is the backend page `/viewer/robot.html` in an iframe (`view-ticket`; Vite proxies `/viewer` in dev, production needs the site origin in the
-  backend's `CORS_ORIGINS`). Calibration is sent from the workstation (`robot_agent/scripts/robot_console.py calibrate`), not from the web. The simulation result the backend gates start on is recorded from the agent's LOAD check and PREFLIGHT; the manual form
-  stays as a fallback. A red (level 4) alert shows the E-Stop banner; software STOP never replaces the physical E-Stop.
+- **Technicians do not use the web** (owner decision 2026-11-26, `BE/docs/FE_TECH_WORKSPACE_HANDOFF.md`): every technician task (jobs, package, choosing the robot, prepare, calibration, REAL switch, robot control and 3D, simulation, photos, QC) is on the **workstation screen served by the Robot Agent** (`robot_agent/vhrs_agent/static/`, `http://<workstation>:8765/`). A technician signed in on the web, and any old `/tech...` link, gets `pages/TechDesktopOnly.tsx`: the workstation address and their jobs read only (`GET /technician/jobs`), no actions, Sign out. Do not add technician screens here. The `td.*`, `rb.*`, `tw.*`, `tq.*`, `nt.*` keys are kept: `DesktopApp/tool/gen_i18n.dart` (the Flutter app) still generates from them.
 
 
 ## Forgot password
@@ -139,7 +132,7 @@ Admin dropdowns, including the audit record-kind filter, remain scrollable with 
 
 ## Staff presentation
 
-Staff retains the workshop `Shell` and existing workflow components. `components/ws/staff-ui.css` is scoped to `.ws.ws-staff` (`area="staff"`, `"manager"` and `"tech"`). Its CRM reference lives in `crm_video_reference/`: a sticky header for the logo, notifications, appearance, language and profile link, plus a labelled workflow sidebar with a mobile drawer, cool white page, white cards, black/deep navy accents and one dark KPI. Use dark text and a navy keyboard focus ring with clear contrast in both themes. Staff and Admin share the saved `AppearanceSwitch` preference. `staff-depth.css` adds gradients, layered surfaces and shadows scoped to Staff. No abstract 3D shapes (spheres, rings) on Staff screens. `staff-theme.css` supplies Staff dark tokens and surfaces; paper previews retain their original colours. `BrandLogo` follows the theme. Manager and Technician use the same frame (see "Manager area" and "Technician area").
+Staff retains the workshop `Shell` and existing workflow components. `components/ws/staff-ui.css` is scoped to `.ws.ws-staff` (`area="staff"` and `"manager"`). Its CRM reference lives in `crm_video_reference/`: a sticky header for the logo, notifications, appearance, language and profile link, plus a labelled workflow sidebar with a mobile drawer, cool white page, white cards, black/deep navy accents and one dark KPI. Use dark text and a navy keyboard focus ring with clear contrast in both themes. Staff and Admin share the saved `AppearanceSwitch` preference. `staff-depth.css` adds gradients, layered surfaces and shadows scoped to Staff. No abstract 3D shapes (spheres, rings) on Staff screens. `staff-theme.css` supplies Staff dark tokens and surfaces; paper previews retain their original colours. `BrandLogo` follows the theme. Manager uses the same frame (see "Manager area").
 
 `/staff/review` shows the existing open-order groups as responsive pipeline columns. Cards open the existing `/staff/review/:id` list/detail route. Stage/scope/search/collapse/pagination rules and action handlers stay unchanged; no drag-and-drop status mutations. For a Manager the same screens render in the Staff frame with the Manager sidebar. Staff filters use `AdminSelect`, portalled into `.ws-staff` for light tokens, with hidden scrollbar chrome. The dashboard's 7/30-day selector affects the received-orders chart only; KPIs keep current totals. No sample data or unsupported CRM actions in production.
 
@@ -152,11 +145,4 @@ Check `node scripts/check-staff-ui-browser.mjs` and existing fulfillment/Admin b
 - Data: `services/managerOps.ts`: `/manager/dashboard`, `/manager/reports` and its Excel/PDF export (through `apiFile` in `services/api.ts`, Bearer fetch), robot status, health, runs, process compliance, alerts and the alert catalogue, job detail, events, incidents, quality, and review moderation. Pages: `ManagerDashboard.tsx`, `Reports.tsx` (`/staff/reports`), `Robots.tsx` (`/staff/robots`, `?job=<id>` opens a job), `Reviews.tsx` (`/staff/reviews`).
 - Alert titles and actions (`title_vi`, `action_vi`, `headline_vi`), process steps and quality advice come from the backend in Vietnamese and are shown as received. A Manager may close a red (level 4) alert only after a confirmation; the E-Stop reminder stays. Red catalogue entries keep e-mail, stay on and keep technicians.
 - Check with `node scripts/check-manager-browser.mjs` after building (set `TECH_BROWSER_PATH` outside Windows; `MANAGER_SHOTS=<dir>` saves screenshots).
-
-## Technician area
-
-`Shell area="tech"` renders the Staff frame (`.ws.ws-staff.ws-tech`): the same header with a robot-alert button (`RobotAlertBell`, robot icon, red while an alert is open) next to notifications, the labelled sidebar (dashboard, preview, QC with the count of written jobs) and its mobile drawer, Staff tokens and the shared light/dark preference. No order chat for technicians. `components/ws/tech-ui.css` holds the few Technician-only rules (three KPIs, `sd-btn` as the Staff inverse button, sticky header while a job's progress is pinned, phone header fit); `pages/tech/tech.css` uses tokens only, so dark mode follows `staff-theme.css`.
-- Workflow guards (`flow.ts`, `jobPermissions`), robot console rules and the E-Stop banner are unchanged. Start stays off unless the package hash is verified, `simulation_passed === true` and the server's `can_start`; the gate chips show an icon and a word, and a line says why Start is off.
-- Quality check (Service G, `pages/tech/JobQuality.tsx`): `POST /technician/jobs/{id}/photos/{photoId}/evaluate` per photo (sketch page 1 to 10) and `GET .../quality`. The verdict, metrics and Vietnamese advisory are the backend's; the technician still sets each photo's QC result.
-- The verified package shows whether it is signed (`snapshot`) and lists `material_drift` (backend text, shown as received).
-- A PAUSED job calibrated again needs a new passed simulation before RUN / RESUME (backend `SIMULATION_STALE`). The backend does not expose the flag, so `simulationStale()` in `services/technician.ts` reads the event log from its newest page: a `CALIBRATED` newer than the last `SIMULATED` is stale. Robot control then shows `rb.simStale`, holds Write and Resume, and opens "Record simulation result" on the PAUSED job (`jobPermissions().simulate` allows PAUSED too). Check with `node scripts/check-tech-simstale-browser.mjs` after building. `scripts/check-technician-browser.mjs` predates the workstation calibration and still expects the removed web calibration form.
+- Robots are given to technicians for good (migration 0032): `RobotAssignments.tsx` on `/staff/robots` (`PUT` / `DELETE /manager/robots/{id}/technician`; `409 ROBOT_HAS_ACTIVE_JOBS` lists the job ids to move first). The schedule books a **technician** and a time; the robot is optional ("Let the technician choose") and only one of theirs; the technician picks it on the workstation screen. The calendar's columns are technicians, a job without a robot shows "No robot chosen" with a dashed edge, and a technician without a robot in service is locked with a link to Robots. Robot cards show a red "REAL on for job X until hh:mm" from `robot-status` `real_enabled` (switched on only at the workstation). `checkSlot` in `scheduleMath.ts` mirrors the backend (`TECHNICIAN_HAS_NO_ROBOT`, `ROBOT_NOT_ASSIGNED`, no robot of theirs free); the pen fit stays the backend's (`ROBOT_NOT_SUITABLE`).

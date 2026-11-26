@@ -41,7 +41,8 @@ class TechJob {
   final int id;
   final int orderId;
   final String orderCode;
-  final int robotId;
+  /// Null until the technician picks one of their robots (job SCHEDULED, migration 0032).
+  final int? robotId;
   final String robotCode;
   final int technicianId;
   final String technicianName;
@@ -82,7 +83,7 @@ class TechJob {
         id: j['id'] as int,
         orderId: j['order_id'] as int,
         orderCode: j['order_code'] as String? ?? '',
-        robotId: j['robot_id'] as int,
+        robotId: j['robot_id'] as int?,
         robotCode: j['robot_code'] as String? ?? '',
         technicianId: j['technician_id'] as int,
         technicianName: j['technician_name'] as String? ?? '',
@@ -190,7 +191,11 @@ class TechJobDetail {
     final calibrated = calibration?.isValid ?? false;
     return JobPermissions(
       download: previewJobStatuses.contains(s),
-      prepare: s == JobStatus.scheduled && verified && job.downloadedAt != null,
+      // A SCHEDULED job may have no robot yet (0032): the technician picks one of theirs before preparing.
+      chooseRobot: s == JobStatus.scheduled,
+      prepare: s == JobStatus.scheduled && verified && job.downloadedAt != null && job.robotId != null,
+      // PAUSED too: recalibrating a paused job makes its simulation stale (SIMULATION_STALE).
+      calibrate: s == JobStatus.preparing || s == JobStatus.paused,
       // PAUSED too: after a recalibration the backend wants a new passed simulation before writing on (SIMULATION_STALE).
       simulate: (s == JobStatus.preparing || s == JobStatus.paused) && verified && calibrated,
       start: s == JobStatus.preparing &&
@@ -207,10 +212,12 @@ class TechJobDetail {
 }
 
 class JobPermissions {
-  final bool download, prepare, simulate, start, finish, incident, photos;
+  final bool download, chooseRobot, prepare, calibrate, simulate, start, finish, incident, photos;
   const JobPermissions({
     required this.download,
+    required this.chooseRobot,
     required this.prepare,
+    required this.calibrate,
     required this.simulate,
     required this.start,
     required this.finish,

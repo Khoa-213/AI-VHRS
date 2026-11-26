@@ -28,7 +28,7 @@ def _hub(tmp_path, token=None):
 def test_viewer_serves_the_page_the_job_and_the_live_state(tmp_path):
     hub, runner, _ = _hub(tmp_path)
     c = TestClient(create_app(hub))
-    assert "VHRS Robot Monitor" in c.get("/").text
+    assert "VHRS · Máy trạm" in c.get("/").text                       # the technician workspace (2026-11-26), was "VHRS Robot Monitor"
     job = c.get("/api/job").json()
     assert job["mode"] == "SIM" and job["job_id"] == 3 and len(job["pages"][0]["strokes"]) == 2
     hub.set_snapshot(Snapshot(state="WRITING", mode="SIM", progress_pct=40.0, force_n=1.1))

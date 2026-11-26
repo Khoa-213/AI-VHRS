@@ -35,7 +35,7 @@ Mở `http://localhost:5173`. Dùng **4 trình duyệt / cửa sổ ẩn danh ri
 | Khách | `customer@example.com` (hoặc tự đăng ký tài khoản mới ở bước 1) | `/` |
 | Staff | `staff@netviet.vn` | `/staff` |
 | Manager | `manager@netviet.vn` | `/staff` (bảng điều khiển Manager) |
-| Kỹ thuật viên | `tech@netviet.vn` | `/tech` |
+| Kỹ thuật viên | `tech@netviet.vn` | màn máy trạm `http://<máy trạm>:8765/` (web `/tech` chỉ còn trang thông báo; xem `FE_TECH_WORKSPACE_HANDOFF.md`) |
 | Admin (tuỳ chọn) | `admin@netviet.vn` | `/admin` |
 
 Mật khẩu: bạn (chủ dự án) đang giữ.
@@ -101,6 +101,9 @@ Ba chỗ làm việc trong bước này:
 - **[MT]** = PowerShell trên máy trạm nối robot, trong thư mục `D:\K9\AI-VHRS\robot_agent`.
 - **[WEB]** = trình duyệt đăng nhập `staff@gmail.com`, trang `http://localhost:5173/tech/jobs/<JOB_ID>`.
 - **[RB]** = tại robot (mắt nhìn, tay trên E-Stop).
+
+> **Đã đổi (chủ dự án quyết định 2026-11-26):** trang web `/tech` đã gỡ; mọi bước **[WEB]** dưới đây làm trên **màn máy trạm**
+> `http://<máy trạm>:8765/` (Robot Agent `serve`), cùng nghiệp vụ; bật REAL bằng nút "Bật REAL" ở bước 9 (`docs/FE_TECH_WORKSPACE_HANDOFF.md`).
 
 ### 6A. Chuẩn bị máy trạm (mỗi buổi một lần)
 

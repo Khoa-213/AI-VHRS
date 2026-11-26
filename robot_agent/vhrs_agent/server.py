@@ -655,7 +655,9 @@ def create_server_app(service: AgentService) -> FastAPI:
         return {"version": __version__, "auth_required": True, "backend_url": service.cfg.backend_url, "modes": list(service.cfg.modes),
                 "busy": service._busy, "current": service.current, "last": service.last, "joint_model_available": sim_model,
                 "real_requires": "REAL switch for the job at this workstation + plan authorization token + a finished dry run",
-                "real_enabled": service.real_state()}
+                "real_enabled": service.real_state(),
+                # The robot this workstation drives (agent.json robot_id), so the desktop screen can mark "this machine" before a load.
+                "robot_id": service.cfg.robot_id}
 
     @app.get("/api/real")
     def real(request: Request) -> dict[str, Any]:

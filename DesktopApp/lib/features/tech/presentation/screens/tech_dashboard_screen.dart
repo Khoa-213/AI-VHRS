@@ -15,6 +15,7 @@ import '../../domain/job.dart';
 import '../../domain/robot.dart';
 import '../../i18n/tech_strings.dart';
 import '../widgets/job_widgets.dart';
+import '../widgets/my_robots.dart';
 import '../widgets/tech_shell.dart';
 import '../widgets/tech_ui.dart';
 
@@ -26,7 +27,7 @@ const _groups = [
   (key: 'history', statuses: [JobStatus.photoUploaded, JobStatus.done, JobStatus.cancelled]),
 ];
 
-/// My jobs by what they need next, my robots and the waiting queue (FE `TechDashboard.tsx`).
+/// My robots (`GET /technician/robots`), my jobs by what they need next and the waiting queue.
 class TechDashboardScreen extends ConsumerWidget {
   const TechDashboardScreen({super.key});
 
@@ -36,13 +37,11 @@ class TechDashboardScreen extends ConsumerWidget {
     final auth = ref.watch(authNotifierProvider);
     final name = auth is AuthAuthenticated ? auth.fullName : t('td.technician');
     final q = ref.watch(techJobsProvider);
-    final status = ref.watch(robotStatusProvider).valueOrNull;
     final mine = q.valueOrNull ?? const <TechJob>[];
     final loaded = q.hasValue;
 
     List<TechJob> inStatus(List<JobStatus> s) => mine.where((j) => s.contains(j.status)).toList();
     final queued = inStatus(const [JobStatus.scheduled, JobStatus.preparing]);
-    final open = inStatus(activeJobStatuses);
     final queueMinutes = queued.fold<int>(0, (a, j) => a + j.durationMin);
     final maxMin = queued.fold<int>(1, (a, j) => math.max(a, j.durationMin));
     final compact = isCompact(context);
@@ -115,26 +114,6 @@ class TechDashboardScreen extends ConsumerWidget {
       ),
     );
 
-    final robots = <int, TechJob>{for (final j in open) j.robotId: j};
-    final robotsCard = TechCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          CardHead(t('td.api.assignedRobots')),
-          for (final r in robots.values)
-            _RobotRow(
-              job: r,
-              status: status?.where((s) => s.robotId == r.robotId).firstOrNull,
-              jobs: open.where((j) => j.robotId == r.robotId).toList(),
-            ),
-          if (loaded && robots.isEmpty && !q.hasError)
-            Text(t('td.noRobots'), style: const TextStyle(color: AppColors.textSecondary)),
-          const SizedBox(height: 12),
-          Text(t('td.api.robotNote'), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
-        ],
-      ),
-    );
-
     final queueCard = TechCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -187,10 +166,12 @@ class TechDashboardScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           JobFeedback(loading: !loaded && q.isLoading, error: q.hasError ? q.error : null, retry: () => reloadTechData(ref)),
+          MyRobotsStrip(onPick: (id) => context.go(id == null ? '/tech/jobs' : '/tech/jobs?robot=$id')),
+          const SizedBox(height: 16),
           LayoutBuilder(builder: (context, c) {
             final stats = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [kpis, const SizedBox(height: 16), robotsCard, const SizedBox(height: 16), queueCard],
+              children: [kpis, const SizedBox(height: 16), queueCard],
             );
             if (c.maxWidth < 1000) {
               return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [stats, const SizedBox(height: 16), ordersCard]);
@@ -254,55 +235,6 @@ class _GroupState extends ConsumerState<_Group> {
         if (_open)
           for (final j in widget.rows) JobRow(job: j),
       ],
-    );
-  }
-}
-
-class _RobotRow extends ConsumerWidget {
-  final TechJob job;
-  final RobotStatus? status;
-  final List<TechJob> jobs;
-  const _RobotRow({required this.job, required this.status, required this.jobs});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = ref.watch(tProvider);
-    final s = status;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.divider))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(child: MonoText(job.robotCode.isEmpty ? '${job.robotId}' : job.robotCode, size: 13)),
-              if (s != null && s.state != RobotHealth.unknown) Flexible(child: Align(alignment: Alignment.centerRight, child: StatusPill(t('rb.state.${s.state.code}'), robotHealthColor(s.state)))),
-            ],
-          ),
-          // The backend writes this sentence in Vietnamese only; it is shown as data.
-          if (s != null && s.headline.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(s.headline, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
-          ],
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: [
-              for (final j in jobs)
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () => context.go(jobPath(j.id)),
-                    child: Text('${j.orderCode.isEmpty ? j.orderId : j.orderCode} · ${jobStatusLabel(t, j.status)}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, decoration: TextDecoration.underline)),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 }

@@ -5,7 +5,7 @@ import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
 import { errText, orderErrorKey } from '../../services/orders'
 import {
-  calendarJobs, listRobots, listTechnicians, scheduleConfig, scheduleOrder, scheduleSuggestion, type Robot, type ScheduleConfig,
+  calendarJobs, listTechnicians, scheduleConfig, scheduleOrder, scheduleSuggestion, type ScheduleConfig, type Technician,
 } from '../../services/workshop'
 import {
   addDays, addWorkingMinutes, at, checkSlot, clockOf, dateKey, dayMinutes, deadlineOf, hm, inDay, lateDays, weekDays, workingDayFrom, type Deadline, type Verdict,
@@ -23,12 +23,17 @@ export interface ScheduleTarget {
 }
 
 interface Draft {
-  robotId: number
+  techId: number
+  /** One of the technician's robots, or null: the technician picks it before preparing. */
+  robotId: number | null
   date: string
   time: string
 }
 
-/** A week or day of robot jobs from the API. With `order`, a click on a free time opens the booking form for it. */
+/**
+ * A week (one technician) or a day (every technician) of jobs from the API (migration 0032: the Manager books a technician and a
+ * time; the robot is optional and must be one of theirs). With `order`, a click on a free time opens the booking form for it.
+ */
 export default function ScheduleCalendar({ order, version, onBooked }: { order?: ScheduleTarget; version: number; onBooked: () => void }) {
   const t = useT()
   const config = useAsync(scheduleConfig, [])
@@ -47,15 +52,13 @@ export default function ScheduleCalendar({ order, version, onBooked }: { order?:
 function Calendar({ config: c, order, version, onBooked }: { config: ScheduleConfig; order?: ScheduleTarget; version: number; onBooked: () => void }) {
   const t = useT()
   const locale = useLocale()
-  const robots = useAsync(listRobots, [])
-  const techs = useAsync(listTechnicians, [])
+  const techs = useAsync(listTechnicians, [version])
   const sug = useAsync(async () => (order ? scheduleSuggestion(order.id) : null), [order?.id, version])
   const [now, setNow] = useState(() => Date.now())
   const [view, setView] = useState<'week' | 'day'>('week')
   const [focus, setFocus] = useState(() => workingDayFrom(c, dateKey(c, Date.now()), 1))
-  const [robotPick, setRobotPick] = useState<number | null>(null)
   const [techPick, setTechPick] = useState<number | null>(null)
-  const [hover, setHover] = useState<{ robotId: number; start: number } | null>(null)
+  const [hover, setHover] = useState<{ techId: number; start: number } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -76,17 +79,15 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
   }, [])
 
   const jobs = useMemo(() => jobsQ.data ?? [], [jobsQ.data])
-  const robotList = useMemo(() => robots.data ?? [], [robots.data])
   const techList = useMemo(() => techs.data ?? [], [techs.data])
-  const robotId = robotPick ?? robotList.find((r) => r.status === 'AVAILABLE')?.id ?? robotList[0]?.id ?? null
-  const techId = techPick ?? sug.data?.suggestions[0]?.technicianId ?? techList[0]?.id ?? null
-  const robot = robotList.find((r) => r.id === robotId)
+  const techId = techPick ?? sug.data?.suggestions[0]?.technicianId ?? techList.find((x) => x.robots.length)?.id ?? techList[0]?.id ?? null
   const tech = techList.find((x) => x.id === techId)
   const minutes = order ? sug.data?.durationMin ?? 0 : 0
-  const bookable = !!order && minutes > 0 && techId !== null
+  const bookable = !!order && minutes > 0
   const deadline: Deadline = useMemo(() => (order && sug.data ? deadlineOf(c, sug.data.eta, now) : { state: 'none' }), [c, order, sug.data, now])
   const today = dateKey(c, now)
   const height = dayMinutes(c) * PX
+  const usable = (x: Technician) => x.robots.some((r) => r.status === 'AVAILABLE')
 
   const dayName = (key: string, opts: Intl.DateTimeFormatOptions) => new Date(`${key}T00:00:00Z`).toLocaleDateString(locale, { timeZone: 'UTC', ...opts })
   const shortDate = (key: string) => dayName(key, { day: '2-digit', month: '2-digit' })
@@ -104,10 +105,12 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
   }
   const verdictText = (v: Verdict) => {
     switch (v.kind) {
+      case 'noRobot': return t('wk.cal.noOwnRobot')
       case 'robot': return t('wk.cal.robotOff', { status: t(`rs.${v.status}`) })
       case 'closed': return t('wk.cal.closed', { start: c.workingHours.start, end: c.workingHours.end })
       case 'past': return t('wk.cal.past')
       case 'robotBusy': return t('wk.cal.robotBusy', { code: v.code })
+      case 'allRobotsBusy': return t('wk.cal.allRobotsBusy', { name: tech?.fullName ?? '' })
       case 'techBusy': return t('wk.cal.techBusy', { code: v.code })
       default: return ''
     }
@@ -118,11 +121,11 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
     setHover(null)
     setFocus(view === 'week' ? addDays(focus, dir * 7) : workingDayFrom(c, addDays(focus, dir), dir))
   }
-  const openDraft = (id: number, start: number, tid?: number) => {
-    if (tid !== undefined) setTechPick(tid)
+  const openDraft = (tid: number, start: number, robotId: number | null = null) => {
+    setTechPick(tid)
     setHover(null)
     setErr('')
-    setDraft({ robotId: id, date: dateKey(c, start), time: clockOf(c, start) })
+    setDraft({ techId: tid, robotId, date: dateKey(c, start), time: clockOf(c, start) })
   }
   const closeDraft = () => {
     setDraft(null)
@@ -130,18 +133,18 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
   }
 
   const draftStart = draft ? at(c, draft.date, hm(draft.time)) : 0
-  const draftRobot = draft ? robotList.find((r) => r.id === draft.robotId) : undefined
-  const draftCheck: Verdict | null = draftRobot && techId !== null ? checkSlot(c, draftRobot, techId, draftStart, minutes, jobs, now) : null
-  const draftEnd = draftCheck && draftCheck.kind !== 'closed' ? addWorkingMinutes(c, draftStart, minutes) : null
+  const draftTech = draft ? techList.find((x) => x.id === draft.techId) : undefined
+  const draftCheck: Verdict | null = draftTech ? checkSlot(c, draftTech, draft?.robotId ?? null, draftStart, minutes, jobs, now) : null
+  const draftEnd = draftCheck && draftCheck.kind !== 'closed' && draftCheck.kind !== 'noRobot' ? addWorkingMinutes(c, draftStart, minutes) : null
 
   const book = async () => {
-    if (!order || !draft || techId === null || busy) return
+    if (!order || !draft || busy) return
     setBusy(true)
     setErr('')
     try {
       await scheduleOrder(order.id, {
-        robot_id: draft.robotId,
-        technician_id: techId,
+        ...(draft.robotId !== null ? { robot_id: draft.robotId } : {}),
+        technician_id: draft.techId,
         slot_start: new Date(draftStart).toISOString(),
         ...(note.trim() ? { note: note.trim() } : {}),
       })
@@ -156,9 +159,10 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
     }
   }
 
-  const cols: { key: string; robot: Robot; day: string }[] = robot || view === 'day'
-    ? (view === 'week' ? days.map((d) => ({ key: d, robot: robot as Robot, day: d })) : robotList.map((r) => ({ key: String(r.id), robot: r, day: focus })))
-    : []
+  // Week: one technician, a column per day. Day: a column per technician. A job sits with its technician, robot or not.
+  const cols: { key: string; tech: Technician; day: string }[] = view === 'week'
+    ? (tech ? days.map((d) => ({ key: d, tech, day: d })) : [])
+    : techList.map((x) => ({ key: String(x.id), tech: x, day: focus }))
 
   const pointerStart = (e: MouseEvent<HTMLButtonElement>, day: string) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -166,13 +170,13 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
     const stepped = Math.floor(raw / c.slotStepMin) * c.slotStepMin
     return at(c, day, hm(c.workingHours.start) + Math.max(0, Math.min(dayMinutes(c) - c.slotStepMin, stepped)))
   }
-  const keyMove = (e: KeyboardEvent<HTMLButtonElement>, col: { robot: Robot; day: string }) => {
+  const keyMove = (e: KeyboardEvent<HTMLButtonElement>, col: { tech: Technician; day: string }) => {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
     e.preventDefault()
     const open = at(c, col.day, hm(c.workingHours.start))
     const last = open + (dayMinutes(c) - c.slotStepMin) * 60000
-    const cur = hover && hover.robotId === col.robot.id && dateKey(c, hover.start) === col.day ? hover.start : open
-    setHover({ robotId: col.robot.id, start: Math.max(open, Math.min(last, cur + (e.key === 'ArrowDown' ? 1 : -1) * c.slotStepMin * 60000)) })
+    const cur = hover && hover.techId === col.tech.id && dateKey(c, hover.start) === col.day ? hover.start : open
+    setHover({ techId: col.tech.id, start: Math.max(open, Math.min(last, cur + (e.key === 'ArrowDown' ? 1 : -1) * c.slotStepMin * 60000)) })
   }
   const block = (from: number, mins: number) => {
     const h = Math.max(mins * PX - 1, MIN_BLOCK_PX)
@@ -188,6 +192,7 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
         ? `${t('wk.cal.booking', { code: order.code, min: minutes })} ${deadlineText(deadline)}`
         : t('co.loading')
   const hintTone = !!sug.error || deadline.state === 'overdue' || deadline.state === 'tight' ? ' bad' : ''
+  const robotsOf = (x: Technician) => (x.robots.length ? x.robots.map((r) => r.code).join(', ') : t('wk.cal.noRobotShort'))
 
   return (
     <section className="wk-block wc-card">
@@ -201,18 +206,12 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
         <span className="wc-space" />
         {view === 'week' && (
           <label className="wc-pick">
-            {t('wk.robot')}
-            <select className="vh-select" value={robotId ?? ''} onChange={(e) => setRobotPick(Number(e.target.value))}>
-              {robotList.map((r) => <option key={r.id} value={r.id}>{r.code} · {t(`rs.${r.status}`)}</option>)}
+            {t('wk.technician')}
+            <select className="vh-select" value={techId ?? ''} onChange={(e) => setTechPick(Number(e.target.value))}>
+              {techList.map((x) => <option key={x.id} value={x.id}>{x.fullName} · {robotsOf(x)}</option>)}
             </select>
           </label>
         )}
-        <label className="wc-pick">
-          {t('wk.technician')}
-          <select className="vh-select" value={techId ?? ''} onChange={(e) => setTechPick(Number(e.target.value))}>
-            {techList.map((x) => <option key={x.id} value={x.id}>{x.fullName} · {t('wk.activeJobs', { n: x.activeJobs })}</option>)}
-          </select>
-        </label>
         <span className="wk-tabs wc-tabs" role="group" aria-label={t('wk.cal.view')}>
           <button className={view === 'day' ? 'on' : ''} aria-pressed={view === 'day'} onClick={() => setView('day')}>{t('wk.cal.day')}</button>
           <button className={view === 'week' ? 'on' : ''} aria-pressed={view === 'week'} onClick={() => setView('week')}>{t('wk.cal.week')}</button>
@@ -220,8 +219,11 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
       </div>
 
       <p className={`wc-hint${hintTone}`} aria-live="polite">{hint}</p>
-      {[robots.error, techs.error, jobsQ.error].filter(Boolean).slice(0, 1).map((e, i) => <p key={i} className="lg-error" role="alert">{errText(t, orderErrorKey(e))}</p>)}
+      {[techs.error, jobsQ.error].filter(Boolean).slice(0, 1).map((e, i) => <p key={i} className="lg-error" role="alert">{errText(t, orderErrorKey(e))}</p>)}
       {sug.data?.stockWarnings.map((w) => <p key={w} className="wk-warn">{w}</p>)}
+      {view === 'week' && tech && !usable(tech) && (
+        <p className="wk-warn" role="status">{t('wk.cal.techNoRobot', { name: tech.fullName })} <Link to="/staff/robots">{t('wk.cal.toRobots')}</Link></p>
+      )}
 
       {order && sug.data && (
         <div className="wc-sugs">
@@ -229,8 +231,8 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
           {!sug.data.suggestions.length && <p className="sd-sub">{t('wk.noSuggestions')}</p>}
           <div className="wc-sug-list">
             {sug.data.suggestions.map((s) => (
-              <button key={`${s.robotId}-${s.slotStart}`} className="wc-sug" onClick={() => { setFocus(dateKey(c, Date.parse(s.slotStart))); setRobotPick(s.robotId); openDraft(s.robotId, Date.parse(s.slotStart), s.technicianId) }}>
-                <b>{s.robotCode}{s.isSimulated ? ` · ${t('wk.simulated')}` : ''} · {s.technicianName}</b>
+              <button key={`${s.technicianId}-${s.slotStart}`} className="wc-sug" onClick={() => { setFocus(dateKey(c, Date.parse(s.slotStart))); openDraft(s.technicianId, Date.parse(s.slotStart), s.robotId) }}>
+                <b>{s.technicianName} · {s.robotCode}{s.isSimulated ? ` · ${t('wk.simulated')}` : ''}</b>
                 <span>{span(Date.parse(s.slotStart), Date.parse(s.slotEnd))}</span>
                 {s.etaRisk && <span className="wc-risk">{deadline.state === 'overdue' ? t('wk.cal.alreadyLate') : t('wk.cal.lateDays', { n: lateFor(Date.parse(s.slotEnd)) })}</span>}
               </button>
@@ -239,8 +241,7 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
         </div>
       )}
 
-      {robots.data && !robotList.length && <p className="sd-sub">{t('wk.cal.noRobots')}</p>}
-      {robots.data && techs.data && !techList.length && <p className="sd-sub">{t('wk.cal.noTechs')}</p>}
+      {techs.data && !techList.length && <p className="sd-sub">{t('wk.cal.noTechs')}</p>}
 
       <div className="wc-scroll">
         <div className="wc-grid" style={{ minWidth: 56 + cols.length * (view === 'week' ? 128 : 200) }}>
@@ -250,8 +251,8 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
               const isToday = view === 'week' && col.day === today
               return (
                 <div key={col.key} className={`wc-colhead${isToday ? ' today' : ''}`}>
-                  <span>{view === 'week' ? dayName(col.day, { weekday: 'short' }) : t(`rs.${col.robot.status}`)}</span>
-                  <b>{view === 'week' ? dayName(col.day, { day: '2-digit' }) : col.robot.code}</b>
+                  <span>{view === 'week' ? dayName(col.day, { weekday: 'short' }) : robotsOf(col.tech)}</span>
+                  <b>{view === 'week' ? dayName(col.day, { day: '2-digit' }) : col.tech.fullName}</b>
                   {deadline.state !== 'none' && deadline.eta === col.day && <i className="wc-chip">{t('wk.cal.etaChip')}</i>}
                   {deadline.state === 'normal' && deadline.lastOk === col.day && <i className="wc-chip dark">{t('wk.cal.lastOkChip')}</i>}
                 </div>
@@ -263,60 +264,57 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
               {hours.map((h, i) => <span key={h} style={{ top: i * HOUR_PX + 1 }}>{`${String(Math.floor(h / 60)).padStart(2, '0')}:${String(h % 60).padStart(2, '0')}`}</span>)}
             </div>
             {cols.map((col) => {
-              const locked = col.robot.status !== 'AVAILABLE'
+              const locked = !usable(col.tech)
               const open = at(c, col.day, hm(c.workingHours.start))
               const pastMin = Math.max(0, Math.min(dayMinutes(c), (now - open) / 60000))
               const late = deadline.state === 'normal' && col.day > deadline.lastOk
               const nowIn = open <= now && open + dayMinutes(c) * 60000 > now
-              const hovering = hover && hover.robotId === col.robot.id && bookable && !draft ? hover : null
+              const hovering = hover && hover.techId === col.tech.id && bookable && !draft ? hover : null
               const ghost = hovering ? inDay(c, hovering.start, addWorkingMinutes(c, hovering.start, minutes), col.day) : null
-              const ghostCheck = hovering && techId !== null ? checkSlot(c, col.robot, techId, hovering.start, minutes, jobs, now) : null
+              const ghostCheck = hovering ? checkSlot(c, col.tech, null, hovering.start, minutes, jobs, now) : null
               const ghostLate = hovering && ghostCheck?.kind === 'ok' ? lateFor(addWorkingMinutes(c, hovering.start, minutes)) : 0
-              const draftHere = draft && draft.robotId === col.robot.id && draftEnd ? inDay(c, draftStart, draftEnd, col.day) : null
+              const draftHere = draft && draft.techId === col.tech.id && draftEnd ? inDay(c, draftStart, draftEnd, col.day) : null
               return (
                 <div key={col.key} className="wc-col" style={{ height, backgroundSize: `100% ${HOUR_PX}px, 100% ${HOUR_PX / 2}px` }}>
-                  {locked && <><div className="wc-locked" /><span className="wc-lock-text">{t('wk.cal.robotOff', { status: t(`rs.${col.robot.status}`) })}</span></>}
+                  {locked && <><div className="wc-locked" /><span className="wc-lock-text">{t('wk.cal.noOwnRobot')}</span></>}
                   <div className="wc-past" style={{ height: pastMin * PX }} />
                   {late && <div className="wc-late" />}
                   <button
                     className="wc-slot"
                     disabled={locked || !bookable}
-                    aria-label={t('wk.cal.slotAria', { robot: col.robot.code, day: longDay(col.day) })}
+                    aria-label={t('wk.cal.slotAriaTech', { name: col.tech.fullName, day: longDay(col.day) })}
                     onMouseMove={(e) => {
                       const start = pointerStart(e, col.day)
-                      if (!hover || hover.robotId !== col.robot.id || hover.start !== start) setHover({ robotId: col.robot.id, start })
+                      if (!hover || hover.techId !== col.tech.id || hover.start !== start) setHover({ techId: col.tech.id, start })
                     }}
                     onMouseLeave={() => setHover(null)}
                     onKeyDown={(e) => keyMove(e, col)}
-                    onClick={(e) => openDraft(col.robot.id, e.detail === 0 && hover ? hover.start : pointerStart(e, col.day))}
+                    onClick={(e) => openDraft(col.tech.id, e.detail === 0 && hover ? hover.start : pointerStart(e, col.day))}
                   />
-                  {!locked && techId !== null && jobs.filter((j) => j.technicianId === techId).map((j) => {
-                    const seg = inDay(c, Date.parse(j.slotStart), Date.parse(j.slotEnd), col.day)
-                    return seg ? <div key={j.id} className="wc-busy" style={{ top: seg.from * PX, height: seg.minutes * PX }} /> : null
-                  })}
-                  {jobs.filter((j) => j.robotId === col.robot.id).map((j) => {
+                  {jobs.filter((j) => j.technicianId === col.tech.id).map((j) => {
                     const seg = inDay(c, Date.parse(j.slotStart), Date.parse(j.slotEnd), col.day)
                     if (!seg) return null
                     const b = block(seg.from, seg.minutes)
+                    const robot = j.robotCode || t('tw.noRobot')
                     return (
                       <Link
                         key={j.id}
                         to={`/staff/review/${j.orderId}`}
-                        className={`wc-ev ${j.status === 'SCHEDULED' ? 'sched' : 'run'}${b.compact ? ' compact' : ''}`}
+                        className={`wc-ev ${j.status === 'SCHEDULED' ? 'sched' : 'run'}${b.compact ? ' compact' : ''}${j.robotId === null ? ' norobot' : ''}`}
                         style={b.style}
-                        title={`${j.orderCode} · ${j.technicianName} · ${t(`js.${j.status}`)} · ${span(Date.parse(j.slotStart), Date.parse(j.slotEnd))}`}
+                        title={`${j.orderCode} · ${robot} · ${t(`js.${j.status}`)} · ${span(Date.parse(j.slotStart), Date.parse(j.slotEnd))}`}
                       >
-                        <b>{j.orderCode}</b><span>{j.technicianName}</span>
+                        <b>{j.orderCode}</b><span>{robot}</span>
                       </Link>
                     )
                   })}
-                  {!draft && sug.data?.suggestions.filter((s) => s.robotId === col.robot.id).map((s) => {
+                  {!draft && sug.data?.suggestions.filter((s) => s.technicianId === col.tech.id).map((s) => {
                     const seg = inDay(c, Date.parse(s.slotStart), Date.parse(s.slotEnd), col.day)
                     if (!seg) return null
                     const b = block(seg.from, seg.minutes)
                     return (
-                      <button key={s.slotStart} className="wc-sugg" style={b.style} title={span(Date.parse(s.slotStart), Date.parse(s.slotEnd))} onClick={() => openDraft(s.robotId, Date.parse(s.slotStart), s.technicianId)}>
-                        {t('wk.cal.suggested', { name: s.technicianName })}
+                      <button key={s.slotStart} className="wc-sugg" style={b.style} title={span(Date.parse(s.slotStart), Date.parse(s.slotEnd))} onClick={() => openDraft(s.technicianId, Date.parse(s.slotStart), s.robotId)}>
+                        {t('wk.cal.suggestedRobot', { code: s.robotCode })}
                       </button>
                     )
                   })}
@@ -346,8 +344,8 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
       <div className="wc-legend">
         <span><i className="sched" />{t('js.SCHEDULED')}</span>
         <span><i className="run" />{t('wk.cal.legendRun')}</span>
+        <span><i className="sched norobot" />{t('tw.noRobot')}</span>
         {bookable && <span><i className="sugg" />{t('wk.suggestions')}</span>}
-        <span><i className="busy" />{tech ? t('wk.cal.legendBusy', { name: tech.fullName }) : ''}</span>
         {deadline.state === 'normal' && <span><i className="late" />{t('wk.cal.legendLate')}</span>}
       </div>
 
@@ -360,15 +358,9 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
           {err && <p className="lg-error" role="alert">{errText(t, err)}</p>}
           <div className="wc-fields">
             <label className="vh-label">
-              {t('wk.robot')}
-              <select className="vh-select" value={draft.robotId} onChange={(e) => setDraft({ ...draft, robotId: Number(e.target.value) })}>
-                {robotList.map((r) => <option key={r.id} value={r.id} disabled={r.status !== 'AVAILABLE'}>{r.code} · {t(`rs.${r.status}`)}</option>)}
-              </select>
-            </label>
-            <label className="vh-label">
               {t('wk.technician')}
-              <select className="vh-select" value={techId ?? ''} onChange={(e) => setTechPick(Number(e.target.value))}>
-                {techList.map((x) => <option key={x.id} value={x.id}>{x.fullName}</option>)}
+              <select className="vh-select" value={draft.techId} onChange={(e) => { setTechPick(Number(e.target.value)); setDraft({ ...draft, techId: Number(e.target.value), robotId: null }) }}>
+                {techList.map((x) => <option key={x.id} value={x.id} disabled={!usable(x)}>{x.fullName} · {robotsOf(x)}</option>)}
               </select>
             </label>
             <label className="vh-label">
@@ -379,7 +371,15 @@ function Calendar({ config: c, order, version, onBooked }: { config: ScheduleCon
               {t('wk.slot')}
               <input className="vh-input" type="time" step={c.slotStepMin * 60} value={draft.time} onChange={(e) => e.target.value && setDraft({ ...draft, time: e.target.value })} />
             </label>
+            <label className="vh-label">
+              {t('wk.robot')}
+              <select className="vh-select" value={draft.robotId ?? ''} onChange={(e) => setDraft({ ...draft, robotId: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">{t('wk.cal.techPicks')}</option>
+                {(draftTech?.robots ?? []).map((r) => <option key={r.id} value={r.id} disabled={r.status !== 'AVAILABLE'}>{r.code} · {t(`rs.${r.status}`)}</option>)}
+              </select>
+            </label>
           </div>
+          {draftTech && !usable(draftTech) && <p className="wk-warn">{t('wk.cal.techNoRobot', { name: draftTech.fullName })} <Link to="/staff/robots">{t('wk.cal.toRobots')}</Link></p>}
           {draftEnd !== null && <p className="sd-sub">{t('wk.cal.endsAt', { when: `${longDay(dateKey(c, draftEnd))}, ${clockOf(c, draftEnd)}` })}</p>}
           {draftCheck && (
             <p className={`wc-verdict ${draftCheck.kind !== 'ok' ? 'bad' : draftEnd && lateFor(draftEnd) && deadline.state !== 'none' ? 'risk' : 'ok'}`} aria-live="polite">

@@ -53,6 +53,9 @@ class TechApi {
   Future<Map<String, dynamic>> _post(String path, [Object? body]) =>
       _guard(() => _client.post<Map<String, dynamic>>(path, data: body));
 
+  Future<Map<String, dynamic>> _put(String path, [Object? body]) =>
+      _guard(() => _client.put<Map<String, dynamic>>(path, data: body));
+
   String _job(int id) => '${ApiConstants.technicianJobs}/$id';
 
   // ─── Jobs ──────────────────────────────────────────────────────────
@@ -99,7 +102,14 @@ class TechApi {
   Future<TechJob> _action(int id, String action, [Object? body]) async =>
       TechJob.fromJson(await _post('${_job(id)}/$action', body));
 
+  /// `PUT /technician/jobs/{id}/robot`: picks or changes the robot of a SCHEDULED job, one of the robots the Manager gave me.
+  Future<TechJob> chooseRobot(int id, int robotId) async => TechJob.fromJson(await _put('${_job(id)}/robot', {'robot_id': robotId}));
+
   Future<TechJob> prepare(int id) => _action(id, 'prepare');
+
+  /// `POST /technician/jobs/{id}/calibration` (`CalibrationIn`). A new calibration clears the job's earlier simulation result
+  /// (on a PAUSED job it makes it stale), so preflight and simulation have to run again.
+  Future<void> calibrate(int id, Map<String, dynamic> body) => _post('${_job(id)}/calibration', body);
   Future<TechJob> start(int id) => _action(id, 'start');
   Future<TechJob> finish(int id) => _action(id, 'finish');
   Future<TechJob> simulate(int id, {required bool passed, List<String> errors = const [], Map<String, dynamic>? report}) =>

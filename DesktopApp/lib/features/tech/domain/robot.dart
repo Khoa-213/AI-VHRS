@@ -368,6 +368,21 @@ class RobotStatus {
   final List<RobotAlert> alerts;
   final int? calibrationAgeMin;
 
+  // Filled by `GET /technician/robots` (migration 0032); `/technician/robot-status` leaves the defaults.
+
+  /// The Manager's status: AVAILABLE, BUSY, MAINTENANCE or BROKEN.
+  final String robotStatus;
+  final String? station;
+  final bool isSimulated;
+  final List<String> penCategories;
+
+  /// Working now: a run is open or its job is WRITING / PAUSED.
+  final bool active;
+
+  /// Modes the online agent allows (MOCK, SIM, REAL); empty when offline.
+  final List<String> enabledModes;
+  final bool agentBusy;
+
   const RobotStatus({
     required this.robotId,
     required this.robotCode,
@@ -382,7 +397,19 @@ class RobotStatus {
     this.jobStatus,
     this.openRun,
     this.calibrationAgeMin,
+    this.robotStatus = 'AVAILABLE',
+    this.station,
+    this.isSimulated = false,
+    this.penCategories = const [],
+    this.active = false,
+    this.enabledModes = const [],
+    this.agentBusy = false,
   });
+
+  bool get online => connection == 'ONLINE';
+
+  /// MAINTENANCE or BROKEN: the robot cannot take a job.
+  bool get outOfService => robotStatus == 'MAINTENANCE' || robotStatus == 'BROKEN';
 
   factory RobotStatus.fromJson(Map<String, dynamic> j) => RobotStatus(
         robotId: j['robot_id'] as int,
@@ -400,5 +427,28 @@ class RobotStatus {
           for (final a in (j['open_alerts'] as List<dynamic>? ?? const [])) RobotAlert.fromJson(a as Map<String, dynamic>),
         ],
         calibrationAgeMin: (j['calibration_age_minutes'] as num?)?.toInt(),
+        robotStatus: j['robot_status'] as String? ?? 'AVAILABLE',
+        station: j['station'] as String?,
+        isSimulated: j['is_simulated'] as bool? ?? false,
+        penCategories: [for (final p in (j['supported_pen_categories'] as List<dynamic>? ?? const [])) '$p'],
+        active: j['active'] as bool? ?? false,
+        enabledModes: [for (final m in (j['enabled_modes'] as List<dynamic>? ?? const [])) '$m'],
+        agentBusy: j['agent_busy'] as bool? ?? false,
+      );
+}
+
+/// `GET /technician/robots`: the robots the Manager gave to the signed-in technician (migration 0032).
+class MyRobots {
+  final int total;
+  final int online;
+  final int active;
+  final List<RobotStatus> robots;
+  const MyRobots({required this.total, required this.online, required this.active, required this.robots});
+
+  factory MyRobots.fromJson(Map<String, dynamic> j) => MyRobots(
+        total: j['total'] as int? ?? 0,
+        online: j['online'] as int? ?? 0,
+        active: j['active'] as int? ?? 0,
+        robots: [for (final r in (j['robots'] as List<dynamic>? ?? const [])) RobotStatus.fromJson(r as Map<String, dynamic>)],
       );
 }

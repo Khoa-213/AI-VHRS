@@ -97,6 +97,8 @@ def create_app(hub: ViewerHub) -> FastAPI:
         return FileResponse(STATIC / "index.html")
 
     app.mount("/vendor", StaticFiles(directory=STATIC / "vendor", check_dir=False), name="vendor")
+    # The technician's desktop workspace (owner 2026-11-26): plain HTML/JS/CSS, no build step.
+    app.mount("/assets", StaticFiles(directory=STATIC / "assets", check_dir=False), name="assets")
 
     def model_info() -> dict[str, Any]:
         """What the 3D viewer needs: where the vendor's robot model is and the joint limits it declares."""

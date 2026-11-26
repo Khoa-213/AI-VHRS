@@ -32,7 +32,10 @@ enum JobFilter {
 /// My jobs: filter and search above the list. Opening a job goes to its own page.
 class JobsScreen extends ConsumerStatefulWidget {
   final JobFilter filter;
-  const JobsScreen({super.key, this.filter = JobFilter.active});
+
+  /// Only the jobs on this robot (`?robot=`, from a card of "My robots").
+  final int? robotId;
+  const JobsScreen({super.key, this.filter = JobFilter.active, this.robotId});
 
   @override
   ConsumerState<JobsScreen> createState() => _JobsScreenState();
@@ -50,7 +53,10 @@ class _JobsScreenState extends ConsumerState<JobsScreen> {
 
   void _pick(JobFilter f) {
     if (f == widget.filter) return;
-    context.go(f == JobFilter.qc ? '/tech/qc' : '/tech/jobs${f == JobFilter.active ? '' : '?filter=${f.name}'}');
+    final robot = widget.robotId == null ? '' : 'robot=${widget.robotId}';
+    if (f == JobFilter.qc) return context.go(robot.isEmpty ? '/tech/qc' : '/tech/jobs?filter=qc&$robot');
+    final query = [if (f != JobFilter.active) 'filter=${f.name}', if (robot.isNotEmpty) robot].join('&');
+    context.go('/tech/jobs${query.isEmpty ? '' : '?$query'}');
   }
 
   bool _found(TechJob j) => _needle.isEmpty || j.orderCode.toLowerCase().contains(_needle) || '${j.id}'.contains(_needle);
@@ -59,7 +65,11 @@ class _JobsScreenState extends ConsumerState<JobsScreen> {
   Widget build(BuildContext context) {
     final t = ref.watch(tProvider);
     final q = ref.watch(techJobsProvider);
-    final all = q.valueOrNull ?? const <TechJob>[];
+    final robotId = widget.robotId;
+    final all = (q.valueOrNull ?? const <TechJob>[]).where((j) => robotId == null || j.robotId == robotId).toList();
+    final robotCode = robotId == null
+        ? null
+        : ref.watch(myRobotsProvider).valueOrNull?.robots.where((r) => r.robotId == robotId).firstOrNull?.robotCode ?? '#$robotId';
     final rows = all.where((j) => widget.filter.matches(j.status) && _found(j)).toList();
     final query = widget.filter == JobFilter.active ? '' : '?filter=${widget.filter.name}';
     final isQc = widget.filter == JobFilter.qc;
@@ -99,6 +109,23 @@ class _JobsScreenState extends ConsumerState<JobsScreen> {
                     ],
                   ),
                 ),
+                if (robotCode != null) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(t('tw.filter', {'code': robotCode}), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      TechButton(
+                        t('tw.filterClear'),
+                        small: true,
+                        style: CustomButtonStyle.outline,
+                        onPressed: () => context.go(widget.filter == JobFilter.active ? '/tech/jobs' : '/tech/jobs?filter=${widget.filter.name}'),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 16),
                 LayoutBuilder(builder: (context, c) {
                   final cols = c.maxWidth >= 1000 ? 3 : (c.maxWidth >= 620 ? 2 : 1);

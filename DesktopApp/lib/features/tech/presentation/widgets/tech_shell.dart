@@ -19,6 +19,7 @@ void reloadTechData(WidgetRef ref) {
   ref.invalidate(techJobsProvider);
   ref.invalidate(techJobProvider);
   ref.invalidate(robotStatusProvider);
+  ref.invalidate(myRobotsProvider);
   ref.invalidate(jobPhotosProvider);
   ref.invalidate(jobEventsProvider);
   ref.invalidate(jobCommandsProvider);

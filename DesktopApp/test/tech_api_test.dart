@@ -447,9 +447,58 @@ void main() {
       await api.postEvent(276, ClientEvent.estop);
       expect(sent, {'event_type': 'ESTOP'});
     });
+    test('choosing a robot puts its id; a calibration posts the body as it is (migration 0032)', () async {
+      final sent = <String, Object?>{};
+      final s = _setup((o) {
+        sent['${o.method} ${o.path}'] = o.data;
+        return _route(o, {
+          'PUT /technician/jobs/282/robot': _ok({..._job(id: 282, status: 'SCHEDULED'), 'robot_id': 47, 'robot_code': 'FR3-02'}),
+          'POST /technician/jobs/276/calibration': _ok({'id': 3, 'is_valid': true}),
+        });
+      });
+      final api = s.c.read(techApiProvider);
+      final j = await api.chooseRobot(282, 47);
+      expect(j.robotId, 47);
+      expect(sent.keys.first, endsWith('/technician/jobs/282/robot'));
+      expect(sent.values.first, {'robot_id': 47});
+      final body = {'checklist': {'frame_mounted': true}, 'force_zero_offset': 0.1, 'probe_points': []};
+      await api.calibrate(276, body);
+      expect(sent.values.last, body);
+    });
   });
 
   group('RobotApi', () {
+    test('my robots read the counts and each robot\'s strip facts', () async {
+      final s = _setup((o) => _route(o, {
+            'GET /technician/robots': _ok({
+              'total': 2,
+              'online': 1,
+              'active': 1,
+              'robots': [
+                {
+                  'robot_id': 47, 'robot_code': 'FR3-02', 'state': 'WRITING', 'headline_vi': 'Đang viết', 'level': 1, 'mode': 'SIM',
+                  'connection_state': 'ONLINE', 'last_seen_at': '2026-11-26T01:00:00Z', 'job_id': 276, 'job_status': 'WRITING',
+                  'open_run': null, 'open_alerts': [], 'calibration_age_minutes': 3, 'robot_status': 'BUSY', 'station': 'A1',
+                  'is_simulated': true, 'supported_pen_categories': ['BALLPOINT'], 'active': true, 'enabled_modes': ['SIM'], 'agent_busy': true,
+                },
+                {
+                  'robot_id': 48, 'robot_code': 'FR3-03', 'state': 'OFFLINE', 'headline_vi': '', 'level': 1, 'mode': null,
+                  'connection_state': 'UNKNOWN', 'last_seen_at': null, 'job_id': null, 'job_status': null, 'open_run': null,
+                  'open_alerts': [], 'calibration_age_minutes': null, 'robot_status': 'MAINTENANCE',
+                },
+              ],
+            }),
+          }));
+      final m = await s.c.read(robotApiProvider).myRobots();
+      expect((m.total, m.online, m.active), (2, 1, 1));
+      final w = m.robots.first;
+      expect((w.online, w.active, w.agentBusy, w.station), (true, true, true, 'A1'));
+      expect(w.enabledModes, ['SIM']);
+      expect(w.penCategories, ['BALLPOINT']);
+      expect(m.robots.last.outOfService, isTrue);
+      expect(m.robots.last.enabledModes, isEmpty);
+    });
+
     test('each press gets its own idempotency key', () async {
       final keys = <String>[];
       final s = _setup((o) {

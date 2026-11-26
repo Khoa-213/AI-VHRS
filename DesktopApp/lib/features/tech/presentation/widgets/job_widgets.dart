@@ -27,6 +27,9 @@ Color jobStatusColor(JobStatus s) => switch (s) {
       JobStatus.scheduled || JobStatus.cancelled || JobStatus.unknown => AppColors.textSecondary,
     };
 
+/// The job's robot, or "No robot chosen" while the technician has not picked one (migration 0032).
+String jobRobotLabel(T t, TechJob j) => j.robotId == null ? t('tw.noRobot') : (j.robotCode.isEmpty ? '#${j.robotId}' : j.robotCode);
+
 String jobStatusLabel(T t, JobStatus s) => s == JobStatus.unknown ? t('td.api.unavailable') : t('js.${s.code}');
 
 class JobStatusPill extends ConsumerWidget {
@@ -122,7 +125,7 @@ class JobRow extends ConsumerWidget {
     final facts = [
       t('td.api.jobId', {'id': j.id}),
       if (j.isRewrite) t('wk.rewrite'),
-      j.robotCode.isEmpty ? '${j.robotId}' : j.robotCode,
+      jobRobotLabel(t, j),
       jobStamp(t, j.slotStart),
       t('td.min', {'n': j.durationMin}),
     ].join(' · ');

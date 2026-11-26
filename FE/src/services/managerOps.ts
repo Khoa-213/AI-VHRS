@@ -167,6 +167,8 @@ export interface ManagerRobotStatus extends Omit<RobotStatus, 'alerts'> {
   alerts: ManagerAlert[]
   secondsSinceSeen: number | null
   agentVersion: string | null
+  /** REAL switched on at the workstation (desktop button; never by a backend command): job and end time (unix s), else null. */
+  realEnabled: { jobId: number; expiresAt: number; waiveDryRun: boolean } | null
 }
 
 interface RawStatus {
@@ -175,6 +177,7 @@ interface RawStatus {
   job_id: number | null; job_status: string | null
   open_run: { run_id: string; mode: string; dry_run: boolean; completed_strokes: number; total_strokes: number } | null
   open_alerts: RawAlert[]; calibration_age_minutes: number | null
+  real_enabled?: { job_id: number; expires_at: number; waive_dry_run?: boolean } | null
 }
 
 const toStatus = (r: RawStatus): ManagerRobotStatus => ({
@@ -184,6 +187,7 @@ const toStatus = (r: RawStatus): ManagerRobotStatus => ({
   openRun: r.open_run && { runId: r.open_run.run_id, mode: r.open_run.mode, dryRun: r.open_run.dry_run,
     completedStrokes: r.open_run.completed_strokes, totalStrokes: r.open_run.total_strokes },
   alerts: r.open_alerts.map(toAlert), calibrationAgeMin: r.calibration_age_minutes,
+  realEnabled: r.real_enabled ? { jobId: r.real_enabled.job_id, expiresAt: r.real_enabled.expires_at, waiveDryRun: !!r.real_enabled.waive_dry_run } : null,
 })
 
 export const managerRobotStatus = async (): Promise<ManagerRobotStatus[]> => (await api<RawStatus[]>('/manager/robot-status')).map(toStatus)

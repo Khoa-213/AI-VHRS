@@ -1,5 +1,7 @@
 # Technical Staff: tích hợp web với API BE
 
+> **Lỗi thời từ 2026-11-26:** phần kỹ thuật viên đã gỡ khỏi web FE; kỹ thuật viên chỉ làm việc trên `DesktopApp/` (xem `BE/docs/FE_TECH_WORKSPACE_HANDOFF.md`). Tài liệu dưới đây chỉ còn để tra lịch sử.
+
 Cập nhật: 23/10/2026. Phạm vi: FE web; không sửa BE, không điều khiển robot vật lý. Giữ Shell, dashboard, card và panel hiện có; bổ sung form theo hợp đồng API.
 
 ## Đã nối

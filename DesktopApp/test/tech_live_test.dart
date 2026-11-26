@@ -42,6 +42,12 @@ void main() {
       print('${jobs.length} jobs; ${s.robotCode} ${s.state.name} online=${live.online} alerts='
           '${[for (final a in s.alerts) '${a.code}/L${a.level}/estop=${a.estopAdvised}/ack=${a.acknowledgedAt != null}']}');
     }
+    // Robots the Manager gave me (migration 0032); the counts agree with the list.
+    final mine = await robot.myRobots();
+    expect(mine.total, mine.robots.length);
+    expect(mine.online, mine.robots.where((r) => r.online).length);
+    // ignore: avoid_print
+    print('my robots: ${mine.online} / ${mine.total} connected, ${mine.active} working');
     await client.dio.post<void>('/auth/logout');
   }, skip: !const bool.fromEnvironment('LIVE_API'), timeout: const Timeout(Duration(minutes: 5)));
 }

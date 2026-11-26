@@ -160,6 +160,13 @@ final robotStatusProvider = StreamProvider.autoDispose<List<RobotStatus>>((ref) 
       next: (_) => const Duration(seconds: 2),
     ));
 
+/// The robots the Manager gave me (`GET /technician/robots`): every 5 seconds while one works or warns, otherwise every 15.
+final myRobotsProvider = StreamProvider.autoDispose<MyRobots>((ref) => pollStream(
+      ref,
+      ref.watch(robotApiProvider).myRobots,
+      next: (m) => m.active > 0 || m.robots.any((r) => r.level >= 3) ? const Duration(seconds: 5) : const Duration(seconds: 15),
+    ));
+
 /// Live frames of a robot: 4 times a second while it runs, once a second otherwise.
 final robotLiveProvider = StreamProvider.autoDispose.family<LiveView, int>((ref, robotId) {
   var after = 0;

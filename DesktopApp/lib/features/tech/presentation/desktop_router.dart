@@ -43,7 +43,12 @@ final desktopRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/tech', pageBuilder: (_, _) => const NoTransitionPage(child: TechDashboardScreen())),
           GoRoute(
             path: '/tech/jobs',
-            pageBuilder: (_, s) => NoTransitionPage(child: JobsScreen(filter: JobFilter.parse(s.uri.queryParameters['filter']))),
+            pageBuilder: (_, s) => NoTransitionPage(
+              child: JobsScreen(
+                filter: JobFilter.parse(s.uri.queryParameters['filter']),
+                robotId: int.tryParse(s.uri.queryParameters['robot'] ?? ''),
+              ),
+            ),
           ),
           GoRoute(
             path: '/tech/jobs/:id',

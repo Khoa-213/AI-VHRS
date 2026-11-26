@@ -92,6 +92,10 @@ class RobotApi {
     return [for (final s in r) RobotStatus.fromJson(s as Map<String, dynamic>)];
   }
 
+  /// `GET /technician/robots`: the robots the Manager gave me, with how many are connected and how many work now.
+  Future<MyRobots> myRobots() async =>
+      MyRobots.fromJson(await _client.get<Map<String, dynamic>>(ApiConstants.technicianRobots));
+
   Future<RobotAlert> ackAlert(int id) async =>
       RobotAlert.fromJson(await _client.post<Map<String, dynamic>>('${ApiConstants.technicianAlerts}/$id/ack'));
 

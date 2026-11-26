@@ -9,6 +9,11 @@ Ngày 2026-11-26. Chủ dự án chốt:
 - BE: migration 0032, xem `FE_API_GUIDE.md` mục 7.3 và 7b.0.
 - API cục bộ của agent: mục 2.2 dưới đây.
 
+- **2026-11-26 (tối, chưa commit): mục 1, 2, 3 đã làm theo tài liệu này.**
+  - Mục 2: màn máy trạm `robot_agent/vhrs_agent/static/` (`index.html`, `assets/app.js`, `assets/app.css`): đăng nhập, dải robot, job theo nhóm, 12 bước (mở/gập, lý do khoá, tự sang bước kế), đo P0–P2 bằng robot hoặc file, Bật/Tắt REAL có đếm ngược, Về điểm chờ, Viết lại từ đầu, nhật ký, sự cố, ảnh + QC + gửi, lệnh Tạm dừng/DỪNG cho robot ở máy khác, thanh Tạm dừng/Tiếp tục/DỪNG luôn ở đáy. `/api/agent` trả thêm `robot_id`; agent phục vụ `/assets`. SHA-256 tự tính khi trang mở qua http LAN (không có `crypto.subtle`).
+  - Kiểm: agent `pytest` 178 passed, 3 skipped; `scripts/check_workspace_browser.mjs` PASS (Edge thật, mọi API giả lập, đi hết bước 1–12 với REAL). **Chưa chạy với BE cục bộ + agent `serve` thật như mục 2.7**, chưa thử robot thật.
+  - Mục 1: `RobotAssignments.tsx`, lịch theo kỹ thuật viên, nhãn đỏ "REAL đang bật cho job X tới hh:mm" (1.3). Mục 3: trang `/tech*` gỡ, còn trang thông báo địa chỉ máy trạm + danh sách job chỉ xem. `FE/scripts/check-robot-assignment-browser.mjs` PASS.
+
 **Tài liệu này là việc người khác cần làm:** web Manager (mục 1), gỡ trang kỹ thuật viên trên web (mục 3), dựng màn desktop (mục 2).
 
 ## 0. Thay đổi nghiệp vụ
