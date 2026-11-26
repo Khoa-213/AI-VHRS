@@ -367,3 +367,52 @@ def test_the_operator_at_the_workstation_can_waive_the_real_rehearsal_for_one_jo
     assert any(x["kind"] == "dry_run_waived" for x in c.get("/api/jobs/12/log", headers=auth()).json()["lines"])
     # the waiver covers one job: the same file does not open another job's rehearsal gate, and a rehearsal never counts as waived
     assert c.post("/api/jobs/12/dry-run", headers=auth(), json={"mode": "real", "authorization": token}).status_code in (202, 409)
+
+
+# ---------------------------------------------------------------- the desktop is the technician's workspace (owner 2026-11-26)
+def test_real_is_switched_on_by_the_desktop_button_only_on_a_wired_agent_for_a_loaded_job(tmp_path):
+    svc, c, _ = make(tmp_path)                                                         # no "real": not wired to the robot
+    c.post("/api/jobs/12/load", headers=auth())
+    r = c.post("/api/jobs/12/real-enable", headers=auth(), json={"minutes": 30})
+    assert r.status_code == 403 and r.json()["error"]["code"] == "MODE_DISABLED"
+    assert c.get("/api/real", headers=auth()).json() == {"real_enabled": None, "real_available": False, "max_minutes": 120}
+
+    svc, c, _ = real_service(tmp_path / "b")
+    assert c.post("/api/jobs/12/real-enable", headers=auth(), json={}).json()["error"]["code"] == "JOB_NOT_LOADED"
+    token = c.post("/api/jobs/12/load", headers=auth()).json()["authorization_token"]
+    assert c.post("/api/jobs/12/real-enable", headers=auth("other-token"), json={}).json()["error"]["code"] == "JOB_NOT_LOADED"
+    assert c.post("/api/jobs/12/real-enable", headers=auth("mgr-token"), json={}).status_code == 403
+    assert c.post("/api/jobs/12/real-enable", headers=auth(), json={"minutes": 500}).status_code == 422
+    assert c.post("/api/jobs/12/real-enable", headers=auth(), json={"waive_dry_run": True}).json()["error"]["code"] == "CONFIRM_REQUIRED"
+    on = c.post("/api/jobs/12/real-enable", headers=auth(), json={"minutes": 30})
+    assert on.status_code == 200 and on.json()["real_enabled"]["enabled_by"] == "desktop:Ky Thuat"
+    assert c.get("/api/agent", headers=auth()).json()["real_enabled"]["job_id"] == 12
+    # the switch replaces typing at the console; the plan-bound token and the dry run are still required
+    assert c.post("/api/jobs/12/run", headers=auth(), json={"mode": "real", "authorization": token}).json()["error"]["code"] == "DRY_RUN_REQUIRED"
+    assert c.post("/api/jobs/12/dry-run", headers=auth(), json={"mode": "real", "authorization": token}).status_code == 202
+    assert wait_idle(c)["last"]["result"]["state"] == "DRY_RUN_DONE"
+    assert c.delete("/api/real-enable", headers=auth("mgr-token")).json() == {"real_enabled": None}       # a Manager may switch it off
+    assert c.post("/api/jobs/12/run", headers=auth(), json={"mode": "real", "authorization": token}).json()["error"]["code"] == "REAL_NOT_ENABLED_ON_SITE"
+
+
+def test_reset_progress_needs_a_new_sheet_confirmation(tmp_path):
+    svc, c, _ = make(tmp_path)
+    c.post("/api/jobs/12/load", headers=auth())
+    assert c.post("/api/jobs/12/reset-progress", headers=auth(), json={"confirm": "NEW_SHEET"}).json() == {"reset": False, "reason": "NO_PROGRESS"}
+    d = tmp_path / "job12"
+    d.mkdir(exist_ok=True)
+    (d / "progress.json").write_text(json.dumps({"state": "INTERRUPTED", "completed": 7, "interrupted": 7, "resume_at": 7}))
+    assert c.post("/api/jobs/12/reset-progress", headers=auth(), json={"confirm": "yes"}).json()["error"]["code"] == "CONFIRM_REQUIRED"
+    r = c.post("/api/jobs/12/reset-progress", headers=auth(), json={"confirm": "NEW_SHEET"}).json()
+    assert r["reset"] is True and r["before"] == {"state": "INTERRUPTED", "completed": 7} and (d / r["backup"]).exists()
+    assert json.loads((d / "progress.json").read_text())["completed"] == 0
+
+
+def test_the_desktop_reaches_the_technician_api_through_the_agent_with_the_persons_token(tmp_path):
+    svc, c, be = make(tmp_path)
+    r = c.get("/api/technician/jobs/12", headers=auth())
+    assert r.status_code == 200 and r.json()["id"] == 12
+    assert be.calls[-1][:2] == ("GET", "/technician/jobs/12")
+    r = c.put("/api/technician/jobs/99/robot", headers=auth(), json={"robot_id": 3})
+    assert r.status_code == 404 and be.calls[-1] == ("PUT", "/technician/jobs/99/robot", {"robot_id": 3})   # the backend's answer, as is
+    assert c.get("/api/technician/jobs/12").status_code == 401                                              # no token: refused here

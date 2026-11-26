@@ -176,6 +176,9 @@ class RobotStatusOut(BaseModel):
     active: bool = Field(default=False, description="Working now: a run is open or its job is WRITING / PAUSED.")
     enabled_modes: list[str] = Field(default=[], description="Modes the online agent allows (MOCK / SIM / REAL); [] when offline.")
     agent_busy: bool = Field(default=False, description="The online agent is executing a command.")
+    real_enabled: dict | None = Field(default=None, description=(
+        "REAL switch set at the workstation (desktop button or CLI; never by a backend command): "
+        "{job_id, expires_at (unix s), enabled_by, waive_dry_run}; null when off, expired or offline."))
 
 
 class MyRobotsOut(BaseModel):

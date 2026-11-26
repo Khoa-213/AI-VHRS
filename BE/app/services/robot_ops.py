@@ -353,6 +353,7 @@ class RobotOpsService:
                 "active": bool(run is not None or (job is not None and job.status in (JobStatus.WRITING, JobStatus.PAUSED))),
                 "enabled_modes": [str(m).upper() for m in agent.get("enabled_modes") or []],
                 "agent_busy": bool(agent.get("busy")),
+                "real_enabled": agent.get("real_enabled") if isinstance(agent.get("real_enabled"), dict) else None,
                 "mode": robot.last_mode, "connection_state": conn, "last_seen_at": seen,
                 "seconds_since_seen": round(age, 1) if age is not None else None,
                 "controller_version": robot.controller_version, "firmware_version": robot.firmware_version,
