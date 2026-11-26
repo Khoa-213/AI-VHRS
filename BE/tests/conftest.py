@@ -232,6 +232,9 @@ def _no_real_provider_credentials(monkeypatch):
     # U5: never call a real LLM (BE/.env may hold a Gemini / Claude / OpenAI key); assistant tests use scripted providers
     for name in ("anthropic_api_key", "openai_api_key", "gemini_api_key"):
         monkeypatch.setattr(s, name, None)
+    # test accounts have no phone: without this every sign-in adds an "add your phone" notification and the tests that
+    # count notifications would depend on it. tests/test_phone_reminders.py switches it on.
+    monkeypatch.setattr(s, "phone_reminders_enabled", False)
     from app.integrations.mailer import ConsoleMailer
     ConsoleMailer.outbox.clear()
     # the notification stream would otherwise stay open for 30 minutes (TestClient reads the whole body)
