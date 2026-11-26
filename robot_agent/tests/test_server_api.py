@@ -109,6 +109,17 @@ def test_login_goes_through_the_backend_and_refuses_customers(tmp_path):
     assert c.post("/api/login", json={"email": "cust@x.vn", "password": "pw"}).status_code == 403
 
 
+def test_the_desktop_app_signs_the_screen_in_with_its_code_only(tmp_path):
+    svc, c, be = make(tmp_path)
+    code = "a" * 32
+    assert c.post("/api/screen-login", json={"code": code}).json()["error"]["code"] == "SCREEN_CODE_INVALID"   # not started by the app
+    svc.screen_login = (code, "tech@x.vn", "pw")
+    assert c.post("/api/screen-login", json={"code": "b" * 32}).status_code == 401
+    ok = c.post("/api/screen-login", json={"code": code})
+    assert ok.status_code == 200 and ok.json()["access_token"] == "tech-token" and ok.json()["role"] == "TECHNICAL_STAFF"
+    assert "pw" not in json.dumps(ok.json())
+
+
 def test_websocket_needs_a_token(tmp_path):
     svc, c, _ = make(tmp_path)
     with pytest.raises(Exception):
@@ -395,6 +406,52 @@ def test_real_is_switched_on_by_the_desktop_button_only_on_a_wired_agent_for_a_l
     assert c.post("/api/jobs/12/run", headers=auth(), json={"mode": "real", "authorization": token}).json()["error"]["code"] == "REAL_NOT_ENABLED_ON_SITE"
 
 
+class DeadReal(FakeReal):
+    """A real robot that is switched off or unplugged: the SDK connection fails."""
+
+    def connect(self):
+        raise ConnectionError("controller 192.168.58.2 did not answer")
+
+
+class WrongToolReal(FakeReal):
+    """Answers, but the controller has another tool slot active than agent.json asks for."""
+
+    def connect(self):
+        from vhrs_agent.port import RobotError
+        raise RobotError("TOOL_MISMATCH", "Robot đang dùng tool 0, cấu hình yêu cầu tool 2.")
+
+
+class MuteReal(FakeReal):
+    """Connects, but the controller does not answer the heartbeat."""
+
+    def heartbeat(self, deadline=None):
+        return False
+
+
+def test_real_switch_checks_the_robot_first_and_stays_off_when_it_does_not_answer(tmp_path):
+    """Owner 2026-11-26: pressing 'Bật REAL' first checks the connection to the real robot; no answer, no REAL."""
+    svc, c, _ = real_service(tmp_path)
+    c.post("/api/jobs/12/load", headers=auth())
+    for dead in (DeadReal, MuteReal):
+        svc.robot_factory = lambda mode, cls=dead: cls(DEMO_START, speed_factor=None) if mode == "real" else SimRobot(DEMO_START, speed_factor=None)
+        r = c.post("/api/jobs/12/real-enable", headers=auth(), json={"minutes": 30})
+        assert r.status_code == 502 and r.json()["error"]["code"] == "ROBOT_UNREACHABLE", dead
+        assert not (tmp_path / "REAL_ENABLED.json").exists()
+        assert c.get("/api/real", headers=auth()).json()["real_enabled"] is None
+    # it answers but the tool slot differs: a setup problem, not a lost connection, and REAL still stays off
+    svc.robot_factory = lambda mode: WrongToolReal(DEMO_START, speed_factor=None) if mode == "real" else SimRobot(DEMO_START, speed_factor=None)
+    r = c.post("/api/jobs/12/real-enable", headers=auth(), json={"minutes": 30})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "ROBOT_CONFIG_MISMATCH"
+    assert r.json()["error"]["details"]["reason"] == "TOOL_MISMATCH" and "tool 0" in r.json()["error"]["message"]
+    assert not (tmp_path / "REAL_ENABLED.json").exists()
+    r = c.post("/api/robot/identify", headers=auth(), json={"mode": "real"})
+    assert r.json()["error"]["code"] == "ROBOT_CONFIG_MISMATCH"
+    svc.robot_factory = lambda mode: FakeReal(DEMO_START, speed_factor=None) if mode == "real" else SimRobot(DEMO_START, speed_factor=None)
+    on = c.post("/api/jobs/12/real-enable", headers=auth(), json={"minutes": 30}).json()
+    assert on["real_enabled"]["job_id"] == 12
+    assert on["robot_check"]["ok"] is True and on["robot_check"]["controller"]["mode"] in ("real", "REAL") and len(on["robot_check"]["tcp_mm"]) == 3
+
+
 def test_reset_progress_needs_a_new_sheet_confirmation(tmp_path):
     svc, c, _ = make(tmp_path)
     c.post("/api/jobs/12/load", headers=auth())
@@ -429,3 +486,72 @@ def test_the_desktop_workspace_page_and_its_assets_are_served_and_the_agent_says
     assert c.get("/api/agent").json()["robot_id"] is None                       # not configured: the page learns it from a loaded job
     svc.cfg.robot_id = 46
     assert c.get("/api/agent").json()["robot_id"] == 46
+
+
+# ---------------------------------------------------------------- started by the desktop app (owner 2026-11-26)
+def _running(tmp_path):
+    svc, c, _ = make(tmp_path, robot_factory=lambda mode: SimRobot(DEMO_START, speed_factor=1.0))
+    token = c.post("/api/jobs/12/load", headers=auth()).json()["authorization_token"]
+    assert c.post("/api/jobs/12/run", headers=auth(), json={"mode": "sim", "authorization": token}).status_code == 202
+    assert svc._busy
+    return svc, c
+
+
+class _Silent:
+    """stdin that never ends (a pipe end kept open by another process)."""
+
+    def readline(self):
+        import threading as th
+        th.Event().wait()
+
+
+def test_the_agent_still_exits_when_the_app_took_its_stdout_with_it(tmp_path, monkeypatch):
+    """Seen on the workstation 2026-11-26: the app closed, printing 'stopping safely' raised on the broken pipe and the agent stayed."""
+    import io
+    import sys
+    import threading as th
+    from vhrs_agent.server import watch_parent
+
+    class Broken(io.TextIOBase):
+        def write(self, s):
+            raise OSError(22, "Invalid argument")
+
+    svc, c, _ = make(tmp_path)
+    monkeypatch.setattr(sys, "stdout", Broken())
+    released, codes, done = [], [], th.Event()
+    watch_parent(svc, lambda: released.append(True), stream=io.StringIO(""), exit_fn=lambda code: (codes.append(code), done.set()))
+    assert done.wait(10)
+    assert released == [True] and codes == [0]
+
+
+def test_waiting_for_a_process_returns_when_it_ends():
+    import subprocess
+    import sys
+    from vhrs_agent.server import wait_for_process_exit
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.5)"])
+    t0 = time.monotonic()
+    wait_for_process_exit(p.pid)
+    assert p.wait(5) == 0 and time.monotonic() - t0 < 5
+
+
+def test_the_desktop_app_stops_the_agent_safely_by_a_stop_line_or_by_going_away(tmp_path):
+    """STOP on stdin, stdin closing, or the app's process ending: a run in progress is stopped the normal way, the robot session is
+    released once, then the agent exits. Other lines are ignored."""
+    import io
+    import threading as th
+    from vhrs_agent.server import watch_parent
+
+    def watch(svc, **kw):
+        released, codes, done = [], [], th.Event()
+        watch_parent(svc, lambda: released.append(True), exit_fn=lambda code: (codes.append(code), done.set()), **kw)
+        assert done.wait(40)
+        return released, codes
+
+    for i, kw in enumerate([
+        {"stream": io.StringIO("hello\nSTOP\n")},
+        {"stream": io.StringIO("")},
+        {"stream": _Silent(), "parent_pid": 999999, "wait_exit": lambda pid: None},          # stdin stays open: only the pid tells
+    ]):
+        svc, c = _running(tmp_path / str(i))
+        released, codes = watch(svc, **kw)
+        assert released == [True] and codes == [0] and not svc._busy, kw

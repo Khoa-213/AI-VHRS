@@ -19,6 +19,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// Roles allowed to use this app. The desk is for technical staff only.
   final Set<String> allowedRoles;
 
+  /// The password typed at this sign-in, kept in memory only so the app can start the Robot Agent
+  /// on the workstation without asking again. Never written anywhere; null after a restored session.
+  String? _sessionPassword;
+  String? get sessionPassword => _sessionPassword;
+  void rememberPassword(String password) => _sessionPassword = password;
+
   AuthNotifier({
     required AuthRepository repository,
     required SecureStorageService storage,
@@ -69,6 +75,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _storage.saveTokens(accessToken: session.accessToken, refreshToken: session.refreshToken);
       await _storage.saveUserId(session.user.id);
       await _storage.saveUserEmail(session.user.email);
+      _sessionPassword = password;
       state = AuthAuthenticated.fromUser(session.user);
     } on NetworkException catch (e) {
       state = AuthError(authErrorKey(e));
@@ -80,12 +87,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Revokes the session on the server (best effort), then clears local tokens.
   Future<void> logout() async {
+    _sessionPassword = null;
     await _revokeQuietly();
     state = const AuthUnauthenticated();
   }
 
   /// Called when the refresh token is rejected: tokens are already cleared.
   void sessionExpired() {
+    _sessionPassword = null;
     if (state is AuthAuthenticated) state = const AuthError('dk.err.expired');
   }
 

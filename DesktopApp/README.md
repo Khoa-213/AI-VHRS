@@ -14,6 +14,33 @@ flutter test test/tech_live_test.dart --dart-define=LIVE_API=true   # real job a
 
 Use another backend with `--dart-define=API_BASE_URL=https://.../api/v1`.
 
+## Robot Agent inside the app (2026-11-26)
+
+On the workstation wired to the robot, the agent runs inside the app and **Overview holds only the agent** (2026-11-26: the
+old counts, queue, job groups and My robots strip are gone; jobs stay in the Jobs and QC tabs; there is no separate Robot Agent
+tab and `/tech/agent` redirects to Overview). The workstation screen fills the page below the agent's state card:
+
+- **Starts by itself on sign-in**: once a technician signs in, the agent starts as that account (no click needed). After a
+  restored session (the password is not kept on disk) the app asks for the password once. Signing out, or the session expiring,
+  stops the agent the safe way. **Start the agent** is still there to start it again after a Stop or a failure.
+- **Start the agent**: the app finds `robot_agent` (walking up from the app, or `--dart-define=AGENT_DIR=...`), starts
+  `robot_agent\.simenv\python.exe -m vhrs_agent.cli serve --screen --stop-on-stdin-eof --parent-pid <app pid> --host 127.0.0.1 --port 8765` and gives it
+  the signed-in technician's email and password in its environment only (the password typed at sign-in, kept in memory; after a
+  restored session the app asks once). No terminal, no stored password.
+- The agent's **workstation screen** (`http://127.0.0.1:8765/`, the 12 job steps and the "Bật REAL" button) opens on Overview,
+  **already signed in** as the app's technician: the app gives the agent a random one-time code (`VHRS_SCREEN_CODE`, environment
+  only) and opens the screen with `#code=...`; the screen trades it at `POST /api/screen-login` for the same session as a normal
+  login. Its own Sign out button is hidden there (signing out of the app stops the agent).
+- **Stop the agent** sends a `STOP` line on the agent's stdin; closing or killing the app ends the process the agent watches
+  (`--parent-pid`). Either way a move in progress finishes its stroke, lifts the pen and stops, the robot session is given back
+  to the backend, then the agent exits (killed only if still there after 40 s). On Windows a pipe end can outlive the app, so the
+  process id is the reliable signal.
+- An `IDENTIFY` refused by a robot that did answer (wrong tool slot, work object, model...) reads "Robot answered, but its setup
+  does not match agent.json" (`ROBOT_CONFIG_MISMATCH`), not as a lost connection.
+- **Check the robot connection** runs four read-only steps: agent running and linked, TCP to the controller (`fairino.ip`:20003),
+  the backend sees the robot ONLINE, and `IDENTIFY` with `mode: REAL` through the backend. Nothing moves.
+- Only one agent may hold a robot: stop an agent started from a terminal first, or the backend answers `ROBOT_IN_USE`.
+
 ## Sign in
 
 Real API: `POST /auth/login` on `https://ai-vhrs.onrender.com/api/v1`. Only `TECHNICAL_STAFF`

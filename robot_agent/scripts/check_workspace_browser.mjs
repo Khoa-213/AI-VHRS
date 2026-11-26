@@ -37,6 +37,7 @@ const robots = { total: 2, online: 1, active: 0, robots: [robot(46, 'FR3-01', 'O
 const agent = { version: 'test', auth_required: true, modes: ['mock', 'sim', 'real'], busy: false, current: null, last: null, real_enabled: null, robot_id: 46 }
 const probes = [[0, 0, 19], [100, 0, 19], [0, 100, 19]]
 let loaded = null
+let robotAnswers = false                                  // the first 'Bật REAL' finds the robot switched off
 const photos = []
 const calls = []
 
@@ -64,7 +65,9 @@ function answer(method, path, body) {
   if (path === '/api/technician/jobs/12/simulation') { job.simulation_passed = true; job.can_start = true; return [200, job] }
   if (path === '/api/jobs/12/real-enable') {
     assert.equal(body.minutes, 30); assert.equal(body.waive_dry_run, undefined, 'no waiver unless ticked')
-    agent.real_enabled = { job_id: 12, expires_at: Date.now() / 1000 + 1800, enabled_by: 'desktop:Ky Thuat', waive_dry_run: false }; return [200, { real_enabled: agent.real_enabled, minutes: 30 }]
+    if (!robotAnswers) return err(502, 'ROBOT_UNREACHABLE', 'ConnectionError: controller 192.168.58.2 did not answer')
+    agent.real_enabled = { job_id: 12, expires_at: Date.now() / 1000 + 1800, enabled_by: 'desktop:Ky Thuat', waive_dry_run: false }
+    return [200, { real_enabled: agent.real_enabled, minutes: 30, robot_check: { ok: true, controller: { mode: 'real', controller_version: 'V3.8.25-QX' }, tcp_mm: [1, 2, 3] } }]
   }
   if (path === '/api/jobs/12/dry-run') {
     if (body.mode === 'real' && !agent.real_enabled) return err(403, 'REAL_NOT_ENABLED_ON_SITE')
@@ -185,6 +188,11 @@ try {
   await setField('mode', 'real')
   await act('dryRun'); await wait(text('Chưa bật REAL cho job này'), 'REAL dry run needs the switch')
   await openStep('real')
+  // the switch first checks the real robot: no answer, REAL stays off and the step says so
+  await act('realOn'); await wait(text('robot không phản hồi, REAL chưa bật'), 'REAL refused when the robot does not answer')
+  assert.equal(agent.real_enabled, null)
+  assert.equal(await evaluate(`getComputedStyle(document.getElementById('realbar')).display`), 'none', 'no REAL bar after a failed check')
+  robotAnswers = true
   await act('realOn'); await wait(`!document.getElementById('realbar').hidden && document.getElementById('realtext').textContent.includes('job 12')`, 'REAL bar with countdown')
   await shot('2-real-on-1440')
   await openStep('dryRun')

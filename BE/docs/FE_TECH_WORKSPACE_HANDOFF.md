@@ -95,7 +95,8 @@ WebSocket xem 3D / trạng thái             như index.html hiện tại; tạm
 **Mới, 2026-11-26:**
 ```
 GET    /api/real                                  {real_enabled: {job_id, expires_at, enabled_by, waive_dry_run} | null, real_available, max_minutes}
-POST   /api/jobs/{id}/real-enable {minutes 1..120, waive_dry_run?, confirm_waive?}   bật REAL cho job này
+POST   /api/jobs/{id}/real-enable {minutes 1..120, waive_dry_run?, confirm_waive?}   kiểm tra kết nối robot thật rồi mới bật REAL cho job này
+                                                  → {real_enabled, minutes, robot_check: {ok, controller, tcp_mm, checked_at}}
 DELETE /api/real-enable                           tắt REAL (kỹ thuật viên hoặc Manager)
 POST   /api/jobs/{id}/reset-progress {confirm: "NEW_SHEET"}   lần chạy sau viết lại từ nét đầu (có sao lưu)
 *      /api/technician/{path}                     chuyển tiếp tới BE /api/v1/technician/{path}
@@ -106,6 +107,9 @@ POST   /api/jobs/{id}/reset-progress {confirm: "NEW_SHEET"}   lần chạy sau v
 - `409 JOB_NOT_LOADED`: phải nạp job ở máy này trước, và chỉ người đã nạp job mới bật được.
 - `422 CONFIRM_REQUIRED`: có `waive_dry_run` mà thiếu `confirm_waive = "SKIP-DRY-RUN"`.
 - `422`: số phút nằm ngoài 1..120.
+- `502 ROBOT_UNREACHABLE` (2026-11-26): trước khi bật, agent nối controller thật **chỉ đọc** (connect, heartbeat, TCP; không enable, không chuyển động). Robot không phản hồi thì REAL **không** bật, file không được ghi; màn hiện "robot không phản hồi, REAL chưa bật".
+- `409 ROBOT_CONFIG_MISMATCH`: robot **có trả lời** nhưng cấu hình chưa khớp (`details.reason`: `TOOL_MISMATCH`, `WOBJ_MISMATCH`, `WRONG_ROBOT`, `CONTROLLER_UNSUPPORTED`, `TCP_OFFSET_MISMATCH`, `INVALID_CONFIG`, `UNCONFIGURED`, `SDK_MISSING`); REAL không bật. Hiện nguyên `message` (vd. "Robot đang dùng tool 0, cấu hình yêu cầu tool 2."): sửa ở controller hoặc `agent.json`, không phải dây mạng. Lệnh `IDENTIFY` qua BE trả cùng mã trong `error_code`.
+- `409 AGENT_BUSY`: agent đang chạy (kể cả đúng job này): dừng hẳn rồi mới bật, vì phải kiểm tra robot trước.
 
 Bật REAL **không** bỏ qua hai lớp khoá còn lại. Chạy REAL vẫn cần mã `authorization_token` (lấy khi nạp job) và một lần chạy thử nhấc bút REAL đã đạt, trừ khi đã bỏ qua bằng `confirm_waive`.
 
@@ -158,6 +162,7 @@ Bật REAL **không** bỏ qua hai lớp khoá còn lại. Chạy REAL vẫn c�
   - Màn hình nên đề xuất: Bật REAL → chạy thử REAL → viết REAL.
 - **Nút Bật REAL:**
   - Ô số phút, mặc định 30.
+  - Khi bấm: hiện "Đang kiểm tra kết nối tới robot thật…"; chỉ bật khi robot phản hồi (`robot_check`), không thì báo lỗi và giữ REAL tắt.
   - Hộp đánh dấu "Bỏ chạy thử nhấc bút"; khi đánh dấu thì gửi `confirm_waive: "SKIP-DRY-RUN"` và hiện cảnh báo đỏ.
   - Sau khi bật, hiện đồng hồ đếm ngược và nút **Tắt REAL** (`DELETE /api/real-enable`).
 - **Các nút khác:**

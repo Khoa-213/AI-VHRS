@@ -155,9 +155,11 @@ def cmd_serve(a: argparse.Namespace) -> int:                                  # 
         cfg.host = a.host
     if a.port:
         cfg.port = a.port
+    if a.screen:
+        cfg.lan_server = True
     print(f"Robot Agent {cfg.host}:{cfg.port}  backend {cfg.backend_url}  modes {list(cfg.modes)}"
           + ("  TLS" if cfg.tls_certfile else "  (no TLS: use it only on a trusted LAN)"))
-    serve(cfg)
+    serve(cfg, stop_on_stdin_eof=a.stop_on_stdin_eof, parent_pid=a.parent_pid)
     return 0
 
 
@@ -211,6 +213,11 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--config", required=True)
     sv.add_argument("--host", default=None)
     sv.add_argument("--port", type=int, default=None)
+    sv.add_argument("--screen", action="store_true", help="serve the workstation screen even if agent.json says lan_server false")
+    sv.add_argument("--stop-on-stdin-eof", action="store_true",
+                    help="started by the desktop app: stop safely and give the robot back on a STOP line or when stdin closes")
+    sv.add_argument("--parent-pid", type=int, default=None,
+                    help="the desktop app's process id: when it ends, stop safely and give the robot back")
     re_ = sub.add_parser("real-enable", help="at the workstation: allow one job to run on the REAL robot for a limited time")
     re_.add_argument("--config", required=True)
     re_.add_argument("--job", type=int, default=0)
