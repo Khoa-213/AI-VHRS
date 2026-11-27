@@ -188,19 +188,60 @@ void main() {
     }
   });
 
-  group('overview', () {
-    testWidgets('only the Robot Agent: no counts, queue or job groups (owner 2026-11-26)', (tester) async {
-      await _pump(tester, const Size(1440, 1000), '/tech');
-      expect(find.text('Needs QC'), findsNothing);
-      expect(find.text('My robots'), findsNothing);
-      expect(find.text('VHRS-276'), findsNothing);
-      // Tests never find the repository's robot_agent, so the panel says it is missing.
-      expect(find.text(const T(Lang.en)('dk.agent.err.notFound')), findsOneWidget);
+  group('dashboard', () {
+    testWidgets('counts, groups and the queue come from the jobs', (tester) async {
+      await _pump(tester, const Size(1440, 1400), '/tech');
+      expect(find.text('Needs QC'), findsOneWidget);
+      expect(find.text('Scheduled and preparing'), findsOneWidget);
+      expect(find.text('Photo and QC'), findsOneWidget);
+      expect(find.text('Needs attention'), findsOneWidget);
+      expect(find.text('7 assigned'), findsOneWidget);
+      // 25 + 30 + 40 + 25 minutes wait to start; the groups with no jobs are not shown.
+      expect(find.text('120 min'), findsOneWidget);
+      expect(find.text('Writing and paused'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('history starts folded and opens on a tap', (tester) async {
+      await _pump(tester, const Size(1440, 1400), '/tech');
+      expect(find.text('VHRS-279'), findsNothing);
+      await tester.tap(find.text('History'));
+      await tester.pumpAndSettle();
+      expect(find.text('VHRS-279'), findsOneWidget);
+    });
+
+    testWidgets('the robot shows the state and the backend sentence', (tester) async {
+      await _pump(tester, const Size(1440, 1400), '/tech');
+      expect(find.text('Danger'), findsOneWidget);
+      expect(find.text('Máy trạm mất kết nối'), findsOneWidget);
+    });
+
+    testWidgets('a tile and a row open the right place', (tester) async {
+      final router = await _pump(tester, const Size(1440, 1400), '/tech');
+      await tester.tap(find.text('VHRS-276').first);
+      await tester.pumpAndSettle();
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/tech/jobs/276');
+      router.go('/tech');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Needs QC'));
+      await tester.pumpAndSettle();
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/tech/qc');
+    });
+
+    testWidgets('a failed load says so instead of showing an empty queue', (tester) async {
+      await _pump(tester, const Size(1440, 1000), '/tech', jobs: Stream.error(const NoInternetException()), status: const []);
+      expect(find.text('No connection to the server. Check your network.'), findsOneWidget);
+      expect(find.text('Nothing assigned yet'), findsNothing);
+      expect(find.text('Refresh'), findsNWidgets(2));
+    });
+
+    testWidgets('no jobs reads as nothing assigned', (tester) async {
+      await _pump(tester, const Size(1440, 1000), '/tech', jobs: Stream.value(const []), status: const []);
+      expect(find.text('Nothing assigned yet'), findsOneWidget);
+    });
+
     for (final lang in Lang.values) {
-      testWidgets('a phone fits it without overflow in ${lang.name}', (tester) async {
+      testWidgets('a phone stacks it without overflow in ${lang.name}', (tester) async {
         await _pump(tester, const Size(390, 844), '/tech', lang: lang.name);
         expect(tester.takeException(), isNull);
         expect(find.byType(NavigationBar), findsOneWidget);
@@ -278,8 +319,19 @@ void main() {
   });
 
   group('my robots and the robot choice (migration 0032)', () {
-    testWidgets('the jobs of one robot (?robot=), then all of them', (tester) async {
-      final router = await _pump(tester, const Size(1440, 1400), '/tech/jobs?robot=46', mine: const [_danger, _writer, _broken]);
+    testWidgets('the dashboard lists the robots given to me with the connected and working counts', (tester) async {
+      final router = await _pump(tester, const Size(1440, 1400), '/tech', mine: const [_danger, _writer, _broken]);
+      expect(find.text('My robots'), findsOneWidget);
+      expect(find.text('Connected 1 / 3 · Working 1'), findsOneWidget);
+      expect(find.text('Connected'), findsOneWidget);
+      expect(find.text('Disconnected'), findsOneWidget);
+      expect(find.text('Never connected'), findsOneWidget);
+      expect(find.text('Working'), findsOneWidget);
+      expect(find.text('Under maintenance'), findsOneWidget);
+      expect(find.text('Real robot'), findsOneWidget);
+
+      await tester.tap(find.text('FR3-01'));
+      await tester.pumpAndSettle();
       expect(router.routerDelegate.currentConfiguration.uri.toString(), '/tech/jobs?robot=46');
       expect(find.text('Showing the jobs of FR3-01.'), findsOneWidget);
       expect(find.text('VHRS-276'), findsOneWidget);
@@ -288,6 +340,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('VHRS-282'), findsOneWidget);
       expect(find.textContaining('No robot chosen'), findsOneWidget);
+    });
+
+    testWidgets('no robot given yet says to ask the manager', (tester) async {
+      await _pump(tester, const Size(1440, 1400), '/tech', mine: const []);
+      expect(find.text('No robot is assigned to you yet. Ask the manager to assign one.'), findsOneWidget);
     });
 
     testWidgets('a scheduled job without a robot: pick one of mine, not one in maintenance', (tester) async {
@@ -340,7 +397,9 @@ void main() {
     });
 
     for (final lang in Lang.values) {
-      testWidgets('the job steps fit a phone in ${lang.name}', (tester) async {
+      testWidgets('the robot strip and the job steps fit a phone in ${lang.name}', (tester) async {
+        await _pump(tester, const Size(390, 844), '/tech', lang: lang.name, mine: const [_danger, _writer, _broken]);
+        expect(tester.takeException(), isNull);
         await _pump(tester, const Size(390, 844), '/tech/jobs/282', lang: lang.name, mine: const [_danger, _writer, _broken]);
         expect(tester.takeException(), isNull);
       });

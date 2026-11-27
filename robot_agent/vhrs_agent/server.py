@@ -181,6 +181,9 @@ class AgentService:
         # (code, email, password) set by `serve` when the desktop app started this agent: the app opens the workstation
         # screen with that code so the technician signed in to the app is signed in to the screen too (no second login).
         self.screen_login: tuple[str, str, str] | None = None
+        # Email of the technician whose session the backend link holds (desktop app start). Jobs that technician loaded from
+        # the app arrive through the link (owner id 0); that technician may switch REAL on for them at this workstation.
+        self.link_owner: str | None = None
         self._who: dict[str, tuple[float, dict[str, Any]]] = {}
         self._lock = threading.Lock()
         self._busy = False
@@ -208,7 +211,7 @@ class AgentService:
             raise ApiError(401, "UNAUTHENTICATED", "Token không hợp lệ hoặc đã hết hạn: đăng nhập lại.") from exc
         except httpx.HTTPError as exc:
             raise ApiError(503, "BACKEND_UNREACHABLE", f"Không gọi được máy chủ: {exc}") from exc
-        who = {"id": me["id"], "role": me["role"], "name": me.get("full_name", "")}
+        who = {"id": me["id"], "role": me["role"], "name": me.get("full_name", ""), "email": (me.get("email") or "").lower()}
         self._who[key] = (time.monotonic(), who)
         return who
 
@@ -570,6 +573,15 @@ class AgentService:
         self.jobs[job_id] = ctx
         return ctx
 
+    def ctx_for_real(self, job_id: int, who: dict[str, Any]) -> JobCtx:
+        """The REAL switch: the technician who loaded the job here, or, for a job loaded from the app (through the link),
+        the technician the desktop app started this agent as."""
+        ctx = self.jobs.get(job_id)
+        by_link = ctx is not None and ctx.owner_id == 0 and bool(self.link_owner) and who.get("email") == self.link_owner
+        if ctx is None or (ctx.owner_id != who["id"] and not by_link):
+            raise ApiError(409, "JOB_NOT_LOADED", "Hãy tải job trước (LOAD trên máy này) rồi mới bật REAL.")
+        return ctx
+
     def ctx(self, job_id: int, who: dict[str, Any]) -> JobCtx:
         ctx = self.jobs.get(job_id)
         if ctx is None or ctx.owner_id != who["id"]:
@@ -703,7 +715,7 @@ def create_server_app(service: AgentService) -> FastAPI:
     @app.post("/api/jobs/{job_id}/real-enable")
     def real_enable(job_id: int, body: RealEnableIn, request: Request) -> dict[str, Any]:
         who = service.user(request)
-        service.ctx(job_id, who)                                              # only the technician who loaded this job here
+        service.ctx_for_real(job_id, who)                                     # the technician who loaded this job here
         if body.waive_dry_run and body.confirm_waive != "SKIP-DRY-RUN":
             raise ApiError(422, "CONFIRM_REQUIRED", "Bỏ chạy thử nhấc bút: gửi confirm_waive = SKIP-DRY-RUN (bút chạm giấy ngay nét đầu).")
         return service.enable_real(job_id, body.minutes, "desktop:" + str(who.get("name") or who.get("id")),
@@ -917,6 +929,7 @@ def serve(cfg: ServerConfig, *, stop_on_stdin_eof: bool = False, parent_pid: int
         code = os.environ.get("VHRS_SCREEN_CODE", "")
         if len(code) >= 16:                                           # the app signs the screen in with this code
             service.screen_login = (code, email, password)
+        service.link_owner = email.lower()
     elif key:
         from vhrs_agent.link import LinkClient
         link = LinkClient(service, key=key)

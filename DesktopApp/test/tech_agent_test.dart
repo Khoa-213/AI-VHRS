@@ -122,7 +122,7 @@ void main() {
     expect(env['VHRS_TECH_PASSWORD'], 'secret');
     expect(env['VHRS_AGENT_KEY'], '');
     expect(env['VHRS_SCREEN_CODE'], hasLength(64));
-    expect(c.state.screenLoginUrl, 'http://127.0.0.1:8765/#code=${env['VHRS_SCREEN_CODE']}');
+    expect(c.state.screenCode, env['VHRS_SCREEN_CODE']);
     expect(args, containsAll(['--screen', '--stop-on-stdin-eof', '--host', '127.0.0.1', '--parent-pid', '$pid']));
     expect(args.join(' '), isNot(contains('secret')));
     expect(c.state.log.join('\n'), isNot(contains('secret')));
@@ -165,6 +165,36 @@ void main() {
     expect(p.killed, isTrue);
     expect(c.state.phase, AgentPhase.stopped);
     c.dispose();
+  });
+
+  test('the REAL switch signs in with the run code once, and reads the agent\'s refusal', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final seen = <String>[];
+    var logins = 0;
+    server.listen((r) async {
+      final body = await utf8.decoder.bind(r).join();
+      seen.add('${r.method} ${r.uri.path} ${r.headers.value('authorization') ?? '-'}');
+      r.response.headers.contentType = ContentType.json;
+      if (r.uri.path == '/api/screen-login') {
+        logins++;
+        expect(jsonDecode(body), {'code': 'c0de'});
+        r.response.write(jsonEncode({'access_token': 'tok', 'role': 'TECHNICAL_STAFF', 'name': 'T'}));
+      } else if (r.uri.path == '/api/real') {
+        r.response.write(jsonEncode({'real_enabled': null}));
+      } else if (r.uri.path == '/api/jobs/276/real-enable') {
+        expect(jsonDecode(body), {'minutes': 30});
+        r.response.statusCode = 502;
+        r.response.write(jsonEncode({'error': {'code': 'ROBOT_UNREACHABLE', 'message': 'no answer'}}));
+      }
+      await r.response.close();
+    });
+    final api = AgentLocalApi(base: 'http://127.0.0.1:${server.port}/', code: 'c0de');
+    expect(await api.realState(), isNull);
+    await expectLater(api.realEnable(276), throwsA(isA<AgentApiError>().having((e) => e.code, 'code', 'ROBOT_UNREACHABLE')));
+    expect(logins, 1, reason: 'one sign-in for the run');
+    expect(seen.where((l) => l.contains('/api/real')).every((l) => l.endsWith('Bearer tok')), isTrue);
+    await server.close(force: true);
+    await expectLater(api.realState(), throwsA(isA<AgentApiError>().having((e) => e.code, 'code', 'AGENT_UNREACHABLE')));
   });
 
   test('a controller that does not listen is reported, not thrown', () async {

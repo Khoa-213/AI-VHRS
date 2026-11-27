@@ -19,8 +19,8 @@ from vhrs_agent.port import Mode, RobotInfo
 from vhrs_agent.server import AgentService, ServerConfig, create_server_app
 from vhrs_agent.sim import SimRobot
 
-USERS = {"tech-token": {"id": 5, "role": "TECHNICAL_STAFF", "full_name": "Ky Thuat"},
-         "other-token": {"id": 6, "role": "TECHNICAL_STAFF", "full_name": "Ky Thuat 2"},
+USERS = {"tech-token": {"id": 5, "role": "TECHNICAL_STAFF", "full_name": "Ky Thuat", "email": "Tech@X.vn"},
+         "other-token": {"id": 6, "role": "TECHNICAL_STAFF", "full_name": "Ky Thuat 2", "email": "tech2@x.vn"},
          "mgr-token": {"id": 7, "role": "MANAGER", "full_name": "Quan Ly"},
          "cust-token": {"id": 8, "role": "CUSTOMER", "full_name": "Khach"}}
 PAGES = tts.compose_text("Xin chào", font_name="futural", paper_size="A5", font_size_mm=7.0, seed=1)
@@ -118,6 +118,23 @@ def test_the_desktop_app_signs_the_screen_in_with_its_code_only(tmp_path):
     ok = c.post("/api/screen-login", json={"code": code})
     assert ok.status_code == 200 and ok.json()["access_token"] == "tech-token" and ok.json()["role"] == "TECHNICAL_STAFF"
     assert "pw" not in json.dumps(ok.json())
+
+
+def test_the_app_technician_turns_real_on_for_a_job_loaded_from_the_app_and_nobody_else(tmp_path):
+    from vhrs_agent.link import LINK_WHO
+    svc, c, be = make(tmp_path, modes=("mock", "sim", "real"))
+    svc.check_real_robot = lambda: {"ok": True}
+    h = {"Authorization": "Bearer tech-token"}
+    tech = svc.identify("tech-token")
+    svc.load_job(12, "tech-token", LINK_WHO)                                  # LOAD sent from the app, run through the link
+    r = c.post("/api/jobs/12/real-enable", json={"minutes": 5}, headers=h)
+    assert r.json()["error"]["code"] == "JOB_NOT_LOADED"                       # the agent was not started by the app
+    svc.link_owner = "someone.else@x.vn"
+    assert c.post("/api/jobs/12/real-enable", json={"minutes": 5}, headers=h).status_code == 409
+    assert tech["email"] == "tech@x.vn"
+    svc.link_owner = "tech@x.vn"
+    ok = c.post("/api/jobs/12/real-enable", json={"minutes": 5}, headers=h)
+    assert ok.status_code == 200 and ok.json()["real_enabled"]["job_id"] == 12
 
 
 def test_websocket_needs_a_token(tmp_path):

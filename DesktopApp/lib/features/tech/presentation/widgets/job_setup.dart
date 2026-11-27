@@ -12,6 +12,7 @@ import '../../domain/robot.dart';
 import '../../i18n/tech_strings.dart';
 import 'job_flow.dart';
 import 'my_robots.dart';
+import 'real_switch.dart';
 import 'tech_ui.dart';
 
 // ─── Steps ───────────────────────────────────────────────────────────
@@ -62,7 +63,8 @@ List<JobStep> jobSteps(TechJobDetail d, {required bool verified, List<RobotComma
   ];
 }
 
-/// The workstation command that allows the real arm for this job (no API on purpose).
+/// The workstation command that allows the real arm for this job: shown where the app does not run that robot's agent.
+/// On the workstation itself the REAL step is a button (`RealSwitch`, the agent's local API; still no backend API).
 String realEnableCommand(int jobId) => 'real-enable --config agent.json --job $jobId --minutes 30';
 
 /// Vertical list of the job's steps: ✓ for done, the current step in ink, a lock and the reason for one that waits.
@@ -83,7 +85,8 @@ class JobStepList extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (var i = from; i < to; i++)
-              _StepRow(n: i + 1, step: steps[i], current: live && i == current, last: i == to - 1, jobId: detail.job.id),
+              _StepRow(n: i + 1, step: steps[i], current: live && i == current, last: i == to - 1, jobId: detail.job.id,
+                  robotId: detail.job.robotId),
           ],
         );
     final half = (steps.length / 2).ceil();
@@ -113,7 +116,8 @@ class _StepRow extends ConsumerWidget {
   final bool current;
   final bool last;
   final int jobId;
-  const _StepRow({required this.n, required this.step, required this.current, required this.last, required this.jobId});
+  final int? robotId;
+  const _StepRow({required this.n, required this.step, required this.current, required this.last, required this.jobId, this.robotId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -179,7 +183,7 @@ class _StepRow extends ConsumerWidget {
                       const SizedBox(height: 4),
                       Text(t('tw.realHelp'), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
                       const SizedBox(height: 8),
-                      _CopyCommand(command: realEnableCommand(jobId)),
+                      RealSwitch(jobId: jobId, robotId: robotId, fallback: _CopyCommand(command: realEnableCommand(jobId))),
                     ],
                   ],
                 ),
