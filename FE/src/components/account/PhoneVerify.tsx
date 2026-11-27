@@ -1,16 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { useT } from '../../i18n'
+import { useLang, useT } from '../../i18n'
 import OtpBoxes, { OTP_DIGITS } from '../../pages/login/OtpBoxes'
 import { ApiError, authErrorKey } from '../../services/api'
 import { apiSendPhoneOtp, maskPhone } from '../../services/auth'
-import { useUser, verifyPhone } from '../../store/store'
+import { FirebasePhoneError, cancelPhoneCode, firebasePhoneEnabled, sendPhoneCode, type PhoneCode } from '../../services/firebasePhone'
+import { useUser, verifyPhone, verifyPhoneFirebase } from '../../store/store'
 import './phone-verify.css'
 
 type T = ReturnType<typeof useT>
 type Job = { (): Promise<void> }
 
+/** Seconds before another code may be asked for when Firebase sends it (the backend's own flow answers its wait). */
+const FIREBASE_RESEND_S = 60
+
 /** The backend's answers about codes and SMS, in the reader's language (`BE/docs/FE_API_GUIDE.md` 3.2). */
 function phoneErrorText(t: T, e: unknown): string {
+  if (e instanceof FirebasePhoneError) return t(e.key)
   if (!(e instanceof ApiError)) return t(authErrorKey(e))
   const details = (e.details ?? {}) as { attempts_left?: unknown; retry_after?: unknown }
   switch (e.code) {
@@ -32,6 +37,9 @@ function phoneErrorText(t: T, e: unknown): string {
  * it and `POST /me/phone/verify` marks the number verified (the sixth digit sends it). Used in Account > Profile and in the
  * reminder after sign-in. A code is only sent after a click, or at once with `autoSend` when the click already happened.
  * `look` picks the buttons of the place it sits in.
+ *
+ * With Firebase set up (`services/firebasePhone.ts`, 2026-11-27) Google sends and checks the code instead: the six boxes
+ * confirm it with Firebase and the ID token goes to `POST /me/phone/verify-firebase`. The screen is the same.
  */
 export default function PhoneVerify({ look, autoSend = false, cancelLabel, onVerified, onCancel }: {
   look: 'page' | 'dialog'
@@ -41,8 +49,11 @@ export default function PhoneVerify({ look, autoSend = false, cancelLabel, onVer
   onCancel: () => void
 }) {
   const t = useT()
+  const lang = useLang()
   const user = useUser()
   const phone = user?.phone ?? ''
+  /** The code Firebase texted, waiting for the six digits. */
+  const pending = useRef<PhoneCode | null>(null)
   const [sent, setSent] = useState<{ masked: string; mock: boolean } | null>(null)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState<'send' | 'check' | null>(null)
@@ -77,6 +88,13 @@ export default function PhoneVerify({ look, autoSend = false, cancelLabel, onVer
   }
 
   const send = () => run('send', async () => {
+    if (firebasePhoneEnabled) {
+      pending.current = await sendPhoneCode(phone, lang)
+      setSent({ masked: maskPhone(phone), mock: false })
+      setCode('')
+      setWait(FIREBASE_RESEND_S)
+      return
+    }
     const r = await apiSendPhoneOtp()
     setSent({ masked: r.phoneMasked, mock: r.mode === 'MOCK' })
     setCode('')
@@ -84,9 +102,19 @@ export default function PhoneVerify({ look, autoSend = false, cancelLabel, onVer
   })
 
   const check = (value: string) => run('check', async () => {
-    await verifyPhone(value)
+    if (firebasePhoneEnabled) {
+      if (!pending.current) throw new FirebasePhoneError('auth.err.otpExpired', 'no-code')
+      const token = await pending.current.confirm(value)
+      pending.current = null
+      await verifyPhoneFirebase(token)
+    } else {
+      await verifyPhone(value)
+    }
     onVerified()
   })
+
+  // The reCAPTCHA widget of a code that was never typed goes with the panel.
+  useEffect(() => cancelPhoneCode, [])
 
   useEffect(() => {
     if (!autoSend || started.current) return
@@ -103,7 +131,7 @@ export default function PhoneVerify({ look, autoSend = false, cancelLabel, onVer
     <div className={`phv phv--${look}`} aria-busy={!!busy}>
       {sent ? (
         <>
-          <p className="phv-note" role="status">{t('ph.sent', { phone: sent.masked })}</p>
+          <p className="phv-note" role="status">{t(firebasePhoneEnabled ? 'ph.sentFirebase' : 'ph.sent', { phone: sent.masked })}</p>
           {sent.mock && <p className="phv-note phv-note--warn" role="note">{t('ph.mock')}</p>}
           <OtpBoxes
             value={code}

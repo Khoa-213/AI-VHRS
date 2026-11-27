@@ -158,6 +158,21 @@ POST /me/phone/otp, POST /me/phone/verify, POST /auth/phone-reset/request|verify
 1. `POST /auth/phone-reset/request {phone}` → **luôn `202`** (kể cả số không tồn tại, chưa xác minh, đang phải chờ, hết lượt), nên FE luôn chuyển sang ô nhập mã với câu "Nếu số đã được xác minh, mã đã được gửi".
 2. Một màn: ô mã 6 số + mật khẩu mới + nhập lại → `POST /auth/password-reset/confirm {phone, code, new_password}` (cùng endpoint và cùng cách của luồng email, chỉ thay `email` bằng `phone`; **không còn `/auth/phone-reset/verify` và `reset_token`**, 2026-11-26) → `204`; mọi thiết bị bị đăng xuất, email báo "mật khẩu đã được đổi" được gửi tới email của tài khoản. Sau đó về màn đăng nhập. Gửi cả `email` lẫn `phone`, hoặc không gửi cái nào: `422`. Mã sai: `400 OTP_INVALID` (`details.attempts_left`), `OTP_EXPIRED`, `OTP_TOO_MANY_ATTEMPTS`; mật khẩu yếu: `422`, mã chưa bị dùng.
 
+**Xác minh số bằng Firebase (2026-11-27, cách đang dùng để gửi SMS thật; Google gửi tin):** FE cài `firebase`, khởi tạo bằng `firebaseConfig` của project (biến `VITE_FIREBASE_*`), đặt `auth.languageCode = 'vi'`. Hai màn dùng cùng một đoạn:
+```ts
+import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut } from 'firebase/auth'
+const auth = getAuth(app); auth.languageCode = 'vi'
+const verifier = new RecaptchaVerifier(auth, 'id-cua-nut-gui-ma', { size: 'invisible' })
+const confirmation = await signInWithPhoneNumber(auth, '+84' + phone.slice(1), verifier)   // Google gửi SMS
+const { user } = await confirmation.confirm(code)                                          // mã khách nhập
+const idToken = await user.getIdToken()
+await signOut(auth)                                                                         // chỉ cần bằng chứng, không giữ phiên Firebase
+```
+- **Hồ sơ (đã đăng nhập):** số gửi cho Firebase phải là số trong hồ sơ → `POST /me/phone/verify-firebase {id_token}` → `AccountOut` với `phone_verified=true`. Lỗi: `400 PHONE_MISMATCH` (số vừa xác minh khác số hồ sơ), `409 PHONE_ALREADY_VERIFIED` / `PHONE_TAKEN`, `422 PHONE_MISSING`.
+- **Quên mật khẩu bằng số (chưa đăng nhập):** khách nhập số → luồng Firebase → màn mật khẩu mới → `POST /auth/password-reset/confirm {firebase_id_token, new_password}` (không kèm `code` / `phone`) → `204`. Lỗi: `400 PHONE_NOT_VERIFIED` (số này chưa xác minh cho tài khoản nào: bảo khách dùng email), `422` mật khẩu yếu (token chưa bị dùng, gửi lại được).
+- Lỗi chung: `401 FIREBASE_TOKEN_INVALID` (token sai, hoặc đã dùng để đặt lại mật khẩu), `401 FIREBASE_TOKEN_EXPIRED` (đăng nhập Firebase cũ hơn 10 phút: nhận mã mới), `503 FIREBASE_NOT_CONFIGURED` / `FIREBASE_UNAVAILABLE`. Lỗi của chính Firebase (`auth/invalid-phone-number`, `auth/too-many-requests`, `auth/invalid-verification-code`, `auth/code-expired`...) FE tự dịch.
+- Khi phát triển: `localhost` không dùng được cho phone auth của Firebase; dùng "Phone numbers for testing" trong Firebase console (số giả + mã cố định, không tốn tin) hoặc thử trên tên miền thật. Các API `POST /me/phone/otp`, `/me/phone/verify`, `/auth/phone-reset/request` (mã do BE gửi) vẫn còn cho chế độ MOCK và các nhà cung cấp SMS khác.
+
 **Quy tắc mã:** 6 chữ số, hiệu lực **5 phút**; sai **5 lần** thì mã bị huỷ; xin mã mới thì mã cũ hết hiệu lực; phải chờ **60 giây** giữa hai lần gửi và tối đa **5 mã mỗi số trong 24 giờ** (tính chung cả hai luồng).
 
 | Lỗi | Khi nào | UI |

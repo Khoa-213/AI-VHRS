@@ -145,6 +145,13 @@ class AuthService:
         acc = PhoneOtpService(self.session, None, ip).confirm_reset(phone, code)
         self._set_password(acc, new_password)
 
+    def confirm_password_reset_firebase(self, id_token: str, new_password: str, verifier, *, ip: str | None = None) -> None:
+        """A Firebase phone sign-in the person just made (Google sent the SMS) stands for the SMS code (2026-11-27)."""
+        security.validate_password_strength(new_password)          # before the token is used up
+        proof = verifier.verify_phone(id_token)
+        acc = PhoneOtpService(self.session, None, ip).reset_owner_by_proof(proof.phone, id_token)
+        self._set_password(acc, new_password)
+
     def _set_password(self, acc: Account, new_password: str) -> None:
         acc.password_hash = security.hash_password(new_password)
         acc.failed_login_count, acc.locked_until = 0, None

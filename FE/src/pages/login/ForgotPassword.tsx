@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { DeviceMobile, EnvelopeSimple, Eye, EyeSlash, LockKey } from '@phosphor-icons/react'
-import { useT } from '../../i18n'
-import { ApiError, authErrorKey } from '../../services/api'
-import { PASSWORD_RULE, PHONE_RULE, apiConfirmResetCode, apiRequestPhoneReset, apiRequestReset, cleanPhone } from '../../services/auth'
+import { useLang, useT } from '../../i18n'
+import { ApiError } from '../../services/api'
+import { PASSWORD_RULE, PHONE_RULE, apiConfirmResetCode, apiConfirmResetFirebase, apiRequestPhoneReset, apiRequestReset, cleanPhone } from '../../services/auth'
+import { cancelPhoneCode, firebasePhoneEnabled, phoneErrorKey, sendPhoneCode, type PhoneCode } from '../../services/firebasePhone'
 import OtpBoxes, { OTP_DIGITS as DIGITS } from './OtpBoxes'
 
 /** Seconds before another code may be asked for (the backend keeps the same wait between two codes). */
@@ -20,6 +21,11 @@ type Secret = 'password' | 'confirm'
  * sets the password in one call (`POST /auth/password-reset/confirm {email | phone, code, new_password}`), so a wrong or
  * expired code is reported after the password step and brings the six boxes back. Asking for a code always answers 202,
  * whether or not the email or the number is known, so the next screen never says that an account exists.
+ *
+ * By phone with Firebase set up (`services/firebasePhone.ts`, 2026-11-27): Google texts the code to the number typed and
+ * checks it at the six boxes; the ID token it gives goes with the new password (`{firebase_id_token, new_password}`).
+ * The backend then says whether the number is verified on an account (`PHONE_NOT_VERIFIED`), which is fair to tell
+ * someone who just proved the number is theirs. The token lasts 10 minutes and works once.
  */
 export default function ForgotPassword({ initialEmail, onBack }: {
   initialEmail: string
@@ -30,6 +36,10 @@ export default function ForgotPassword({ initialEmail, onBack }: {
   onBack: (email?: string) => void
 }) {
   const t = useT()
+  const lang = useLang()
+  /** By phone with Firebase: the code Google texted, then the ID token its six digits gave. */
+  const pending = useRef<PhoneCode | null>(null)
+  const proof = useRef('')
   const [step, setStep] = useState<Step>('start')
   const [via, setVia] = useState<Via>('email')
   const [email, setEmail] = useState(initialEmail)
@@ -43,6 +53,10 @@ export default function ForgotPassword({ initialEmail, onBack }: {
   const [busy, setBusy] = useState(false)
   const [wait, setWait] = useState(0)
   const byPhone = via === 'phone'
+  const byFirebase = byPhone && firebasePhoneEnabled
+
+  // The reCAPTCHA widget of a code that was never typed goes with the form.
+  useEffect(() => cancelPhoneCode, [])
 
   useEffect(() => {
     if (wait <= 0) return
@@ -58,10 +72,16 @@ export default function ForgotPassword({ initialEmail, onBack }: {
     try {
       await job()
     } catch (e) {
-      setError(t(authErrorKey(e)))
+      setError(t(phoneErrorKey(e)))
     } finally {
       setBusy(false)
     }
+  }
+
+  /** Asks for a code: by email or SMS from the backend, or by SMS from Firebase. */
+  const request = async (address: string, number: string) => {
+    if (byFirebase) pending.current = await sendPhoneCode(number, lang)
+    else await (byPhone ? apiRequestPhoneReset(number) : apiRequestReset(address))
   }
 
   const sendCode = (event: FormEvent) => {
@@ -70,7 +90,7 @@ export default function ForgotPassword({ initialEmail, onBack }: {
     const number = cleanPhone(phone)
     if (byPhone ? !PHONE_RULE.test(number) : !/^\S+@\S+\.\S+$/.test(address)) return setError(t(byPhone ? 'reset.errPhone' : 'login.errEmail'))
     void run(async () => {
-      await (byPhone ? apiRequestPhoneReset(number) : apiRequestReset(address))
+      await request(address, number)
       setEmail(address)
       if (byPhone) setPhone(number)
       setCode('')
@@ -80,18 +100,32 @@ export default function ForgotPassword({ initialEmail, onBack }: {
   }
 
   const resend = () => run(async () => {
-    await (byPhone ? apiRequestPhoneReset(phone) : apiRequestReset(email))
+    await request(email, phone)
     setCode('')
     setWait(RESEND_S)
-    setNotice(byPhone ? t('reset.resentPhone', { phone }) : t('reset.resent', { email }))
+    setNotice(byFirebase ? t('reset.resentFirebase', { phone }) : byPhone ? t('reset.resentPhone', { phone }) : t('reset.resent', { email }))
   })
 
-  /** Six digits are enough to go on; the backend checks them together with the new password. */
+  /**
+   * Six digits are enough to go on; the backend checks them together with the new password. With Firebase the digits are
+   * checked here and now, and what goes on is the ID token.
+   */
   const next = (value: string) => {
     if (value.length < DIGITS) return setError(t('reset.otpErr'))
     setError('')
     setNotice('')
-    setStep('password')
+    if (!byFirebase) return setStep('password')
+    void run(async () => {
+      try {
+        if (!pending.current) throw new ApiError(400, 'OTP_EXPIRED', '')
+        proof.current = await pending.current.confirm(value)
+        pending.current = null
+        setStep('password')
+      } catch (e) {
+        setCode('')
+        throw e
+      }
+    })
   }
 
   const save = (event: FormEvent) => {
@@ -103,13 +137,20 @@ export default function ForgotPassword({ initialEmail, onBack }: {
     if (Object.keys(next).length) return
     void run(async () => {
       try {
-        await apiConfirmResetCode(byPhone ? { phone } : { email }, code, form.password)
+        if (byFirebase) await apiConfirmResetFirebase(proof.current, form.password)
+        else await apiConfirmResetCode(byPhone ? { phone } : { email }, code, form.password)
         setStep('done')
       } catch (e) {
         // A wrong, expired or used-up code: back to the six boxes, the passwords typed are kept.
         if (e instanceof ApiError && e.code.startsWith('OTP_')) {
           setStep('otp')
           setCode('')
+        }
+        // Firebase: the proof is too old or already used, or the number has no account. A new code or another way.
+        if (e instanceof ApiError && (e.code.startsWith('FIREBASE_') || e.code === 'PHONE_NOT_VERIFIED')) {
+          proof.current = ''
+          setCode('')
+          setStep('start')
         }
         throw e
       }
@@ -178,7 +219,7 @@ export default function ForgotPassword({ initialEmail, onBack }: {
 
   if (step === 'otp') return <>
     <h2 id="entry-login-title">{t('reset.otpTitle')}</h2>
-    <p id="entry-login-description" className="entry-login-description">{byPhone ? t('reset.otpLedePhone', { phone }) : t('reset.otpLede', { email })}</p>
+    <p id="entry-login-description" className="entry-login-description">{byFirebase ? t('reset.otpLedeFirebase', { phone }) : byPhone ? t('reset.otpLedePhone', { phone }) : t('reset.otpLede', { email })}</p>
     <form onSubmit={(event) => { event.preventDefault(); next(code) }} noValidate aria-busy={busy}>
       <OtpBoxes
         value={code}

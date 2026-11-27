@@ -235,6 +235,8 @@ def _no_real_provider_credentials(monkeypatch):
     # test accounts have no phone: without this every sign-in adds an "add your phone" notification and the tests that
     # count notifications would depend on it. tests/test_phone_reminders.py switches it on.
     monkeypatch.setattr(s, "phone_reminders_enabled", False)
+    # Firebase phone proofs: never fetch Google's certificates from a test (tests/test_firebase_phone.py uses its own key)
+    monkeypatch.setattr(s, "firebase_project_id", None)
     from app.integrations.mailer import ConsoleMailer
     ConsoleMailer.outbox.clear()
     # the notification stream would otherwise stay open for 30 minutes (TestClient reads the whole body)

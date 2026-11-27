@@ -210,6 +210,12 @@ export function authErrorKey(e: unknown): string {
     case 'OTP_INVALID': return 'auth.err.otpInvalid'
     case 'OTP_EXPIRED': return 'auth.err.otpExpired'
     case 'OTP_TOO_MANY_ATTEMPTS': return 'auth.err.otpTries'
+    case 'PHONE_MISMATCH': return 'auth.err.phoneMismatch'
+    case 'PHONE_NOT_VERIFIED': return 'auth.err.phoneNoAccount'
+    case 'FIREBASE_TOKEN_INVALID':
+    case 'FIREBASE_TOKEN_EXPIRED': return 'auth.err.phoneSession'
+    case 'FIREBASE_NOT_CONFIGURED':
+    case 'FIREBASE_UNAVAILABLE': return 'auth.err.phoneSetup'
     case 'TIMEOUT': return 'auth.err.timeout'
     case 'NETWORK': return 'auth.err.network'
   }
