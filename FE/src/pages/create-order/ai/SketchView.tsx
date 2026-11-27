@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useT } from '../../../i18n'
 import { selectionSize, sketchPreviewUrl, type AiSelection, type LoadUrl, type SketchInfo } from '../../../services/orderAi'
 import SketchPicker from './SketchPicker'
+import PaperPhoto from '../PaperPhoto'
+import type { Paper } from '../../../services/orders'
 
 /** A picture that needs the Bearer header, loaded as an object URL. `id` names what is shown, so another one never shows under it. */
 export function BlobImage({ id, load, className }: { id: string; load: LoadUrl; className?: string }) {
@@ -43,9 +45,10 @@ export function SketchImage({ orderId, revisionId, page = 1, className }: { orde
  * The sketch the order will be sent with, in the preview box beside the form. Follows the order's current revision (never a
  * proposal that is not applied). With `selection` the customer can pick parts of it for the assistant.
  */
-export default function SketchView({ orderId, sketch, selection, onSelection, pickLocked = false, outdatedKey = 'oa.outdated' }: {
+export default function SketchView({ orderId, sketch, paper, selection, onSelection, pickLocked = false, outdatedKey = 'oa.outdated' }: {
   orderId: number
   sketch: SketchInfo
+  paper?: Pick<Paper, 'name' | 'imageUrl'> | null
   /** Offered only while the assistant is on. */
   selection?: AiSelection
   onSelection?: (s: AiSelection) => void
@@ -77,6 +80,7 @@ export default function SketchView({ orderId, sketch, selection, onSelection, pi
         </button>
       )}
       {sketch.inputsChanged && <span className="oa-stale" role="status">{t(outdatedKey)}</span>}
+      <PaperPhoto paper={paper} />
       {picking && selection && onSelection && (
         <SketchPicker sketch={sketch} selection={selection} onChange={onSelection} onClose={() => setPicking(false)} />
       )}

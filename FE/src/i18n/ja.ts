@@ -1190,6 +1190,8 @@ export const ja: Record<Key, string> = {
   "co.suggestSub": "こだわる部分だけ選び、残りは空けておきます。工房が補い、見積りで1〜3案を提案します。",
   "co.paperSpec": "{gsm} gsm · {surface} · {size}",
   "co.perSheet": "1枚 {price}",
+  "co.paperShown": "用紙:",
+  "co.paperPhotoFailed": "用紙の写真を読み込めませんでした。",
   "co.penSpec": "線幅 {mm} mm",
   "co.noPens": "この用紙に使えるペンはまだありません。",
   "co.noteLabel": "工房へのメモ（任意）",

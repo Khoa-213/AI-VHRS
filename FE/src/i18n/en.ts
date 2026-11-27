@@ -1206,6 +1206,8 @@ export const en = {
   "co.suggestSub": "Choose what matters to you and leave the rest. The workshop fills it in and offers 1 to 3 options in your quotation.",
   "co.paperSpec": "{gsm} gsm · {surface} · {size}",
   "co.perSheet": "{price} per sheet",
+  "co.paperShown": "Paper:",
+  "co.paperPhotoFailed": "The paper photo could not be loaded.",
   "co.penSpec": "{mm} mm stroke",
   "co.noPens": "No pen works with this paper yet.",
   "co.noteLabel": "Note for the workshop, optional",

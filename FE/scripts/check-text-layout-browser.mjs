@@ -39,8 +39,9 @@ const TEMPLATES = [
   { id: 30, code: 'NOTHING', name: 'No picture', kind: 'TYPOGRAPHY', preview_url: null },
 ]
 const PAPERS = [
-  { id: 1, code: 'P_A5', name: 'Plain A5', gsm: 100, surface: 'PLAIN', size: 'A5', unit_price: '1000' },
+  { id: 1, code: 'P_A5', name: 'Plain A5', gsm: 100, surface: 'PLAIN', size: 'A5', unit_price: '1000', image_url: 'https://media.test/paper-a5.svg' },
   { id: 2, code: 'P_A4', name: 'Plain A4', gsm: 100, surface: 'PLAIN', size: 'A4', unit_price: '2000' },
+  { id: 3, code: 'P_BROKEN', name: 'Unavailable photo A5', gsm: 100, surface: 'PLAIN', size: 'A5', unit_price: '1000', image_url: 'https://media.test/missing-paper.png' },
 ]
 const newOrder = (type) => ({
   id: 88, code: 'VH-TL-1', order_type: type, order_status: 'DRAFT', production_status: 'NOT_STARTED',
@@ -76,6 +77,8 @@ const errors = []
 async function answer(method, url, path, postData) {
   const host = url.hostname
   const body = postData && method !== 'GET' ? JSON.parse(postData) : {}
+  if (host === 'media.test' && path === '/missing-paper.png') return ['', 404, 'image/png']
+  if (host === 'media.test' && path === '/paper-a5.svg') return ['<svg xmlns="http://www.w3.org/2000/svg" width="420" height="594"><rect width="420" height="594" fill="#bc955e"/><path d="M40 60H380M40 100H380M40 140H380M40 180H380" stroke="#715b40"/></svg>', 200, 'image/svg+xml']
   if (host === 'media.test') return realApi && realTemplate ? picture('GET', new URL(`http://x/?fit=text&text=${encodeURIComponent('Xin chào Việt Nam')}`)) : [PNG, 200, 'image/png']
   if (path === '/me') return [{ id: 17, email: 'test@example.test', full_name: 'Browser Test', role: 'CUSTOMER', status: 'ACTIVE', addresses: [], created_at: now }]
   if (path === '/studio/assistant/status') return [{ enabled: false, available: false, providers: [], messages_left_today: 0, daily_message_limit: 30, sends_photos: false }]
@@ -95,7 +98,10 @@ async function answer(method, url, path, postData) {
   if (path.includes('conversations')) return [path.endsWith('unread-count') ? { unread_count: 0 } : { items: [], total: 0 }]
   if (path === '/orders' && method === 'POST') { state.order = newOrder(body.order_type); return [orderOut(), 201] }
   if (path === '/orders') return [{ items: state.order ? [orderOut()] : [], total: state.order ? 1 : 0, page: 1, page_size: 20 }]
-  if (path === '/orders/88' && (method === 'GET' || method === 'PATCH')) return [orderOut()]
+  if (path === '/orders/88' && (method === 'GET' || method === 'PATCH')) {
+    if (method === 'PATCH') Object.assign(state.order, body)
+    return [orderOut()]
+  }
   if (path === '/orders/88/inputs/text' && method === 'PUT') {
     state.puts.push(body)
     // As the backend: a layout sent replaces the stored one; keep_layout carries the stored one over; nothing = the default.
@@ -310,6 +316,26 @@ try {
   assert.deepEqual(state.puts[n + 1].layout.paragraphs, [{ index: 0, alignment: 'LEFT' }])
   assert.equal(state.puts[n + 1].layout.vertical_align, 'TOP')
 
+  // ---- paper photos: selection updates both previews, missing/broken photos remain selectable.
+  await evaluate(`document.querySelectorAll('.co-steps .co-step')[1].click()`)
+  await wait(`document.querySelectorAll('.co-opt .co-paper-thumb').length === 3`, 'paper thumbnails')
+  const paperChoice = (name) => `[...document.querySelectorAll('.co-opt')].find((b) => b.textContent.includes(${JSON.stringify(name)}))`
+  await evaluate(`${paperChoice('Plain A5')}.click()`)
+  await wait(`document.querySelector('.co-rail .co-paper-photo summary')?.textContent.includes('Plain A5')`, 'selected paper beside the preview')
+  await evaluate(`document.querySelector('.co-rail .co-paper-photo summary').click()`)
+  await wait(`document.querySelector('.co-rail .co-paper-photo-full')?.naturalWidth === 420`, 'the full paper photo loads')
+  await shot('paper-photo-materials-1440.png', '.co-root')
+  await evaluate(`${paperChoice('Plain A4')}.click()`)
+  await wait(`document.querySelector('.co-rail .co-paper-label')?.textContent.includes('Plain A4')`, 'paper without a photo')
+  assert.equal(await evaluate(`!!document.querySelector('.co-rail .co-paper-photo-full')`), false, 'the previous photo is removed')
+  await evaluate(`${paperChoice('Unavailable photo A5')}.click()`)
+  await wait(`document.querySelector('.co-rail .co-paper-photo summary')?.textContent.includes('Unavailable photo A5')`, 'paper with a broken photo remains selectable')
+  await evaluate(`document.querySelector('.co-rail .co-paper-photo summary').click()`)
+  await wait(`document.querySelector('.co-rail .co-paper-photo [role="status"]')?.textContent.includes('could not be loaded')`, 'photo error fallback')
+  await evaluate(`${paperChoice('Plain A5')}.click()`)
+  await wait(`document.querySelector('.co-rail .co-paper-photo summary')?.textContent.includes('Plain A5')`, 'switching back to a working photo')
+  await until(() => state.order.paper_type_id === 1, 'the chosen paper is saved before reloading')
+
   // ---- languages and widths
   for (const lang of ['vi', 'ja']) {
     await setLang(lang)
@@ -317,6 +343,10 @@ try {
       await command('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: w < 500 })
       await openDraft()
       await wait(`document.querySelectorAll('.co-place-grid input').length === 5`, `placement controls (${lang}, ${w})`)
+      const paperLabel = lang === 'vi' ? 'Giấy:' : '用紙:'
+      await wait(`document.querySelector('.co-body .co-paper-photo summary')?.textContent.includes(${JSON.stringify(paperLabel)})`, 'translated paper label')
+      await evaluate(`document.querySelector('.co-body .co-paper-photo summary').click()`)
+      await wait(`document.querySelector('.co-body .co-paper-photo-full')?.naturalWidth === 420`, 'paper photo at this viewport')
       const words = await evaluate(`[...document.querySelectorAll('.co-sub .co-group')].slice(1, 3).map((g) => g.innerText).join(' ')`)
       for (const en of ['Position on the sheet', 'Top', 'Middle', 'Bottom', 'Margins', 'Line spacing', 'Left', 'Right']) assert.ok(!words.includes(en), `English "${en}" left in ${lang}`)
       const bar = await evaluate(`document.querySelector('.co-fmt')?.innerText ?? ''`)
