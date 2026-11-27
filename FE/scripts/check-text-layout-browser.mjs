@@ -3,7 +3,8 @@
 // words (`fit=text`); when the live picture fails the template's stored sample is shown and the style can still be picked,
 // a style with nothing to show is disabled; the placement (top / middle / bottom, four margins, line spacing) is saved in
 // the text's `layout` and drawn by the styled preview on the sheet of the chosen paper; a stored placement comes back
-// after a reload; styles of parts of the text made elsewhere survive (text first with `keep_layout`, then the placement);
+// after a reload; styles of parts of the text follow the typing; the toolbar (select words, then italic, underline, double
+// underline, strikethrough, a letter height, clear); paragraph settings made elsewhere survive (`keep_layout` first);
 // the three languages at desktop and phone width. Run `npm run build` first.
 // LAYOUT_REAL_API=http://127.0.0.1:8000 (a backend) with LAYOUT_REAL_TEMPLATE=<id> draws the pictures for the screenshots
 // with real strokes instead of a one-pixel image; LAYOUT_SHOTS=<dir> keeps the screenshots.
@@ -174,8 +175,10 @@ try {
   // ---- cards: the first line of the customer's words, cut to the words; a style with nothing to show is off
   await type(`document.querySelector('textarea')`, LETTER)
   await until(() => state.cards.some((c) => c.id === 20 && c.text === 'Chúc mừng sinh nhật mẹ yêu'), 'the card asks for the first line')
-  assert.ok(state.cards.every((c) => c.fit === 'text'), 'every card picture is asked cut to the words')
-  assert.ok(state.cards.every((c) => (c.text ?? '').length <= 40 && !c.text.includes('\n')), 'a card never sends more than the first 40 characters')
+  // The same route without `fit` is the whole-sheet picture of the side preview; a card always asks with `fit=text`.
+  const cut = () => state.cards.filter((c) => c.fit === 'text')
+  for (const id of [11, 20, 30]) assert.ok(cut().some((c) => c.id === id), `the card of style ${id} asks for a picture cut to the words`)
+  assert.ok(cut().every((c) => (c.text ?? '').length <= 40 && !c.text.includes('\n')), 'a card never sends more than the first 40 characters')
   await wait(`${card('No picture')}.disabled === true`, 'the style without any picture is off')
   assert.equal(await evaluate(`${card('Dancing Script')}.disabled || ${card('Single line')}.disabled`), false)
   assert.equal(await evaluate(`${card('Dancing Script')}.querySelector('img').src.includes('fit=text')`), true)
@@ -239,18 +242,73 @@ try {
   await sleep(1500)
   assert.equal(state.puts.length, settled, 'opening a draft saves nothing back')
 
-  // ---- styles of parts of the text survive: a placement change carries them, a text change saves the text first with keep_layout
+  // ---- styles of parts of the text survive: a placement change carries them, and they follow the typing (one save, no keep_layout)
   await evaluate(`${seg(1, 0)}.click()`)                                    // position: top
   await until(() => state.puts.length === settled + 1, 'one save for a placement change')
   assert.equal(lastPut().layout.vertical_align, 'TOP')
   assert.deepEqual(lastPut().layout.spans, [{ start: 0, end: 4, italic: true }])
-  const b3 = state.puts.length
-  await type(`document.querySelector('textarea')`, 'Mẹ ơi\n' + LETTER + ' Thương mẹ.')
-  await until(() => state.puts.length === b3 + 2, 'two saves when the words change under styled parts')
-  assert.equal(state.puts[b3].keep_layout, true)
-  assert.equal(state.puts[b3].layout, undefined)
-  assert.deepEqual(state.puts[b3 + 1].layout.spans, [{ start: 0, end: 4, italic: true }])
-  assert.equal(state.puts[b3 + 1].layout.vertical_align, 'TOP')
+  const WORDS = 'Mẹ ơi\n' + LETTER + ' Thương mẹ.'
+  let n = state.puts.length
+  await type(`document.querySelector('textarea')`, WORDS)                   // typed after the styled part: it stays
+  await until(() => state.puts.length === n + 1, 'one save when words are added after a styled part')
+  assert.equal(lastPut().keep_layout, undefined)
+  assert.deepEqual(lastPut().layout.spans, [{ start: 0, end: 4, italic: true }])
+  await type(`document.querySelector('textarea')`, 'Ôi ' + WORDS)           // typed before it: it moves along
+  await until(() => lastPut().layout.spans?.[0]?.start === 3, 'the styled part follows its characters')
+  assert.deepEqual(lastPut().layout.spans, [{ start: 3, end: 7, italic: true }])
+
+  // ---- the toolbar: select words in the box, then a style; the box itself never shows a style
+  const select = (from, to) => evaluate(`(() => { const el = document.querySelector('textarea'); el.focus(); el.setSelectionRange(${from}, ${to}) })()`)
+  const tool = (i) => `document.querySelectorAll('.co-fmt-row .co-fmt-btn')[${i}]`     // italic, underline, double, strike, apply height, clear
+  const spansSaved = (want, label) => until(() => JSON.stringify(lastPut().layout.spans ?? []) === JSON.stringify(want), label)
+  assert.equal(await evaluate(`document.querySelectorAll('.co-fmt-row .co-fmt-btn').length`), 6)
+  n = state.puts.length
+  await select(2, 2)
+  await evaluate(`${tool(1)}.click()`)
+  await wait(`!!document.querySelector('.co-fmt-note')`, 'a note asks for a selection')
+  await sleep(1200)
+  assert.equal(state.puts.length, n, 'nothing is saved without a selection')
+  await select(0, 5)                                                        // "Ôi Mẹ": overlaps the italic part [3, 7)
+  await evaluate(`${tool(1)}.click()`)
+  await spansSaved([{ start: 0, end: 3, underline: 'single' }, { start: 3, end: 5, italic: true, underline: 'single' }, { start: 5, end: 7, italic: true }], 'underline over part of an italic part splits it')
+  await select(8, 12)
+  await type(`document.querySelector('.co-fmt-size input')`, '2')
+  await evaluate(`${tool(4)}.click()`)
+  await wait(`document.querySelector('.co-fmt-note')?.innerText.includes('4')`, 'a letter height out of range is refused')
+  await type(`document.querySelector('.co-fmt-size input')`, '14')
+  await evaluate(`${tool(4)}.click()`)
+  await until(() => (lastPut().layout.spans ?? []).some((x) => x.start === 8 && x.end === 12 && x.size_mm === 14), 'a letter height of its own')
+  await select(8, 12)
+  await evaluate(`${tool(2)}.click()`)                                      // double underline on the same words
+  await evaluate(`${tool(3)}.click()`)                                      // and strikethrough
+  await until(() => (lastPut().layout.spans ?? []).some((x) => x.start === 8 && x.size_mm === 14 && x.underline === 'double' && x.strike === true), 'styles add up on the same words')
+  assert.equal(await evaluate(`document.querySelectorAll('.co-fmt-list li').length`), 4)
+  assert.equal(await evaluate(`document.querySelector('textarea').value`), 'Ôi ' + WORDS, 'the box keeps the plain words')
+  await until(() => lastView()?.layout?.spans?.length === 4, 'the preview is asked with the styles')
+  await shot('layout-styles-1440.png', '.co-root')
+  await select(0, 5)
+  await evaluate(`${tool(1)}.click()`)                                      // underline again: taken off
+  await until(() => !(lastPut().layout.spans ?? []).some((x) => x.underline === 'single'), 'the same style again takes it off')
+  await evaluate(`document.querySelector('.co-fmt-list li .co-fmt-part').click()`)   // a part in the list selects its words
+  assert.deepEqual(await evaluate(`[document.querySelector('textarea').selectionStart, document.querySelector('textarea').selectionEnd]`), [3, 7])
+  await evaluate(`document.querySelector('.co-fmt-list li .co-fmt-x').click()`)      // the cross removes that part
+  await until(() => (lastPut().layout.spans ?? []).length === 1 && lastPut().layout.spans[0].start === 8, 'the cross removes one part')
+  await select(8, 12)
+  await evaluate(`${tool(5)}.click()`)                                      // clear formatting
+  await until(() => lastPut().layout.spans === undefined, 'clearing leaves no spans in the layout')
+  assert.equal(await evaluate(`document.querySelectorAll('.co-fmt-list li').length`), 0)
+
+  // ---- settings of single paragraphs (made by the assistant) are carried by the backend: text first with keep_layout
+  state.input.layout = { ...state.input.layout, paragraphs: [{ index: 0, alignment: 'LEFT' }] }
+  await openDraft()
+  await wait(`document.querySelectorAll('.co-place-grid input').length === 5`, 'the draft with paragraph settings')
+  n = state.puts.length
+  await type(`document.querySelector('textarea')`, 'Ôi ' + WORDS + ' Hết.')
+  await until(() => state.puts.length === n + 2, 'two saves when the words change under paragraph settings')
+  assert.equal(state.puts[n].keep_layout, true)
+  assert.equal(state.puts[n].layout, undefined)
+  assert.deepEqual(state.puts[n + 1].layout.paragraphs, [{ index: 0, alignment: 'LEFT' }])
+  assert.equal(state.puts[n + 1].layout.vertical_align, 'TOP')
 
   // ---- languages and widths
   for (const lang of ['vi', 'ja']) {
@@ -261,12 +319,14 @@ try {
       await wait(`document.querySelectorAll('.co-place-grid input').length === 5`, `placement controls (${lang}, ${w})`)
       const words = await evaluate(`[...document.querySelectorAll('.co-sub .co-group')].slice(1, 3).map((g) => g.innerText).join(' ')`)
       for (const en of ['Position on the sheet', 'Top', 'Middle', 'Bottom', 'Margins', 'Line spacing', 'Left', 'Right']) assert.ok(!words.includes(en), `English "${en}" left in ${lang}`)
+      const bar = await evaluate(`document.querySelector('.co-fmt')?.innerText ?? ''`)
+      for (const en of ['Format part', 'Italic', 'Underline', 'Strikethrough', 'Clear formatting', 'Letter height']) assert.ok(bar && !bar.includes(en), `English "${en}" left in the format bar (${lang})`)
       await noOverflow(`${lang} ${w}`)
       if (lang === 'vi') await shot(`layout-vi-${w}.png`, '.co-root')
     }
   }
   assert.deepEqual(errors, [], 'no page errors')
-  console.log('PASS: writing-style cards (first line, cut to the words, stored sample when the live picture fails, nothing to show = off), placement (top / middle / bottom, margins, line spacing, limits) saved in the layout and drawn by the preview on the chosen sheet, reload, styled parts kept (keep_layout then placement), vi/ja at 1440 and 390. All API calls intercepted.')
+  console.log('PASS: writing-style cards (first line, cut to the words, stored sample when the live picture fails, nothing to show = off), placement (top / middle / bottom, margins, line spacing, limits) saved in the layout and drawn by the preview on the chosen sheet, reload, styles of parts of the text (follow the typing, toolbar, list, clear), paragraph settings kept (keep_layout first), vi/ja at 1440 and 390. All API calls intercepted.')
 } finally {
   try { ws?.close() } catch { /* closing */ }
   browser?.kill()

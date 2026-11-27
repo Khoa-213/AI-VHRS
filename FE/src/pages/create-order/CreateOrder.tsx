@@ -10,7 +10,7 @@ import { Link, navigate, orderPath } from '../../router/router'
 import {
   ACCEPTED_UPLOADS, MAX_UPLOAD_MB, createOrder, deleteInput, editPhoto, estimate, getInks, getOrder, getPapers, getPens, getTemplates,
   incompleteFields, orderErrorKey, patchOrder, provideInfo, putText, submitOrder, uploadOriginal,
-  type Alignment, type CropBox, type Estimate, type Order, type OrderPatch, type OrderType, type SheetSize, errText } from '../../services/orders'
+  type Alignment, type CropBox, type Estimate, type Order, type OrderPatch, type OrderType, type SheetSize, type TextLayout, errText } from '../../services/orders'
 import { useUser } from '../../store/store'
 import type { InputMode } from '../../types'
 import { fmt } from '../../utils/format'
@@ -23,7 +23,9 @@ import AiPolicyDialog from './ai/AiPolicyDialog'
 import SketchView from './ai/SketchView'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
-import { DEFAULT_PLACE, MARGIN_SIDES, VERTICAL_ALIGNS, hasRichLayout, layoutWithPlace, placeFromLayout, placeKey, type Place } from './textPlace'
+import TextStyleBar from './TextStyleBar'
+import { DEFAULT_PLACE, MARGIN_SIDES, VERTICAL_ALIGNS, hasParagraphs, layoutWithPlace, placeFromLayout, placeKey, type Place } from './textPlace'
+import { length as textLength, remapSpans, spansForApi, spansFromLayout, spansKey, type Span } from './textSpans'
 import { openAuth } from '../../store/authDialog'
 import Header from '../landing/components/Header'
 import fr3Arm from '../../assets/fr3-arm.png'
@@ -53,6 +55,19 @@ function Frame({ children, narrow = false }: { children: ReactNode; narrow?: boo
   )
 }
 
+/** A layout with the form's styles of parts of the text in place of the stored ones, cut to `text`. */
+function withSpans(base: TextLayout | null | undefined, spans: Span[], text: string): TextLayout {
+  const { spans: _stored, ...rest } = base ?? {}
+  const list = spansForApi(spans, textLength(text))
+  return list.length ? { ...rest, spans: list } : rest
+}
+
+/** What the autosave compares: the text input as the server has it, in the form's own terms. */
+function savedKey(tx: { text: string | null; templateId: number | null; alignment: Alignment | null; fontSizeMm: number | null; layout: TextLayout | null } | undefined): string {
+  const stored = spansFromLayout(tx?.layout, textLength(tx?.text ?? ''))
+  return `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}|${placeKey(placeFromLayout(tx?.layout))}|${spansKey(stored)}`
+}
+
 /** The order is a draft on the server from the first thing the customer enters; every change is saved there. */
 export default function CreateOrder({ orderId: given = null }: { orderId?: number | null }) {
   const t = useT()
@@ -70,6 +85,9 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [fontSize, setFontSize] = useState('')
   /** Where the text sits on the sheet: top / middle / bottom, the margins, the line spacing. */
   const [place, setPlace] = useState<Place>(DEFAULT_PLACE)
+  /** Styles of parts of the text (italic, underline, strikethrough, a letter height of their own). */
+  const [spans, setSpans] = useState<Span[]>([])
+  const box = useRef<HTMLTextAreaElement | null>(null)
   const [paperId, setPaperId] = useState<number | null>(null)
   const [penId, setPenId] = useState<number | null>(null)
   const [inkId, setInkId] = useState<number | null>(null)
@@ -179,7 +197,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     setErr('')
     setEst(null)
     if (given === null) {
-      setText(''); setTemplateId(null); setAlignment(null); setFontSize('')
+      setText(''); setSpans([]); setTemplateId(null); setAlignment(null); setFontSize('')
       setPaperId(null); setPenId(null); setInkId(null); setSuggest(false); setQty(1); setNote('')
       setLoading(false)
       return
@@ -198,6 +216,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
         setAlignment(tx?.alignment ?? null)
         setFontSize(tx?.fontSizeMm ? String(tx.fontSizeMm) : '')
         setPlace(placeFromLayout(tx?.layout))
+        setSpans(spansFromLayout(tx?.layout, textLength(tx?.text ?? '')))
         setPaperId(o.paperId); setPenId(o.penId); setInkId(o.inkId)
         setSuggest(o.workshopSuggest); setQty(o.quantity); setNote(o.note ?? '')
         setMode(initialMode() ?? (o.type === 'OT1_COPY_RESTORE' ? 'upload' : !tx && o.inputs.some((i) => i.kind === 'CANVAS') ? 'draw' : 'text'))
@@ -234,16 +253,21 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   // ---------- text: saved shortly after the typing stops ----------
 
+  /** The words changed in the box: the styles of parts of the text move with the characters that stayed. */
+  const changeText = (next: string) => {
+    setSpans((prev) => remapSpans(prev, text, next))
+    setText(next)
+  }
+
   const dText = useDebounced(text, 700)
   const dSize = useDebounced(fontSize, 700)
   const dPlace = useDebounced(place, 700)
-  const textKey = `${dText}|${templateId}|${alignment}|${dSize}|${placeKey(dPlace)}`
+  const textKey = `${dText}|${templateId}|${alignment}|${dSize}|${placeKey(dPlace)}|${spansKey(spans)}`
   useEffect(() => {
     if (loading) return
     if (!loaded.current) {
       loaded.current = true
-      const tx = orderRef.current?.inputs.find((i) => i.kind === 'TEXT_CONTENT')
-      lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}|${placeKey(placeFromLayout(tx?.layout))}`
+      lastSaved.current = savedKey(orderRef.current?.inputs.find((i) => i.kind === 'TEXT_CONTENT'))
     }
     // Wait until the typing has settled, so a value still on its way is never saved.
     if (text !== dText || fontSize !== dSize || place !== dPlace) return
@@ -254,13 +278,14 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     enqueue(async () => {
       const o = await ensure()
       const fields = { text_content: dText, template_id: templateId, alignment, font_size_mm: dSize && size > 0 ? size : null }
-      // The placement is part of the text's layout, and a PUT replaces the whole layout. Styles of parts of the text
-      // (made by the assistant or the studio) index its characters: when the words changed too, the text is saved first
-      // with `keep_layout`, so those styles follow the characters that stayed, and the placement goes on top of the result.
+      // The placement and the styles of parts of the text are the text's layout, and a PUT replaces the whole layout.
+      // The form keeps both itself (the styles follow the typing, `remapSpans`). Settings of single paragraphs, made by the
+      // assistant or the studio, are numbered by paragraph: when the words changed, the text is saved first with
+      // `keep_layout` so the backend carries them over, and the form's layout goes on top of what comes back.
       const stored = (orderRef.current ?? o).inputs.find((i) => i.kind === 'TEXT_CONTENT')
       let base = stored?.layout ?? null
-      if (hasRichLayout(base) && stored?.text !== dText) base = (await putText(o.id, { ...fields, keep_layout: true })).layout
-      const input = await putText(o.id, { ...fields, layout: layoutWithPlace(base, dPlace) })
+      if (hasParagraphs(base) && stored?.text !== dText) base = (await putText(o.id, { ...fields, keep_layout: true })).layout
+      const input = await putText(o.id, { ...fields, layout: layoutWithPlace(withSpans(base, spans, dText), dPlace) })
       const cur = orderRef.current ?? o
       adopt({ ...cur, inputs: [...cur.inputs.filter((i) => i.kind !== 'TEXT_CONTENT'), input] })
     }).then(undefined, (e: unknown) => {
@@ -319,10 +344,11 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     setAlignment(tx?.alignment ?? null)
     setFontSize(tx?.fontSizeMm ? String(tx.fontSizeMm) : '')
     setPlace(placeFromLayout(tx?.layout))
+    setSpans(spansFromLayout(tx?.layout, textLength(tx?.text ?? '')))
     setPaperId(o.paperId); setPenId(o.penId); setInkId(o.inkId)
     setSuggest(o.workshopSuggest); setQty(o.quantity); setNote(o.note ?? '')
     // What is on screen is what the server has: the autosave must not send it back.
-    lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}|${placeKey(placeFromLayout(tx?.layout))}`
+    lastSaved.current = savedKey(tx)
     sentQty.current = o.quantity
     sentNote.current = o.note ?? ''
   }, [adopt])
@@ -506,7 +532,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const sheet: SheetSize = (['A4', 'A5', 'A6'] as const).find((s) => s === papers.data?.find((p) => p.id === paperId)?.size) ?? 'A5'
   const dPlaceView = useDebounced(place, 300)
   const storedText = order?.inputs.find((i) => i.kind === 'TEXT_CONTENT')
-  const previewLayout = JSON.stringify(layoutWithPlace(storedText?.text === dPreview ? storedText.layout : null, dPlaceView))
+  // Paragraph settings only fit the text they were stored with; the styles of parts are the form's own, cut to the text drawn.
+  const previewLayout = JSON.stringify(layoutWithPlace(withSpans(storedText?.text === dPreview ? storedText.layout : null, spans, dPreview.slice(0, 2000)), dPlaceView))
   const previewSrc = useStyledPreview(mode === 'text' ? templateId : null, dPreview, alignment, sizeMm > 0 ? sizeMm : null, previewLayout, sheet)
   useEffect(() => {
     if (loading) return
@@ -789,24 +816,26 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                         </div>
                         <div className="co-field">
                           <textarea
+                            ref={box}
                             className="co-text"
                             rows={5}
                             value={text}
                             maxLength={20000}
                             aria-label={t('co.message')}
                             placeholder={t('co.placeholder')}
-                            onChange={(e) => setText(e.target.value)}
+                            onChange={(e) => changeText(e.target.value)}
                           />
                           <div className="co-meta vh-mono">
                             <span>{t('co.chars', { n: text.length })}</span>
                             <span>{est ? t('co.charsCounted', { min: est.charsMin, max: est.charsMax }) : ''}</span>
                           </div>
+                          {!!text.trim() && <TextStyleBar box={box} text={text} spans={spans} onChange={setSpans} />}
                           {!text.trim() && (
                             <div className="co-try">
                               <span>{t('co.try')}</span>
                               <div className="co-try-list">
                                 {[1, 2, 3].map((n) => (
-                                  <button key={n} type="button" className="co-example" onClick={() => setText(t(`co.ex.${n}`))}>
+                                  <button key={n} type="button" className="co-example" onClick={() => changeText(t(`co.ex.${n}`))}>
                                     {t(`co.ex.${n}`)}
                                   </button>
                                 ))}
