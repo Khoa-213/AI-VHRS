@@ -9,14 +9,23 @@ const FIELDS = new Set([
 const ALIGNMENTS = new Set(['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'])
 const LONG = 90
 
+export type ProposalAction = 'apply' | 'skip' | 'revert'
+
 /**
- * What one answer of the assistant changed on the order, as a compact line that opens to the list of changes. The order is
- * changed as soon as the assistant answers (CreateOrder applies the proposal), so there is nothing to decide here: the new
- * sketch is in the sketch box beside the form, and Undo in the chat header goes back.
+ * What one answer of the assistant changes on the order, as a compact line that opens to the list of changes. An answer that
+ * only changes what Undo brings back (words, layout, materials, sketch) is on the order as soon as it arrives (OrderAssistant
+ * applies it); one that changes more, or draws over the customer's own edits, waits here with Apply and Skip. An applied
+ * answer can be taken back whole while the order has not changed since.
  */
-export default function ProposalCard({ proposal }: { proposal: AiProposal }) {
+export default function ProposalCard({ proposal, busy = false, onAction }: {
+  proposal: AiProposal
+  busy?: boolean
+  onAction?: (action: ProposalAction, proposal: AiProposal) => void
+}) {
   const t = useT()
   const tn = useTn()
+  const waiting = proposal.status === 'PENDING' && proposal.applicable
+  const reason = (r: string) => (r === 'DISCARDS_MANUAL_EDITS' ? t('oa.reason.DISCARDS_MANUAL_EDITS') : t(FIELDS.has(r) ? `oa.field.${r}` : 'oa.field.other'))
 
   const cut = (s: string) => (s.length > LONG ? `${s.slice(0, LONG)}…` : s)
   const show = (c: AiChange, v: unknown): string => {
@@ -42,7 +51,7 @@ export default function ProposalCard({ proposal }: { proposal: AiProposal }) {
   const state = proposal.status === 'APPLIED' ? 'oa.applied' : proposal.status === 'REJECTED' ? 'oa.skipped' : 'oa.notApplied'
 
   return (
-    <details className="oa-prop" data-status={proposal.status}>
+    <details className="oa-prop" data-status={proposal.status} open={waiting && proposal.needsConfirmation ? true : undefined}>
       <summary>
         <span className={`oa-dot${proposal.status === 'APPLIED' ? ' ok' : ''}`} aria-hidden="true" />
         <b>{t(state)}</b>
@@ -62,6 +71,23 @@ export default function ProposalCard({ proposal }: { proposal: AiProposal }) {
         ))}
       </dl>
       {proposal.preview?.sketchOutdated && <p className="oa-blocked" role="status">{t('oa.proposalOutdated')}</p>}
+      {waiting && proposal.needsConfirmation && (
+        <div className="oa-confirm" role="status">
+          <p>{t('oa.confirmWhy')}</p>
+          <ul>{proposal.confirmReasons.map((r) => <li key={r}>{reason(r)}</li>)}</ul>
+        </div>
+      )}
+      {onAction && waiting && (
+        <div className="oa-prop-actions">
+          <button type="button" className="oa-btn" disabled={busy} onClick={() => onAction('apply', proposal)}>{t('oa.apply')}</button>
+          <button type="button" className="oa-btn oa-btn--line" disabled={busy} onClick={() => onAction('skip', proposal)}>{t('oa.skip')}</button>
+        </div>
+      )}
+      {onAction && proposal.status === 'APPLIED' && proposal.revertible && (
+        <div className="oa-prop-actions">
+          <button type="button" className="oa-btn oa-btn--line" disabled={busy} title={t('oa.revertHint')} onClick={() => onAction('revert', proposal)}>{t('oa.revert')}</button>
+        </div>
+      )}
     </details>
   )
 }

@@ -26,7 +26,7 @@ import './order.css'
 
 const HAS_QUOTE = ['QUOTED', 'AWAITING_DEPOSIT', 'CONFIRMED']
 // The acceptance step is closed on the server (auto-accepted, rewrite already asked), so the page must catch up.
-const RELOAD_ON = ['STATE_CONFLICT', 'ACCEPTANCE_CLOSED', 'ORDER_NOT_AWAITING_ACCEPTANCE', 'REWRITE_LIMIT_REACHED']
+const RELOAD_ON = ['STATE_CONFLICT', 'ACCEPTANCE_CLOSED', 'ORDER_NOT_AWAITING_ACCEPTANCE', 'REWRITE_LIMIT_REACHED', 'SKETCH_VERSION_STALE']
 
 export default function OrderReview({ id }: { id: string | null }) {
   const t = useT()
@@ -343,7 +343,11 @@ export default function OrderReview({ id }: { id: string | null }) {
                         className="vh-btn vh-btn--primary vh-btn--md"
                         disabled={busy || !agreed || (multi && chosen === null)}
                         onClick={() => void run(
-                          () => approveQuotation(orderId, { ...(multi && chosen !== null ? { option: chosen } : {}), deposit_pct: depositPct }),
+                          () => approveQuotation(orderId, {
+                            ...(multi && chosen !== null ? { option: chosen } : {}), deposit_pct: depositPct,
+                            // the sketch on screen: the server answers SKETCH_VERSION_STALE if the workshop replaced it meanwhile
+                            ...(quotation?.sketch?.id != null ? { sketch_id: quotation.sketch.id } : {}),
+                          }),
                           () => navigate(orderPath(orderId, 'deposit')),
                         )}
                       >

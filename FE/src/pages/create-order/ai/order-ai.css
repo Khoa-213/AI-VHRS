@@ -139,6 +139,10 @@
 .oa-arrow{margin:0 6px;color:var(--t5)}
 .oa-after{color:var(--t1);font-weight:700}
 .oa-blocked{margin:6px 0 0;font-size:13px;line-height:1.45;color:var(--warn)}
+.oa-confirm{margin-top:8px;font-size:13px;line-height:1.45;color:var(--t2)}
+.oa-confirm p{margin:0}
+.oa-confirm ul{margin:4px 0 0;padding-left:18px}
+.oa-prop-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;margin-bottom:10px}
 
 /* Chat history: the order's conversations in place of the messages. */
 .oa-history{flex:1 1 auto;display:flex;flex-direction:column;gap:10px;min-height:220px;padding:12px 12px 14px;overflow-y:auto}

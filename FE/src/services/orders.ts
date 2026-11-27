@@ -471,6 +471,8 @@ export interface Quotation {
   pdfUrl: string | null
   note: string
   sketch: {
+    /** Sent back as `sketch_id` when approving, so the server refuses an approval of a sketch that changed meanwhile. */
+    id: number | null
     version: number
     /** The sketch JPEGs the customer decides on (one per page, links last 10 minutes). */
     imageUrls: string[]
@@ -488,7 +490,7 @@ interface RawQuotation {
   final_total: string; min_deposit_pct: string; eta: string | null; valid_until: string | null
   pdf_url: string | null; note: string
   sketch: {
-    version: number; image_urls?: string[]; preview_urls: string[]; approach_note: string | null
+    id?: number | null; version: number; image_urls?: string[]; preview_urls: string[]; approach_note: string | null
     estimated_writing_sec: number | null; similarity_score: string | null
   } | null
 }
@@ -503,7 +505,7 @@ export async function getQuotation(id: number): Promise<Quotation> {
     finalTotal: num(q.final_total) ?? 0, minDepositPct: num(q.min_deposit_pct) ?? 50,
     eta: q.eta, validUntil: q.valid_until, pdfUrl: q.pdf_url, note: q.note,
     sketch: q.sketch && {
-      version: q.sketch.version, imageUrls: q.sketch.image_urls?.length ? q.sketch.image_urls : q.sketch.preview_urls, approachNote: q.sketch.approach_note,
+      id: q.sketch.id ?? null, version: q.sketch.version, imageUrls: q.sketch.image_urls?.length ? q.sketch.image_urls : q.sketch.preview_urls, approachNote: q.sketch.approach_note,
       estimatedWritingSec: q.sketch.estimated_writing_sec, similarity: num(q.sketch.similarity_score),
     },
   }
@@ -513,7 +515,7 @@ export const requestChanges = async (id: number, note: string): Promise<void> =>
   await api(`/orders/${id}/quotation/request-changes`, { method: 'POST', body: { note } })
 }
 
-export const approveQuotation = async (id: number, body: { option?: number; deposit_pct?: number }): Promise<Order> =>
+export const approveQuotation = async (id: number, body: { option?: number; deposit_pct?: number; sketch_id?: number }): Promise<Order> =>
   toOrder(await api<RawOrder>(`/orders/${id}/quotation/approve`, { method: 'POST', body }))
 
 // ---------- deposit ----------

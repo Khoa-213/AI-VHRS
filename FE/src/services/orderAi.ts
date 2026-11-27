@@ -60,6 +60,12 @@ export interface AiProposal {
   status: ProposalStatus
   applicable: boolean
   blockedReason: BlockedReason | null
+  /** True: the screen does not apply it by itself; the customer chooses Apply or Skip (it changes what Undo cannot bring back). */
+  needsConfirmation: boolean
+  /** Why: field names (`quantity`, `customer_note`, ...) and `DISCARDS_MANUAL_EDITS`. */
+  confirmReasons: string[]
+  /** Applied, and the order has not changed since: it can be taken back whole. */
+  revertible: boolean
   changes: AiChange[]
   /** Estimated price AFTER the proposal is applied. */
   estimate: { priceMin: number; priceMax: number } | null
@@ -84,6 +90,7 @@ export interface ProposalPreview {
 interface RawProposal {
   id: number; message_id: number; parent_proposal_id: number | null; status: ProposalStatus
   applicable: boolean; blocked_reason: BlockedReason | null
+  needs_confirmation?: boolean; confirm_reasons?: string[]; revertible?: boolean
   changes: { field: string; before: unknown; after: unknown }[]
   estimate: { price_min: number; price_max: number } | null
   sketch_revision_id: number | null
@@ -93,6 +100,7 @@ interface RawProposal {
 const toProposal = (p: RawProposal): AiProposal => ({
   id: p.id, messageId: p.message_id, parentId: p.parent_proposal_id, status: p.status, applicable: p.applicable,
   blockedReason: p.blocked_reason, changes: p.changes ?? [], sketchRevisionId: p.sketch_revision_id, createdAt: p.created_at,
+  needsConfirmation: p.needs_confirmation ?? false, confirmReasons: p.confirm_reasons ?? [], revertible: p.revertible ?? false,
   preview: p.preview
     ? { revisionId: p.preview.revision_id, pages: p.preview.pages, url: p.preview.preview_url, sketchChanged: p.preview.sketch_changed, sketchOutdated: p.preview.sketch_outdated }
     : null,
@@ -102,6 +110,12 @@ const toProposal = (p: RawProposal): AiProposal => ({
 /** The customer applies a proposal: the order, its materials, its price and its sketch change on the server. */
 export async function applyProposal(orderId: number, id: number): Promise<AiProposal> {
   const r = await api<{ proposal: RawProposal }>(`/orders/${orderId}/assistant/proposals/${id}/apply`, { method: 'POST', body: {} })
+  return toProposal(r.proposal)
+}
+
+/** Takes an applied proposal back: the order is again what it was before applying, every field. Refused once the order changed. */
+export async function revertProposal(orderId: number, id: number): Promise<AiProposal> {
+  const r = await api<{ proposal: RawProposal }>(`/orders/${orderId}/assistant/proposals/${id}/revert`, { method: 'POST', body: {} })
   return toProposal(r.proposal)
 }
 

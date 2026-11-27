@@ -6,12 +6,13 @@ import {
 import { useLocale, useT } from '../../../i18n'
 import { ApiError } from '../../../services/api'
 import {
-  aiConversation, aiSessions, aiStatus, applyProposal, deleteAiSession, redoSketch, redrawSketch, selectionSize, sendAiMessage,
-  staleReason, undoSketch,
-  type AiEvent, type AiMessage, type AiSelection, type AiSession, type AiStatus, type EnsureOrder, type ReloadOrder, type SketchInfo,
+  aiConversation, aiSessions, aiStatus, applyProposal, deleteAiSession, redoSketch, redrawSketch, rejectProposal, revertProposal,
+  selectionSize, sendAiMessage, staleReason, undoSketch,
+  type AiEvent, type AiMessage, type AiProposal, type AiSelection, type AiSession, type AiStatus, type EnsureOrder, type ReloadOrder,
+  type SketchInfo,
 } from '../../../services/orderAi'
 import { errText, orderErrorKey } from '../../../services/orders'
-import ProposalCard from './ProposalCard'
+import ProposalCard, { type ProposalAction } from './ProposalCard'
 import RichText from './RichText'
 import StaffChat from './StaffChat'
 import ThinkingStage, { type StageFinish } from './ThinkingStage'
@@ -190,9 +191,10 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
         setMessages((m) => [...m, turn.user, turn.reply])
         setText('')
         onClearSelection()
-        // The answer goes straight onto the order: the sketch box shows it now, Undo goes back.
+        // An answer that only changes what Undo brings back goes straight onto the order (the sketch box shows it now). One that
+        // changes more, or draws over the customer's own edits, waits on its card for Apply or Skip.
         const p = turn.proposal
-        if (p && p.status === 'PENDING' && p.applicable) {
+        if (p && p.status === 'PENDING' && p.applicable && !p.needsConfirmation) {
           setProgress((x) => [...x, t('oa.applying')])
           try {
             await applyProposal(id, p.id)
@@ -234,6 +236,23 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
     setFreshId(answered)
     setPending(null)
     setProgress([])
+  }
+
+  /** Apply or skip a waiting answer, or take an applied one back; then the order and the sketch are loaded again. */
+  const decide = (action: ProposalAction, p: AiProposal) => {
+    if (orderId === null) return
+    void work(async () => {
+      try {
+        if (action === 'apply') await applyProposal(orderId, p.id)
+        else if (action === 'skip') await rejectProposal(orderId, p.id)
+        else await revertProposal(orderId, p.id)
+      } catch (e) {
+        const why = staleReason(e)
+        fail(e, why ? `oa.stale.${why}` : undefined)
+      }
+      await refresh(orderId)
+      await onChanged()
+    })
   }
 
   /** Undo, redo or draw again. Undo and redo also bring the form back to that drawing, so the order is reloaded. */
@@ -444,7 +463,7 @@ export default function OrderAssistant({ orderId, ensureOrder, sketch, selection
               <div className="oa-col oa-turn">
                 <div className="oa-by"><b>{t('oa.title')}</b><span className="oa-time">{clock(m.createdAt)}</span></div>
                 {body && <div className={`oa-msg oa-msg--bot${m.status === 'FAILED' ? ' failed' : ''}`}><RichText text={body} reveal={m.id === freshId} /></div>}
-                {m.proposal && <ProposalCard proposal={m.proposal} />}
+                {m.proposal && <ProposalCard proposal={m.proposal} busy={busy} onAction={canWrite ? decide : undefined} />}
               </div>
             </div>
           )
