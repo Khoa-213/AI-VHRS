@@ -23,6 +23,13 @@ M = f"{API}/manager"
 POINTS = [{"x": 0, "y": 0, "z": 10.0}, {"x": 100, "y": 0, "z": 10.1}, {"x": 0, "y": 100, "z": 10.2}]
 CHECKLIST = {"frame_mounted": True, "paper_clamped": True, "pen_installed": True, "force_zeroed": True}
 CAL = {"checklist": CHECKLIST, "force_zero_offset": 0.02, "probe_points": POINTS}
+# The same calibration with the measured motion block (TEST FIXTURES, not measurements of any robot): with it the server
+# re-validates the trajectory itself, which a REAL writing run needs (A03, tests/test_audit_crosscheck.py).
+CAL_MOTION = {**CAL, "frame_transform": {
+    "schema": "vhrs-motion/1",
+    "motion": {"a_lat_mm_s2": 2000.0, "a_tan_mm_s2": 1000.0, "travel_speed_mm_s": 100.0, "approach_speed_mm_s": 10.0,
+               "pen_up_clearance_mm": 5.0, "spring_k_n_per_mm": 0.4, "max_spring_travel_mm": 6.0},
+    "workspace": {"box_min_mm": [-100, -100, -50], "box_max_mm": [600, 600, 200]}}}
 SUMMARY = {"f_mean": 0.61, "f_max": 0.98, "rms_err_pct": 4.5, "in_band_pct": 97.2, "samples": 5000}
 
 
@@ -42,13 +49,13 @@ def _post(client, tech, jid, path, body=None, status=None):
     return r
 
 
-def _ready(client, cust, staff, mgr, wcat, robot, tech, **kw):
-    """Downloaded, preparing, calibrated and simulated (passed): one call from START."""
+def _ready(client, cust, staff, mgr, wcat, robot, tech, cal=None, **kw):
+    """Downloaded, preparing, calibrated and simulated (passed): one call from START. `cal`: another calibration than CAL."""
     oid, jid = _job(client, cust, staff, mgr, wcat, robot, tech, **kw)
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200
     issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
-    _post(client, tech, jid, "calibration", CAL, status=201)
+    _post(client, tech, jid, "calibration", cal or CAL, status=201)
     _post(client, tech, jid, "simulation", {"passed": True}, status=200)
     return oid, jid
 
@@ -63,8 +70,11 @@ def _status(jid):
     return _sql("select status::text from production_jobs where id=:j", j=jid)
 
 
-def _robot_wrote(client, tech, jid, mode="SIM"):
-    """The robot's side of "written" (D06): a run of this job that ended DONE. `finish` is refused without one."""
+def _robot_wrote(client, tech, jid, mode="SIM", copies=1):
+    """The robot's side of "written" (D06): a run of this job that ended DONE, one for each copy (A02). `finish` is refused
+    with fewer than the order's quantity."""
+    if copies > 1:
+        return [_robot_wrote(client, tech, jid, mode) for _ in range(copies)][-1]
     key = "run-" + uuid.uuid4().hex[:10]
     r = client.post(f"{T}/jobs/{jid}/runs", headers=tech[0], json={"run_id": key, "mode": mode, "dry_run": False, "total_strokes": 10})
     assert r.status_code == 201, r.text
@@ -274,6 +284,8 @@ def test_job_lifecycle_from_download_to_written(client, cust, staff, mgr, wcat, 
 
     assert _err(_post(client, tech, jid, "finish", status=409)) == "RUN_EVIDENCE_REQUIRED"        # D06: no robot run ended DONE yet
     _robot_wrote(client, tech, jid)
+    assert _err(_post(client, tech, jid, "finish", status=409)) == "COPIES_MISSING"               # A02: 3 copies ordered, 1 written
+    _robot_wrote(client, tech, jid, copies=2)
     r = _post(client, tech, jid, "finish", status=200)
     assert r.json()["status"] == "WRITTEN" and float(r.json()["progress_pct"]) == 100.0 and r.json()["finished_at"]
     assert _status(jid) == "WRITTEN" and _prod(oid) == "WRITTEN"
@@ -335,7 +347,7 @@ def test_finish_is_idempotent_under_concurrency_and_never_blocked_by_stale_stock
     # 3 sheets spoiled at the robot: 3 more than were taken; the shelf holds only 2 of them now
     _sql("update paper_types set stock_qty=2 where id=:i returning 1", i=wcat["paper"])
     pen0 = _sql("select stock_qty from pen_types where id=:i", i=wcat["gel"])
-    _robot_wrote(client, tech, jid)
+    _robot_wrote(client, tech, jid, copies=3)
 
     def finish(_):
         with TestClient(app) as c:

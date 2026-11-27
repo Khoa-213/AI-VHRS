@@ -380,7 +380,7 @@ Mã xác nhận: <span class="mono">${esc(String(l.authorization_token).slice(0,
         ${running ? '<p class="hint">Robot đang chạy: dùng thanh điều khiển ở cuối màn hình.</p>' : ''}`;
     }
     case 'finish':
-      return `<p class="hint">Ghi nhận viết xong khi robot đã hoàn tất tờ giấy.</p><div class="row">${btn('finish', 'Viết xong', { tone: 'go', disabled: d.status !== 'WRITING' })}</div>`;
+      return `<p class="hint">Ghi nhận viết xong khi robot đã hoàn tất đủ số bản của đơn.</p>${copiesNote(d)}${orphanNote(d)}<div class="row">${btn('finish', 'Viết xong', { tone: 'go', disabled: d.status !== 'WRITING' || copiesLeft(d) > 0 })}</div>`;
     case 'photos': return photosBody(d);
     default: return '';
   }
@@ -431,7 +431,7 @@ function toolsBody(d) {
 
 function signature(d) {
   const a = S.agent || {};
-  return JSON.stringify([d && [d.id, d.status, d.robot_id, d.calibration && d.calibration.id, d.calibration && d.calibration.is_valid, d.simulation_passed, d.downloaded_at, d.can_start],
+  return JSON.stringify([d && [d.id, d.status, d.robot_id, d.calibration && d.calibration.id, d.calibration && d.calibration.is_valid, d.simulation_passed, d.downloaded_at, d.can_start, d.copies_written, d.open_run && [d.open_run.run_id, d.open_run.orphan]],
     S.open, S.busy, S.f.calTab, S.f.waive, S.f.newsheet, S.f.mode, Object.keys(S.loaded), S.pre[S.sel], S.pkg[S.sel], S.photos[S.sel], S.quality[S.sel], S.calFile && S.calFile.name, S.calFileErr, S.log,
     a.busy, a.last && [a.last.job_id, a.last.dry_run, a.last.result && a.last.result.state], a.real_enabled && [a.real_enabled.job_id, a.real_enabled.expires_at], (a.modes || []).join(),
     S.robots && S.robots.robots.map((r) => [r.robot_id, r.connection_state, r.robot_status]), S.detailErr]);
@@ -456,7 +456,7 @@ function renderDetail(force = false) {
   const dead = ['CANCELLED', 'FAILED', 'REWRITE_REQUIRED'].includes(d.status);
   box.innerHTML = `
     <div class="row" style="justify-content:space-between"><div class="row"><h2 style="margin:0;font-size:22px">${esc(d.order_code || '#' + d.order_id)}</h2>${pill(JOB_STATUS[d.status] || d.status, jobTone(d.status))}</div>
-      <span class="hint">Job #${d.id}${d.is_rewrite ? ' · viết lại' : ''}</span></div>
+      <span class="hint">Job #${d.id}${d.is_rewrite ? ' · viết lại' : ''}${(d.quantity || 1) > 1 ? ` · bản ${Math.min(d.copies_written || 0, d.quantity)}/${d.quantity}` : ''}</span></div>
     <div class="facts">
       <div class="fact"><span>Robot</span><b>${esc(robotLabel(d.robot_id))}</b></div>
       <div class="fact"><span>Bắt đầu theo lịch</span><b>${esc(fmt(d.slot_start))}</b></div>
@@ -477,6 +477,24 @@ function renderDetail(force = false) {
     }).join('')}</ol>
     ${toolsBody(d)}`;
   if (S.open === 'photos' && !S.photos[d.id] && AFTER_FINISH.includes(d.status)) loadPhotos(d.id);
+}
+// One robot run writes one copy. The server counts the runs that ended DONE and refuses "Viết xong" below the order's quantity.
+// A run the server still holds open although this workstation is not running anything (its "run closed" message was lost).
+// It blocks the next run (ROBOT_BUSY) and "Viết xong" (RUN_OPEN) until someone closes it, with a reason.
+function orphanNote(d) {
+  const r = d.open_run;
+  if (!r) return '';
+  if (!r.orphan || (S.agent && S.agent.busy)) return `<p class="hint">Robot đang có một lần chạy mở trên máy chủ (${esc(r.run_id)}).</p>`;
+  return `<p class="err">Máy chủ còn giữ lần chạy ${esc(r.run_id)} đang mở, nhưng máy trạm không chạy gì (mất kết nối lúc kết thúc). Kiểm tra tờ giấy và robot, rồi đóng lần chạy này để làm tiếp.</p>
+    <textarea data-f="orphanwhy" placeholder="Lý do (ít nhất 10 ký tự), ví dụ: robot đã dừng, mất mạng lúc viết xong" aria-label="Lý do đóng lần chạy" style="margin-top:6px">${esc(val('orphanwhy'))}</textarea>
+    <div class="row">${btn('closeOrphan', 'Đóng lần chạy treo')}</div>`;
+}
+function copiesLeft(d) { return Math.max(0, (d.quantity || 1) - (d.copies_written || 0)); }
+function copiesNote(d) {
+  const n = d.quantity || 1, k = d.copies_written || 0;
+  if (n <= 1 && k <= 1) return '';
+  const next = k < n && k > 0 ? ' Để viết bản tiếp theo: đặt tờ giấy mới, mở "Đặt lại tiến độ" ở bước chạy robot và xác nhận giấy mới, rồi chạy lại.' : '';
+  return `<p class="${k >= n ? 'okt' : 'err'}">Robot đã viết xong ${k}/${n} bản.${next}</p>`;
 }
 function updateMeter() { const m = $('meter'); if (m && S.detail) m.style.width = Math.max(0, Math.min(100, S.detail.progress_pct || 0)) + '%'; }
 
@@ -632,6 +650,13 @@ const ACTIONS = {
     S.f.newsheet = false;
     toast(r.reset ? `Đã đặt lại tiến độ (sao lưu ${r.backup}).` : 'Job này chưa viết gì: không cần đặt lại.');
   }, { confirm: 'Lần chạy sau viết lại từ nét đầu. Tờ giấy là tờ MỚI, trắng?' }),
+  closeOrphan: () => {
+    const reason = (S.f.orphanwhy || '').trim(), run = S.detail && S.detail.open_run;
+    if (!run) return toast('Không còn lần chạy nào đang mở.', true);
+    if (reason.length < 10) return toast('Hãy ghi lý do (ít nhất 10 ký tự).', true);
+    act(async () => { await tech(`runs/${encodeURIComponent(run.run_id)}/close-orphan`, { method: 'POST', body: { reason } }); S.f.orphanwhy = ''; },
+      { confirm: 'Đóng lần chạy này với kết quả "không rõ"? Chỉ làm khi robot đã đứng yên.', ok: 'Đã đóng lần chạy.' });
+  },
   incident: () => {
     const description = (S.f.idesc || '').trim();
     if (!description) return toast('Hãy mô tả sự cố.', true);

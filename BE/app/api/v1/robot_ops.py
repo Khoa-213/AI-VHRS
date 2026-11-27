@@ -10,7 +10,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.robot_schemas import (AlertOut, AlertRaiseIn, AlertResolveIn, CatalogOut, CatalogPatch, ComplianceOut, HealthOut,
-                                   HeartbeatIn, MyRobotsOut, RobotStatusOut, RunCloseIn, RunOpenIn, RunOut)
+                                   HeartbeatIn, MyRobotsOut, RobotStatusOut, RunCloseIn, RunCloseOrphanIn, RunOpenIn,
+                                   RunOut)
 from app.api.schemas import ErrorOut, Page
 from app.models.account import Account, RoleCode
 from app.models.ops import RobotAlert
@@ -63,6 +64,31 @@ def open_run(job_id: int, body: RunOpenIn, svc: TechSvc) -> RunOut:
                          summary="Robot Agent đóng lần chạy với kết quả (DONE/STOPPED/FAULT/UNKNOWN/DRY_RUN_DONE/REFUSED); gọi lại cùng kết quả là idempotent")
 def close_run(run_id: str, body: RunCloseIn, svc: TechSvc) -> RunOut:
     return RunOut.model_validate(svc.close_run(run_id, **body.model_dump()))
+
+
+ORPHAN = {409: {"model": ErrorOut, "description": "RUN_ALREADY_CLOSED / RUN_STILL_ACTIVE"},
+          422: {"model": ErrorOut, "description": "REASON_REQUIRED"}}
+ORPHAN_DOC = ("Khi máy trạm mất kết nối đúng lúc robot kết thúc, lần chạy vẫn mở trên máy chủ: robot bị báo bận "
+                           "(`ROBOT_BUSY`) và job không ghi nhận viết xong được (`RUN_OPEN`). Endpoint này đóng lần chạy đó "
+                           "với kết quả UNKNOWN, kèm lý do, có nhật ký. Bị từ chối (`409 RUN_STILL_ACTIVE`) khi máy trạm còn "
+                           "báo robot đang chạy. Nếu sau đó máy trạm gửi được kết quả thật, kết quả thật thay cho UNKNOWN.")
+
+
+def _close_orphan(session, actor: Account, request: Request, run_id: str, reason: str) -> RunOut:
+    from app.services.robot_link import RobotLinkService
+    return RunOut.model_validate(RobotLinkService(session, actor, client_ip(request)).close_orphan_run(run_id, reason))
+
+
+@technician_router.post("/runs/{run_id}/close-orphan", response_model=RunOut, responses=ORPHAN, description=ORPHAN_DOC,
+                        summary="Kỹ thuật viên đóng lần chạy mà máy trạm không đóng được (kết quả UNKNOWN, bắt buộc lý do)")
+def close_orphan_run(run_id: str, body: RunCloseOrphanIn, session: SessionDep, tech: TechDep, request: Request) -> RunOut:
+    return _close_orphan(session, tech, request, run_id, body.reason)
+
+
+@manager_router.post("/runs/{run_id}/close-orphan", response_model=RunOut, responses=ORPHAN, description=ORPHAN_DOC,
+                     summary="Quản lý đóng lần chạy mà máy trạm không đóng được (kết quả UNKNOWN, bắt buộc lý do)")
+def close_orphan_run_manager(run_id: str, body: RunCloseOrphanIn, session: SessionDep, manager: ManagerDep, request: Request) -> RunOut:
+    return _close_orphan(session, manager, request, run_id, body.reason)
 
 
 @technician_router.post("/alerts", response_model=AlertOut, status_code=status.HTTP_201_CREATED,

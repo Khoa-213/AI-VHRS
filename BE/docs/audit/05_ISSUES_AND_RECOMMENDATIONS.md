@@ -14,13 +14,13 @@
 | 1. Customer & Order (CO) | 0 | 2 | 3 | 1 |
 | 2. Staff & Design (SD) | 0 | 2 | 6 | 1 |
 | 3. Pricing & Payment (PP) | 1 | 0 | 3 | 2 |
-| 4. Technical Staff & Production (TP) | 2 | 5 | 3 | 0 |
+| 4. Technical Staff & Production (TP) | 2 | 8 | 3 | 0 |
 | 5. AI & Handwriting (AI) | 0 | 7 | 4 | 1 |
 | 6. Robotics & IoT (RB) | 2 | 5 | 3 | 1 |
 | 7. Database & Architecture (AR) | 0 | 4 | 3 | 1 |
 | 8. Security & Reliability (SR) | 0 | 2 | 5 | 1 |
 | 9. Demo Readiness (DM) | 1 | 3 | 1 | 0 |
-| **Tổng** | **6** | **30** | **31** | **8** |
+| **Tổng** | **6** | **33** | **31** | **8** |
 
 ## 1. Customer & Order
 
@@ -52,7 +52,7 @@
 | ID | Loại | Vấn đề hiện tại | Hậu quả thực tế | Đề xuất | Ưu tiên | Công |
 |---|---|---|---|---|---|---|
 | PP-01 | Bảo mật | Chế độ MOCK: khách tự gọi `mock-checkout SUCCESS`. Chế độ sandbox: trả bằng thẻ test. payOS thật chạy song song | Đơn được xác nhận, robot viết, hàng được giao mà xưởng không nhận tiền | Cờ cho phép thanh toán thử, mặc định tắt; khi tắt thì từ chối cổng không phải LIVE và ẩn khỏi danh sách | **P0** khi mở cho khách thật, P1 nếu chỉ demo | S |
-| PP-02 | Bug | payOS: tiền về link đã đóng hoặc đã thành công không được gắn cờ hoàn | Tiền thật về tài khoản xưởng nhưng không vào danh sách cần hoàn | Trong `_settle` xét trạng thái trước; cộng dồn số nhận | P2 | S |
+| PP-02 | Bug | payOS: tiền về link đã đóng hoặc đã thành công không được gắn cờ hoàn; mọi cổng: báo `FAILED` rồi báo `SUCCESS` cho cùng giao dịch thì bị bỏ qua (bổ sung 2026-11-28, A07) | Tiền thật về tài khoản xưởng nhưng không vào danh sách cần hoàn | Trong `_settle` xét trạng thái trước; cộng dồn số nhận | P2 | S |
 | PP-03 | Thiếu luồng | Một Staff tự chuyển khoản và tự xác nhận hoàn tiền; tạo sai không huỷ được; Manager chỉ đọc | Không có đối soát; hoàn tiền của Staff nghỉ việc treo | Cho Manager xác nhận; thêm huỷ yêu cầu hoàn đang chờ; mã tham chiếu duy nhất | P2 | M |
 | PP-04 | Cải tiến | Độ khó OT-1 (quyết định giá) dựa trên tỉ số hai số nhiễu, ngưỡng nằm giữa phân bố; thời gian viết dùng ba hằng số giả định | Gợi ý giá và lịch robot gần như ngẫu nhiên với OT-1 | Hiệu chỉnh trên đơn thật và log robot; hoặc để Staff chọn độ khó | P2 | M |
 | PP-05 | Nợ KT | Báo giá `APPROVED` không đổi khi đơn bị huỷ; đọc báo giá không khoá có thể ghi hết hạn đè lên lượt duyệt | Báo cáo đếm thừa; khe hở vài mili giây quanh hạn | Khoá khi hết hạn; đổi `APPROVED` sang `CANCELLED` khi huỷ đơn | P3 | XS |
@@ -68,10 +68,13 @@
 | TP-04 | Bảo mật | Kết quả mô phỏng do máy trạm báo và mặc định được tin; hộp làm việc và giới hạn chuyển động cũng do máy trạm gửi | Một request `{"passed": true}` qua được cổng an toàn | Bật `MOTION_VALIDATION_REQUIRED` ở production; hộp làm việc và giới hạn lưu theo robot do Manager duyệt | P1 | M |
 | TP-05 | Xung đột | "Viết xong" chỉ cần job đang `WRITING` | Trừ kho và chuyển sang chụp ảnh dù robot chưa viết | Yêu cầu một lần chạy thật kết thúc `DONE`; Manager ghi đè có nhật ký | P1 | S |
 | TP-06 | Thiếu luồng | Manager không tiếp quản được job đã bắt đầu; khoá kỹ thuật viên không kiểm job; khoá agent của người bị khoá vẫn dùng được | Đơn kẹt vô hạn khi kỹ thuật viên vắng; người đã bị khoá vẫn điều khiển được qua máy trạm | Endpoint Manager "đánh hỏng / chuyển giao" kèm lý do; kiểm tài khoản còn hoạt động khi xác thực agent; thu hồi khoá phiên khi khoá | P1 | M |
-| TP-07 | Cần kiểm chứng | Agent mất quyền đóng lần chạy khi job rời trạng thái đang chạy | Lần chạy mở mãi, chặn job sau | Cho khoá agent đóng lần chạy của chính robot mình bất kể trạng thái job | P1 | S |
+| TP-07 | Cần kiểm chứng | Agent mất quyền đóng lần chạy khi job rời trạng thái đang chạy; agent không gửi lại kết quả lần chạy khi lỗi mạng và không ai đóng được lần chạy mồ côi (bổ sung 2026-11-28, A06) | Lần chạy mở mãi, chặn job sau | Cho khoá agent đóng lần chạy của chính robot mình bất kể trạng thái job | P1 | S |
 | TP-08 | Nợ KT | `BUSY` không được gán; cùng robot để được hai job `WRITING`; phát hiện agent mất kết nối chỉ khi có người mở màn hình; lệnh `DELIVERED` không có hạn | Mất agent lúc đang viết mà không ai mở màn hình thì không có cảnh báo | Tác vụ nền quét; từ chối chuẩn bị khi robot đã có job đang chạy; đặt `BUSY` hoặc bỏ hẳn | P2 | S |
 | TP-09 | Bug | Hệ trục giấy không kiểm thứ tự điểm dò và không so với khổ giấy | Đổi nhầm P1 / P2 thì chữ bị soi gương mà hệ thống vẫn chấp nhận | Từ chối khi tích có hướng sai dấu; so đáy với khổ giấy | P2 | XS |
-| TP-10 | Nợ KT | Kiểm chuyển động chỉ xét trần tốc độ, không xét gia tốc / jerk; tồn kho không trừ giấy hỏng | "Kiểm độc lập" thực chất kiểm kế hoạch do cùng code sinh; kho lệch thực tế | Thêm kiểm gia tốc, jerk; báo sự cố nhận số tờ hỏng | P2 | S |
+| TP-10 | Nợ KT | Kiểm chuyển động chỉ xét trần tốc độ, không xét gia tốc / jerk; tồn kho không trừ giấy hỏng (phần tồn kho đã được `main` giải quyết bằng sổ kho, migration 0033, 2026-11-27) | "Kiểm độc lập" thực chất kiểm kế hoạch do cùng code sinh; kho lệch thực tế | Thêm kiểm gia tốc, jerk; báo sự cố nhận số tờ hỏng | P2 | S |
+| TP-11 | Bug | Đơn nhiều bản: agent chỉ viết một bản mỗi lần chạy và không đọc `quantity`; "viết xong" không đếm số bản (phát hiện khi đối chiếu audit độc lập 2026-11-28, mục A02; audit này đã bỏ sót) | Đơn 3 bản chỉ cần 1 lần chạy là thành `WRITTEN`, kho trừ 3 tờ, khách có thể nhận thiếu bản | "Viết xong" đòi số lần chạy `DONE` đủ nét ≥ số bản; máy trạm hiện bản k/N | P1 | S |
+| TP-12 | Bug | Lần chạy đóng `DONE` với số nét ít hơn kế hoạch vẫn được nhận (A01) | Lần chạy dở vẫn được tính là đã viết | `DONE` phải đủ số nét | P1 | XS |
+| TP-13 | Bảo mật | Lệnh đã giao cho agent mà không có trả lời thì `DELIVERED` mãi, không giao lại; cùng khoá idempotency với tham số khác trả lại lệnh cũ (A05; tách từ TP-08 và nâng mức vì lệnh STOP tự động của TP-01 đi qua kênh này) | Lệnh STOP thất lạc trông giống hệt lệnh đã tới | Quá hạn thành `NO_ANSWER`; STOP / PAUSE giao lại; không bao giờ giao lại lệnh chuyển động | P1 | S |
 
 ## 5. AI & Handwriting Intelligence
 
@@ -138,7 +141,7 @@
 |---|---|---|---|---|---|---|
 | DM-01 | Cần kiểm chứng | Không có bằng chứng lưu được về robot viết (log, video, ảnh) | Hội đồng hỏi là không có gì đưa ra | Một lần viết trọn trang có video liên tục + log; ảnh bản viết cạnh phác thảo có thước | **P0** | L |
 | DM-02 | Xung đột | Kênh kỹ thuật viên: tài liệu ghi Flutter, quyết định mới là màn máy trạm; chuỗi BE + agent + robot chưa chạy trọn | Bước robot viết có thể gãy khi demo | Chốt một kênh, tập trọn luồng ≥ 2 lần | P1 | M |
-| DM-03 | Nợ KT | Tài liệu mâu thuẫn: robot đã chạy hay chưa, loadcell, "AI không gọi dịch vụ ngoài", `HANDOFF.md` | Hội đồng đọc thấy mâu thuẫn | Sửa trước khi nộp | P1 | S |
+| DM-03 | Nợ KT | Tài liệu mâu thuẫn (thêm 2026-11-28, A15: docstring `technician.py` và tag Technician trong `main.py` còn ghi "chưa kết nối robot"): robot đã chạy hay chưa, loadcell, "AI không gọi dịch vụ ngoài", `HANDOFF.md` | Hội đồng đọc thấy mâu thuẫn | Sửa trước khi nộp | P1 | S |
 | DM-04 | Cần kiểm chứng | NFR-02..05 và câu hỏi nghiên cứu hứa số đo; chưa có số đo trên robot | Không trả lời được "sai lệch bao nhiêu mm" | Đo trên bản viết thật bằng Service G + thước; hoặc nêu là giới hạn | P1 | L |
 | DM-05 | Cải tiến | Giao hàng và thanh toán khi demo là MOCK | Dễ bị hiểu là thật | Nói rõ trên slide; nhãn `mode=MOCK` đã có sẵn trên giao diện | P2 | XS |
 
@@ -181,6 +184,9 @@
 | TP-08 | Không có phép gán `RobotStatus.BUSY` trong `app/`; `api/v1/robot_ops.py:80,162`; `services/scheduling.py:245` |
 | TP-09 | `services/motion/frame.py:103-105` |
 | TP-10 | `services/motion/validate.py` `_check_plan`; `services/motion/plan.py:183-190`; `domain/job_rules.py:148-154` |
+| TP-11 ✓ | `robot_agent/vhrs_agent` không có `quantity`; `server.py` `start` chạy `ctx.pages` một lần; `services/technician.py` `finish`. Test phân xử trên DB cục bộ: đơn 3 bản, 1 lần chạy, `WRITTEN`, kho 100 → 97 |
+| TP-12 ✓ | `services/robot_ops.py` `close_run` (chỉ từ chối `completed > total`). Test phân xử: `DONE` 3/10 trả 200 |
+| TP-13 ✓ | `services/robot_link.py` `sync` (đặt `DELIVERED` trong lúc trả lời), `_expire` (chỉ `PENDING`), `create_command` (so `kind`, `job_id`). Test phân xử: 10 phút sau vẫn `DELIVERED` |
 | AI-01 ✓ | `FE/src/pages/create-order/ai/OrderAssistant.tsx:193-203`; `services/ai/assistant.py:82-85,106`; `services/ai/proposals.py:280-281`; `services/sketch_work.py:80-92` |
 | AI-02 | `services/ai/assistant.py:315,321,451`; `core/config.py:17-18` |
 | AI-03 | `services/ai/order_tools.py:464-470`; `services/sketch_work.py:303-347`; `services/ai/proposals.py:91-119` |

@@ -6,6 +6,8 @@ Phạm vi: nhánh `BE` tại commit `691f361`. Backend `BE/` (34.341 dòng, 33 r
 
 > **Cập nhật 2026-11-28.** Nội dung dưới đây là kết quả audit trước khi sửa. Sau đó chủ dự án đã duyệt và phần lớn mục P0 / P1 về phần mềm đã được sửa (BE 1.149 test đạt trên Postgres cục bộ, agent 197). Xem trạng thái từng vấn đề và các thay đổi hành vi ở `09_APPROVAL_AND_IMPLEMENTATION_PLAN.md` mục 6, điểm cập nhật ở `07_ENTERPRISE_READINESS_ASSESSMENT.md` mục 4 (6,3 → 6,8; ba kết luận sẵn sàng không đổi). Chưa commit, chưa chạy trên Supabase, chưa chạy robot thật.
 
+> **Cập nhật 2026-11-28 (đối chiếu audit độc lập).** Một audit thứ hai trên cùng source đã được đối chiếu từng mục. Kết quả: audit này bỏ sót một lỗi (đơn nhiều bản chỉ cần một lần robot chạy, TP-11), xếp thấp một lỗi (lệnh đã giao không có hạn, TP-13) và ghi "đã sửa" hơi sớm cho một mục (lần chạy mồ côi, TP-07). Cả ba đã sửa. Mốc `691f361` của audit cũ hơn `main` ba commit; các bản sửa đã gộp với `main` trên nhánh cục bộ `audit-fixes` (BE 1.176 test đạt, agent 209, chưa push, chưa chạy Supabase, chưa chạy robot thật). Chi tiết ở `09_APPROVAL_AND_IMPLEMENTATION_PLAN.md` mục 7.
+
 ## 1. Kết luận
 
 AI-VHRS là một hệ thống thật, không phải khung code: luồng đơn hàng từ tạo đơn tới giao hàng đã có đủ code ở BE và đã nối vào web, có 1.094 test tự động và ràng buộc ở mức database. Phần phần mềm đủ vững để bảo vệ đồ án.
@@ -64,7 +66,7 @@ Chưa kiểm chứng được: robot thật, cổng thanh toán thật, GHN th�
 | AI-08, AI-09 | "Độ giống 98%" là nét so với mực hệ thống tự lọc; OT-2 không học gì | Nói sai trước hội đồng sẽ bị bắt lỗi |
 | AR-01 | Bộ test chạy thẳng trên Supabase thật và xoá tham số `order_types_enabled` trong lúc chạy | Khách thật đặt được OT-2 trong khoảng đó; rủi ro mất dữ liệu thật |
 
-Bảng đầy đủ (74 mục: 6 P0, 29 P1, 31 P2, 8 P3) ở `05_ISSUES_AND_RECOMMENDATIONS.md`.
+Bảng đầy đủ (78 mục sau đợt đối chiếu 2026-11-28: 6 P0, 33 P1, 31 P2, 8 P3) ở `05_ISSUES_AND_RECOMMENDATIONS.md`.
 
 ## 5. Việc bắt buộc trước buổi bảo vệ
 

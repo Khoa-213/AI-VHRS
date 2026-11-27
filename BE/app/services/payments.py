@@ -224,12 +224,23 @@ class PaymentService:
                          entity_id=payment.id, new={"order_code": code, "amount": amount})
             self.session.commit()                      # keep the security trail although the request itself fails
             raise AppError(422, "PAYMENT_MISMATCH", "Mã đơn hoặc số tiền không khớp giao dịch.")
-        if payment.status in (PaymentStatus.SUCCESS, PaymentStatus.FAILED):
+        if payment.status == PaymentStatus.SUCCESS or (payment.status == PaymentStatus.FAILED and not ok):
             return {"result": "ALREADY_PROCESSED", "status": payment.status.value}      # idempotent (NFR-06)
         if payment.status == PaymentStatus.CANCELLED:
             if ok:                                      # the customer paid an intent we had already closed: real money, keep a record
                 self._flag_orphan(order, payment, group, "cancelled payment paid")
             return {"result": "IGNORED", "status": payment.status.value}
+        if payment.status == PaymentStatus.FAILED:
+            # A07 (cross-check 2026-11-28, owner's choice): the gateway reported FAILED and now reports the money. Before, this
+            # was answered ALREADY_PROCESSED and the money was recorded nowhere. If the order still waits for exactly this
+            # payment, it is the payment after all and goes on below as a success. Otherwise the customer has moved on (a newer
+            # attempt, another amount, the order no longer waiting): the money is flagged for the refund flow.
+            if not self._still_awaited(order, payment, group):
+                self._flag_orphan(order, payment, group, "paid after a failed report")
+                return {"result": "PROCESSED", "status": payment.status.value, "order_status": order.order_status.value,
+                        "needs_refund": True}
+            audit.record(self.session, actor_id=None, action="PAYMENT_RECOVERED", entity_type="payment", entity_id=payment.id,
+                         new={"order_id": order.id, "was": "FAILED", "types": [p.type.value for p in group]})
 
         if not ok:
             for row in group:
@@ -280,6 +291,18 @@ class PaymentService:
         log.warning("Deposit received for order %s in status %s: refund needed", order.code, order.order_status.value)
         return {"result": "PROCESSED", "status": "SUCCESS", "order_status": order.order_status.value,
                 "needs_refund": True}
+
+    def _still_awaited(self, order: Order, payment: Payment, group: list[Payment]) -> bool:
+        """Is the order still waiting for exactly this (failed) payment? Its step, its amount, and no newer attempt."""
+        family = ((PaymentType.DEPOSIT,) if payment.type == PaymentType.DEPOSIT else (PaymentType.FINAL, PaymentType.SHIPPING))
+        if payment.type == PaymentType.DEPOSIT:
+            waiting = order.order_status == OrderStatus.AWAITING_DEPOSIT and payment.amount == order.deposit_amount
+        elif payment.type in (PaymentType.FINAL, PaymentType.SHIPPING):
+            waiting = order.order_status == OrderStatus.AWAITING_FINAL_PAYMENT
+        else:
+            waiting = False
+        newest = max(p.id for p in group)
+        return waiting and not any(p.type in family and p.id > newest for p in self.payments.for_order(order.id))
 
     def _flag_orphan(self, order: Order, payment: Payment, group: list[Payment], why: str,
                      received: int | None = None) -> None:

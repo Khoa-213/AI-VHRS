@@ -42,7 +42,7 @@ from app.services.motion.validate import Workspace, validate
 from vhrs_agent import __version__
 from vhrs_agent.bridge import BackendBridge, BridgeError
 from vhrs_agent.gripper import ForceLimits, GripperPort, SimGripper
-from vhrs_agent.ops import OpsReporter
+from vhrs_agent.ops import CloseOutbox, OpsReporter
 from vhrs_agent.port import Control, Mode, RobotError, RobotPort, StopRequested
 from vhrs_agent.runner import authorization_token, JobRunner, plan_digest, RunRefused, StationLimits, Watchdogs
 from vhrs_agent.sim import MockRobot, SimRobot
@@ -195,6 +195,16 @@ class AgentService:
         self.paper_event = threading.Event()
         self.hub.paper_confirmed = self.paper_event                              # POST /api/paper-changed releases the runner's wait
         cfg.run_dir.mkdir(parents=True, exist_ok=True)
+        # A06: run results the backend has not received yet, kept across restarts. A run the previous process left open is
+        # reported as UNKNOWN the first time the link works.
+        self.closes = CloseOutbox(cfg.run_dir / "pending_closes.json")
+        self.closes.recover()
+
+    def flush_closes(self, token: "str | Callable[[], str]") -> int:
+        """Send the run results that are still waiting. Called by the backend link after every successful sync."""
+        if not self.closes.pending():
+            return 0
+        return self.closes.flush(self.bridge(token).close_run)
 
     # ---- backend
     def bridge(self, token: "str | Callable[[], str]") -> BackendBridge:
@@ -437,6 +447,8 @@ class AgentService:
             self.real_gate(ctx.job_id)
             if authorization != authorization_token(ctx.job_id, ctx.summary["plan_digest"]):
                 raise ApiError(409, "AUTHORIZATION_REQUIRED", "Chưa có xác nhận của người vận hành cho job và kế hoạch này.")
+            if corner is not None:
+                self._check_pen_mount(ctx, corner)
         with self._lock:
             if self._busy:
                 raise ApiError(409, "AGENT_BUSY", "Agent đang chạy một job khác.", self.current)
@@ -466,6 +478,26 @@ class AgentService:
                 except Exception:                                        # noqa: BLE001
                     pass
             self._busy = False
+
+    def _check_pen_mount(self, ctx: "JobCtx", corner: str) -> None:
+        """The pen-mount move is the one REAL move outside a run that goes DOWN to the paper, to a height computed from the
+        hand-typed probe points. It does not pass the runner's preflight, so the same station locks are applied here
+        (cross-check 2026-11-28; the locks themselves: RB-02 and TP-09 of the 2026-11 audit)."""
+        station = self.station()
+        if not (station and station.configured()):
+            raise ApiError(409, "STATION_LIMITS_UNCONFIGURED", "Chưa đặt giới hạn cứng của máy trạm trong agent.json (station_limits: "
+                           "z_floor_mm, max_press_mm). Không hạ đầu bút xuống mặt giấy khi độ cao chỉ dựa vào điểm dò nhập tay.")
+        if len(ctx.probes) < 4:
+            raise ApiError(409, "PROBE_CHECK_POINT_REQUIRED", "Hạ bút xuống mặt giấy bằng robot thật cần ít nhất 4 điểm dò: ba điểm "
+                           "luôn nằm trên một mặt phẳng nên không phát hiện được điểm nào đo hoặc nhập sai.", {"probes": len(ctx.probes)})
+        if build_frame(ctx.probes).mirrored:
+            raise ApiError(409, "PROBE_ORDER_MIRRORED", "P0, P1, P2 quay ngược chiều: góc giấy được chọn sẽ là góc khác trên bàn. Kiểm "
+                           "tra lại P1 (góc trên-phải) và P2 (góc dưới-trái) rồi hiệu chuẩn lại.")
+        z = float(self.corner_point(ctx, corner)[2])
+        if z < station.z_floor_mm:
+            raise ApiError(409, "BELOW_Z_FLOOR", f"Mặt giấy ở góc {corner} tính ra z = {z:.2f} mm, thấp hơn sàn của máy trạm "
+                           f"{station.z_floor_mm:g} mm (station_limits.z_floor_mm). Kiểm tra lại các điểm dò.",
+                           {"target_z_mm": round(z, 3), "z_floor_mm": station.z_floor_mm})
 
     def _pen_up_lift(self, ctx: "JobCtx") -> float:
         return float(ctx.cfg.pen_up_clearance_mm or 0.0) + self.ALIGN_EXTRA_CLEARANCE_MM
@@ -637,7 +669,7 @@ class AgentService:
                    "job_status": detail["status"], "pages": len(job["pages"]), "strokes": sum(len(p.strokes) for p in job["pages"]),
                    "package_hash": job["hash"], "plan_digest": digest, "pen": pen["name"],
                    "estimated_seconds": report.stats.get("estimated_seconds"), "validation": report.as_dict(),
-                   "authorization_token": authorization_token(job_id, digest)}
+                   "authorization_token": authorization_token(job_id, digest), "signed": job.get("signed") is not None}
         ctx = JobCtx(job_id, who["id"], detail["robot_id"], job["pages"], job["hash"], cal["probe_points"], cfg, ws, limits,
                      pen["name"], summary)
         self.jobs[job_id] = ctx
@@ -674,7 +706,7 @@ class AgentService:
         frame = build_frame(ctx.probes)
         gripper = self.make_gripper(mode, ctx, frame)
         br = self.bridge(self.provider(token))
-        ops = OpsReporter(br, robot_id=ctx.robot_id)
+        ops = OpsReporter(br, robot_id=ctx.robot_id, outbox=self.closes)
         runner = JobRunner(robot, gripper, run_dir=self.cfg.run_dir, limits=ctx.limits, bridge=br, ops=ops,
                            watchdogs=self.watchdogs(), wait_for_paper=self._wait_for_paper,
                            unsensed=bool(mode == "real" and gripper is None and self.cfg.unsensed_gripper), waive_dry_run=waive_dry_run,
@@ -699,6 +731,10 @@ class AgentService:
         if mode == "real":
             if "real" not in self.cfg.modes:
                 raise ApiError(403, "MODE_DISABLED", "Chế độ REAL không được bật trên agent này.")
+            if not dry_run and not ctx.summary.get("signed"):
+                # A08: `require_signed_packages` (off by default, for jobs older than the signing) must not decide this for REAL
+                raise ApiError(409, "PACKAGE_NOT_SIGNED", "Gói job không có chữ ký sản xuất. Robot thật chỉ viết gói đã ký; nhờ "
+                               "Quản lý xếp lịch lại job để phát hành gói ký.")
             waive = bool(self.real_gate(ctx.job_id).get("waive_dry_run")) and not dry_run
         else:
             waive = False

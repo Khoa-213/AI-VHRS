@@ -105,8 +105,10 @@ def job_detail(job_id: int, svc: Svc) -> JobOut:
 @router.post("/jobs/{job_id}/finish-override", response_model=JobOut,
              summary="D06 Quản lý ghi nhận job đã viết xong khi máy trạm không báo được lần chạy (bắt buộc lý do, có nhật ký)",
              description=("Bình thường kỹ thuật viên chỉ ghi nhận viết xong được khi job có một lần chạy robot kết thúc DONE "
-                          "(`409 RUN_EVIDENCE_REQUIRED`). Endpoint này bỏ qua điều kiện đó; mọi điều kiện khác giữ nguyên "
-                          "(job đang WRITING, không còn lần chạy mở). Ghi `JOB_FINISH_OVERRIDE` vào nhật ký dưới tên Quản lý."),
+                          "(`409 RUN_EVIDENCE_REQUIRED`), đủ một lần cho mỗi bản của đơn (`409 COPIES_MISSING`). Endpoint này bỏ qua "
+                          "hai điều kiện đó. Job vẫn phải đang WRITING. Một lần chạy còn mở mà không ai thực hiện (máy trạm mất "
+                          "kết nối hoặc đang rảnh) được đóng luôn với kết quả UNKNOWN; nếu máy trạm còn báo robot đang chạy thì "
+                          "vẫn `409 RUN_OPEN`. Ghi `JOB_FINISH_OVERRIDE` vào nhật ký dưới tên Quản lý."),
              responses={409: {"model": ErrorOut, "description": "JOB_STATE_CONFLICT / RUN_OPEN"},
                         422: {"model": ErrorOut, "description": "REASON_REQUIRED"}})
 def finish_override(job_id: int, body: FinishOverrideIn, svc: Svc, session: SessionDep, manager: ManagerDep,

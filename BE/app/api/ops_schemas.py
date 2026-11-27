@@ -729,6 +729,14 @@ class ProductionSnapshotBlock(BaseModel):
 JobPackageOut.model_rebuild()
 
 
+class OpenRunInfo(BaseModel):
+    run_id: str
+    mode: str
+    dry_run: bool
+    started_at: datetime
+    orphan: bool
+
+
 class TechJobDetail(JobOut):
     order_type: str = ""
     quantity: int = 1
@@ -739,6 +747,10 @@ class TechJobDetail(JobOut):
     approach_note: str | None = None
     calibration: CalibrationOut | None = None
     can_start: bool = Field(default=False, description="Downloaded, valid calibration and a passed simulation.")
+    open_run: OpenRunInfo | None = Field(default=None, description="The robot run of this job that is still open on the server; "
+                                         "`orphan` = nobody is executing it (agent offline or idle): it can be closed by hand.")
+    copies_written: int = Field(default=0, description="Robot runs of this job that ended DONE (one per copy). 'Viết xong' needs "
+                                "as many as `quantity`.")
     incidents: list[IncidentOut] = Field(default_factory=list)
 
 

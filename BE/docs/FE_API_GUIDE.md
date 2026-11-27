@@ -1363,6 +1363,30 @@ Mọi thay đổi dưới đây đã có test trên Postgres cục bộ; **chưa
 - Route không tồn tại / sai method: `{"error": {"code": "NOT_FOUND" | "METHOD_NOT_ALLOWED", ...}, "detail": "..."}`. Lỗi không lường trước: `500 {"error": {"code": "INTERNAL_ERROR", ...}}`, có header CORS.
 - Thiếu dòng `order_types_enabled` trong `system_settings` nay nghĩa là chỉ OT-1 và OT-3.
 
+## 7z-2. Thay đổi API sau đợt đối chiếu audit 2026-11-28 (không đổi DB; lý do ở `docs/audit/09_APPROVAL_AND_IMPLEMENTATION_PLAN.md` mục 7)
+
+Đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Trang máy trạm (`robot_agent/.../static`) đã dùng các trường và endpoint mới; web `FE/` và app desktop chưa.
+
+**Số bản của đơn**
+- `GET /technician/jobs/{id}`: thêm `copies_written` (số lần chạy robot của job kết thúc `DONE`, mỗi lần là một bản) và `open_run` (`null`, hoặc `{run_id, mode, dry_run, started_at, orphan}`: lần chạy máy chủ còn giữ mở; `orphan = true` nghĩa là không ai đang thực hiện nó).
+- `POST /technician/jobs/{id}/finish`: `409 COPIES_MISSING` với `details: {written, quantity}` khi `copies_written < quantity`. UI nên khoá nút "Viết xong" và hiện "đã viết k/N bản". `409 RUN_OPEN` giờ có `details: {open_run_id, orphan}`.
+- `PATCH /technician/runs/{run_id}` với `result: DONE` cần `completed_strokes == total_strokes`, không thì `422 RESULT_INVALID`. Lần chạy dừng giữa chừng dùng `STOPPED`, `FAULT` hoặc `UNKNOWN`.
+- `POST /manager/jobs/{id}/finish-override`: bỏ qua cả điều kiện số bản; tự đóng lần chạy mồ côi (`UNKNOWN`). Vẫn `409 RUN_OPEN` khi máy trạm còn báo robot đang chạy.
+
+**Lần chạy mồ côi**
+- `POST /technician/runs/{run_id}/close-orphan` và `POST /manager/runs/{run_id}/close-orphan`, body `{reason}` (10–500 ký tự). Trả `RunOut` với `result: UNKNOWN`. Lỗi: `409 RUN_STILL_ACTIVE` (máy trạm đang báo bận: dừng robot trước), `409 RUN_ALREADY_CLOSED`, `422`, `404 RUN_NOT_FOUND`.
+- Nếu sau đó máy trạm gửi được kết quả thật của lần chạy đó, kết quả thật thay cho `UNKNOWN`; `summary` giữ `closed_by_person` và `reason`.
+
+**Lệnh robot**
+- Một lệnh có thể kết thúc `FAILED` với `error_code: NO_ANSWER`: máy trạm đã nhận lệnh nhưng không báo kết quả trong 30 giây (PAUSE, RESUME, STOP) hoặc 300 giây (lệnh khác). UI hiện `error_message` và **không tự gửi lại lệnh chạy**.
+- Gửi lại cùng `idempotency_key` với `params` hoặc robot khác: `409 IDEMPOTENCY_KEY_REUSED`. Mỗi lần bấm nên sinh một khoá mới (trang máy trạm đã làm vậy).
+
+**Robot thật**
+- `POST /technician/jobs/{id}/runs` với `mode: REAL, dry_run: false`, và `POST /technician/robot-commands` với `kind: RUN, params.mode: REAL`: thêm `409 SERVER_VALIDATION_REQUIRED` (`details.server_validation`: `NOT_RUN` hoặc `FAIL`) và `409 PACKAGE_NOT_SIGNED`. Để qua: gửi hiệu chuẩn có `frame_transform` (`schema: vhrs-motion/1`, lấy từ `calibration.json` của máy trạm) rồi ghi lại kết quả mô phỏng. Chạy thử, SIM và MOCK không đổi.
+
+**Thanh toán**
+- Webhook báo `SUCCESS` cho giao dịch đã `FAILED`: nếu đơn còn chờ đúng khoản đó thì giao dịch thành `SUCCESS` và đơn đi tiếp như một lần thanh toán thường; ngược lại giao dịch giữ `FAILED`, có `needs_refund` và hiện trong `GET /workshop/refunds`. FE không phải đổi gì.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |

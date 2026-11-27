@@ -51,6 +51,24 @@ def require_motion_allowed(session: Session, robot: Robot) -> None:
                        "cho tới khi cảnh báo được đóng.", {"robot_id": robot.id, "alert_id": red.id, "code": red.code})
 
 
+def require_real_write_ready(job: ProductionJob) -> None:
+    """A03 / A08 (cross-check 2026-11-28): what a REAL writing run needs on top of every other gate, whatever the settings say.
+
+    * the job runs a signed production snapshot (a job scheduled before U1 has none and passed on the hash alone);
+    * the server itself re-validated the trajectory against the current calibration and it passed. Before, with
+      MOTION_VALIDATION_REQUIRED off (the default), the workstation's own `{"passed": true}` was enough.
+    Rehearsals, the simulator and the mock robot are not touched."""
+    if job.snapshot_id is None:
+        raise AppError(409, "PACKAGE_NOT_SIGNED", "Job này không có gói sản xuất đã ký (job cũ). Robot thật chỉ viết gói đã ký: "
+                       "nhờ Quản lý xếp lịch lại job để phát hành gói ký.")
+    status = ((job.simulation_report or {}).get("server_validation") or {}).get("status") or "NOT_RUN"
+    if status != "PASS":
+        raise AppError(409, "SERVER_VALIDATION_REQUIRED",
+                       "Robot thật chỉ viết khi máy chủ đã tự kiểm quỹ đạo với hiệu chuẩn hiện hành và đạt. Gửi hiệu chuẩn có khối "
+                       "thông số chuyển động (calibration.json của máy trạm) rồi ghi lại kết quả mô phỏng.",
+                       {"server_validation": status})
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -129,6 +147,8 @@ class RobotOpsService:
                 raise AppError(409, *jr.STALE_SIMULATION, {"job_status": job.status.value})
             if mode == "REAL" and not authorized:
                 raise AppError(422, "AUTHORIZATION_REQUIRED", "Chạy robot thật cần người vận hành xác nhận cho job và kế hoạch này.")
+            if mode == "REAL" and not dry_run:
+                require_real_write_ready(job)
         elif job.status not in ACTIVE_JOB_STATUSES:
             raise AppError(409, "JOB_NOT_ACTIVE", f"Job đã {job.status.value}.", {"job_status": job.status.value})
         run = RobotRun(run_id=run_id, job_id=job.id, robot_id=robot.id, mode=mode, dry_run=dry_run, started_at=now,
@@ -160,10 +180,15 @@ class RobotOpsService:
         if run is None:
             raise AppError(404, "RUN_NOT_FOUND", "Không tìm thấy lần chạy.")
         self._own_job(run.job_id)
+        late = False
         if run.ended_at is not None:
             if run.result == result:                       # the agent retried a close that already went through
                 return run
-            raise AppError(409, "RUN_ALREADY_CLOSED", f"Lần chạy đã kết thúc với kết quả {run.result}.")
+            # A06: a person closed this run as UNKNOWN because the agent was silent. When the agent's own report arrives after
+            # all, it is the better evidence: it replaces the placeholder, and the record keeps who closed it and why.
+            late = run.result == "UNKNOWN" and (run.summary or {}).get("closed_by_person") is not None
+            if not late:
+                raise AppError(409, "RUN_ALREADY_CLOSED", f"Lần chạy đã kết thúc với kết quả {run.result}.")
         if result == "DRY_RUN_DONE" and not run.dry_run:
             raise AppError(422, "RESULT_INVALID", "DRY_RUN_DONE chỉ dành cho lần chạy thử.")
         if result == "DONE" and run.dry_run:
@@ -171,9 +196,14 @@ class RobotOpsService:
         total = total_strokes if total_strokes is not None else run.total_strokes
         if total and completed_strokes > total:
             raise AppError(422, "RESULT_INVALID", "Số nét đã viết lớn hơn tổng số nét.")
-        run.ended_at, run.result, run.completed_strokes, run.total_strokes = _now(), result, completed_strokes, total
-        run.summary = {**(run.summary or {}), **(summary or {})}
-        audit.record(self.session, actor_id=run.created_by, action="ROBOT_RUN_CLOSE", entity_type="robot_run", entity_id=run.id,
+        if result == "DONE" and total and completed_strokes != total:
+            # A01 (cross-check 2026-11-28): DONE is what "written" is counted from, so it cannot be claimed for part of the plan
+            raise AppError(422, "RESULT_INVALID", f"DONE cần đủ số nét của kế hoạch ({completed_strokes}/{total}). Lần chạy dừng "
+                           "giữa chừng kết thúc là STOPPED, FAULT hoặc UNKNOWN.", {"completed": completed_strokes, "total": total})
+        run.ended_at, run.result, run.completed_strokes, run.total_strokes = run.ended_at or _now(), result, completed_strokes, total
+        run.summary = {**(run.summary or {}), **(summary or {}), **({"agent_reported_at": _now().isoformat()} if late else {})}
+        audit.record(self.session, actor_id=run.created_by, action="ROBOT_RUN_LATE_RESULT" if late else "ROBOT_RUN_CLOSE",
+                     entity_type="robot_run", entity_id=run.id,
                      new={"result": result, "completed": completed_strokes, "total": total}, ip=self.ip)
         return run
 

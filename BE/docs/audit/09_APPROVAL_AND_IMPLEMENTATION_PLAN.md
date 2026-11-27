@@ -279,10 +279,10 @@ Tài khoản:
 |---|---|---|---|
 | CO | CO-01, CO-02 (BE) | | CO-03 (chờ D09), CO-04, CO-05, CO-06 |
 | SD | SD-01, SD-05 (web gửi `sketch_id`) | | SD-02, SD-03, SD-04, SD-06, SD-07, SD-08, SD-09 |
-| PP | PP-01 | | PP-02, PP-03, PP-04, PP-05, PP-06 |
-| TP | TP-01, TP-02, TP-03, TP-05, TP-07, TP-09 | TP-06 (khoá agent và chặn khoá tài khoản xong; Manager chuyển giao job đang chạy chưa có, mới có `finish-override`) | TP-04 (chỉ khai biến, mặc định chưa đổi), TP-08, TP-10 |
+| PP | PP-01 | PP-02 (2026-11-28: ca `FAILED` rồi `SUCCESS`; ca payOS trả vào link đã thành công chưa sửa) | PP-03, PP-04, PP-05, PP-06 |
+| TP | TP-01, TP-02, TP-03, TP-04 (2026-11-28: REAL viết thật đòi server validation), TP-05, TP-07 (2026-11-28: đóng lần chạy mồ côi), TP-09, TP-11, TP-12, TP-13 | TP-06 (khoá agent và chặn khoá tài khoản xong; Manager chuyển giao job đang chạy chưa có, mới có `finish-override`) | TP-08 (phần còn lại: `BUSY`, hai job `WRITING`, quét agent mất kết nối), TP-10 (phần gia tốc / jerk) |
 | AI | AI-01, AI-03, AI-04, AI-05, AI-10 | AI-02 (giới hạn đồng thời + hạn lượt; vẫn giữ kết nối khi chờ model), AI-06 (chưa có trần theo khách), AI-08 (đổi nhãn; chưa có tập ảnh giữ lại), AI-09 (tài liệu; chưa đo phiếu thật), AI-11 (chặn điểm ảnh; chưa đo thời gian trên Render), AI-12 | AI-07 |
-| RB | RB-02, RB-06 | RB-03 (trần watchdog + giới hạn trạm; khối chuyển động vẫn không ký), RB-05 (mới kiểm trên mô phỏng), RB-07 (lỗi bất ngờ gửi STOP; dừng vẫn không nhấc bút) | RB-01, RB-04 (để sau), RB-08, RB-09, RB-10, RB-11 |
+| RB | RB-02, RB-06 | RB-09 (2026-11-28: REAL bắt buộc gói ký; kiểm chữ ký vẫn không kèm mã đơn, hiệu chuẩn không ký), RB-03 (trần watchdog + giới hạn trạm; khối chuyển động vẫn không ký), RB-05 (mới kiểm trên mô phỏng), RB-07 (lỗi bất ngờ gửi STOP; dừng vẫn không nhấc bút) | RB-01, RB-04 (để sau), RB-08, RB-10, RB-11 |
 | AR | AR-02, AR-03 (khai biến), AR-05, AR-08 | AR-01 (theo D12: chỉ thôi xoá dòng cấu hình) | AR-04, AR-06, AR-07 |
 | SR | SR-01, SR-03 | | SR-02, SR-04, SR-05, SR-06, SR-07 (việc của chủ dự án), SR-08 |
 | DM | | DM-03 | DM-01, DM-02, DM-04, DM-05 |
@@ -300,3 +300,48 @@ Tính theo mức ưu tiên: 3 trong 6 mục P0 đã sửa ở phần mềm (TP-0
 7. Mở web bằng trình duyệt để xem thẻ đề xuất mới (Áp dụng / Bỏ qua / Hoàn lại) ở ba ngôn ngữ; chạy `node scripts/check-order-ai-browser.mjs`.
 8. Kiểm DesktopApp chạy trọn luồng với BE hiện tại (D10) và xử lý các mã lỗi mới: `RED_ALERT_OPEN`, `RUN_OPEN`, `RUN_EVIDENCE_REQUIRED`.
 9. Trên robot thật, có người vận hành: tập trọn luồng với `station_limits` và 4 điểm dò; thu video, log (D11).
+
+## 7. Đối chiếu với audit độc lập (2026-11-28)
+
+Chủ dự án nhờ một bên thứ hai (ChatGPT) audit độc lập rồi yêu cầu đối chiếu. Tài liệu của bên đó: `AI-VHRS_Independent_Backend_Audit_2026-11-27.md` (ngoài repo), 15 mục A01–A15, chỉ đọc code, không chạy.
+
+**Phiên bản.** Hai bên đọc cùng một source: `691f361` (audit này) và `fd331f2` (bên kia) không khác nhau ở `BE/`, `robot_agent/`, `FE/`. Cả hai đều cũ hơn `main` ba commit (sổ kho + migration `0033_stock_movements`, chạy robot thật từ app desktop, tăng tốc MoveL). Các bản sửa của audit đã được gộp với `main` trên nhánh cục bộ `audit-fixes`; migration lối ra cho đơn kẹt đổi số thành `0034`.
+
+**Cách phân xử.** Mỗi mục được đọc lại trong code; sáu mục có kết luận khác nhau hoặc chưa chắc được chạy thử bằng test tạm trên Postgres cục bộ (không nằm trong repo).
+
+| Mục | Kết luận sau kiểm chứng | Quyết định của chủ dự án | Trạng thái |
+|---|---|---|---|
+| A01 "viết xong" không cần lần chạy | Lõi đã sửa ở D06. Còn lỗ: `DONE` thiếu nét vẫn được nhận (TP-12) | Đếm đủ số bản | Xong |
+| A02 đơn nhiều bản chỉ viết một | **Đúng, audit này đã bỏ sót** (TP-11) | Đếm đủ số bản | Xong (BE + trang máy trạm); app desktop chưa có nút "giấy mới" |
+| A03 mô phỏng do máy trạm tự báo | Đúng, trùng TP-04 | Siết trong code | Xong |
+| A04 `WRITING` trước khi robot chạy | Đúng hiện tượng, là thiết kế; sau D06 không còn hậu quả về kho và tiền | Không đổi máy trạng thái | Không làm |
+| A05 lệnh `DELIVERED` không hạn | **Đúng, audit này xếp thấp** (TP-13) | Sửa đầy đủ | Xong |
+| A06 lần chạy mở mãi | **Chưa đủ, và D06 làm nặng hơn**: Manager ghi nhận thay cũng bị chặn (TP-07) | Sửa đầy đủ | Xong |
+| A07 `FAILED` rồi `SUCCESS` | Đúng (PP-02) | Tự xác nhận đơn nếu đơn còn chờ đúng khoản đó, ngược lại gắn cờ cần hoàn | Xong |
+| A08 gói ký tái dùng, job cũ không ký | Nửa đầu không thành lỗi (trigger không cho quay lại báo giá; 3 chỗ ghi vật tư / số lượng đều trước cọc). Nửa sau đúng (RB-09) | Siết trong code | Xong |
+| A09 QC không gắn số bản | Đúng mô tả, đúng BR-21; giải quyết cùng A02 | Không thêm ảnh theo bản | Không làm |
+| A10 bỏ chạy thử, gripper không cảm biến | Trùng RB-04, RB-08 | Giữ; quy tắc demo: không dùng waiver | Tài liệu |
+| A11 tồn kho giả định | Lỗi thời: `main` đã có sổ kho | | Không làm |
+| A12 OT-2, A13 giao dịch AI, A14 trạng thái trong RAM | Không có bằng chứng mới; trùng AI-09 / AI-10, AI-02 / AI-04 (đã sửa), AR-03 | | Không làm |
+| A15 docstring cũ | Đúng (DM-03) | Sửa | Xong |
+
+Bên kia không nêu: TP-01, TP-02, TP-03, AR-08, PP-01, SR-01, AI-01, CO-01, CO-02, SD-01, RB-02, RB-06, điểm dò lật gương.
+
+### Thay đổi hành vi cần nhóm biết (đợt đối chiếu)
+
+- **Số bản (TP-11, TP-12).** `POST /technician/jobs/{id}/finish` trả `409 COPIES_MISSING` (`details: {written, quantity}`) khi số lần chạy `DONE` ít hơn số bản của đơn. `PATCH /technician/runs/{id}` với `DONE` mà `completed_strokes` khác `total_strokes` trả `422 RESULT_INVALID`. Chi tiết job có thêm `copies_written` và `open_run`. Trang máy trạm hiện "bản k/N"; để viết bản tiếp theo, người vận hành đặt giấy mới và bấm "Đặt lại tiến độ". Manager `finish-override` bỏ qua điều kiện số bản.
+- **Lệnh không được trả lời (TP-13).** Lệnh `DELIVERED` quá 30 giây (PAUSE, RESUME, STOP) hoặc 300 giây (lệnh khác) không có trả lời thành `FAILED` với `error_code = NO_ANSWER`. STOP và PAUSE được giao lại mỗi 3 giây cho tới khi agent trả lời; lệnh làm robot chuyển động không bao giờ được giao lại. Trả lời đến muộn vẫn được ghi. Cùng `idempotency_key` với tham số khác trả `409 IDEMPOTENCY_KEY_REUSED`.
+- **Lần chạy mồ côi (TP-07).** Agent lưu kết quả lần chạy chưa gửi được vào `runs/pending_closes.json` và gửi lại sau mỗi lần sync thành công, kể cả sau khi agent khởi động lại (lần chạy bị bỏ dở được báo `UNKNOWN`). `POST /technician/runs/{id}/close-orphan` và `POST /manager/runs/{id}/close-orphan` (`{reason}` ≥ 10 ký tự) đóng lần chạy với `UNKNOWN`; bị từ chối `409 RUN_STILL_ACTIVE` khi máy trạm còn báo đang chạy. `finish-override` tự đóng lần chạy mồ côi. Kết quả thật đến muộn của agent thay cho `UNKNOWN` do người đặt (`ROBOT_RUN_LATE_RESULT`).
+- **Thanh toán (PP-02).** Cổng báo `SUCCESS` cho giao dịch đã `FAILED`: nếu đơn còn chờ đúng khoản đó (đúng bước, đúng số tiền, khách chưa mở giao dịch mới hơn) thì giao dịch thành `SUCCESS` và đơn đi tiếp, ghi `PAYMENT_RECOVERED`. Ngược lại tiền được gắn cờ `needs_refund` và vào danh sách hoàn tiền của Staff.
+- **Robot thật (TP-04, RB-09).** Mở lần chạy REAL viết thật, và lệnh `RUN` với `mode=REAL`, cần `server_validation = PASS` (`409 SERVER_VALIDATION_REQUIRED`) và job có gói ký (`409 PACKAGE_NOT_SIGNED`), bất kể `MOTION_VALIDATION_REQUIRED`. Agent cũng từ chối viết REAL gói không ký bất kể `require_signed_packages`. Chạy thử, SIM và MOCK không đổi. Hệ quả: `calibration.json` gửi lên phải có khối `frame_transform` (`vhrs-motion/1`) thì robot thật mới viết được.
+- **Thao tác gắn bút ở góc giấy (code mới của `main`).** Ở chế độ REAL, thao tác này giờ qua cùng các khoá của máy trạm như một lần chạy: `station_limits` đã đặt, đủ 4 điểm dò, điểm dò không lật gương, mặt giấy không thấp hơn `z_floor_mm`. Phần tăng tốc MoveL của `main` không bị đổi.
+
+### Kiểm thử (đợt đối chiếu)
+
+Chỉ chạy trên Postgres cục bộ và robot mô phỏng: BE 1.176 passed, 5 skipped, 0 failed; `robot_agent` 209 passed, 3 skipped, 1 bỏ qua (RB-11); FE `tsc -b`, `i18n:check` (3.547 khoá), `build` đạt. Chưa chạy trên Supabase, chưa chạy robot thật, chưa mở app desktop (máy không có Flutter).
+
+### Còn lại sau đợt đối chiếu
+
+1. App desktop (kênh chính theo D10) chưa có: nút "giấy mới" để viết bản tiếp theo, nút đóng lần chạy mồ côi, câu chữ cho các mã `COPIES_MISSING`, `SERVER_VALIDATION_REQUIRED`, `PACKAGE_NOT_SIGNED`, `NO_ANSWER`, `RUN_STILL_ACTIVE`. Trang máy trạm (`robot_agent/vhrs_agent/static`) đã có hai nút đầu.
+2. Code mới của `main` chưa được audit: `services/stock.py` (sổ kho) và phần app desktop. Riêng phần robot của `main` đã được đọc lại (mục trên).
+3. Mục 5–9 của "Còn lại khi làm tiếp" ở mục 6 vẫn nguyên, trừ: đã có commit cục bộ trên nhánh `audit-fixes` (chưa push).
