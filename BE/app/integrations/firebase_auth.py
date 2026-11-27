@@ -11,9 +11,9 @@ https://securetoken.google.com/<project id>, a non-empty `sub`, `auth_time` in t
   weeks, but a phone proof here must be the SMS the person just received.
 The certificates are fetched from Google and kept for the `max-age` Google gives.
 
-VERIFICATION: covered by tests with a locally made key and certificate. The claim names `phone_number` and
-`sign_in_provider: "phone"` are from general knowledge of Firebase tokens, not from the page read; to be confirmed with the
-first real token.
+VERIFICATION: covered by tests with a locally made key and certificate. 2026-11-27: the owner verified a real number on the
+deployed site (SMS from Google's sender "CloudOTP", then `POST /me/phone/verify-firebase` accepted the real ID token), which
+confirms the claim names `phone_number` and `sign_in_provider: "phone"`. The password-reset path has not been tried live yet.
 """
 from __future__ import annotations
 

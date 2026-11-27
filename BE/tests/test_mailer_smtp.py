@@ -76,3 +76,5 @@ def test_no_reply_to_and_plain_text_only_when_switched_off():
 def test_the_reset_page_link_is_a_reset_button():
     page = mail_html.render("Trang đặt lại mật khẩu:\nhttps://www.example.com/reset-password", "s", with_logo=False)
     assert ">Đặt lại mật khẩu</a>" in page and "cid:" not in page
+    page = mail_html.render("Đăng nhập lại bằng mật khẩu mới:\nhttps://www.example.com/login", "s", with_logo=False)
+    assert ">Đăng nhập</a>" in page and 'href="https://www.example.com/login"' in page
