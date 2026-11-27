@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
-import { fetchStyledPreview, templatePreviewUrl, type Alignment } from '../services/orders'
+import { fetchStyledPreview, templatePreviewUrl, type Alignment, type SheetSize, type TextLayout } from '../services/orders'
 
 /**
- * Preview image of the customer's words in a template, with the chosen alignment and letter height.
- * Falls back to the plain preview when the styled one fails, so the picture never disappears.
+ * Preview image of the customer's words in a template: the first page as the robot would write it, with the chosen
+ * alignment, letter height, placement on the sheet (`layoutJson`: the layout as JSON, so an equal layout does not ask
+ * again) and sheet size. Falls back to the plain preview when the styled one fails, so the picture never disappears.
  */
-export function useStyledPreview(templateId: number | null, text: string, alignment: Alignment | null, fontSizeMm: number | null) {
+export function useStyledPreview(
+  templateId: number | null, text: string, alignment: Alignment | null, fontSizeMm: number | null,
+  layoutJson: string | null = null, paperSize: SheetSize = 'A5',
+) {
   const [src, setSrc] = useState<string | null>(null)
 
   useEffect(() => {
@@ -15,7 +19,8 @@ export function useStyledPreview(templateId: number | null, text: string, alignm
     }
     const ctl = new AbortController()
     let made: string | null = null
-    fetchStyledPreview(templateId, text, alignment, fontSizeMm, ctl.signal)
+    const layout = layoutJson ? (JSON.parse(layoutJson) as TextLayout) : null
+    fetchStyledPreview(templateId, text, alignment, fontSizeMm, ctl.signal, layout, paperSize)
       .then((blob) => {
         made = URL.createObjectURL(blob)
         setSrc(made)
@@ -27,7 +32,7 @@ export function useStyledPreview(templateId: number | null, text: string, alignm
       ctl.abort()
       if (made) URL.revokeObjectURL(made)
     }
-  }, [templateId, text, alignment, fontSizeMm])
+  }, [templateId, text, alignment, fontSizeMm, layoutJson, paperSize])
 
   return src
 }

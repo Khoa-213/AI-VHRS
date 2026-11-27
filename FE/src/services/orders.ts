@@ -87,6 +87,8 @@ export interface Template {
   code: string
   name: string
   kind: string
+  /** The template's stored sample picture (public address), drawn from the robot's own strokes; null when it has none. */
+  previewUrl: string | null
 }
 
 export const num = (s: string | number | null | undefined): number | null => (s === null || s === undefined || s === '' ? null : Number(s))
@@ -94,7 +96,7 @@ export const num = (s: string | number | null | undefined): number | null => (s 
 interface RawPaper { id: number; code: string; name: string; gsm: number; surface: string; size: string; unit_price: string }
 interface RawPen { id: number; code: string; name: string; category: string; stroke_width_mm: string; surcharge: string }
 interface RawInk { id: number; pen_type_id: number; name: string; hex_code: string | null; unit_price: string }
-interface RawTemplate { id: number; code: string; name: string; kind: string }
+interface RawTemplate { id: number; code: string; name: string; kind: string; preview_url?: string | null }
 
 export const getPapers = async (): Promise<Paper[]> =>
   (await api<RawPaper[]>('/catalog/papers', { auth: false })).map((p) => ({ ...p, unitPrice: num(p.unit_price) ?? 0 }))
@@ -111,26 +113,60 @@ export const getInks = async (penId: number): Promise<Ink[]> =>
   }))
 
 export const getTemplates = async (): Promise<Template[]> =>
-  (await api<RawTemplate[]>('/catalog/templates', { auth: false })).map((x) => ({ id: x.id, code: x.code, name: x.name, kind: x.kind }))
+  (await api<RawTemplate[]>('/catalog/templates', { auth: false })).map((x) => ({
+    id: x.id, code: x.code, name: x.name, kind: x.kind, previewUrl: storedPreview(x.preview_url),
+  }))
 
-/** PNG preview of a template with the customer's own words (the endpoint caps the text at 200 characters). */
+/**
+ * The address of a template's stored sample. A template without a stored picture gets the backend's own preview route:
+ * relative (`/api/v1/...`) when the backend has no PUBLIC_BASE_URL, so it is put on the API's address, and asked cut to
+ * the words like every card picture.
+ */
+function storedPreview(url: string | null | undefined): string | null {
+  if (!url) return null
+  const abs = url.startsWith('/api/v1/') ? `${API_BASE}${url.slice('/api/v1'.length)}` : url
+  return /\/catalog\/templates\/\d+\/preview$/.test(abs) ? `${abs}?fit=text` : abs
+}
+
+/**
+ * PNG preview of a template with the customer's own words (the endpoint caps the text at 200 characters). Every picture
+ * the backend draws comes from the strokes the robot follows, with no stroke-start dots (2026-11-27).
+ */
 export const templatePreviewUrl = (id: number, text: string) =>
   `${API_BASE}/catalog/templates/${id}/preview?text=${encodeURIComponent((text.trim() || 'Nét Việt').slice(0, 200))}`
 
 /**
- * PNG preview that also follows the alignment and letter height (`POST /catalog/templates/{id}/preview`, public).
- * The plain GET above ignores both, so this is what makes the alignment buttons visible before the order is saved.
+ * The small picture of a writing style: the first line of the customer's words, cut to the words themselves
+ * (`fit=text`), so the card shows letters and not an almost empty sheet.
+ */
+export const templateCardUrl = (id: number, text: string) => {
+  const line = (text.trim().split('\n')[0] || 'Nét Việt').slice(0, 40)
+  return `${API_BASE}/catalog/templates/${id}/preview?fit=text&text=${encodeURIComponent(line)}`
+}
+
+/** Sheet sizes the preview can draw. */
+export type SheetSize = 'A4' | 'A5' | 'A6'
+/** `layout` of a text input: placement on the sheet, line spacing and the styles of parts of the text. */
+export type TextLayout = Record<string, unknown>
+
+/**
+ * PNG preview that also follows the alignment, the letter height, the placement on the sheet (`layout`: margins, top /
+ * middle / bottom, line spacing) and the sheet size (`POST /catalog/templates/{id}/preview`, public): the first page, as
+ * the robot would write it. The plain GET above ignores all of these.
  */
 export async function fetchStyledPreview(
   id: number, text: string, alignment: Alignment | null, fontSizeMm: number | null, signal: AbortSignal,
+  layout: TextLayout | null = null, paperSize: SheetSize = 'A5',
 ): Promise<Blob> {
   const res = await fetch(`${API_BASE}/catalog/templates/${id}/preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal,
     body: JSON.stringify({
-      text: (text.trim() || 'Nét Việt').slice(0, 200),
-      alignment: alignment ?? 'LEFT',
+      text: (text.trim() || 'Nét Việt').slice(0, 2000),
+      alignment: alignment ?? 'CENTER',
+      paper_size: paperSize,
+      ...(layout ? { layout } : {}),
       ...(fontSizeMm && fontSizeMm >= 4 && fontSizeMm <= 100 ? { font_size_mm: fontSizeMm } : {}),
     }),
   })
@@ -197,6 +233,8 @@ export interface OrderInput {
   templateId: number | null
   fontSizeMm: number | null
   alignment: Alignment | null
+  /** Placement on the sheet, line spacing and styles of parts of the text, as the backend stores them. */
+  layout: TextLayout | null
   canvas: CanvasData | null
   /** Temporary link to the stored file; only the workshop endpoints send it. */
   fileUrl: string | null
@@ -247,6 +285,7 @@ export interface RawInput {
   rotation_deg?: number | null; crop_box?: Record<string, unknown> | null
   text_content: string | null; template_id: number | null; font_size_mm: string | null
   alignment: Alignment | null; canvas_data: CanvasData | null; file_url?: string | null
+  layout?: TextLayout | null
 }
 
 export interface RawOrder {
@@ -268,6 +307,7 @@ export const toInput = (i: RawInput): OrderInput => ({
   id: i.id, kind: i.kind, sortOrder: i.sort_order, mime: i.mime_type, size: i.file_size_bytes,
   quality: i.quality_result, qualityWarning: i.is_quality_warning, rotation: i.rotation_deg ?? 0, cropBox: i.crop_box ?? null,
   text: i.text_content, templateId: i.template_id, fontSizeMm: num(i.font_size_mm), alignment: i.alignment,
+  layout: i.layout ?? null,
   canvas: i.canvas_data, fileUrl: i.file_url ?? null,
 })
 
@@ -333,7 +373,13 @@ export const deleteOrder = (id: number) => api(`/orders/${id}`, { method: 'DELET
 
 export async function putText(
   id: number,
-  body: { text_content: string; template_id?: number | null; font_size_mm?: number | null; alignment?: Alignment | null },
+  body: {
+    text_content: string; template_id?: number | null; font_size_mm?: number | null; alignment?: Alignment | null
+    /** Replaces the stored layout. Without it (and without `keep_layout`) the backend clears the formatting. */
+    layout?: TextLayout | null
+    /** No `layout` sent: the stored one follows the new text (styles stay on the characters that were kept). */
+    keep_layout?: boolean
+  },
 ): Promise<OrderInput> {
   return toInput(await api<RawInput>(`/orders/${id}/inputs/text`, { method: 'PUT', body }))
 }
