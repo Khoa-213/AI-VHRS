@@ -1190,6 +1190,8 @@ export const vi: Record<Key, string> = {
   "co.suggestSub": "Bạn chọn phần mình quan tâm, phần còn lại để trống. Xưởng sẽ bổ sung và đưa 1 đến 3 phương án trong báo giá.",
   "co.paperSpec": "{gsm} gsm · {surface} · {size}",
   "co.perSheet": "{price} mỗi tờ",
+  "co.paperShown": "Giấy:",
+  "co.paperPhotoFailed": "Không tải được ảnh mẫu giấy.",
   "co.penSpec": "Nét {mm} mm",
   "co.noPens": "Chưa có bút nào dùng được với loại giấy này.",
   "co.noteLabel": "Ghi chú cho xưởng, không bắt buộc",
