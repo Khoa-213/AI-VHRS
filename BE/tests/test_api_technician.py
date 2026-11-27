@@ -4,6 +4,7 @@ Real database, real DB triggers, the in-memory storage double. Every test gets i
 so the workshop's real robot and people are never touched. Nothing here talks to a robot: the workstation's reports
 (simulation result, progress, safety stops) are posted by the test the way the Flutter app / Robot Agent would.
 """
+import uuid
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
@@ -59,6 +60,16 @@ def _running(client, cust, staff, mgr, wcat, robot, tech, **kw):
 
 def _status(jid):
     return _sql("select status::text from production_jobs where id=:j", j=jid)
+
+
+def _robot_wrote(client, tech, jid, mode="SIM"):
+    """The robot's side of "written" (D06): a run of this job that ended DONE. `finish` is refused without one."""
+    key = "run-" + uuid.uuid4().hex[:10]
+    r = client.post(f"{T}/jobs/{jid}/runs", headers=tech[0], json={"run_id": key, "mode": mode, "dry_run": False, "total_strokes": 10})
+    assert r.status_code == 201, r.text
+    r = client.patch(f"{T}/runs/{key}", headers=tech[0], json={"result": "DONE", "completed_strokes": 10, "total_strokes": 10})
+    assert r.status_code == 200, r.text
+    return key
 
 
 def _event_types(client, h, jid, base=T):
@@ -231,6 +242,8 @@ def test_job_lifecycle_from_download_to_written(client, cust, staff, mgr, wcat, 
     assert _sql("select force_summary->>'in_band_pct' from job_events where job_id=:j and event_type='FORCE_SUMMARY'", j=jid) == "97.2"
     assert _err(_post(client, tech, jid, "start", status=409)) == "JOB_STATE_CONFLICT"            # already writing
 
+    assert _err(_post(client, tech, jid, "finish", status=409)) == "RUN_EVIDENCE_REQUIRED"        # D06: no robot run ended DONE yet
+    _robot_wrote(client, tech, jid)
     r = _post(client, tech, jid, "finish", status=200)
     assert r.json()["status"] == "WRITTEN" and float(r.json()["progress_pct"]) == 100.0 and r.json()["finished_at"]
     assert _status(jid) == "WRITTEN" and _prod(oid) == "WRITTEN"
@@ -287,6 +300,7 @@ def test_finish_is_idempotent_under_concurrency_and_never_blocked_by_stale_stock
     need = 3 * pages
     _sql("update paper_types set stock_qty=:n where id=:i returning 1", n=need - 1, i=wcat["paper"])   # count is 1 sheet short
     pen0 = _sql("select stock_qty from pen_types where id=:i", i=wcat["gel"])
+    _robot_wrote(client, tech, jid)
 
     def finish(_):
         with TestClient(app) as c:

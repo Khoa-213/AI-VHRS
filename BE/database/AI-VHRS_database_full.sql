@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0032 (alembic head), generated 2026-11-26 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0033 (alembic head), generated 2026-11-28 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0032);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0032;
+--      baseline schema and every migration up to 0033);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0033;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -23,8 +23,8 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 18.1
--- Dumped by pg_dump version 18.1
+-- Dumped from database version 18.7 (Homebrew)
+-- Dumped by pg_dump version 18.7 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -470,9 +470,9 @@ BEGIN
       WHEN 'AWAITING_DEPOSIT'       THEN NEW.order_status IN ('CONFIRMED','CANCELLED')
       WHEN 'CONFIRMED'              THEN NEW.order_status IN ('AWAITING_ACCEPTANCE','CANCELLED')
       WHEN 'AWAITING_ACCEPTANCE'    THEN NEW.order_status IN ('AWAITING_FINAL_PAYMENT','CONFIRMED')
-      WHEN 'AWAITING_FINAL_PAYMENT' THEN NEW.order_status IN ('READY_TO_DELIVER')
-      WHEN 'READY_TO_DELIVER'       THEN NEW.order_status IN ('DELIVERING','COMPLETED')
-      WHEN 'DELIVERING'             THEN NEW.order_status IN ('COMPLETED')
+      WHEN 'AWAITING_FINAL_PAYMENT' THEN NEW.order_status IN ('READY_TO_DELIVER','CANCELLED')
+      WHEN 'READY_TO_DELIVER'       THEN NEW.order_status IN ('DELIVERING','COMPLETED','CANCELLED')
+      WHEN 'DELIVERING'             THEN NEW.order_status IN ('COMPLETED','READY_TO_DELIVER','CANCELLED')
       ELSE FALSE
     END;
     IF NOT o_ok THEN
@@ -765,8 +765,8 @@ CREATE TABLE public.ai_messages (
     attempts jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     client_ref character varying(64),
-    CONSTRAINT ai_messages_role_check CHECK (((role)::text = ANY (ARRAY[('USER'::character varying)::text, ('ASSISTANT'::character varying)::text]))),
-    CONSTRAINT ai_messages_status_check CHECK (((status)::text = ANY (ARRAY[('OK'::character varying)::text, ('FAILED'::character varying)::text, ('CAPPED'::character varying)::text])))
+    CONSTRAINT ai_messages_role_check CHECK (((role)::text = ANY ((ARRAY['USER'::character varying, 'ASSISTANT'::character varying])::text[]))),
+    CONSTRAINT ai_messages_status_check CHECK (((status)::text = ANY ((ARRAY['OK'::character varying, 'FAILED'::character varying, 'CAPPED'::character varying])::text[])))
 );
 
 --
@@ -956,7 +956,7 @@ CREATE TABLE public.audit_logs (
     policy_version character varying(20),
     ip_address inet,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_audit_privacy CHECK ((((action)::text <> ALL (ARRAY[('PRIVACY_ACCEPT'::character varying)::text, ('PRIVACY_DECLINE'::character varying)::text])) OR (policy_version IS NOT NULL)))
+    CONSTRAINT chk_audit_privacy CHECK ((((action)::text <> ALL ((ARRAY['PRIVACY_ACCEPT'::character varying, 'PRIVACY_DECLINE'::character varying])::text[])) OR (policy_version IS NOT NULL)))
 );
 
 --
@@ -1118,7 +1118,7 @@ CREATE TABLE public.htr_readings (
     consent_text text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT chk_htr_read_has_text CHECK ((((status)::text <> 'READ'::text) OR ((transcript IS NOT NULL) AND (provider IS NOT NULL)))),
-    CONSTRAINT htr_readings_status_check CHECK (((status)::text = ANY (ARRAY[('READ'::character varying)::text, ('FAILED'::character varying)::text])))
+    CONSTRAINT htr_readings_status_check CHECK (((status)::text = ANY ((ARRAY['READ'::character varying, 'FAILED'::character varying])::text[])))
 );
 
 --
@@ -1274,7 +1274,7 @@ CREATE TABLE public.material_profiles (
     CONSTRAINT material_profiles_bleed_mm_check CHECK ((bleed_mm >= (0)::numeric)),
     CONSTRAINT material_profiles_darkness_check CHECK (((darkness >= (0)::numeric) AND (darkness <= (1)::numeric))),
     CONSTRAINT material_profiles_line_width_mm_check CHECK ((line_width_mm > (0)::numeric)),
-    CONSTRAINT material_profiles_status_check CHECK (((status)::text = ANY (ARRAY[('UNCALIBRATED'::character varying)::text, ('MEASURED'::character varying)::text, ('VERIFIED'::character varying)::text]))),
+    CONSTRAINT material_profiles_status_check CHECK (((status)::text = ANY ((ARRAY['UNCALIBRATED'::character varying, 'MEASURED'::character varying, 'VERIFIED'::character varying])::text[]))),
     CONSTRAINT material_profiles_v_max_mm_s_check CHECK ((v_max_mm_s > (0)::numeric))
 );
 
@@ -1309,7 +1309,7 @@ CREATE TABLE public.messages (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     kind character varying(20) DEFAULT 'TEXT'::character varying NOT NULL,
     CONSTRAINT chk_message_not_empty CHECK ((((kind)::text = 'ORDER_CARD'::text) OR (body IS NOT NULL) OR (jsonb_array_length(attachments) > 0))),
-    CONSTRAINT chk_messages_kind CHECK (((kind)::text = ANY (ARRAY[('TEXT'::character varying)::text, ('ORDER_CARD'::character varying)::text])))
+    CONSTRAINT chk_messages_kind CHECK (((kind)::text = ANY ((ARRAY['TEXT'::character varying, 'ORDER_CARD'::character varying])::text[])))
 );
 
 --
@@ -1385,10 +1385,10 @@ CREATE TABLE public.order_inputs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT chk_input_payload CHECK ((((kind = ANY (ARRAY['ORIGINAL_IMAGE'::public.order_input_kind, 'HANDWRITING_SAMPLE'::public.order_input_kind])) AND ((file_url IS NOT NULL) OR (deleted_at IS NOT NULL))) OR (kind = 'TEXT_CONTENT'::public.order_input_kind) OR ((kind = 'CANVAS'::public.order_input_kind) AND ((canvas_data IS NOT NULL) OR (deleted_at IS NOT NULL))))),
-    CONSTRAINT order_inputs_alignment_check CHECK (((alignment)::text = ANY (ARRAY[('LEFT'::character varying)::text, ('CENTER'::character varying)::text, ('RIGHT'::character varying)::text, ('JUSTIFY'::character varying)::text]))),
+    CONSTRAINT order_inputs_alignment_check CHECK (((alignment)::text = ANY ((ARRAY['LEFT'::character varying, 'CENTER'::character varying, 'RIGHT'::character varying, 'JUSTIFY'::character varying])::text[]))),
     CONSTRAINT order_inputs_file_size_bytes_check CHECK (((file_size_bytes > 0) AND (file_size_bytes <= 20971520))),
     CONSTRAINT order_inputs_font_size_mm_check CHECK ((font_size_mm > (0)::numeric)),
-    CONSTRAINT order_inputs_mime_type_check CHECK (((mime_type)::text = ANY (ARRAY[('image/jpeg'::character varying)::text, ('image/png'::character varying)::text, ('application/pdf'::character varying)::text]))),
+    CONSTRAINT order_inputs_mime_type_check CHECK (((mime_type)::text = ANY ((ARRAY['image/jpeg'::character varying, 'image/png'::character varying, 'application/pdf'::character varying])::text[]))),
     CONSTRAINT order_inputs_rotation_deg_check CHECK ((rotation_deg = ANY (ARRAY[0, 90, 180, 270])))
 );
 
@@ -1470,7 +1470,7 @@ CREATE TABLE public.orders (
     CONSTRAINT chk_orders_pickup_slot CHECK (((pickup_slot_end IS NULL) OR (pickup_slot_end > pickup_slot_start))),
     CONSTRAINT chk_orders_privacy_before_quote CHECK (((order_status <> ALL (ARRAY['QUOTED'::public.order_status, 'AWAITING_DEPOSIT'::public.order_status, 'CONFIRMED'::public.order_status, 'AWAITING_ACCEPTANCE'::public.order_status, 'AWAITING_FINAL_PAYMENT'::public.order_status, 'READY_TO_DELIVER'::public.order_status, 'DELIVERING'::public.order_status, 'COMPLETED'::public.order_status])) OR (privacy_accepted_at IS NOT NULL))),
     CONSTRAINT chk_orders_reject CHECK (((order_status <> 'REJECTED'::public.order_status) OR (reject_reason IS NOT NULL))),
-    CONSTRAINT chk_orders_restoration_mode CHECK (((restoration_mode)::text = ANY (ARRAY[('FAITHFUL'::character varying)::text, ('ASSISTED'::character varying)::text]))),
+    CONSTRAINT chk_orders_restoration_mode CHECK (((restoration_mode)::text = ANY ((ARRAY['FAITHFUL'::character varying, 'ASSISTED'::character varying])::text[]))),
     CONSTRAINT chk_orders_shipping_service CHECK (((shipping_carrier IS NULL) = (shipping_service_code IS NULL))),
     CONSTRAINT chk_orders_staff_after_accept CHECK (((order_status = ANY (ARRAY['DRAFT'::public.order_status, 'SUBMITTED'::public.order_status, 'NEED_INFO'::public.order_status, 'REJECTED'::public.order_status, 'CANCELLED'::public.order_status])) OR (assigned_staff_id IS NOT NULL))),
     CONSTRAINT orders_char_count_check CHECK ((char_count >= 0)),
@@ -1898,7 +1898,7 @@ CREATE TABLE public.quality_evaluations (
     created_by bigint NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT quality_evaluations_page_no_check CHECK ((page_no >= 1)),
-    CONSTRAINT quality_evaluations_verdict_check CHECK (((verdict)::text = ANY (ARRAY[('PASS'::character varying)::text, ('NEEDS_REVIEW'::character varying)::text, ('FAIL'::character varying)::text])))
+    CONSTRAINT quality_evaluations_verdict_check CHECK (((verdict)::text = ANY ((ARRAY['PASS'::character varying, 'NEEDS_REVIEW'::character varying, 'FAIL'::character varying])::text[])))
 );
 
 --
@@ -2135,8 +2135,8 @@ CREATE TABLE public.robot_commands (
     expires_at timestamp with time zone NOT NULL,
     delivered_at timestamp with time zone,
     finished_at timestamp with time zone,
-    CONSTRAINT chk_robot_command_kind CHECK (((kind)::text = ANY (ARRAY[('LOAD'::character varying)::text, ('PREFLIGHT'::character varying)::text, ('DRY_RUN'::character varying)::text, ('RUN'::character varying)::text, ('PAUSE'::character varying)::text, ('RESUME'::character varying)::text, ('STOP'::character varying)::text, ('PAPER_CHANGED'::character varying)::text, ('IDENTIFY'::character varying)::text, ('ALIGN_START'::character varying)::text]))),
-    CONSTRAINT chk_robot_command_status CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('DELIVERED'::character varying)::text, ('DONE'::character varying)::text, ('FAILED'::character varying)::text, ('EXPIRED'::character varying)::text, ('CANCELLED'::character varying)::text])))
+    CONSTRAINT chk_robot_command_kind CHECK (((kind)::text = ANY ((ARRAY['LOAD'::character varying, 'PREFLIGHT'::character varying, 'DRY_RUN'::character varying, 'RUN'::character varying, 'PAUSE'::character varying, 'RESUME'::character varying, 'STOP'::character varying, 'PAPER_CHANGED'::character varying, 'IDENTIFY'::character varying, 'ALIGN_START'::character varying])::text[]))),
+    CONSTRAINT chk_robot_command_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'DELIVERED'::character varying, 'DONE'::character varying, 'FAILED'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying])::text[])))
 );
 
 --
@@ -2166,8 +2166,8 @@ CREATE TABLE public.robot_runs (
     CONSTRAINT chk_run_progress CHECK (((total_strokes = 0) OR (completed_strokes <= total_strokes))),
     CONSTRAINT chk_run_real_authorized CHECK ((((mode)::text <> 'REAL'::text) OR (authorized_by IS NOT NULL) OR (NOT ((result)::text IS DISTINCT FROM 'REFUSED'::text)))),
     CONSTRAINT robot_runs_completed_strokes_check CHECK ((completed_strokes >= 0)),
-    CONSTRAINT robot_runs_mode_check CHECK (((mode)::text = ANY (ARRAY[('MOCK'::character varying)::text, ('SIM'::character varying)::text, ('REAL'::character varying)::text]))),
-    CONSTRAINT robot_runs_result_check CHECK (((result)::text = ANY (ARRAY[('DONE'::character varying)::text, ('STOPPED'::character varying)::text, ('FAULT'::character varying)::text, ('UNKNOWN'::character varying)::text, ('DRY_RUN_DONE'::character varying)::text, ('REFUSED'::character varying)::text]))),
+    CONSTRAINT robot_runs_mode_check CHECK (((mode)::text = ANY ((ARRAY['MOCK'::character varying, 'SIM'::character varying, 'REAL'::character varying])::text[]))),
+    CONSTRAINT robot_runs_result_check CHECK (((result)::text = ANY ((ARRAY['DONE'::character varying, 'STOPPED'::character varying, 'FAULT'::character varying, 'UNKNOWN'::character varying, 'DRY_RUN_DONE'::character varying, 'REFUSED'::character varying])::text[]))),
     CONSTRAINT robot_runs_total_strokes_check CHECK ((total_strokes >= 0))
 );
 
@@ -2206,8 +2206,8 @@ CREATE TABLE public.robots (
     connection_state character varying(10) DEFAULT 'UNKNOWN'::character varying NOT NULL,
     last_seen_at timestamp with time zone,
     last_mode character varying(10),
-    CONSTRAINT chk_robots_connection_state CHECK (((connection_state)::text = ANY (ARRAY[('ONLINE'::character varying)::text, ('OFFLINE'::character varying)::text, ('UNKNOWN'::character varying)::text]))),
-    CONSTRAINT chk_robots_last_mode CHECK (((last_mode IS NULL) OR ((last_mode)::text = ANY (ARRAY[('MOCK'::character varying)::text, ('SIM'::character varying)::text, ('REAL'::character varying)::text]))))
+    CONSTRAINT chk_robots_connection_state CHECK (((connection_state)::text = ANY ((ARRAY['ONLINE'::character varying, 'OFFLINE'::character varying, 'UNKNOWN'::character varying])::text[]))),
+    CONSTRAINT chk_robots_last_mode CHECK (((last_mode IS NULL) OR ((last_mode)::text = ANY ((ARRAY['MOCK'::character varying, 'SIM'::character varying, 'REAL'::character varying])::text[]))))
 );
 
 --
@@ -2258,7 +2258,7 @@ CREATE TABLE public.shipments (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT shipments_fee_check CHECK ((fee >= (0)::numeric)),
-    CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY (ARRAY[('FLAT_BOX_A5'::character varying)::text, ('FLAT_BOX_A4'::character varying)::text, ('TUBE'::character varying)::text]))),
+    CONSTRAINT shipments_package_type_check CHECK (((package_type)::text = ANY ((ARRAY['FLAT_BOX_A5'::character varying, 'FLAT_BOX_A4'::character varying, 'TUBE'::character varying])::text[]))),
     CONSTRAINT shipments_weight_g_check CHECK ((weight_g > 0))
 );
 
@@ -2366,10 +2366,10 @@ CREATE TABLE public.sketch_regions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT chk_sketch_region_strokes CHECK ((stroke_end >= stroke_start)),
     CONSTRAINT sketch_regions_confidence_check CHECK (((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))),
-    CONSTRAINT sketch_regions_label_check CHECK (((label)::text = ANY (ARRAY[('ORIGINAL'::character varying)::text, ('RESTORED'::character varying)::text, ('INFERRED'::character varying)::text]))),
+    CONSTRAINT sketch_regions_label_check CHECK (((label)::text = ANY ((ARRAY['ORIGINAL'::character varying, 'RESTORED'::character varying, 'INFERRED'::character varying])::text[]))),
     CONSTRAINT sketch_regions_page_no_check CHECK ((page_no >= 1)),
     CONSTRAINT sketch_regions_region_no_check CHECK ((region_no >= 1)),
-    CONSTRAINT sketch_regions_source_check CHECK (((source)::text = ANY (ARRAY[('AUTO'::character varying)::text, ('STAFF'::character varying)::text, ('CUSTOMER'::character varying)::text]))),
+    CONSTRAINT sketch_regions_source_check CHECK (((source)::text = ANY ((ARRAY['AUTO'::character varying, 'STAFF'::character varying, 'CUSTOMER'::character varying])::text[]))),
     CONSTRAINT sketch_regions_stroke_start_check CHECK ((stroke_start >= 0))
 );
 
@@ -2414,7 +2414,7 @@ CREATE TABLE public.sketch_revisions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     inputs_snapshot jsonb,
     CONSTRAINT chk_sketch_rev_tool CHECK ((((author)::text <> 'AI'::text) OR (tool_name IS NOT NULL))),
-    CONSTRAINT sketch_revisions_author_check CHECK (((author)::text = ANY (ARRAY[('ENGINE'::character varying)::text, ('CUSTOMER'::character varying)::text, ('AI'::character varying)::text, ('STAFF'::character varying)::text]))),
+    CONSTRAINT sketch_revisions_author_check CHECK (((author)::text = ANY ((ARRAY['ENGINE'::character varying, 'CUSTOMER'::character varying, 'AI'::character varying, 'STAFF'::character varying])::text[]))),
     CONSTRAINT sketch_revisions_seq_check CHECK ((seq >= 1))
 );
 
@@ -2548,8 +2548,8 @@ CREATE TABLE public.studio_drafts (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     submitted_at timestamp with time zone,
     CONSTRAINT chk_studio_submitted CHECK ((((status)::text <> 'SUBMITTED'::text) OR (submitted_at IS NOT NULL))),
-    CONSTRAINT studio_drafts_mode_check CHECK (((mode)::text = ANY (ARRAY[('TEXT'::character varying)::text, ('RESTORE'::character varying)::text]))),
-    CONSTRAINT studio_drafts_status_check CHECK (((status)::text = ANY (ARRAY[('OPEN'::character varying)::text, ('SUBMITTED'::character varying)::text, ('ABANDONED'::character varying)::text])))
+    CONSTRAINT studio_drafts_mode_check CHECK (((mode)::text = ANY ((ARRAY['TEXT'::character varying, 'RESTORE'::character varying])::text[]))),
+    CONSTRAINT studio_drafts_status_check CHECK (((status)::text = ANY ((ARRAY['OPEN'::character varying, 'SUBMITTED'::character varying, 'ABANDONED'::character varying])::text[])))
 );
 
 --
@@ -2584,7 +2584,7 @@ CREATE TABLE public.studio_revisions (
     note character varying(200),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT chk_studio_rev_tool CHECK ((((author)::text <> 'AI'::text) OR (tool_name IS NOT NULL))),
-    CONSTRAINT studio_revisions_author_check CHECK (((author)::text = ANY (ARRAY[('CUSTOMER'::character varying)::text, ('AI'::character varying)::text]))),
+    CONSTRAINT studio_revisions_author_check CHECK (((author)::text = ANY ((ARRAY['CUSTOMER'::character varying, 'AI'::character varying])::text[]))),
     CONSTRAINT studio_revisions_seq_check CHECK ((seq >= 1))
 );
 
@@ -5200,7 +5200,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0032');
+INSERT INTO alembic_version (version_num) VALUES ('0033');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

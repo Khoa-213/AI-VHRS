@@ -78,7 +78,8 @@ class RefundInfo(BaseModel):
     refund_of_id: int
     reason: str | None
     rule: str | None = Field(default=None, description="CANCELLATION: BR14_BEFORE_SCHEDULE | BR14_AFTER_SCHEDULE | "
-                             "BR16_ETA_POSTPONED | WORKSHOP_CANCEL")
+                             "BR16_ETA_POSTPONED | WORKSHOP_CANCEL | MANAGER_CLOSE (D08: a Manager closed an order stuck "
+                             "after production and chose the amount)")
     deduction: int = Field(default=0, description="Kept by the workshop (the setup fee under BR14_AFTER_SCHEDULE).")
     account: RefundAccount | None = None
     reference: str | None = Field(default=None, description="Bank / gateway reference Staff entered when confirming.")
@@ -492,6 +493,29 @@ class RescheduleIn(BaseModel):
 
 class UnscheduleIn(BaseModel):
     reason: Reason
+
+
+class CloseOrderIn(BaseModel):
+    reason: str = Field(min_length=10, max_length=1000, description="Why the order is closed; shown to the customer.")
+    refund_amount: Decimal = Field(default=Decimal(0), ge=0, decimal_places=0, description=(
+        "How much of what the customer paid is given back (VND). From 0 to what was paid and not refunded yet; opens a "
+        "refund request the Staff pay out by hand and confirm."))
+
+
+class ToPickupIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000, description="What happened with the delivery (the carrier's reason, what was agreed).")
+
+
+class CloseOrderOut(BaseModel):
+    order_id: int
+    order_status: str
+    refundable_before: Decimal = Field(description="what the customer had paid and not been refunded, before this close")
+    refund_id: int | None = Field(description="the refund request opened (null when nothing is given back)")
+    refund_amount: Decimal
+
+
+class FinishOverrideIn(BaseModel):
+    reason: str = Field(min_length=10, max_length=1000, description="Why the job is recorded as written without a reported robot run.")
 
 
 class JobOut(_ORM):

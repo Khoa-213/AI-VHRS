@@ -4,6 +4,8 @@ Tiến trình Python trên **máy trạm cạnh robot** (không chạy trong BE)
 và phục vụ **trình theo dõi từ xa** để Technical Staff xem và dừng job mà không đứng cạnh robot. Hướng dẫn đầy đủ: `../BE/docs/ROBOT_INTEGRATION.md`.
 
 > Dừng bằng phần mềm không thay nút E-stop vật lý. Tác giả code chưa bao giờ chạy chế độ REAL; chỉ người vận hành chạy, tại chỗ.
+> Tới 2026-11-28: robot thật đã chạy MỘT PHẦN ngày 2026-10-25 do người vận hành (chạy thử nhấc bút 45/45 nét trong 489 s, viết có mực 2 nét đầu; xem changelog cùng ngày); **chưa có lần viết trọn trang nào**, và code sau 2026-10-26 (gói ký, nút REAL, giao robot cố định, các sửa an toàn của đợt audit 2026-11-27) chưa chạy trên robot.
+> Từ đợt audit 2026-11-27, REAL còn cần `station_limits` (`z_floor_mm`, `max_press_mm`) trong `agent.json` và ít nhất 4 điểm dò (`agent.example.json`, `calibration.example.json`); điểm dò quay ngược chiều bị từ chối (`PROBE_ORDER_MIRRORED`).
 
 ## Môi trường mô phỏng 3D (PyBullet), không cần trình biên dịch C++
 

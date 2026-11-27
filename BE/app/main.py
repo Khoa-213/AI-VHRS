@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,7 +17,7 @@ from app.api.v1 import (reviews, quality, robot_link, acceptance, admin, robot_o
                         manager_ops, me, conversations, eta, messages, notifications, orders, payments, pricing, refunds, reports, scheduling, shipments,
                         studio, styles, technician, verify, workshop, order_sketch, order_assistant, ai_chat)
 from app.core.config import get_settings
-from app.core.errors import register_error_handlers
+from app.core.errors import internal_error_response, register_error_handlers
 
 DESCRIPTION = """
 Backend của **AI-VHRS – Xưởng Nét Việt** (đơn đặt viết tay bằng robot FR3).
@@ -91,6 +92,28 @@ app = FastAPI(lifespan=_lifespan,
     redoc_url="/redoc" if _settings.enable_docs else None,
     openapi_url="/openapi.json" if _settings.enable_docs else None,
 )
+if not logging.getLogger().handlers and "pytest" not in sys.modules:
+    # AR-05: nothing configured logging, so every `log.info(...)` of the application was dropped and an unexpected error
+    # left no trace beyond uvicorn's own line. One plain handler on stdout (the platform collects it). Not under the test
+    # runner, which captures logging itself (a handler here only slows the worker threads the tests wait for).
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # httpx logs every outbound request line at INFO, URL included: signed storage links, tokens in query strings. Never that.
+    for _noisy in ("httpx", "httpcore"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+
+@app.middleware("http")
+async def unexpected_errors(request: Request, call_next):
+    """AR-05: an error nobody handled used to leave as a bare text/plain 500 from OUTSIDE the CORS layer, so the web app saw a
+    "CORS error" instead of a failure and nothing useful was logged. Registered before CORSMiddleware, hence inside it: the
+    reply is the usual error envelope, carries the CORS headers, and the traceback is logged with the request line."""
+    try:
+        return await call_next(request)
+    except Exception:                                            # noqa: BLE001
+        logging.getLogger("app").exception("unhandled error: %s %s", request.method, request.url.path[:300])
+        return internal_error_response()
+
+
 app.add_middleware(CORSMiddleware, allow_origins=_settings.cors_origins,
                    allow_origin_regex=_settings.cors_origin_regex,
                    allow_methods=["*"], allow_headers=["*"], allow_credentials=True)

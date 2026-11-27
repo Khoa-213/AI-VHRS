@@ -16,13 +16,15 @@ from app.services.stroke_ai.trajectory import Page, Stroke
 
 from vhrs_agent.gripper import ForceLimits, SimGripper
 from vhrs_agent.port import Mode, RobotError, RobotInfo
-from vhrs_agent.runner import (ControllerLock, JobRunner, RunRefused, Watchdogs, authorization_token, plan_digest)
+from vhrs_agent.runner import (ControllerLock, JobRunner, RunRefused, StationLimits, Watchdogs, authorization_token, plan_digest)
 from vhrs_agent.sim import MockRobot, SimRobot
 
 CFG = MotionConfig(a_lat_mm_s2=2000.0, a_tan_mm_s2=1000.0, travel_speed_mm_s=100.0, approach_speed_mm_s=10.0,
                    pen_up_clearance_mm=5.0, spring_k_n_per_mm=0.4, max_spring_travel_mm=6.0, f_target_n=1.0, v_max_mm_s=40.0)
 WS = Workspace(box_min_mm=(0.0, -300.0, -50.0), box_max_mm=(500.0, 300.0, 200.0))
-PROBES = [{"x": 300.0, "y": -105.0, "z": 20.0}, {"x": 300.0, "y": 105.0, "z": 20.0}, {"x": 3.0, "y": -105.0, "z": 20.0}]
+# top-left, top-right, bottom-left, and the bottom-right check point REAL asks for (read from above; not a mirror image)
+PROBES = [{"x": 300.0, "y": 105.0, "z": 20.0}, {"x": 300.0, "y": -105.0, "z": 20.0}, {"x": 3.0, "y": 105.0, "z": 20.0},
+          {"x": 3.0, "y": -105.0, "z": 20.0}]
 LIMITS = ForceLimits(f_min=0.6, f_target=1.0, f_max=1.6, f_hard=4.0)
 HASH = "a" * 64
 FRAME = build_frame(PROBES)
@@ -43,6 +45,7 @@ def grip(k=0.4, **kw):
 
 
 WATCHDOGS = Watchdogs(stop_settle_s=0.01, stop_window_s=0.02, stop_tolerance_mm=1.0, tracking_tolerance_mm=2.0, tracking_grace_s=0.5)
+STATION = StationLimits(z_floor_mm=15.0, max_press_mm=4.0)      # the sheet is at z = 20; CFG presses 1.0 N / 0.4 N/mm = 2.5 mm
 
 
 def runner(tmp_path, robot=None, gripper="default", **kw):
@@ -50,6 +53,7 @@ def runner(tmp_path, robot=None, gripper="default", **kw):
     g = grip() if gripper == "default" else gripper
     if robot.mode == Mode.REAL:
         kw.setdefault("watchdogs", WATCHDOGS)
+        kw.setdefault("station", STATION)
     return JobRunner(robot, g, run_dir=tmp_path, limits=LIMITS, **kw), robot
 
 

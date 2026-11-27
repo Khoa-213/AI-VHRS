@@ -2,7 +2,7 @@
 from collections.abc import Iterator
 from functools import lru_cache
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -16,7 +16,22 @@ class Base(DeclarativeBase):
 def get_engine() -> Engine:
     # Small pool: Supabase's session pooler caps concurrent clients (DB_POOL_SIZE / DB_MAX_OVERFLOW).
     s = get_settings()
-    return create_engine(s.sqlalchemy_url, pool_size=s.db_pool_size, max_overflow=s.db_max_overflow, pool_pre_ping=True)
+    engine = create_engine(s.sqlalchemy_url, pool_size=s.db_pool_size, max_overflow=s.db_max_overflow, pool_pre_ping=True)
+    if s.db_lock_timeout_ms > 0:
+        # Set on every new connection with a plain SET (not a startup option: connection poolers refuse unknown startup
+        # parameters). Session-level, so it needs the session pooler / a direct connection, which this backend uses.
+        timeout = int(s.db_lock_timeout_ms)
+
+        @event.listens_for(engine, "connect")
+        def _lock_timeout(dbapi_connection, _record) -> None:            # noqa: ANN001
+            prev = dbapi_connection.autocommit
+            dbapi_connection.autocommit = True
+            try:
+                with dbapi_connection.cursor() as cur:
+                    cur.execute(f"SET lock_timeout = {timeout}")
+            finally:
+                dbapi_connection.autocommit = prev
+    return engine
 
 
 @lru_cache

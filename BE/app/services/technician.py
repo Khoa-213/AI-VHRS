@@ -15,6 +15,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,7 +28,7 @@ from app.integrations.storage import ObjectStorage
 from app.models.account import Account
 from app.models.catalog import InkColor, PaperType, PenType
 from app.models.ops import (Calibration, Incident, IncidentType, JobEvent, JobEventType, JobStatus, ProductionJob, Robot,
-                            RobotStatus)
+                            RobotRun, RobotStatus)
 from app.models.order import Order, OrderStatus, ProductionStatus
 from app.repositories.accounts import AccountRepository
 from app.repositories.catalog import CatalogRepository
@@ -464,11 +465,26 @@ class TechnicianJobService:
             pass
         return 1, True
 
-    def finish(self, job_id: int) -> ProductionJob:
+    def finish(self, job_id: int, *, override_by: Account | None = None, override_reason: str | None = None) -> ProductionJob:
+        """UC-36: the job is written. D06 (audit 2026-11-27): that needs a robot run of this job that ended DONE (a simulated
+        robot's run counts; the compliance report still says whether it was a REAL one). Before, "start" then "finish" was
+        enough: stock was deducted and the job went on to photos although no robot had written anything. A Manager may
+        record it without that evidence (`override_by`, with a reason): for a station whose agent could not report."""
         job = self._job(job_id, lock=True)
         order = self._order(job)
         self._require_open(job, order)
         self._require_status(job, JobStatus.WRITING, what="Chỉ kết thúc viết")
+        open_run = self.session.scalar(select(RobotRun.run_id).where(RobotRun.job_id == job.id, RobotRun.ended_at.is_(None)).limit(1))
+        if open_run is not None:
+            # TP-01: "written" while the agent still has a run open would say the job is over with the arm possibly moving
+            raise AppError(409, "RUN_OPEN", "Robot còn một lần chạy chưa kết thúc cho job này. Chờ robot viết xong (hoặc dừng "
+                           "robot) rồi mới ghi nhận viết xong.", {"open_run_id": open_run})
+        written_run = self.session.scalar(select(RobotRun.run_id).where(
+            RobotRun.job_id == job.id, RobotRun.dry_run.is_(False), RobotRun.result == "DONE").limit(1))
+        if written_run is None and override_by is None:
+            raise AppError(409, "RUN_EVIDENCE_REQUIRED",
+                           "Chưa có lần chạy robot nào của job này kết thúc thành công, nên chưa thể ghi nhận viết xong. "
+                           "Nếu robot đã viết xong mà máy trạm không báo về được, nhờ Quản lý ghi nhận thay kèm lý do.")
         pages, assumed = self._pages(job)
         use = jr.stock_use(order.quantity, pages)
         stock: dict[str, Any] = {"pages": pages, "pages_assumed": assumed}
@@ -482,9 +498,13 @@ class TechnicianJobService:
             stock[key] = {"id": pk, "used": used, "left": row.stock_qty, "shortfall": short}
         job.finished_at, job.progress_pct = _now(), 100
         self._move(job, order, JobStatus.WRITTEN, "Robot viết xong")
-        self._event(job, JobEventType.WRITTEN, payload={"stock": stock})
+        self._event(job, JobEventType.WRITTEN, payload={"stock": stock, **({"override_by": override_by.id} if override_by else {})})
         audit.record(self.session, actor_id=self.tech.id, action="JOB_WRITTEN", entity_type="production_job",
-                     entity_id=job.id, new={"order_id": order.id, "stock": stock}, ip=self.ip)
+                     entity_id=job.id, new={"order_id": order.id, "stock": stock, "run_id": written_run}, ip=self.ip)
+        if override_by is not None:
+            audit.record(self.session, actor_id=override_by.id, action="JOB_FINISH_OVERRIDE", entity_type="production_job",
+                         entity_id=job.id, new={"order_id": order.id, "had_done_run": written_run is not None},
+                         reason=override_reason, ip=self.ip)
         return job
 
     # ------------------------------------------------------------------ UC-37: incident
@@ -500,6 +520,8 @@ class TechnicianJobService:
             robot = self.robots.get(job.robot_id, lock=True)
             robot.status = RobotStatus(robot_status_after)
         job.finished_at = _now()
+        from app.services.robot_link import halt_job            # late import: robot_link pulls in the live hub
+        halt_job(self.session, job, by=self.tech.id, reason=f"Sự cố: {description}", ip=self.ip)   # TP-01: stop the arm too
         self._move(job, order, JobStatus.FAILED, f"Sự cố: {description}"[:200])   # order -> FAILED, back to the Manager's queue
         self._event(job, JobEventType.INCIDENT, incident_id=incident.id, payload={"type": kind.value})
         audit.record(self.session, actor_id=self.tech.id, action="INCIDENT_REPORT", entity_type="incident",
@@ -508,3 +530,16 @@ class TechnicianJobService:
         notifications.notify(self.session, account_id=job.scheduled_by, order_id=order.id, msg_code="INCIDENT_REPORTED",
                              code=order.code, robot_id=job.robot_id)
         return incident
+
+
+def finish_by_manager(session: Session, manager: Account, job_id: int, reason: str, ip: str | None = None) -> ProductionJob:
+    """D06: a Manager records "written" for a job whose robot run was not reported. Same steps as the technician's finish
+    (stock, state, event), without the run evidence, with a reason, audited under the Manager's name."""
+    reason = (reason or "").strip()
+    if len(reason) < 10:
+        raise AppError(422, "REASON_REQUIRED", "Ghi nhận viết xong thay kỹ thuật viên cần lý do (ít nhất 10 ký tự).")
+    job = session.get(ProductionJob, job_id)
+    tech = session.get(Account, job.technician_id) if job is not None else None
+    if job is None or tech is None:
+        raise AppError(404, "JOB_NOT_FOUND", "Không tìm thấy job.")
+    return TechnicianJobService(session, tech, None, ip).finish(job_id, override_by=manager, override_reason=reason)

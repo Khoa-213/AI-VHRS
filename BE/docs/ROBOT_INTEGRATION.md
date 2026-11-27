@@ -4,6 +4,8 @@ Cập nhật 2026-10-23. Tài liệu đi kèm: `ROBOT_INTEGRATION_AUDIT.md` (rà
 Nhãn trạng thái dùng xuyên suốt: **IMPLEMENTED** (có code + test tự động), **TESTED_IN_SIMULATION**, **READY_FOR_HARDWARE_VALIDATION**
 (code xong, chưa từng chạy với phần cứng), **VERIFIED_ON_REAL_ROBOT** (chưa có mục nào), **BLOCKED** (thiếu số đo/quyết định).
 
+> **Cập nhật 2026-11-28 (audit 2026-11-27, DM-03).** Các nhãn trong file này là trạng thái ngày 2026-10-23. Sau đó robot thật đã chạy MỘT PHẦN ngày 2026-10-25 do người vận hành (chạy thử nhấc bút 45/45 nét trong 489 s, viết có mực 2 nét đầu; xem changelog cùng ngày); **chưa có lần viết trọn trang nào**, và code sau 2026-10-26 (gói ký, nút REAL, giao robot cố định, các sửa an toàn của đợt audit 2026-11-27) chưa chạy trên robot. Chi tiết từng năng lực: `audit/04_AI_ROBOTICS_AUDIT.md` mục 5. Từ đợt audit, chế độ REAL còn cần `station_limits` trong `agent.json` và ít nhất 4 điểm dò (`audit/09_APPROVAL_AND_IMPLEMENTATION_PLAN.md` mục 6).
+
 ## 1. Robot của xưởng (đọc từ trang web robot, ảnh người dùng gửi 2026-10-23)
 
 | Mục | Giá trị |

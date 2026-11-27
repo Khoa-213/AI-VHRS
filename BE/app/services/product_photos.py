@@ -15,6 +15,7 @@ from typing import Any
 import cv2
 import numpy as np
 
+from app.services import image_guard
 from app.core.errors import AppError
 from app.db.session import set_actor
 from app.domain import photo_rules as pr
@@ -54,7 +55,7 @@ def advance_after_writing(session, actor_id: int | None, job: ProductionJob, ord
 
 
 def _dimensions(data: bytes) -> tuple[int | None, int | None]:
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    img = image_guard.decode(data, cv2.IMREAD_COLOR)
     if img is None:
         return None, None
     return int(img.shape[1]), int(img.shape[0])

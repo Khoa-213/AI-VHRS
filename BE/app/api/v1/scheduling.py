@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import (IncidentOut, JobEventOut, JobOut, ProductionQueueRow, RescheduleIn, ResolveIncidentIn,
+from app.api.ops_schemas import (FinishOverrideIn, IncidentOut, JobEventOut, JobOut, ProductionQueueRow, RescheduleIn, ResolveIncidentIn,
                                  RobotAssignIn, RobotOut, ScheduleConfigOut, ScheduleIn, SuggestionOut, TechnicianOut,
                                  UnscheduleIn)
 from app.api.schemas import ErrorOut, Page
@@ -99,6 +99,20 @@ def jobs(svc: Svc, status_: Annotated[list[JobStatus] | None, Query(alias="statu
 
 @router.get("/jobs/{job_id}", response_model=JobOut, summary="Chi tiết job")
 def job_detail(job_id: int, svc: Svc) -> JobOut:
+    return _jobs_out(svc, [svc.get(job_id)])[0]
+
+
+@router.post("/jobs/{job_id}/finish-override", response_model=JobOut,
+             summary="D06 Quản lý ghi nhận job đã viết xong khi máy trạm không báo được lần chạy (bắt buộc lý do, có nhật ký)",
+             description=("Bình thường kỹ thuật viên chỉ ghi nhận viết xong được khi job có một lần chạy robot kết thúc DONE "
+                          "(`409 RUN_EVIDENCE_REQUIRED`). Endpoint này bỏ qua điều kiện đó; mọi điều kiện khác giữ nguyên "
+                          "(job đang WRITING, không còn lần chạy mở). Ghi `JOB_FINISH_OVERRIDE` vào nhật ký dưới tên Quản lý."),
+             responses={409: {"model": ErrorOut, "description": "JOB_STATE_CONFLICT / RUN_OPEN"},
+                        422: {"model": ErrorOut, "description": "REASON_REQUIRED"}})
+def finish_override(job_id: int, body: FinishOverrideIn, svc: Svc, session: SessionDep, manager: ManagerDep,
+                    request: Request) -> JobOut:
+    from app.services.technician import finish_by_manager
+    finish_by_manager(session, manager, job_id, body.reason, client_ip(request))
     return _jobs_out(svc, [svc.get(job_id)])[0]
 
 

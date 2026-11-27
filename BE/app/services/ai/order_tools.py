@@ -461,12 +461,30 @@ class OrderTools:
                 "report": {k: report.get(k) for k in ("op", "page", "changed", "added", "removed", "max_point_shift_mm",
                                                       "untouched_verified", "affected")}}, rev.id
 
+    def _canvas(self) -> Any:
+        row = next((r for r in OrderRepository(self.session).inputs(self.order_id) if r.kind == OrderInputKind.CANVAS), None)
+        return None if row is None else row.canvas_data
+
+    def _keep_canvas(self, before: Any) -> None:
+        """AI-03 (audit 2026-11-27): undo / redo across a drawing restores the form of that drawing, the customer's own
+        hand-drawn canvas included. A proposal is put back afterwards, but the canvas is not part of what a proposal
+        restores, so the customer's drawing changed for real although nothing had been applied. The assistant may walk the
+        history only where the canvas stays as it is; raising here undoes the step (each tool runs in a SAVEPOINT)."""
+        if self._canvas() != before:
+            raise AppError(409, "CANVAS_WOULD_CHANGE",
+                           "Bước này sẽ thay hình vẽ tay của khách bằng bản cũ. Trợ lý không tự làm việc đó: hãy nói khách "
+                           "bấm Hoàn tác / Làm lại trên màn hình nếu muốn.")
+
     def _undo(self, a: dict[str, Any]) -> tuple[dict[str, Any], None]:
+        canvas = self._canvas()
         rev = self.work.undo(self.order_id, discard_input_changes=a.get("discard_input_changes") is True)
+        self._keep_canvas(canvas)
         return {"revision_id": rev.id, "seq": rev.seq, "inputs_restored": self.work.inputs_restored}, None
 
     def _redo(self, a: dict[str, Any]) -> tuple[dict[str, Any], None]:
+        canvas = self._canvas()
         rev = self.work.redo(self.order_id, discard_input_changes=a.get("discard_input_changes") is True)
+        self._keep_canvas(canvas)
         return {"revision_id": rev.id, "seq": rev.seq, "inputs_restored": self.work.inputs_restored}, None
 
     def _flag(self, a: dict[str, Any]) -> tuple[dict[str, Any], None]:

@@ -85,6 +85,14 @@ class ProposalOut(BaseModel):
     parent_proposal_id: int | None = Field(description="đề xuất chưa áp dụng mà đề xuất này làm tiếp")
     status: str = Field(description="PENDING | APPLIED | REJECTED")
     applicable: bool = Field(description="bấm Áp dụng được ngay bây giờ")
+    needs_confirmation: bool = Field(default=False, description=(
+        "D02: true = màn hình KHÔNG tự áp dụng, khách bấm Áp dụng / Bỏ qua. Vì đề xuất đổi thứ Hoàn tác của phác thảo không "
+        "đưa lại được, hoặc vẽ lại làm mất nét khách đã tự sửa"))
+    confirm_reasons: list[str] = Field(default_factory=list, description=(
+        "vì sao cần khách xác nhận: quantity | customer_note | physical_watermark | restoration_mode | "
+        "workshop_suggest_materials | DISCARDS_MANUAL_EDITS"))
+    revertible: bool = Field(default=False, description=(
+        "D02: đề xuất đã áp dụng và đơn chưa đổi gì từ lúc đó: POST .../proposals/{id}/revert đưa đơn về như trước khi áp dụng"))
     blocked_reason: str | None = Field(description="vì sao không áp dụng được: APPLIED | REJECTED | ORDER_NOT_EDITABLE | "
                                                    "ORDER_CHANGED (đơn đã đổi sau khi trợ lý đề xuất)")
     changes: list[dict[str, Any]] = Field(description=(
@@ -171,8 +179,10 @@ Assistant = Annotated[AssistantService, Depends(_assistant)]
 
 def proposal_out(props: ProposalService, order: Order, p, now_hash: str | None = None) -> ProposalOut:
     ok, why = props.applicability(order, p, now_hash)
+    reasons = props.confirm_reasons(p)
     return ProposalOut(id=p.id, message_id=p.message_id, parent_proposal_id=p.parent_proposal_id, status=p.status,
-                       applicable=ok, blocked_reason=why, changes=p.changes or [], estimate=p.estimate,
+                       applicable=ok, blocked_reason=why, needs_confirmation=bool(reasons), confirm_reasons=reasons,
+                       revertible=props.revertible(order, p, now_hash), changes=p.changes or [], estimate=p.estimate,
                        sketch_revision_id=p.sketch_revision_id, preview=_preview_out(order.id, p),
                        created_at=p.created_at, decided_at=p.decided_at)
 
@@ -381,6 +391,23 @@ def list_proposals(order_id: int, props: Proposals) -> list[ProposalOut]:
                           "Phác thảo áp dụng là một revision bình thường: Hoàn tác đưa đơn về như trước."))
 def apply_proposal(order_id: int, proposal_id: int, props: Proposals) -> ApplyOut:
     p, order = props.apply(order_id, proposal_id)
+    props.session.refresh(order)
+    props.session.refresh(p)
+    est = None if order.estimated_price_min is None else {
+        "price_min": int(order.estimated_price_min), "price_max": int(order.estimated_price_max or order.estimated_price_min),
+        "currency": "VND", "is_estimate": True}
+    return ApplyOut(proposal=proposal_out(props, order, p), current_sketch_revision_id=order.current_sketch_revision_id,
+                    estimate=est)
+
+
+@router.post("/orders/{order_id}/assistant/proposals/{proposal_id}/revert", response_model=ApplyOut, responses=_ERR,
+             summary="D02 Hoàn lại một đề xuất đã áp dụng: đơn trở về đúng như trước khi áp dụng",
+             description=("Đưa lại MỌI trường đề xuất đã đổi (nội dung, bố cục, vật tư, số bản, ghi chú, dòng xác thực, chế độ "
+                          "phục dựng, phác thảo) và tính lại giá ước tính. Chỉ khi đơn chưa đổi gì từ lúc áp dụng "
+                          "(`revertible = true`); khác → `409 PROPOSAL_STALE`. Đề xuất chưa áp dụng → `409 PROPOSAL_NOT_APPLIED`. "
+                          "Sau khi hoàn lại, đề xuất có `status = REJECTED`."))
+def revert_proposal(order_id: int, proposal_id: int, props: Proposals) -> ApplyOut:
+    p, order = props.revert(order_id, proposal_id)
     props.session.refresh(order)
     props.session.refresh(p)
     est = None if order.estimated_price_min is None else {

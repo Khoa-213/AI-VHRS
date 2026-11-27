@@ -182,6 +182,10 @@ class AdminAccountUpdateIn(BaseModel):
     status: AccountStatus | None = None
     role: str | None = None
     reason: str | None = Field(default=None, max_length=500)
+    force: bool = Field(default=False, description=(
+        "D05: locking / disabling an account or changing its role is refused with 409 ACCOUNT_HAS_OPEN_WORK while it still holds "
+        "orders, production jobs or robots (the Manager reassigns them first). `force = true` with a `reason` does it anyway, "
+        "for an emergency; the work it leaves behind is written to the audit log."))
 
 
 class AuditLogOut(BaseModel):

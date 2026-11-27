@@ -21,7 +21,9 @@ def begin(gateway: PaymentGateway) -> tuple[str, str]:
     adapter = gw.real_adapter(gateway)
     if adapter is None:
         mock = gw.get_gateway()
+        gw.require_real_money(mock.mode)                          # D01: no mock payment where real orders are taken
         return mock.new_txn_id(gateway.value), mock.mode
+    gw.require_real_money(adapter.mode)                           # D01: nor a gateway's sandbox (test cards)
     return adapter.new_txn_id(), adapter.mode
 
 

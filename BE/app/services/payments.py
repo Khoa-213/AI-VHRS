@@ -159,6 +159,7 @@ class PaymentService:
             raise AppError(404, "PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch.")
         if (payment.gateway_payload or {}).get("mode") != self.gateway.mode:
             raise AppError(409, "NOT_A_MOCK_PAYMENT", "Giao dịch này không phải giao dịch mô phỏng.")
+        gw.require_real_money(self.gateway.mode)                  # D01: also shuts an old mock payment once the flag is off
         body = gw.webhook_body(txn_id=payment.gateway_txn_id, order_code=order.code,
                                amount=int(self._group_total(payment)),
                                result=result, paid_at=_now() if result == "SUCCESS" else None)
@@ -181,6 +182,7 @@ class PaymentService:
             raise AppError(404, "NOT_FOUND", "Không có webhook mô phỏng cho PAYOS.")    # its webhook is POST /webhooks/payments/payos
         if get_settings().payment_mode != "mock":
             raise AppError(403, "MOCK_WEBHOOK_DISABLED", "Webhook mô phỏng đã tắt khi dùng cổng thanh toán thật.")
+        gw.require_real_money(self.gateway.mode)                  # D01: the mock webhook is a test payment too
         if not self.gateway.verify(body, signature):
             raise AppError(401, "INVALID_SIGNATURE", "Chữ ký webhook không hợp lệ.")
         try:

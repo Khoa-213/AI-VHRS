@@ -96,6 +96,10 @@ def _after_soft_rollback(session: Session, previous_transaction) -> None:
 
 
 def _after_commit(session: Session) -> None:
+    # AR-08 (audit 2026-11-27): SQLAlchemy fires "after_commit" for the release of a SAVEPOINT too, not only for the real
+    # commit. Nothing is committed at that point and the request still holds its row locks.
+    if session.in_nested_transaction():
+        return
     for account_ids, item in session.info.pop(_PENDING, None) or ():
         for account_id in account_ids:
             try:

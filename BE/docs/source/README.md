@@ -29,11 +29,26 @@ Cho tới khi có, nguồn thực tế là trigger DB `fn_order_state_guard` và
 | BR-09: ±15% so với giá Pricing Engine tính | So với `computed_total` của chính báo giá đó (không phải giá ước tính lúc tạo đơn) | mục 5 |
 | BR-09/BR-10: ngưỡng ±15% và p_min là tham số | Nguồn duy nhất: bảng `pricing_configs` (có phiên bản); khóa `system_settings.price_adjust_threshold_pct` không được đọc | mục 5 |
 | LI-10: OT-2 là R&D | `system_settings.order_types_enabled` = chỉ OT-1, OT-3 | mục 5 |
-| FR-36 (OT-2) học nét | Chưa làm; AI là cổ điển, không gọi dịch vụ ngoài | mục 5 |
+| FR-36 (OT-2) học nét | (sửa 2026-11-28) **Không có mô hình học.** Đã có code số hoá bộ glyph cá nhân từ phiếu mẫu rồi ghép lại (`/styles`, O2, O3), tắt với khách, chưa đo trên phiếu người thật. Khi trình bày gọi là "số hoá bộ glyph cá nhân (R&D, chưa mở)", không gọi là "AI học nét chữ" (audit D07). Phần dựng nét là thị giác máy tính cổ điển, không gọi dịch vụ ngoài; riêng trợ lý chat và đọc chữ từ ảnh có gọi mô hình ngôn ngữ bên ngoài | mục 5; `docs/audit/04_AI_ROBOTICS_AUDIT.md` |
 | Cổng thanh toán VNPay/MoMo, GHN/GHTK thật | **MOCK** có nhãn `mode=MOCK` (phiếu đăng ký cho phép fallback mock) | mục 5 |
 | Robot thật FR3 + Robot Agent + IoT | Thuộc phạm vi BE nhưng **chưa làm; chỉ làm khi chủ dự án yêu cầu rõ** (2026-10-18). Trước đó Technical Staff làm "web scope A": bản ghi/trạng thái, client báo kết quả lên | mục 3, 5 |
 | UC-41 / FR-40: Manager gán job cho robot **và** kỹ thuật viên; UC-31: kỹ thuật viên xem job "theo robot và ca" | **Giao robot cố định** (chủ dự án chọn 2026-11-26, migration 0032): Manager giao mỗi robot cho tối đa một kỹ thuật viên; xếp lịch giao job cho **kỹ thuật viên + giờ**, robot tuỳ chọn; kỹ thuật viên **tự chọn robot của mình** trước khi Chuẩn bị và chỉ thấy robot được giao | `PROJECT_STATUS.md` mục 9, `docs/FE_API_GUIDE.md` 7.3 / 7b.0 |
 | FR-43 (Flutter App) / màn `/tech` web cho Technical Staff; chạy REAL cần người vận hành tại máy trạm xác nhận | **Bỏ giao diện kỹ thuật viên trên web; màn desktop của Robot Agent ở máy trạm là nơi làm việc duy nhất.** Bật REAL bằng nút trên màn desktop, **không còn bắt xác nhận "có người cạnh E-Stop"** (chủ dự án chọn c1 2026-11-26, đã được báo rủi ro bật từ máy khác trong LAN); không bật được từ xa qua BE | `docs/FE_TECH_WORKSPACE_HANDOFF.md` |
+
+## Quyết định của chủ dự án sau đợt audit (2026-11-27; đầy đủ ở `docs/audit/09_APPROVAL_AND_IMPLEMENTATION_PLAN.md` mục 5)
+| Tài liệu gốc / quyết định cũ nói | Chủ dự án chọn 2026-11-27 | Trạng thái |
+|---|---|---|
+| SRS 3.6, FE-13: loadcell + HX711, vòng điều khiển lực | Phần cứng là **lò xo + cảm biến Hall** (đã chốt 2026-10-23). Điều khiển là vị trí vòng hở, lực do lò xo thụ động; đường Hall / ESP32 chưa nối (không có firmware). Trình bày là giới hạn hiện tại | Không đổi code |
+| FR-43: kỹ thuật viên dùng Flutter Desktop; quyết định 2026-11-26: màn máy trạm của Robot Agent là nơi làm việc duy nhất | **D10: DesktopApp Flutter là kênh chính** cho buổi demo và trong tài liệu (khớp phiếu đăng ký). Quyết định 2026-11-26 về màn máy trạm vì thế cần chủ dự án rà lại: hai quyết định ngược nhau | Chưa kiểm DesktopApp chạy trọn luồng với BE hiện tại |
+| Trợ lý AI: 2026-11-22 "khách đồng ý rồi mới áp dụng", sau đó FE tự áp dụng mọi đề xuất | **D02: tự áp dụng có chọn lọc.** Chỉ đề xuất hoàn tác được mới tự áp dụng; còn lại khách bấm Áp dụng / Bỏ qua; có Hoàn lại | Đã làm (BE + FE) |
+| BR-13: viết lại lần sau tính phí theo báo giá mới | **D09** (nguyên văn): "Được thêm 1 lần viết lại không tốn phí mà, trừ phi đổi nội dung hay vật tư thì mới phải tính báo giá lại từ đầu. Còn nếu không thì được viết lại miễn phí." Hiểu là: một lần viết lại miễn phí như code đang làm; chỉ tính phí khi đổi nội dung hoặc vật tư, và khi đó báo giá lại từ đầu. **Chưa rõ:** bản viết lại vẫn lỗi thì có được viết lại miễn phí tiếp không | Chưa đổi code, chờ trả lời |
+| Trigger: đơn `ACCEPTED` không có service nào huỷ | **D04:** khách và Staff phụ trách huỷ được | Đã làm |
+| Khoá / đổi vai trò tài khoản không kiểm việc đang giữ | **D05:** chặn tới khi phân công lại; có `force` kèm lý do | Đã làm |
+| FR-45/46: kỹ thuật viên xác nhận viết xong | **D06:** cần một lần chạy robot kết thúc `DONE`; Manager ghi đè có lý do | Đã làm |
+| Không có lối ra cho đơn chờ thanh toán cuối, chờ nhận, giao thất bại | **D08 (bản đầy đủ):** Staff chuyển sang nhận tại xưởng khi giao thất bại; Manager đóng đơn kèm số tiền hoàn; tác vụ nền nhắc và báo quá hạn. Migration 0033 | Đã làm (BE); FE chưa có màn |
+| Cổng MOCK dùng được ở mọi môi trường | **D01:** `ALLOW_TEST_PAYMENTS`, mặc định tắt | Đã làm |
+| Bỏ xác nhận "có người cạnh E-Stop", agent mở ra LAN (2026-11-26) | **D03: để sau**, giữ nguyên | Không đổi |
+| Luật: test chạy trên Supabase thật | **D12: giữ luật.** Chỉ sửa để tiến trình test không còn xoá dòng `order_types_enabled` | Đã làm |
 
 ## Quyết định bổ sung của chủ dự án (2026-10-18, cho Phase 4)
 | Vấn đề tài liệu không nói rõ | Quyết định |

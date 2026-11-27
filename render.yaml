@@ -31,3 +31,18 @@ services:
         value: "true"
       - key: TRUST_PROXY_HEADERS   # Render is the single reverse proxy in front of the container
         value: "true"
+      # ---- AR-03 (audit 2026-11-27): settings whose code default is the SAFE-FOR-TESTS one. They were not listed here, so what
+      # production ran with depended on somebody remembering the dashboard. `sync: false` = the value is set in the dashboard
+      # and this file never overwrites it; listing them makes Render ask for them when the service is created.
+      - key: PAYMENT_MODE              # mock | sandbox | live. Code default: mock (simulated payments)
+        sync: false
+      - key: ALLOW_TEST_PAYMENTS       # true ONLY on a demo / test deployment. Code default: false = mock and sandbox payments
+        sync: false                    # are refused and only a real gateway (payOS) can confirm an order (D01)
+      - key: BACKGROUND_JOBS_ENABLED   # true on this one instance, or quotations never expire, unpaid deposits are never
+        sync: false                    # cancelled, nobody is auto-accepted and photos / AI chats are never purged
+      - key: MOTION_VALIDATION_REQUIRED  # true where a real robot is driven: a simulation result counts only after the
+        sync: false                      # server has re-validated it. Code default: false (the client's "passed" is trusted)
+      - key: PRODUCTION_SIGNING_KEY    # Ed25519 private key (scripts/production_key.py new). Without it nothing can be scheduled
+        sync: false
+      - key: DB_LOCK_TIMEOUT_MS        # optional. Code default 20000: a statement gives up on a row lock after 20 s (AR-02)
+        sync: false

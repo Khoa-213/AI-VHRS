@@ -97,6 +97,19 @@ CATALOG: dict[str, _T] = {
     "ACCEPT_REMINDER": ("ORDER_STATUS_CHANGED", None, False, False, lambda p: f"Nhắc nghiệm thu đơn {p['code']}",
                         lambda p: f"Sản phẩm của đơn {p['code']} đang chờ bạn nghiệm thu. Đơn sẽ tự nghiệm thu lúc "
                                   f"{moment(p.get('due_at'))} nếu bạn không phản hồi."),
+    # ---- D08 (audit 2026-11-27): an order that waits too long after production
+    "FINAL_PAYMENT_REMINDER": ("PAYMENT", None, True, False, lambda p: f"Nhắc thanh toán phần còn lại của đơn {p['code']}",
+                               lambda p: f"Sản phẩm của đơn {p['code']} đã xong và đang chờ bạn thanh toán phần còn lại "
+                                         f"(đã {p.get('days')} ngày). Vui lòng thanh toán để xưởng giao hàng."),
+    "DELIVERY_TO_PICKUP": ("ORDER_STATUS_CHANGED", None, True, False, lambda p: f"Đơn {p['code']}: nhận hàng tại xưởng",
+                           lambda p: f"Hãng vận chuyển giao đơn {p['code']} không thành công. Xưởng đang giữ sản phẩm; bạn "
+                                     f"vui lòng nhắn xưởng để hẹn giờ đến nhận."),
+    "FINAL_PAYMENT_OVERDUE": ("PAYMENT", None, False, False, lambda p: f"Đơn {p['code']} chờ thanh toán cuối quá lâu",
+                              lambda p: f"Đơn {p['code']} đã chờ khách thanh toán phần còn lại {p.get('days')} ngày. Cần "
+                                        f"Quản lý quyết định: liên hệ khách hoặc đóng đơn."),
+    "PICKUP_OVERDUE": ("ORDER_STATUS_CHANGED", None, False, False, lambda p: f"Đơn {p['code']} chưa được nhận tại xưởng",
+                       lambda p: f"Đơn {p['code']} đã chờ khách đến nhận {p.get('days')} ngày. Cần Quản lý quyết định: liên hệ "
+                                 f"khách hoặc đóng đơn."),
     "MESSAGE": ("NEW_MESSAGE", None, False, True, lambda p: f"Tin nhắn mới về đơn {p['code']}",
                 lambda p: f"Bạn có tin nhắn mới về đơn {p['code']}."),
     # ---- workshop staff (in-app only)

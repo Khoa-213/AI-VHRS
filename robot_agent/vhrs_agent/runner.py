@@ -48,9 +48,39 @@ class Watchdogs:
     tracking_tolerance_mm: float | None = None  # largest allowed distance between the commanded and the real pen position
     tracking_grace_s: float | None = None       # how long it may exceed that before we stop
 
+    # RB-03: software acceptance limits for the numbers above (not properties of the robot). A watchdog set to an absurd value is
+    # a watchdog switched off: a tracking tolerance of 1e9 mm would pass "> 0" and never fire. A tolerance may not be larger than
+    # two of the longest moves one command makes (5 mm), a time may not be longer than ten seconds.
+    MAX_TOLERANCE_MM = 10.0
+    MAX_SECONDS = 10.0
+
+    def problems(self) -> list[str]:
+        """Why these watchdogs cannot be trusted ([] = fine): a missing value, a value <= 0, or one beyond the acceptance limits."""
+        out = []
+        for name, limit in (("stop_settle_s", self.MAX_SECONDS), ("stop_window_s", self.MAX_SECONDS),
+                            ("tracking_grace_s", self.MAX_SECONDS), ("stop_tolerance_mm", self.MAX_TOLERANCE_MM),
+                            ("tracking_tolerance_mm", self.MAX_TOLERANCE_MM)):
+            v = getattr(self, name)
+            if v is None or not v > 0:
+                out.append(f"{name}: chưa đặt")
+            elif v > limit:
+                out.append(f"{name} = {v:g} vượt mức chấp nhận {limit:g}")
+        return out
+
     def configured(self) -> bool:
-        return all(v is not None and v > 0 for v in (self.stop_settle_s, self.stop_window_s, self.stop_tolerance_mm,
-                                                     self.tracking_tolerance_mm, self.tracking_grace_s))
+        return not self.problems()
+
+
+@dataclass(frozen=True)
+class StationLimits:
+    """RB-02: hard limits of THIS workstation. They live in agent.json on the workstation and are never taken from the backend, the
+    package or the calibration, so a mistyped probe height or a wrong spring figure cannot move them. None = UNCONFIGURED and
+    REAL mode refuses to run."""
+    z_floor_mm: float | None = None      # lowest height (robot base frame) the pen tip may ever be sent to: just under the paper surface
+    max_press_mm: float | None = None    # the largest spring compression a plan may ask for
+
+    def configured(self) -> bool:
+        return self.z_floor_mm is not None and self.max_press_mm is not None and self.max_press_mm > 0
 
 
 class RunRefused(Exception):
@@ -96,6 +126,12 @@ class ProgressStore:
             signature = cur.get("execution_signature") if cur.get("dry_run_ok") == "REAL" and mode != "REAL" else execution_signature
             self.save({**cur, "dry_run_ok": "REAL" if "REAL" in (cur.get("dry_run_ok"), mode) else mode,
                        "execution_signature": signature})
+        elif int(cur.get("completed") or 0) == 0 and cur.get("state") in (None, "IDLE"):
+            # RB-06: the plan changed (new calibration, new package) and nothing of the old plan is on the paper. Without this
+            # branch the new rehearsal was never recorded, REAL kept answering DRY_RUN_REQUIRED for ever, and the only ways out
+            # were to waive the rehearsal or delete the file by hand. Ink already on the paper is never rewritten here.
+            self.save({"digest": digest, "job_id": job_id, "state": "IDLE", "completed": 0, "interrupted": None,
+                       "dry_run_ok": mode, "execution_signature": execution_signature})
 
     def save(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,13 +227,15 @@ class JobRunner:
                  bridge: Any = None, wait_for_paper: Callable[[int], bool] | None = None,
                  on_snapshot: Callable[[Snapshot], None] | None = None, clock: Callable[[], float] = time.monotonic,
                  ops: OpsReporter | None = None, watchdogs: Watchdogs | None = None, unsensed: bool = False,
-                 waive_dry_run: bool = False):
+                 waive_dry_run: bool = False, station: StationLimits | None = None):
         """`unsensed`: the owner chose to write with a plain spring gripper that has no force sensor. Without it a write needs gripper data."""
         self.clock = clock
         self.unsensed = unsensed
         self.waive_dry_run = waive_dry_run          # the person at the workstation waived the REAL pen-up rehearsal for this job (real-enable --waive-dry-run)
         self.ops = ops or OpsReporter(None, robot_id=None)
         self.watchdogs = watchdogs
+        self.station = station
+        self._verify_thread: threading.Thread | None = None
         self.robot, self.gripper, self.run_dir, self.limits = robot, gripper, Path(run_dir), limits
         self.bridge, self.wait_for_paper, self.on_snapshot = bridge, wait_for_paper, on_snapshot
         self.ctl = Control()
@@ -263,7 +301,16 @@ class JobRunner:
                 self.log.write("software_stop", reason=reason)
         w = self.watchdogs
         if w is not None and w.configured():
-            threading.Thread(target=self._verify_stopped, args=(reason,), daemon=True).start()
+            self._verify_thread = threading.Thread(target=self._verify_stopped, args=(reason,), daemon=True)
+            self._verify_thread.start()
+
+    def wait_stop_verified(self) -> None:
+        """RB-05: block until the check "did the robot really stop?" has finished. Whoever owns the robot connection calls this
+        before disconnecting: the check reads the TCP twice, and a connection closed under it made it report a red
+        LINK_LOST_MOVING for a robot that had simply stopped (or never told anybody about one that had not)."""
+        t, w = self._verify_thread, self.watchdogs
+        if t is not None and t.is_alive() and t is not threading.current_thread():
+            t.join(timeout=(w.stop_settle_s + w.stop_window_s if w and w.configured() else 0.0) + 5.0)
 
     def _verify_stopped(self, reason: str) -> None:
         w = self.watchdogs
@@ -309,7 +356,16 @@ class JobRunner:
             fail("ROBOT_NOT_READY", "Robot không phản hồi hoặc đang báo lỗi / dừng khẩn.")
         if self.robot.mode == Mode.REAL and not (self.watchdogs and self.watchdogs.configured()):
             fail("WATCHDOG_UNCONFIGURED", "Chưa cấu hình ngưỡng kiểm tra dừng thật và lệch đường (stop/tracking); "
-                 "không chạy robot thật khi phần mềm chưa thể tự phát hiện robot không dừng.")
+                 "không chạy robot thật khi phần mềm chưa thể tự phát hiện robot không dừng.",
+                 self.watchdogs.problems() if self.watchdogs else None)
+        if self.robot.mode == Mode.REAL:
+            if not (self.station and self.station.configured()):
+                fail("STATION_LIMITS_UNCONFIGURED", "Chưa đặt giới hạn cứng của máy trạm trong agent.json (station_limits: z_floor_mm, "
+                     "max_press_mm). Không chạy robot thật khi độ cao thấp nhất của đầu bút chỉ dựa vào điểm dò nhập tay.")
+            if len(probes) < 4:
+                fail("PROBE_CHECK_POINT_REQUIRED", "Chạy robot thật cần ít nhất 4 điểm dò: ba điểm luôn nằm trên một mặt phẳng nên "
+                     "không phát hiện được điểm nào đo hoặc nhập sai. Dò thêm một điểm trên tờ giấy (ví dụ góc dưới-phải).",
+                     {"probes": len(probes)})
         if len(pages) > 1 and not dry_run and self.wait_for_paper is None:
             fail("PAPER_CHANGE_UNSUPPORTED", "Job nhiều trang cần người vận hành xác nhận thay giấy giữa các trang.")
         report, plans = validate(pages, probes, cfg, ws, require_box=self.robot.mode == Mode.REAL)
@@ -319,6 +375,18 @@ class JobRunner:
         digest = plan_digest(package_hash, probes, cfg, ws)
 
         if self.robot.mode == Mode.REAL:
+            if frame.mirrored:                                   # TP-09
+                fail("PROBE_ORDER_MIRRORED", "P0, P1, P2 quay ngược chiều: chữ viết ra sẽ bị soi gương. Kiểm tra lại P1 (góc trên-phải) "
+                     "và P2 (góc dưới-trái) rồi hiệu chuẩn lại.")
+            if cfg.press_mm > self.station.max_press_mm:
+                fail("PRESS_ABOVE_STATION_LIMIT", f"Kế hoạch nén lò xo {cfg.press_mm:.2f} mm, vượt giới hạn máy trạm "
+                     f"{self.station.max_press_mm:g} mm (station_limits.max_press_mm).",
+                     {"press_mm": round(float(cfg.press_mm), 3), "max_press_mm": self.station.max_press_mm})
+            lowest = float(min(float(np.min(p.all_points()[:, 2])) for p in plans))
+            if lowest < self.station.z_floor_mm:
+                fail("BELOW_Z_FLOOR", f"Kế hoạch đưa đầu bút xuống z = {lowest:.2f} mm, thấp hơn sàn của máy trạm "
+                     f"{self.station.z_floor_mm:g} mm (station_limits.z_floor_mm). Kiểm tra lại các điểm dò.",
+                     {"lowest_z_mm": round(lowest, 3), "z_floor_mm": self.station.z_floor_mm})
             cur = np.asarray(self.robot.read_tcp(), dtype=float)
             if cur.shape != (3,) or not np.all(np.isfinite(cur)):
                 fail("INVALID_START_POSE", "Không đọc được vị trí TCP hợp lệ.")

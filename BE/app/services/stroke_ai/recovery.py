@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 
 from app.core.errors import AppError
+from app.services import image_guard
 from app.services.handwriting_image import _apply_orientation
 from app.services.stroke_ai.regions import RegionDraft, label_for
 from app.services.stroke_ai.trajectory import PAPER_MM, Page, Stroke
@@ -502,7 +503,7 @@ def trace(ink: np.ndarray, smooth_window: int = 5, simplify_eps: float = 0.7) ->
 
 def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_box: dict[str, Any] | None = None,
                  margin_mm: float = 10.0) -> tuple[Page, RecoveryStats]:
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+    img = image_guard.decode(data, cv2.IMREAD_GRAYSCALE)
     if img is None:
         raise AppError(422, "INVALID_IMAGE", "Không đọc được ảnh. Vui lòng tải lại file jpg/png.")
     img = _apply_orientation(img, rotation_deg, crop_box)

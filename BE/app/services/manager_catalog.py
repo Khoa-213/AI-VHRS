@@ -127,12 +127,25 @@ class ManagerCatalogService:
     def _after_commit(self, fn: Callable[[], None]) -> None:
         """Run `fn` once this request's transaction is committed (never when it is rolled back). A failure is logged:
         the database is already right, only an unused file stays behind."""
-        def run(_session: Session) -> None:
+        done = []
+
+        def run(session: Session) -> None:
+            # AR-08 (audit 2026-11-27): "after_commit" also fires when a SAVEPOINT is released. Deleting the old file then
+            # would lose it for good if the request is rolled back afterwards; wait for the real commit, then run once.
+            # (The listener stays on this request's session; removing it from inside its own event is not allowed.)
+            if done or session.in_nested_transaction():
+                return
+            done.append(True)
             try:
                 fn()
             except Exception:
                 log.warning("catalog media: clean-up after commit failed", exc_info=True)
-        event.listen(self.session, "after_commit", run, once=True)
+
+        def cancel(_session: Session, previous_transaction: Any) -> None:
+            if previous_transaction.parent is None:              # the whole transaction was rolled back: keep the file
+                done.append(True)
+        event.listen(self.session, "after_commit", run)
+        event.listen(self.session, "after_soft_rollback", cancel)
 
     def set_image(self, material: str, row_id: int, data: bytes, media: Any) -> Any:
         """Store the workshop's photo of a paper / pen / ink and point the row to it. The upload is normalised first
@@ -311,6 +324,10 @@ class ManagerCatalogService:
         self._audit("ROBOT_UPDATE", "robot", row.id, old, new)
         affected: list[int] = []
         if row.status in (RobotStatus.MAINTENANCE, RobotStatus.BROKEN):
+            if "status" in new:
+                # TP-01: taking a robot out of service must also stop it; until now only the row changed
+                from app.services.robot_link import halt_robot  # late import: robot_link pulls in the live hub
+                halt_robot(self.session, row.id, by=self.manager.id, reason=f"Robot chuyển sang {row.status.value}", ip=self.ip)
             # Jobs already planned on this robot must be moved by the Manager (reschedule); list them.
             affected = [j.id for j in self.jobs.future_for_robot(row.id, datetime.now(timezone.utc))
                         if j.status in ACTIVE_JOB_STATUSES]

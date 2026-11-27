@@ -26,6 +26,7 @@ import cv2
 import numpy as np
 
 from app.core.errors import AppError
+from app.services import image_guard
 from app.services.stroke_ai import recovery
 
 SHEET_VERSION = "SHEET_V1"
@@ -177,7 +178,7 @@ def _corner_squares(gray: np.ndarray) -> np.ndarray | None:
 
 
 def warp(data: bytes) -> np.ndarray:
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+    img = image_guard.decode(data, cv2.IMREAD_GRAYSCALE)
     if img is None:
         raise AppError(422, "INVALID_IMAGE", "Không đọc được ảnh. Vui lòng tải lại file jpg/png.")
     scale = 2400 / max(img.shape)

@@ -35,6 +35,7 @@ import cv2
 import numpy as np
 
 from app.core.errors import AppError
+from app.services import image_guard
 from app.services.handwriting_image import _apply_orientation
 from app.services.stroke_ai import folds as folds_mod
 from app.services.stroke_ai import paper as paper_mod
@@ -297,7 +298,7 @@ def _fine_ink(ink: np.ndarray, gray: np.ndarray, f: float, noise: np.ndarray | N
 def recover_page(data: bytes, *, paper_size: str, rotation_deg: int = 0, crop_box: dict[str, Any] | None = None,
                  margin_mm: float = 10.0) -> tuple[Page, v1.RecoveryStats, dict]:
     """Like `recovery.recover_page`; the third value describes the geometry (benchmark: map strokes back to the photo)."""
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    img = image_guard.decode(data, cv2.IMREAD_COLOR)
     if img is None:
         raise AppError(422, "INVALID_IMAGE", "Không đọc được ảnh. Vui lòng tải lại file jpg/png.")
     img = _apply_orientation(img, rotation_deg, crop_box)

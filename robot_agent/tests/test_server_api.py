@@ -65,7 +65,8 @@ def make(tmp_path, *, modes=("mock", "sim"), robot_factory=None, speed=None, wat
     backend = backend or FakeBackend()
     cfg = ServerConfig(backend_url="https://be.test", modes=modes, run_dir=tmp_path,
                        sim={"tool_offset_mm": 250.0, "table_z_mm": 19.0, "start_mm": list(DEMO_START), "speed_factor": speed, "yaw_deg": 0.0},
-                       watchdogs=watchdogs, unsensed_gripper=unsensed)
+                       watchdogs=watchdogs, unsensed_gripper=unsensed,
+                       station_limits={"z_floor_mm": 15.0, "max_press_mm": 4.0} if "real" in modes else None)
     svc = AgentService(cfg, transport=httpx.MockTransport(backend), downloader=lambda url: RAW,
                        robot_factory=robot_factory or (lambda mode: SimRobot(DEMO_START, speed_factor=None)),
                        gripper_factory=gripper_factory)

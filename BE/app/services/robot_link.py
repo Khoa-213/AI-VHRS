@@ -33,13 +33,14 @@ from app.domain import job_rules as jr
 from app.models.account import Account, RoleCode
 from app.models.ops import ACTIVE_JOB_STATUSES, JobStatus, ProductionJob, Robot, RobotAgent, RobotCommand, RobotRun
 from app.services import audit
-from app.services.robot_ops import OFFLINE_AFTER_S, RobotOpsService
+from app.services.robot_ops import OFFLINE_AFTER_S, RobotOpsService, require_motion_allowed
 
 AGENT_KEY_PREFIX = "vhrs_ak_"
 KINDS = ("LOAD", "PREFLIGHT", "DRY_RUN", "RUN", "PAUSE", "RESUME", "STOP", "PAPER_CHANGED", "IDENTIFY", "ALIGN_START")
 JOB_KINDS = ("LOAD", "PREFLIGHT", "DRY_RUN", "RUN", "PAPER_CHANGED", "ALIGN_START")
 CONTROL_KINDS = ("PAUSE", "RESUME", "STOP")
-MANAGER_KINDS = ("PAUSE", "RESUME", "STOP")             # a Manager may watch and pause/stop, never start a run
+MANAGER_KINDS = ("PAUSE", "STOP")                       # a Manager may watch and halt, never put the arm in motion (TP-03)
+MOTION_KINDS = ("RUN", "DRY_RUN", "RESUME", "ALIGN_START")   # everything that moves the arm; held back by require_motion_allowed
 # Safety (owner decision 2026-11-26): a technician who holds a live job on the robot may always halt it, even while another
 # technician's app holds the robot. Starting or resuming motion stays with the holder (ROBOT_IN_USE).
 HALT_KINDS = ("PAUSE", "STOP")
@@ -159,8 +160,58 @@ def technician_for_agent(session: Session, robot_id: int, job_id: int | None, ac
         stmt = stmt.where(ProductionJob.technician_id == account_id)
     job = session.scalar(stmt.order_by(ProductionJob.slot_start).limit(1))
     if job is None:
+        # TP-07: the job may have left its live states (incident, cancelled order, "finished") while the agent's run is still
+        # open. The agent must still be able to close THAT run and say how it ended, or the open run blocks the robot for good.
+        stmt = select(ProductionJob).join(RobotRun, RobotRun.job_id == ProductionJob.id).where(
+            RobotRun.robot_id == robot_id, RobotRun.ended_at.is_(None))
+        if job_id is not None:
+            stmt = stmt.where(ProductionJob.id == job_id)
+        if account_id is not None:
+            stmt = stmt.where(ProductionJob.technician_id == account_id)
+        job = session.scalar(stmt.limit(1))
+    if job is None:
         raise AppError(401, "AGENT_HAS_NO_ACTIVE_JOB", "Robot này hiện không có job đang hoạt động; agent không có quyền gọi API kỹ thuật viên.")
     return session.get(Account, job.technician_id)
+
+
+def halt_job(session: Session, job: ProductionJob, *, by: int, reason: str, ip: str | None = None) -> RobotCommand | None:
+    """TP-01: the job is ending behind the robot's back (incident, cancelled order, robot taken out of service).
+
+    Until now the backend only changed rows: the job read FAILED while the arm kept writing, and the run stayed open and blocked
+    the next job. Here nothing still queued for the job may reach the agent, and when the arm may be moving (a run is open, or
+    a motion command was handed to the agent and has not come back) a STOP is queued for it. The run itself is closed by the
+    agent once the arm has stopped (it keeps that right, see `technician_for_agent`); the backend cannot know the outcome.
+    Returns the STOP command, or None when nothing was moving. A STOP that finds no agent simply expires: the red e-mailed
+    alert for a silent agent during a run (`sweep_stale`) covers that case, and the physical E-Stop is the last word."""
+    if job.robot_id is None:
+        return None
+    now = _now()
+    for c in session.scalars(select(RobotCommand).where(RobotCommand.job_id == job.id, RobotCommand.status == "PENDING",
+                                                        RobotCommand.kind.not_in(HALT_KINDS)).with_for_update()):
+        c.status, c.finished_at, c.error_code = "EXPIRED", now, "JOB_ENDED"
+    run_open = session.scalar(select(RobotRun.run_id).where(RobotRun.job_id == job.id, RobotRun.ended_at.is_(None)).limit(1))
+    moving = session.scalar(select(RobotCommand.id).where(RobotCommand.job_id == job.id, RobotCommand.status == "DELIVERED",
+                                                          RobotCommand.kind.in_(MOTION_KINDS)).limit(1))
+    if run_open is None and moving is None:
+        return None
+    cmd = RobotCommand(id=str(uuid.uuid4()), robot_id=job.robot_id, job_id=job.id, kind="STOP",
+                       params={"system": True, "reason": reason[:200]}, status="PENDING", created_by=by,
+                       expires_at=now + timedelta(seconds=TTL_S["CONTROL"]))
+    session.add(cmd)
+    session.flush()
+    audit.record(session, actor_id=by, action="ROBOT_COMMAND", entity_type="robot", entity_id=job.robot_id,
+                 new={"command_id": cmd.id, "kind": "STOP", "job_id": job.id, "system": True, "open_run": run_open}, reason=reason, ip=ip)
+    hub.notify_command(job.robot_id)
+    return cmd
+
+
+def halt_robot(session: Session, robot_id: int, *, by: int, reason: str, ip: str | None = None) -> list[RobotCommand]:
+    """STOP for whatever is live on a robot that is being taken out of service (see `halt_job`)."""
+    jobs = session.scalars(select(ProductionJob).where(
+        ProductionJob.robot_id == robot_id,
+        or_(ProductionJob.status.in_(ACTIVE_JOB_STATUSES),
+            ProductionJob.id.in_(select(RobotRun.job_id).where(RobotRun.robot_id == robot_id, RobotRun.ended_at.is_(None))))))
+    return [c for c in (halt_job(session, j, by=by, reason=reason, ip=ip) for j in jobs) if c is not None]
 
 
 class RobotLinkService:
@@ -283,7 +334,8 @@ class RobotLinkService:
         if kind not in KINDS:
             raise AppError(422, "UNKNOWN_COMMAND", f"Lệnh không hợp lệ: {kind}.")
         if self.is_manager and kind not in MANAGER_KINDS:
-            raise AppError(403, "FORBIDDEN", "Quản lý chỉ được tạm dừng, tiếp tục hoặc dừng robot.")
+            raise AppError(403, "FORBIDDEN", "Quản lý chỉ được tạm dừng hoặc dừng robot; cho robot chạy tiếp là việc của "
+                           "kỹ thuật viên đứng tại máy.")
         if kind in JOB_KINDS and job_id is None:
             raise AppError(422, "JOB_REQUIRED", f"Lệnh {kind} cần job_id.")
         job = None
@@ -297,6 +349,8 @@ class RobotLinkService:
         if robot_id is None:
             raise AppError(422, "ROBOT_REQUIRED", "Cần robot_id hoặc job_id.")
         robot = self.ops._robot(robot_id, write=True, lock=True)
+        # TP-03: RESUME may come with only a robot_id. It still resumes one particular job, and that job's rules apply.
+        live_job = job if job is not None else (self._live_job(robot.id) if kind == "RESUME" else None)
         if self.actor and idempotency_key:
             prior = self.session.scalar(select(RobotCommand).where(RobotCommand.created_by == self.actor.id,
                                                                     RobotCommand.idempotency_key == idempotency_key))
@@ -317,9 +371,11 @@ class RobotLinkService:
         if job is not None and kind == "RUN" and job.status not in (JobStatus.WRITING, JobStatus.PAUSED):
             raise AppError(409, "JOB_STATE_CONFLICT", "Hãy bấm Bắt đầu viết (POST /technician/jobs/{id}/start) trước khi gửi lệnh RUN.",
                            {"job_status": job.status.value})
-        if (job is not None and kind in ("RUN", "RESUME") and job.status == JobStatus.PAUSED
-                and jr.simulation_stale(job.simulation_report)):
-            raise AppError(409, *jr.STALE_SIMULATION, {"job_status": job.status.value})
+        if (live_job is not None and kind in ("RUN", "RESUME") and live_job.status == JobStatus.PAUSED
+                and jr.simulation_stale(live_job.simulation_report)):
+            raise AppError(409, *jr.STALE_SIMULATION, {"job_status": live_job.status.value})
+        if kind in MOTION_KINDS:
+            require_motion_allowed(self.session, robot)             # TP-02: out of service, or a red alert nobody closed
         if not self._agent_online(robot):
             raise AppError(409, "AGENT_OFFLINE", "Máy trạm của robot chưa kết nối tới hệ thống. Không gửi lệnh; kiểm tra Robot Agent "
                            "(nếu đang có nguy hiểm: nhấn nút E-Stop vật lý).", {"robot_id": robot.id})
@@ -342,6 +398,16 @@ class RobotLinkService:
         self.session.refresh(cmd)
         hub.notify_command(robot.id)
         return cmd
+
+    def _live_job(self, robot_id: int) -> ProductionJob | None:
+        """The job a bare RESUME would resume on this robot: the one whose run is still open, else the one writing / paused."""
+        run_job = self.session.scalar(select(ProductionJob).join(RobotRun, RobotRun.job_id == ProductionJob.id).where(
+            RobotRun.robot_id == robot_id, RobotRun.ended_at.is_(None)).limit(1))
+        if run_job is not None:
+            return run_job
+        return self.session.scalar(select(ProductionJob).where(
+            ProductionJob.robot_id == robot_id, ProductionJob.status.in_((JobStatus.WRITING, JobStatus.PAUSED)))
+            .order_by(ProductionJob.slot_start).limit(1))
 
     def command(self, command_id: str) -> RobotCommand:
         cmd = self.session.get(RobotCommand, command_id)

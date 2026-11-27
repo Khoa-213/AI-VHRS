@@ -22,7 +22,7 @@ from app.domain import job_rules as jr
 from app.integrations.mailer import get_mailer
 from app.models.account import Account, AccountStatus, Role, RoleCode
 from app.models.ops import (ACTIVE_JOB_STATUSES, AlertCatalog, Calibration, Incident, JobEvent, JobEventType, JobStatus,
-                            ProductionJob, Robot, RobotAlert, RobotRun, TechnicianRobot)
+                            ProductionJob, Robot, RobotAlert, RobotRun, RobotStatus, TechnicianRobot)
 from app.services import audit
 
 log = logging.getLogger("app.robot_ops")
@@ -32,6 +32,23 @@ SAFETY_STOP_EVENTS = (JobEventType.ESTOP, JobEventType.OVER_FORCE, JobEventType.
 EMAIL_REPEAT_AFTER = timedelta(minutes=5)   # a still-open red alert is e-mailed again at most this often
 DRY_RUN_STATUSES = (JobStatus.PREPARING, JobStatus.PAUSED)   # a pen-up rehearsal writes nothing, so it may also run on a job paused after an abort
 WRITE_RUN_STATUSES = (JobStatus.WRITING, JobStatus.PAUSED)
+RED_LEVEL = 4                               # "press the E-Stop": only a Manager closes it, after checking the robot
+MOTION_ROBOT_STATUSES = (RobotStatus.AVAILABLE, RobotStatus.BUSY)   # a robot in MAINTENANCE / BROKEN is not moved
+
+
+def require_motion_allowed(session: Session, robot: Robot) -> None:
+    """TP-02: nothing may put the arm in motion while the robot is out of service or a red alert is still open.
+
+    "Only a Manager closes a red alert" means nothing unless the alert also holds the robot: without this a technician could send
+    RUN / RESUME seconds after an E-Stop alert, before anybody looked at the machine. Halting (PAUSE, STOP) never passes here."""
+    if robot.status not in MOTION_ROBOT_STATUSES:
+        raise AppError(409, "ROBOT_UNAVAILABLE", f"Robot {robot.code} đang {robot.status.value}: không gửi lệnh chuyển động.",
+                       {"robot_id": robot.id, "robot_status": robot.status.value})
+    red = session.scalar(select(RobotAlert).where(RobotAlert.robot_id == robot.id, RobotAlert.resolved_at.is_(None),
+                                                  RobotAlert.level >= RED_LEVEL).order_by(RobotAlert.raised_at).limit(1))
+    if red is not None:
+        raise AppError(409, "RED_ALERT_OPEN", "Robot còn cảnh báo đỏ chưa được Quản lý kiểm tra và đóng. Không cho robot chạy lại "
+                       "cho tới khi cảnh báo được đóng.", {"robot_id": robot.id, "alert_id": red.id, "code": red.code})
 
 
 def _now() -> datetime:
@@ -104,6 +121,7 @@ class RobotOpsService:
             raise AppError(409, "RUN_EXISTS", "run_id đã tồn tại.")
         now = _now()
         if refused_reason is None:
+            require_motion_allowed(self.session, robot)        # TP-02 (a refused attempt is still recorded, below)
             if job.status not in (DRY_RUN_STATUSES if dry_run else WRITE_RUN_STATUSES):
                 raise AppError(409, "JOB_STATE_CONFLICT", f"Không mở lần chạy {'thử' if dry_run else 'viết'} khi job đang {job.status.value}.",
                                {"job_status": job.status.value})

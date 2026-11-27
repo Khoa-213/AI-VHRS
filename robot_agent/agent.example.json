@@ -24,5 +24,8 @@
   "_start_point": "Optional fixed point the pen goes back to after a run and for align-start: x, y, z (mm) in the robot base frame, read from the robot display. It must be inside the safe box and at least the pen-up height above the sheet. Omit to use a point computed from the sheet.",
   "start_point_mm": null,
   "watchdogs": null,
+  "station_limits": null,
+  "_station_limits_example": {"z_floor_mm": "MEASURE: độ cao thấp nhất (mm, hệ BASE) đầu bút được phép tới, ngay dưới mặt giấy trên bàn này", "max_press_mm": "MEASURE: độ nén lò xo lớn nhất cho phép (mm), nhỏ hơn hành trình của gripper"},
+  "_station_limits": "REAL từ chối chạy khi thiếu station_limits. Hai số này là giới hạn cứng của CHÍNH máy trạm: không lấy từ máy chủ, gói job hay file hiệu chuẩn, nên điểm dò nhập sai độ cao không thể kéo chúng theo.",
   "_watchdogs_example": {"stop_settle_s": "MEASURE", "stop_window_s": "MEASURE", "stop_tolerance_mm": "MEASURE", "tracking_tolerance_mm": "MEASURE", "tracking_grace_s": "MEASURE"}
 }

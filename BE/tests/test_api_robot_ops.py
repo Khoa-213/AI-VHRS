@@ -257,7 +257,12 @@ def test_compliance_follows_the_real_steps_and_flags_a_job_without_a_real_run(cl
     assert st["package"] == "PASS" and st["calibration"] == "PASS" and st["simulation"] == "PASS"
     assert st["dry_run"] == "PENDING" and st["authorized"] == "PENDING" and st["written"] == "PENDING"
     _post(client, tech, jid, "start", status=200)
-    _post(client, tech, jid, "finish", status=200)                                    # recorded as written with NO real run
+    # D06: the technician can no longer record "written" with no robot run at all; a Manager may, with a reason
+    assert _err(_post(client, tech, jid, "finish", status=409)) == "RUN_EVIDENCE_REQUIRED"
+    assert client.post(f"{M}/jobs/{jid}/finish-override", headers=mgr, json={"reason": "ngắn"}).status_code == 422
+    done = client.post(f"{M}/jobs/{jid}/finish-override", headers=mgr, json={"reason": "Máy trạm mất mạng, robot đã viết xong"})
+    assert done.status_code == 200 and done.json()["status"] == "WRITTEN", done.text
+    assert _sql("select reason from audit_logs where action='JOB_FINISH_OVERRIDE' and entity_id=:j", j=jid).startswith("Máy trạm")
     c1 = client.get(f"{M}/jobs/{jid}/compliance", headers=mgr).json()
     st1 = {s["key"]: s for s in c1["steps"]}
     assert st1["written"]["status"] == "PASS" and st1["real_run"]["status"] == "FAIL"

@@ -123,6 +123,28 @@ class StaffOrderService:
                              reason=note or reason)
         return order
 
+    def cancel_accepted(self, order_id: int, reason: str) -> Order:
+        """D04 (audit 2026-11-27): the Staff in charge closes an order they had accepted and cannot do after all (missing
+        material, content that turns out not to be writable, a customer who went silent). ACCEPTED only: nothing is paid yet,
+        so no refund is involved; once a quotation is with the customer or the deposit is paid, other rules apply
+        (customer's decision, services/refunds.py). The reason is required and goes to the customer."""
+        reason = (reason or "").strip()
+        if len(reason) < 5:
+            raise AppError(422, "REASON_REQUIRED", "Vui lòng ghi rõ lý do huỷ đơn (ít nhất 5 ký tự).")
+        order = self.access.order(order_id, write=True, lock=True)
+        if order.order_status != OrderStatus.ACCEPTED:
+            raise AppError(409, "ORDER_CANCEL_UNSUPPORTED", "Xưởng chỉ huỷ được đơn đã tiếp nhận và chưa gửi báo giá.",
+                           {"order_status": order.order_status.value})
+        from app.services.orders import close_open_quotations
+        close_open_quotations(self.session, order.id)
+        order.cancel_reason = reason
+        self._move(order, OrderStatus.CANCELLED, f"Xưởng huỷ đơn: {reason}"[:500])
+        audit.record(self.session, actor_id=self.actor.id, action="ORDER_CANCEL", entity_type="order", entity_id=order.id,
+                     new={"by": "WORKSHOP", "from": "ACCEPTED"}, reason=reason)
+        notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="ORDER_CANCELLED",
+                             code=order.code)
+        return order
+
     def request_info(self, order_id: int, note: str, staff_id: int | None = None) -> Order:
         if not note.strip():
             raise AppError(422, "NOTE_REQUIRED", "Vui lòng nêu thông tin cần khách bổ sung.")

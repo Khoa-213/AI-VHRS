@@ -44,7 +44,7 @@ from vhrs_agent.bridge import BackendBridge, BridgeError
 from vhrs_agent.gripper import ForceLimits, GripperPort, SimGripper
 from vhrs_agent.ops import OpsReporter
 from vhrs_agent.port import Control, Mode, RobotError, RobotPort, StopRequested
-from vhrs_agent.runner import JobRunner, RunRefused, Watchdogs, authorization_token, plan_digest
+from vhrs_agent.runner import authorization_token, JobRunner, plan_digest, RunRefused, StationLimits, Watchdogs
 from vhrs_agent.sim import MockRobot, SimRobot
 from vhrs_agent.viewer import ViewerHub, create_app
 
@@ -93,6 +93,7 @@ class ServerConfig:
     lan_server: bool = True                               # false: only the outbound link, no local web console / LAN API
     production_public_keys: dict[str, str] | None = None  # U1: {key_id: base64 Ed25519 public key} of the backend (scripts/production_key.py public)
     require_signed_packages: bool = False                 # U1: refuse packages without a signed snapshot (after the legacy jobs are done)
+    station_limits: dict[str, float] | None = None        # RB-02: {z_floor_mm, max_press_mm} of THIS workstation; REAL refuses without them
 
     @classmethod
     def from_file(cls, path: str | Path) -> "ServerConfig":
@@ -334,9 +335,22 @@ class AgentService:
 
         return SimGripper(depth, float(ctx.cfg.spring_k_n_per_mm or 0.4), ctx.limits.f_hard, float(ctx.cfg.max_spring_travel_mm or 6.0))
 
+    def _hold(self) -> None:
+        """RB-05: take the agent for one robot operation. Checking `_busy` without the lock let a run start between the check and
+        the work; the hub then pointed at the other operation's runner and STOP reached a robot that was not connected."""
+        with self._lock:
+            if self._busy:
+                raise ApiError(409, "AGENT_BUSY", "Agent đang chạy một job.", self.current)
+            self._busy = True
+
     def do_identify(self, mode: str) -> dict[str, Any]:
-        if self._busy:
-            raise ApiError(409, "AGENT_BUSY", "Agent đang chạy một job.", self.current)
+        self._hold()
+        try:
+            return self._identify(mode)
+        finally:
+            self._busy = False
+
+    def _identify(self, mode: str) -> dict[str, Any]:
         robot = self.make_robot(mode, None)
         try:
             info = robot.connect()                                            # read-only identification, no motion, no enable
@@ -361,8 +375,13 @@ class AgentService:
         return {"ok": True, "controller": r["info"], "tcp_mm": r["tcp_mm"], "checked_at": time.time()}
 
     def do_preflight(self, ctx: "JobCtx", mode: str, token: str) -> dict[str, Any]:
-        if self._busy:
-            raise ApiError(409, "AGENT_BUSY", "Agent đang chạy một job.", self.current)
+        self._hold()
+        try:
+            return self._preflight(ctx, mode, token)
+        finally:
+            self._busy = False
+
+    def _preflight(self, ctx: "JobCtx", mode: str, token: str) -> dict[str, Any]:
         runner, robot = self._runner(ctx, mode, None, token)
         try:
             plans, _, digest = runner.preflight(job_id=ctx.job_id, pages=ctx.pages, package_hash=ctx.package_hash, probes=ctx.probes,
@@ -595,6 +614,9 @@ class AgentService:
     def watchdogs(self) -> Watchdogs | None:
         return Watchdogs(**self.cfg.watchdogs) if self.cfg.watchdogs else None
 
+    def station(self) -> StationLimits | None:
+        return StationLimits(**self.cfg.station_limits) if self.cfg.station_limits else None
+
     # ---- running
     def _runner(self, ctx: JobCtx, mode: str, speed: float | None, token: str, waive_dry_run: bool = False) -> tuple[JobRunner, RobotPort]:
         robot = self.make_robot(mode, speed)
@@ -604,7 +626,8 @@ class AgentService:
         ops = OpsReporter(br, robot_id=ctx.robot_id)
         runner = JobRunner(robot, gripper, run_dir=self.cfg.run_dir, limits=ctx.limits, bridge=br, ops=ops,
                            watchdogs=self.watchdogs(), wait_for_paper=self._wait_for_paper,
-                           unsensed=bool(mode == "real" and gripper is None and self.cfg.unsensed_gripper), waive_dry_run=waive_dry_run)
+                           unsensed=bool(mode == "real" and gripper is None and self.cfg.unsensed_gripper), waive_dry_run=waive_dry_run,
+                           station=self.station())
         tool = float(self.cfg.sim["tool_offset_mm"]) if mode != "real" else float((self.cfg.fairino or {}).get("tcp_offset_mm") or 0) or None
         self.hub.attach(runner, ctx.pages, frame, ctx.limits, ctx.cfg.press_mm, ctx.cfg.pen_up_clearance_mm or 0.0, ctx.job_id, tool_mm=tool)
         return runner, robot
@@ -654,6 +677,7 @@ class AgentService:
                 self.last = {"error": f"{type(exc).__name__}: {exc}", "job_id": ctx.job_id}
             finally:
                 try:
+                    runner.wait_stop_verified()                               # RB-05: the "did it really stop?" check still needs the connection
                     robot.disconnect()
                 except Exception:                                             # noqa: BLE001
                     pass

@@ -8,8 +8,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 
-from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import WebhookResult
+from app.api.deps import RawBody, SessionDep, client_ip, require_roles
+from app.api.ops_schemas import ToPickupIn, WebhookResult
+from app.api.order_schemas import OrderOut
 from app.api.schemas import ErrorOut
 from app.api.shipment_schemas import (CancelShipmentIn, CreateShipmentIn, MockEventIn, ShipmentOut,
                                       StaffShipmentOut)
@@ -84,6 +85,19 @@ def create_shipment(order_id: int, body: CreateShipmentIn, session: SessionDep, 
     return _staff_out(svc, row, _eta(svc, order_id))
 
 
+@router.post("/workshop/orders/{order_id}/shipment/to-pickup", response_model=OrderOut,
+             summary="D08 Giao không thành công: Staff phụ trách chuyển đơn sang nhận tại xưởng (DELIVERING → READY_TO_DELIVER)",
+             description=("Chỉ khi vận đơn mới nhất của đơn đang `FAILED` hoặc `RETURNED`. Đơn thành nhận tại xưởng, không đặt "
+                          "khung giờ (hẹn với khách qua chat); số điện thoại người nhận trong địa chỉ giao dùng để đối chiếu khi "
+                          "bàn giao (`POST /workshop/orders/{id}/pickup/confirm`). Phí vận chuyển đã trả không tự hoàn. Khách nhận "
+                          "thông báo và email."),
+             responses={409: {"model": ErrorOut, "description": "ORDER_NOT_DELIVERING / SHIPMENT_NOT_FAILED / PICKUP_CONTACT_MISSING"},
+                        422: {"model": ErrorOut, "description": "REASON_REQUIRED"}})
+def shipment_to_pickup(order_id: int, body: ToPickupIn, session: SessionDep, actor: StaffDep, request: Request) -> OrderOut:
+    from app.services.order_exits import switch_to_pickup
+    return OrderOut.model_validate(switch_to_pickup(session, actor, order_id, body.reason, client_ip(request)))
+
+
 @router.post("/workshop/shipments/{shipment_id}/cancel", response_model=StaffShipmentOut,
              summary="Huỷ vận đơn hãng chưa lấy hàng (CREATED → CANCELLED) để tạo lại. Chỉ Staff", responses=CONFLICT)
 def cancel_shipment(shipment_id: int, body: CancelShipmentIn, session: SessionDep, actor: StaffDep, request: Request,
@@ -109,7 +123,6 @@ def mock_event(shipment_id: int, body: MockEventIn, session: SessionDep, actor: 
              responses={401: {"model": ErrorOut, "description": "INVALID_SIGNATURE"},
                         404: {"model": ErrorOut, "description": "SHIPMENT_NOT_FOUND"},
                         422: {"model": ErrorOut, "description": "INVALID_WEBHOOK"}})
-async def carrier_webhook(carrier: Carrier, request: Request, session: SessionDep) -> WebhookResult:
-    body = await request.body()
+def carrier_webhook(carrier: Carrier, request: Request, session: SessionDep, body: RawBody) -> WebhookResult:
     svc = ShipmentService(session, None, None, client_ip(request))
     return WebhookResult(**svc.handle_webhook(carrier, body, dict(request.query_params), dict(request.headers)))

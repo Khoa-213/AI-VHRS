@@ -146,10 +146,8 @@ def main() -> int:
     saved = None
     started = time.time()
     try:
-        with engine.begin() as c:
-            saved = c.execute(text("select value::text, description from system_settings "
-                                   "where key='order_types_enabled'")).first()
-            c.execute(text("delete from system_settings where key='order_types_enabled'"))
+        # AI-10 (audit 2026-11-27): `order_types_enabled` is no longer removed from the database for the run (that opened OT-2 to
+        # the real customers meanwhile); every pytest process opens the order types for itself in memory (tests/conftest.py).
         base = {**os.environ, "VHRS_TEST_RUNNER_LOCK": "1", "VHRS_TEST_ORDER_TYPES_OPEN": "1",
                 "DB_POOL_SIZE": str(args.pool_size), "DB_MAX_OVERFLOW": str(args.max_overflow), "PYTHONIOENCODING": "utf-8"}
         procs = []
@@ -169,15 +167,6 @@ def main() -> int:
         sp.wait()
         procs.append(("serial", sp, xml))
     finally:
-        with engine.begin() as c:
-            if saved is not None:
-                c.execute(text("insert into system_settings (key, value, description) values "
-                               "('order_types_enabled', cast(:v as jsonb), :d) on conflict (key) do nothing"),
-                          {"v": saved[0], "d": saved[1]})
-            else:
-                c.execute(text("insert into system_settings (key, value, description) values ('order_types_enabled', "
-                               "'[\"OT1_COPY_RESTORE\", \"OT3_TEMPLATE\"]'::jsonb, 'LI-10: loại đơn đang nhận.') "
-                               "on conflict (key) do nothing"))
         lock.execute(text("select pg_advisory_unlock(:k)"), {"k": SUITE_LOCK_KEY})
         lock.close()
 

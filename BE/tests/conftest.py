@@ -194,19 +194,12 @@ def _all_order_types_open(_db_clean):
     """The seed restricts customers to OT-1/OT-3 (LI-10); tests exercise every type, so the restriction is
     lifted while the suite runs and put back afterwards. Under scripts/run_tests_sharded.py the runner does it once for all
     shards (VHRS_TEST_ORDER_TYPES_OPEN=1), since one shard putting it back would close it under the others."""
-    if os.environ.get("VHRS_TEST_ORDER_TYPES_OPEN") == "1":
-        yield
-        return
-    with get_engine().begin() as c:
-        row = c.execute(text("select value::text, description from system_settings where key='order_types_enabled'")).first()
-        c.execute(text("delete from system_settings where key='order_types_enabled'"))
+    # AI-10 (audit 2026-11-27): the database row is no longer removed. Removing it opened OT-2 to the REAL customers of the
+    # database for the whole run, and a killed run left it open. Only this process is told to accept every type.
+    from app.domain import order_types
+    order_types.override_for_this_process(("OT1_COPY_RESTORE", "OT2_LEARNED_STYLE", "OT3_TEMPLATE"))
     yield
-    # Always put the restriction back. If the row was already missing when this run began (an earlier run was
-    # interrupted), restore the project default instead of leaving customers able to order OT-2.
-    value, desc = (row[0], row[1]) if row else ('["OT1_COPY_RESTORE", "OT3_TEMPLATE"]', "LI-10: loại đơn đang nhận.")
-    with get_engine().begin() as c:
-        c.execute(text("insert into system_settings (key, value, description) values "
-                       "('order_types_enabled', cast(:v as jsonb), :d) on conflict (key) do nothing"), {"v": value, "d": desc})
+    order_types.override_for_this_process(None)
 
 
 @pytest.fixture(autouse=True)
@@ -232,6 +225,9 @@ def _no_real_provider_credentials(monkeypatch):
     # U5: never call a real LLM (BE/.env may hold a Gemini / Claude / OpenAI key); assistant tests use scripted providers
     for name in ("anthropic_api_key", "openai_api_key", "gemini_api_key"):
         monkeypatch.setattr(s, name, None)
+    # D01: test payments are off by default (a real deployment refuses them); this suite pays with the mock gateway everywhere.
+    # tests/test_audit_payments.py switches it off to check the refusal.
+    monkeypatch.setattr(s, "allow_test_payments", True)
     # test accounts have no phone: without this every sign-in adds an "add your phone" notification and the tests that
     # count notifications would depend on it. tests/test_phone_reminders.py switches it on.
     monkeypatch.setattr(s, "phone_reminders_enabled", False)
