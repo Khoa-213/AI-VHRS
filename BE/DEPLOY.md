@@ -87,6 +87,7 @@ against its staging API on 2026-10-26; its real callback reached the Render serv
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | notification e-mails (MSG07/08/10/11/12/15) and robot alerts; without them mail is only logged |
 | `SMTP_REPLY_TO` | optional: address replies go to (the project's mailbox), sent as `Reply-To`; the From stays on the verified domain |
 | `SMS_MODE=speedsms2fa`, `SPEEDSMS_ACCESS_TOKEN`, `SPEEDSMS_2FA_APP_ID` | SMS codes through a SpeedSMS 2FA app (connect.speedsms.vn > Verification > Add new: Numeric, length 6, TTL 300, SMS, sender **Verify**; copy its App ID). Use this when the account has no sender for `/sms/send` ("sender not found"). Real, paid SMS |
+| `FIREBASE_PROJECT_ID` | project id of the Firebase project whose web app runs phone sign-in (Google sends the SMS; Blaze plan, Phone provider on, SMS region policy allowing Vietnam, the web domains in Authorized domains). Enables `POST /me/phone/verify-firebase` and `firebase_id_token` in `POST /auth/password-reset/confirm`; empty = 503 `FIREBASE_NOT_CONFIGURED`. Optional `FIREBASE_PHONE_MAX_AGE_SECONDS` (default 600). The FE needs the same project's `firebaseConfig` (`VITE_FIREBASE_*` on Vercel; public values) |
 | `PHONE_REMINDERS_ENABLED` | default `true`: bell reminders to add a phone number (first sign-in without one) and to verify it (at most weekly); `false` turns them off |
 | `SMTP_HTML` | default `true`: every mail also carries an HTML part with the AI-VHRS logo inline; `false` sends plain text only |
 

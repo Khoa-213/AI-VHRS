@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { Order, Profile, OrderStatus, User } from '../types'
 import { getTokens, onSessionExpired } from '../services/api'
-import { apiGoogleLogin, apiLogin, apiLogout, apiMe, apiUpdateMe, apiVerifyPhone, type PhoneReminder, type SignedIn } from '../services/auth'
+import { apiGoogleLogin, apiLogin, apiLogout, apiMe, apiUpdateMe, apiVerifyPhone, apiVerifyPhoneFirebase, type PhoneReminder, type SignedIn } from '../services/auth'
 
 /**
  * App state in small subscribable stores. The signed-in user comes from the
@@ -247,6 +247,13 @@ export async function saveAccount(patch: { fullName?: string; phone?: string | n
 /** Confirms the SMS code for the account's number (`POST /me/phone/verify`). Throws an `ApiError`. */
 export async function verifyPhone(code: string) {
   const u = await apiVerifyPhone(code)
+  userStore.set(u)
+  return u
+}
+
+/** The same with a Firebase phone sign-in as the proof (`POST /me/phone/verify-firebase`). Throws an `ApiError`. */
+export async function verifyPhoneFirebase(idToken: string) {
+  const u = await apiVerifyPhoneFirebase(idToken)
   userStore.set(u)
   return u
 }

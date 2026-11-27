@@ -8,6 +8,7 @@ from app.api.schemas import (AccountOut, GoogleLoginIn, LoginIn, MessageOut, OAu
                              PasswordResetRequestIn, PhoneResetRequestIn, RefreshIn,
                              RegisterIn, TokenOut, account_out)
 from app.core.ratelimit import rate_limit
+from app.integrations.firebase_auth import FirebaseVerifier, get_firebase_verifier
 from app.integrations.google_auth import GoogleVerifier, get_google_verifier
 from app.integrations.mailer import Mailer, get_mailer
 from app.integrations.sms import get_sms_sender
@@ -91,13 +92,20 @@ def password_reset_request(body: PasswordResetRequestIn, svc: Svc) -> MessageOut
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT,
              dependencies=[Depends(rate_limit("reset_confirm", 10, 900))],
-             summary="UC-03 / UC-54 Đặt mật khẩu mới bằng mã 6 số: {email, code, new_password} hoặc {phone, code, new_password}",
-             description="Mã của mail đặt lại mật khẩu (`email`) hoặc của SMS tới số đã xác minh (`phone`), một trong hai. "
-                         "Kiểm mã và đặt mật khẩu trong một lần gọi, không có token (2026-11-26); mọi thiết bị bị đăng xuất. "
-                         "Mật khẩu yếu: 422 và mã chưa bị dùng.",
-             responses={400: {"description": "OTP_INVALID (details.attempts_left) / OTP_EXPIRED / OTP_TOO_MANY_ATTEMPTS"}})
-def password_reset_confirm(body: PasswordResetConfirmIn, svc: Svc, request: Request) -> Response:
-    if body.phone is not None:
+             summary="UC-03 / UC-54 Đặt mật khẩu mới: {email, code} / {phone, code} / {firebase_id_token} + new_password",
+             description="Đúng một cách: mã của mail đặt lại mật khẩu (`email` + `code`), mã SMS do BE gửi tới số đã xác minh "
+                         "(`phone` + `code`), hoặc `firebase_id_token` của lần đăng nhập Firebase bằng số điện thoại khách vừa "
+                         "làm (Google gửi SMS; số phải đã xác minh cho một tài khoản; token dùng một lần, tối đa 10 phút). "
+                         "Kiểm và đặt mật khẩu trong một lần gọi; mọi thiết bị bị đăng xuất. Mật khẩu yếu: 422, bằng chứng chưa bị dùng.",
+             responses={400: {"description": "OTP_INVALID (details.attempts_left) / OTP_EXPIRED / OTP_TOO_MANY_ATTEMPTS / "
+                                             "PHONE_NOT_VERIFIED (Firebase: số chưa xác minh cho tài khoản nào)"},
+                        401: {"description": "FIREBASE_TOKEN_INVALID / FIREBASE_TOKEN_EXPIRED"},
+                        503: {"description": "FIREBASE_NOT_CONFIGURED / FIREBASE_UNAVAILABLE"}})
+def password_reset_confirm(body: PasswordResetConfirmIn, svc: Svc, request: Request,
+                           firebase: Annotated[FirebaseVerifier, Depends(get_firebase_verifier)]) -> Response:
+    if body.firebase_id_token is not None:
+        svc.confirm_password_reset_firebase(body.firebase_id_token, body.new_password, firebase, ip=client_ip(request))
+    elif body.phone is not None:
         svc.confirm_password_reset_phone(body.phone, body.code, body.new_password, ip=client_ip(request))
     else:
         svc.confirm_password_reset_code(str(body.email), body.code, body.new_password)
