@@ -10,7 +10,7 @@ import { Link, navigate, orderPath } from '../../router/router'
 import {
   ACCEPTED_UPLOADS, MAX_UPLOAD_MB, createOrder, deleteInput, editPhoto, estimate, getInks, getOrder, getPapers, getPens, getTemplates,
   incompleteFields, orderErrorKey, patchOrder, provideInfo, putText, submitOrder, uploadOriginal,
-  type Alignment, type CropBox, type Estimate, type Order, type OrderPatch, type OrderType, errText } from '../../services/orders'
+  type Alignment, type CropBox, type Estimate, type Order, type OrderPatch, type OrderType, type SheetSize, errText } from '../../services/orders'
 import { useUser } from '../../store/store'
 import type { InputMode } from '../../types'
 import { fmt } from '../../utils/format'
@@ -23,6 +23,7 @@ import AiPolicyDialog from './ai/AiPolicyDialog'
 import SketchView from './ai/SketchView'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
+import { DEFAULT_PLACE, MARGIN_SIDES, VERTICAL_ALIGNS, hasRichLayout, layoutWithPlace, placeFromLayout, placeKey, type Place } from './textPlace'
 import { openAuth } from '../../store/authDialog'
 import Header from '../landing/components/Header'
 import fr3Arm from '../../assets/fr3-arm.png'
@@ -67,6 +68,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   const [templateId, setTemplateId] = useState<number | null>(null)
   const [alignment, setAlignment] = useState<Alignment | null>(null)
   const [fontSize, setFontSize] = useState('')
+  /** Where the text sits on the sheet: top / middle / bottom, the margins, the line spacing. */
+  const [place, setPlace] = useState<Place>(DEFAULT_PLACE)
   const [paperId, setPaperId] = useState<number | null>(null)
   const [penId, setPenId] = useState<number | null>(null)
   const [inkId, setInkId] = useState<number | null>(null)
@@ -194,6 +197,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
         setTemplateId(tx?.templateId ?? null)
         setAlignment(tx?.alignment ?? null)
         setFontSize(tx?.fontSizeMm ? String(tx.fontSizeMm) : '')
+        setPlace(placeFromLayout(tx?.layout))
         setPaperId(o.paperId); setPenId(o.penId); setInkId(o.inkId)
         setSuggest(o.workshopSuggest); setQty(o.quantity); setNote(o.note ?? '')
         setMode(initialMode() ?? (o.type === 'OT1_COPY_RESTORE' ? 'upload' : !tx && o.inputs.some((i) => i.kind === 'CANVAS') ? 'draw' : 'text'))
@@ -232,28 +236,31 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
 
   const dText = useDebounced(text, 700)
   const dSize = useDebounced(fontSize, 700)
-  const textKey = `${dText}|${templateId}|${alignment}|${dSize}`
+  const dPlace = useDebounced(place, 700)
+  const textKey = `${dText}|${templateId}|${alignment}|${dSize}|${placeKey(dPlace)}`
   useEffect(() => {
     if (loading) return
     if (!loaded.current) {
       loaded.current = true
       const tx = orderRef.current?.inputs.find((i) => i.kind === 'TEXT_CONTENT')
-      lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}`
+      lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}|${placeKey(placeFromLayout(tx?.layout))}`
     }
     // Wait until the typing has settled, so a value still on its way is never saved.
-    if (text !== dText || fontSize !== dSize) return
+    if (text !== dText || fontSize !== dSize || place !== dPlace) return
     if (mode !== 'text' || !dText.trim() || templateId === null || textKey === lastSaved.current) return
     lastSaved.current = textKey
     setErr('')
     const size = Number(dSize)
     enqueue(async () => {
       const o = await ensure()
-      const input = await putText(o.id, {
-        text_content: dText,
-        template_id: templateId,
-        alignment,
-        font_size_mm: dSize && size > 0 ? size : null,
-      })
+      const fields = { text_content: dText, template_id: templateId, alignment, font_size_mm: dSize && size > 0 ? size : null }
+      // The placement is part of the text's layout, and a PUT replaces the whole layout. Styles of parts of the text
+      // (made by the assistant or the studio) index its characters: when the words changed too, the text is saved first
+      // with `keep_layout`, so those styles follow the characters that stayed, and the placement goes on top of the result.
+      const stored = (orderRef.current ?? o).inputs.find((i) => i.kind === 'TEXT_CONTENT')
+      let base = stored?.layout ?? null
+      if (hasRichLayout(base) && stored?.text !== dText) base = (await putText(o.id, { ...fields, keep_layout: true })).layout
+      const input = await putText(o.id, { ...fields, layout: layoutWithPlace(base, dPlace) })
       const cur = orderRef.current ?? o
       adopt({ ...cur, inputs: [...cur.inputs.filter((i) => i.kind !== 'TEXT_CONTENT'), input] })
     }).then(undefined, (e: unknown) => {
@@ -311,10 +318,11 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
     setTemplateId(tx?.templateId ?? null)
     setAlignment(tx?.alignment ?? null)
     setFontSize(tx?.fontSizeMm ? String(tx.fontSizeMm) : '')
+    setPlace(placeFromLayout(tx?.layout))
     setPaperId(o.paperId); setPenId(o.penId); setInkId(o.inkId)
     setSuggest(o.workshopSuggest); setQty(o.quantity); setNote(o.note ?? '')
     // What is on screen is what the server has: the autosave must not send it back.
-    lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}`
+    lastSaved.current = `${tx?.text ?? ''}|${tx?.templateId ?? null}|${tx?.alignment ?? null}|${tx?.fontSizeMm ? String(tx.fontSizeMm) : ''}|${placeKey(placeFromLayout(tx?.layout))}`
     sentQty.current = o.quantity
     sentNote.current = o.note ?? ''
   }, [adopt])
@@ -493,7 +501,13 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
   // The preview is only a picture, so it follows the typing more closely than the autosave does.
   const dPreview = useDebounced(text, 300)
   const sizeMm = Number(dSize)
-  const previewSrc = useStyledPreview(mode === 'text' ? templateId : null, dPreview, alignment, sizeMm > 0 ? sizeMm : null)
+  // The picture is the first page as the robot would write it: on the sheet of the chosen paper (A5 until one is chosen),
+  // with the placement being edited. Styles stored on parts of the text only fit the text they were made for.
+  const sheet: SheetSize = (['A4', 'A5', 'A6'] as const).find((s) => s === papers.data?.find((p) => p.id === paperId)?.size) ?? 'A5'
+  const dPlaceView = useDebounced(place, 300)
+  const storedText = order?.inputs.find((i) => i.kind === 'TEXT_CONTENT')
+  const previewLayout = JSON.stringify(layoutWithPlace(storedText?.text === dPreview ? storedText.layout : null, dPlaceView))
+  const previewSrc = useStyledPreview(mode === 'text' ? templateId : null, dPreview, alignment, sizeMm > 0 ? sizeMm : null, previewLayout, sheet)
   useEffect(() => {
     if (loading) return
     let live = true
@@ -851,6 +865,42 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                           {alignment === null && <span className="co-sub-hint">{t('co.align.autoNote')}</span>}
                         </div>
 
+                        <div className="co-group">
+                          <span className="co-group-label">{t('co.place.vertical')}</span>
+                          <div className="co-seg" role="group" aria-label={t('co.place.vertical')}>
+                            {VERTICAL_ALIGNS.map((v) => (
+                              <button key={v} type="button" className={place.vertical === v ? 'on' : ''} aria-pressed={place.vertical === v} onClick={() => setPlace((p) => ({ ...p, vertical: v }))}>
+                                {t(`co.place.${v}`)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="co-group">
+                          <span className="co-group-label">{t('co.place.margins')}</span>
+                          <div className="co-place-grid">
+                            {MARGIN_SIDES.map((side) => (
+                              <label key={side} className="co-cell">
+                                {t(`co.place.m.${side}`)}
+                                <input
+                                  inputMode="decimal"
+                                  value={place[side]}
+                                  onChange={(e) => setPlace((p) => ({ ...p, [side]: e.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))}
+                                />
+                              </label>
+                            ))}
+                            <label className="co-cell">
+                              {t('co.place.spacing')}
+                              <input
+                                inputMode="decimal"
+                                value={place.spacing}
+                                onChange={(e) => setPlace((p) => ({ ...p, spacing: e.target.value.replace(/[^\d.]/g, '').slice(0, 4) }))}
+                              />
+                            </label>
+                          </div>
+                          <span className="co-sub-hint">{t('co.place.note')}</span>
+                        </div>
+
                         <div className="co-live" aria-live="polite">
                           {previewSrc ? (
                             <img className="co-live-img" src={previewSrc} alt={t('co.previewAlt')} />
@@ -858,6 +908,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                             <span className="co-hint">{t('co.previewWait')}</span>
                           )}
                         </div>
+                        {previewSrc && <span className="co-sub-hint">{t('co.place.sheet', { size: sheet })}</span>}
 
                         <label className="co-cell">
                           {t('co.fontSize')}

@@ -151,7 +151,7 @@
 .co-root .co-example:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .co-root .co-live{display:flex;align-items:center;justify-content:center;min-height:150px;padding:20px;border-radius:14px;background:color-mix(in srgb,var(--t1) 5%,var(--surface));text-align:center}
-.co-root .co-live-img{display:block;max-width:100%;max-height:260px;border-radius:6px;background:#fbfaf5;box-shadow:0 14px 28px var(--sh-4)}
+.co-root .co-live-img{display:block;max-width:100%;max-height:440px;border-radius:6px;background:#fbfaf5;box-shadow:0 14px 28px var(--sh-4)}
 
 .co-root .co-seg{display:flex;flex-wrap:wrap;gap:6px;padding:4px;border-radius:999px;background:var(--tray);width:fit-content;max-width:100%}
 .co-root .co-seg button{padding:9px 18px;border:0;border-radius:999px;background:transparent;color:var(--t3);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .2s,color .2s}
