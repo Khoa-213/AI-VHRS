@@ -180,6 +180,9 @@ class AdminSystemService:
         sms_ok = sms_configured()
         out.append({"name": "SMS", "kind": "SMS", "mode": sms_mode_label(), "configured": sms_ok,
                     "toggleable": False, "enabled": sms_ok})               # FR-53 OTP; SMS_MODE + provider keys
+        fb = bool((s.firebase_project_id or "").strip())
+        out.append({"name": "FIREBASE_PHONE", "kind": "AUTH", "mode": "LIVE", "configured": fb, "toggleable": False,
+                    "enabled": fb})                                        # phone proof by Firebase sign-in (2026-11-27)
         out.append({"name": "GOOGLE_LOGIN", "kind": "AUTH", "mode": "LIVE", "configured": bool(s.google_client_id),
                     "toggleable": False, "enabled": bool(s.google_client_id)})
         return out

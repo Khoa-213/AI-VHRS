@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 7
     # FR-01: temporary lock after 5 wrong passwords. Lock length is an assumption.
     max_failed_logins: int = 5
+    # 2026-11-27: Firebase phone sign-in as the proof of a phone number (integrations/firebase_auth.py). The project id of
+    # the Firebase project whose web app runs the phone flow; empty = the Firebase routes answer 503 FIREBASE_NOT_CONFIGURED.
+    firebase_project_id: str | None = None
+    firebase_phone_max_age_seconds: int = 600      # how old the SMS sign-in behind the ID token may be
     # 2026-11-26: bell reminders to add / verify the phone number at sign-in and on a phone change (services/phone_reminders.py)
     phone_reminders_enabled: bool = True
     lockout_minutes: int = 15

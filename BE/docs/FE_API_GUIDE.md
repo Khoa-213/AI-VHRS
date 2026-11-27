@@ -35,7 +35,7 @@ Mỗi dòng trỏ tới mục có chi tiết. Đánh dấu khi xong.
 - [ ] **Màn hiệu chuẩn của Technical Staff** gửi thêm khối `frame_transform = {schema:"vhrs-motion/1", motion:{…}, workspace:{…}}` (các trường ở mục 7b); hiển thị `UNCONFIGURED` khi thiếu số đo.
 - [ ] Sau `POST .../simulation`, **đọc kết quả của server** (`passed` có thể bị server đổi thành `false`) và hiện danh sách lỗi `SERVER …`; `GET /technician/jobs/{id}` có `can_start`.
 - [ ] **App Technical Staff điều khiển robot qua BE** (mục 7g, KHÔNG gọi máy trạm trực tiếp): gửi lệnh bằng `POST /technician/robot-commands`, hỏi kết quả bằng `GET /technician/robot-commands/{id}`; luôn hiện nhãn chế độ MOCK / SIM / REAL và trạng thái kết nối agent (`GET /technician/robots/{id}/live` → `agent_online`).
-- [ ] **Danh sách mẫu chữ:** có thêm 4 mẫu `kind = "TYPOGRAPHY"` (Playpen Sans, Pangolin, Patrick Hand, Mali Light, `font_uri` dạng `outline:fonts/...`); `GET /catalog/templates/{id}/preview?text=` trả PNG (tối đa 80 ký tự với mẫu này, lần đầu có thể chậm ~3 giây). Hiển thị cảnh báo "thứ tự nét do hệ thống dựng lại" nếu cần.
+- [ ] **Danh sách mẫu chữ:** có thêm 4 mẫu `kind = "TYPOGRAPHY"` (Playpen Sans, Pangolin, Patrick Hand, Mali Light, `font_uri` dạng `outline:fonts/...`); `GET /catalog/templates/{id}/preview?text=` trả PNG (không còn giới hạn 80 ký tự từ 2026-11-27; lần đầu mỗi font có thể chậm ~1 giây). **2026-11-27: thêm 7 mẫu** Itim, Merienda, Great Vibes, Dancing Script, Ms Madi, Pacifico, Allura. Hiển thị cảnh báo "thứ tự nét do hệ thống dựng lại" nếu cần.
 
 **Cuộc chat với trợ lý AI và chính sách dữ liệu chat (mục 7s.1, 7s.2; 2026-11-24, migration 0031)**
 - [ ] **Ô đồng ý chính sách chat AI:** hiện khi `policy_accepted = false` (từ `GET /studio/assistant/status` hoặc `GET /orders/{id}/assistant/messages`), kèm link mở toàn văn `GET /privacy-policy/ai-chat`; đồng ý một lần cho tài khoản, bị hỏi lại khi chính sách đổi phiên bản.
@@ -158,6 +158,21 @@ POST /me/phone/otp, POST /me/phone/verify, POST /auth/phone-reset/request|verify
 1. `POST /auth/phone-reset/request {phone}` → **luôn `202`** (kể cả số không tồn tại, chưa xác minh, đang phải chờ, hết lượt), nên FE luôn chuyển sang ô nhập mã với câu "Nếu số đã được xác minh, mã đã được gửi".
 2. Một màn: ô mã 6 số + mật khẩu mới + nhập lại → `POST /auth/password-reset/confirm {phone, code, new_password}` (cùng endpoint và cùng cách của luồng email, chỉ thay `email` bằng `phone`; **không còn `/auth/phone-reset/verify` và `reset_token`**, 2026-11-26) → `204`; mọi thiết bị bị đăng xuất, email báo "mật khẩu đã được đổi" được gửi tới email của tài khoản. Sau đó về màn đăng nhập. Gửi cả `email` lẫn `phone`, hoặc không gửi cái nào: `422`. Mã sai: `400 OTP_INVALID` (`details.attempts_left`), `OTP_EXPIRED`, `OTP_TOO_MANY_ATTEMPTS`; mật khẩu yếu: `422`, mã chưa bị dùng.
 
+**Xác minh số bằng Firebase (2026-11-27, cách đang dùng để gửi SMS thật; Google gửi tin):** FE cài `firebase`, khởi tạo bằng `firebaseConfig` của project (biến `VITE_FIREBASE_*`), đặt `auth.languageCode = 'vi'`. Hai màn dùng cùng một đoạn:
+```ts
+import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut } from 'firebase/auth'
+const auth = getAuth(app); auth.languageCode = 'vi'
+const verifier = new RecaptchaVerifier(auth, 'id-cua-nut-gui-ma', { size: 'invisible' })
+const confirmation = await signInWithPhoneNumber(auth, '+84' + phone.slice(1), verifier)   // Google gửi SMS
+const { user } = await confirmation.confirm(code)                                          // mã khách nhập
+const idToken = await user.getIdToken()
+await signOut(auth)                                                                         // chỉ cần bằng chứng, không giữ phiên Firebase
+```
+- **Hồ sơ (đã đăng nhập):** số gửi cho Firebase phải là số trong hồ sơ → `POST /me/phone/verify-firebase {id_token}` → `AccountOut` với `phone_verified=true`. Lỗi: `400 PHONE_MISMATCH` (số vừa xác minh khác số hồ sơ), `409 PHONE_ALREADY_VERIFIED` / `PHONE_TAKEN`, `422 PHONE_MISSING`.
+- **Quên mật khẩu bằng số (chưa đăng nhập):** khách nhập số → luồng Firebase → màn mật khẩu mới → `POST /auth/password-reset/confirm {firebase_id_token, new_password}` (không kèm `code` / `phone`) → `204`. Lỗi: `400 PHONE_NOT_VERIFIED` (số này chưa xác minh cho tài khoản nào: bảo khách dùng email), `422` mật khẩu yếu (token chưa bị dùng, gửi lại được).
+- Lỗi chung: `401 FIREBASE_TOKEN_INVALID` (token sai, hoặc đã dùng để đặt lại mật khẩu), `401 FIREBASE_TOKEN_EXPIRED` (đăng nhập Firebase cũ hơn 10 phút: nhận mã mới), `503 FIREBASE_NOT_CONFIGURED` / `FIREBASE_UNAVAILABLE`. Lỗi của chính Firebase (`auth/invalid-phone-number`, `auth/too-many-requests`, `auth/invalid-verification-code`, `auth/code-expired`...) FE tự dịch.
+- Khi phát triển: `localhost` không dùng được cho phone auth của Firebase; dùng "Phone numbers for testing" trong Firebase console (số giả + mã cố định, không tốn tin) hoặc thử trên tên miền thật. Các API `POST /me/phone/otp`, `/me/phone/verify`, `/auth/phone-reset/request` (mã do BE gửi) vẫn còn cho chế độ MOCK và các nhà cung cấp SMS khác.
+
 **Quy tắc mã:** 6 chữ số, hiệu lực **5 phút**; sai **5 lần** thì mã bị huỷ; xin mã mới thì mã cũ hết hiệu lực; phải chờ **60 giây** giữa hai lần gửi và tối đa **5 mã mỗi số trong 24 giờ** (tính chung cả hai luồng).
 
 | Lỗi | Khi nào | UI |
@@ -258,7 +273,7 @@ stateDiagram-v2
            {"start": 20, "end": 27, "strike": true}]}
 ```
   `start`/`end` là vị trí ký tự **theo code point** trong nội dung **đã chuẩn hoá NFC**, khoảng `[start, end)` (khác chỉ số UTF-16 của JavaScript: dùng `Array.from(text.normalize('NFC'))` để đếm). Đoạn không nêu thuộc tính nào thì giữ cỡ chung và chữ thường; các đoạn không được chồng nhau, tối đa 200. Cỡ chữ của đoạn: 4–100 mm. **PUT thay thế toàn bộ**: không gửi `layout` nghĩa là xoá định dạng; sửa nội dung phải gửi lại `layout` cho khớp vị trí. Sai → `422 INVALID_LAYOUT` (`details` nói đoạn nào). Cỡ chữ chung dưới 4 mm → `422 VALIDATION_ERROR`.
-- Xem trước: `POST /catalog/templates/{id}/preview {text (≤200), font_size_mm?, alignment?, layout?}` → ảnh PNG trang đầu (A5), không cần đăng nhập, 60 lần/phút/IP; mẫu `TYPOGRAPHY` tối đa 80 ký tự. `GET .../preview?text=` cũ vẫn dùng được (không có kiểu chữ).
+- Xem trước: `POST /catalog/templates/{id}/preview {text (≤2000), font_size_mm?, alignment?, layout?, paper_size? (A4 | A5 | A6, mặc định A5)}` → ảnh PNG **trang đầu** trên đúng khổ giấy, không cần đăng nhập, 60 lần/phút/IP. `GET .../preview?text=` (≤200 ký tự) cũ vẫn dùng được (không có kiểu chữ / vị trí); thêm `fit=text` → ảnh **chỉ có nét chữ, cắt sát chữ** (dùng cho thẻ mẫu chữ), trả kèm `Cache-Control: public, max-age=3600`. **Từ 2026-11-27:** không còn giới hạn 80 ký tự cho mẫu `TYPOGRAPHY` (đo: 1.000 ký tự vẽ ~15 ms; chỉ lần đầu tải font ~1 s); **mọi ảnh xem thử cho khách đều vẽ từ chính các nét robot sẽ viết và không có chấm xanh đầu nét** (chấm xanh chỉ còn ở ảnh kỹ thuật của phác thảo cho xưởng). **Quy tắc hiển thị (chủ dự án, 2026-11-27): FE không tự vẽ chữ bằng web font**: trình duyệt vẽ nét đậm / thanh đậm mà robot không viết; mọi hình chữ phải là ảnh BE vẽ (ảnh xem thử, ảnh mẫu `preview_url`, ảnh phác thảo của đơn). `preview_url` của mẫu outline giờ là ảnh mẫu cắt sát chữ, không chấm xanh.
 - `InputOut.layout` trả đúng dạng đã lưu (đoạn theo thứ tự, bỏ giá trị mặc định); từ 2026-11-07 luôn có `vertical_align` (mục 5.1c), nên nội dung lưu mới không còn `layout: null`. Lúc Staff sinh phác thảo, nghiêng/gạch chân/cỡ chữ được vẽ thành nét thật (gạch chân là một nét thẳng dưới mỗi dòng của đoạn); layout hỏng → `422 INVALID_LAYOUT`.
 - Cỡ tối thiểu 4 mm là giả định tạm (chưa thử với bút thật); độ nghiêng cố định khoảng 12°.
 

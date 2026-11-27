@@ -18,7 +18,7 @@ from app.core.errors import AppError
 from app.repositories.catalog import CatalogRepository
 from app.api.v1.orders import optional_storage
 from app.services.stroke_ai import outline_font, styled_text, text_to_stroke
-from app.services.stroke_ai.trajectory import render_preview
+from app.services.stroke_ai.trajectory import render_card, render_preview
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
@@ -63,10 +63,16 @@ def templates(session: SessionDep) -> list[TemplateOut]:
             for t in CatalogRepository(session).templates()]
 
 
+PREVIEW_CACHE = "public, max-age=3600"        # the same template and words draw the same picture
+
+
 def _template_preview(tpl, text: str, *, size: float = 9.0, alignment: str = text_layout.DEFAULT_ALIGNMENT,
-                      layout: dict | None = None) -> Response:
+                      layout: dict | None = None, paper_size: str = "A5", fit: str = "page",
+                      cache: str | None = None) -> Response:
     """PNG of the first page of `text` in a template, optionally with sizes and styles of parts of it and its placement
-    (centred on the sheet unless chosen otherwise, as an order's text). A faint frame shows the margins."""
+    (centred on the sheet unless chosen otherwise, as an order's text). A faint frame shows the margins. `fit="text"`:
+    only the strokes, cut to the text (for the small picture of a style). Drawn from the same strokes as an order's
+    sketch and with no stroke-start dots: the customer sees only what the robot writes (owner 2026-11-27)."""
     try:
         placement = text_layout.parse(layout or {}, unicodedata.normalize("NFC", text)).with_defaults()
     except text_layout.TextLayoutError as exc:
@@ -74,8 +80,8 @@ def _template_preview(tpl, text: str, *, size: float = 9.0, alignment: str = tex
     parsed = None if placement.is_plain else placement
     where = {"margins": placement.page_margins, "vertical_align": placement.page_vertical_align}
     if tpl.font_uri.startswith(outline_font.OUTLINE_PREFIX):
-        if len(text) > 80:                                  # public endpoint: keep the work per request small
-            raise AppError(422, "PREVIEW_TEXT_TOO_LONG", "Xem thử mẫu chữ này tối đa 80 ký tự.")
+        # No shorter limit for outline fonts any more (2026-11-27): measured, 1,000 characters compose and draw in about
+        # 15 ms; the only slow part is the first load of a font from storage (about 1 s), whatever the length.
         store = optional_storage()
         if store is None:
             raise AppError(503, "STORAGE_NOT_CONFIGURED", "Chưa cấu hình dịch vụ lưu trữ file.")
@@ -83,12 +89,14 @@ def _template_preview(tpl, text: str, *, size: float = 9.0, alignment: str = tex
     else:
         source, name = None, text_to_stroke.font_name_from_uri(tpl.font_uri)
     if parsed:
-        pages = styled_text.compose_styled(text, parsed, font_name=name, source=source, paper_size="A5",
+        pages = styled_text.compose_styled(text, parsed, font_name=name, source=source, paper_size=paper_size,
                                            font_size_mm=size, alignment=alignment, **where)
     else:
-        pages = text_to_stroke.compose_text(text, font_name=name, source=source, paper_size="A5", font_size_mm=size,
+        pages = text_to_stroke.compose_text(text, font_name=name, source=source, paper_size=paper_size, font_size_mm=size,
                                             alignment=alignment, **where)
-    return Response(render_preview(pages[0], px_per_mm=4.0, margins=placement.page_margins), media_type="image/png")
+    png = (render_card(pages[0]) if fit == "text" else
+           render_preview(pages[0], px_per_mm=4.0, margins=placement.page_margins, starts=False))
+    return Response(png, media_type="image/png", headers={"Cache-Control": cache} if cache else None)
 
 
 def _active_template(session, template_id: int):
@@ -102,14 +110,18 @@ def _active_template(session, template_id: int):
             responses={200: {"content": {"image/png": {}}}},
             summary="FR-04 Xem thử mẫu chữ với nội dung tự gõ (ảnh PNG, không cần đăng nhập)")
 def template_preview(template_id: int, session: SessionDep,
-                     text: Annotated[str, Query(min_length=1, max_length=200)] = "Nét Việt") -> Response:
-    return _template_preview(_active_template(session, template_id), text)
+                     text: Annotated[str, Query(min_length=1, max_length=200)] = "Nét Việt",
+                     fit: Annotated[Literal["page", "text"], Query(
+                         description="page: cả tờ A5; text: chỉ nét chữ, cắt sát chữ (ảnh nhỏ cho thẻ mẫu chữ)")] = "page",
+                     ) -> Response:
+    return _template_preview(_active_template(session, template_id), text, fit=fit, cache=PREVIEW_CACHE)
 
 
 class PreviewIn(BaseModel):
-    text: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=2000, description="vẽ trang đầu của nội dung này")
     font_size_mm: float = Field(default=9.0, ge=text_layout.MIN_FONT_SIZE_MM, le=text_layout.MAX_FONT_SIZE_MM)
     alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY"] = text_layout.DEFAULT_ALIGNMENT
+    paper_size: Literal["A4", "A5", "A6"] = Field(default="A5", description="khổ giấy của tờ được vẽ (khổ của loại giấy đã chọn)")
     layout: dict[str, Any] | None = Field(default=None, description=(
         "Như `layout` của `PUT /orders/{id}/inputs/text` (kể cả `margins_mm`, `vertical_align`; mặc định căn giữa tờ giấy)."))
 
@@ -118,10 +130,12 @@ class PreviewIn(BaseModel):
              dependencies=[Depends(rate_limit("template_preview", 60, 60))],
              responses={200: {"content": {"image/png": {}}}, 422: {"model": ErrorOut, "description": "INVALID_LAYOUT / UNSUPPORTED_CHARS / FONT_TOO_LARGE"}},
              summary="FR-08 Xem thử mẫu chữ với cỡ chữ, căn lề và kiểu chữ theo đoạn (ảnh PNG, không cần đăng nhập)",
-             description="Trang đầu (khổ A5) của nội dung. Dùng để khách xem trước nghiêng / gạch chân / cỡ chữ trước khi lưu đơn.")
+             description="Trang đầu của nội dung trên khổ `paper_size` (mặc định A5). Dùng để khách xem trước vị trí chữ trên tờ "
+                         "giấy (lề, trên / giữa / dưới, căn ngang), nghiêng / gạch chân / cỡ chữ trước khi lưu đơn. Ảnh vẽ từ chính "
+                         "các nét robot sẽ viết, không có chấm đầu nét; khung mờ chỉ vùng trong lề, không phải nét viết.")
 def template_preview_styled(template_id: int, body: PreviewIn, session: SessionDep) -> Response:
     return _template_preview(_active_template(session, template_id), body.text, size=body.font_size_mm,
-                             alignment=body.alignment, layout=body.layout)
+                             alignment=body.alignment, layout=body.layout, paper_size=body.paper_size)
 
 
 @router.get("/text-styles", summary="FR-08 Cỡ chữ và kiểu chữ được phép (để dựng thanh công cụ soạn chữ)",

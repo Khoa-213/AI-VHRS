@@ -83,19 +83,31 @@ class PasswordResetRequestIn(BaseModel):
 
 
 class PasswordResetConfirmIn(BaseModel):
-    """The 6-digit code and where it was sent: `email` (reset e-mail) or `phone` (SMS to the verified number), one of the
-    two. No token any more (owner 2026-11-26): the code is checked and the password set in this one call."""
+    """One of three: `email` + `code` (reset e-mail), `phone` + `code` (SMS the backend sent to the verified number), or
+    `firebase_id_token` alone (the ID token of a Firebase phone sign-in the customer just made; Google sent the SMS,
+    2026-11-27). The proof is checked and the password set in this one call."""
     email: EmailStr | None = Field(default=None, description="luồng email: email đã nhận mã")
     phone: str | None = Field(default=None, pattern=_PHONE, examples=["0901234567"],
-                              description="luồng SMS: số đã xác minh đã nhận mã")
-    code: str = Field(pattern=r"^\d{6}$", examples=["123456"])
+                              description="luồng SMS của BE: số đã xác minh đã nhận mã")
+    code: str | None = Field(default=None, pattern=r"^\d{6}$", examples=["123456"],
+                             description="bắt buộc với email / phone; không gửi cùng firebase_id_token")
+    firebase_id_token: str | None = Field(default=None, min_length=20, max_length=4096,
+                                          description="luồng Firebase: `user.getIdToken()` ngay sau `confirm(code)`")
     new_password: str = Field(min_length=8, max_length=72)
 
     @model_validator(mode="after")
     def _one_way(self):
-        if (self.email is None) == (self.phone is None):
-            raise ValueError("Gửi email hoặc phone (một trong hai) cùng mã 6 số.")
+        ways = [x is not None for x in (self.email, self.phone, self.firebase_id_token)]
+        if sum(ways) != 1:
+            raise ValueError("Gửi đúng một trong: email, phone, firebase_id_token.")
+        if (self.firebase_id_token is None) != (self.code is not None):
+            raise ValueError("Mã 6 số đi cùng email hoặc phone; firebase_id_token không kèm mã.")
         return self
+
+
+class FirebasePhoneIn(BaseModel):
+    id_token: str = Field(min_length=20, max_length=4096,
+                          description="ID token của Firebase ngay sau khi khách nhập đúng mã SMS (`user.getIdToken()`)")
 
 
 class PhoneOtpVerifyIn(BaseModel):

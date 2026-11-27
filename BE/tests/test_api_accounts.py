@@ -122,6 +122,8 @@ def test_password_reset_by_the_six_digit_code_in_the_email(client, mailbox):
     r = client.post(url, json={"email": email, "code": code, "new_password": "short"})        # weak password: code kept
     assert r.status_code == 422
     assert client.post(url, json={"email": email, "code": code, "new_password": "Brandn3wPass"}).status_code == 204
+    changed = mailbox[-1]                                        # the "password changed" notice, with the way back in
+    assert changed[0] == email and "đã được đổi" in changed[1] and "\nhttp://localhost:5173/login\n" in changed[2]
     login(client, email, "Brandn3wPass")
     r = client.post(url, json={"email": email, "code": code, "new_password": "Another1234"})  # single use
     assert r.status_code == 400 and r.json()["error"]["code"] == "OTP_INVALID"

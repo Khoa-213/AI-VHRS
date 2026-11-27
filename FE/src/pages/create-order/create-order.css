@@ -194,7 +194,9 @@
 .co-notice{margin:0;padding:10px 14px;font-size:13px;color:var(--warn);background:linear-gradient(135deg,transparent,var(--st-pending-bg))}
 
 .co-font-frame{display:block;width:100%;aspect-ratio:5 / 1.5;overflow:hidden;background:#fbfaf5;border-radius:2px}
-.co-font-frame img{display:block;width:100%;height:auto}
+/* The card picture is cut to the words (fit=text): shown whole, from the left, never stretched. */
+.co-font-frame{padding:6px 10px;box-sizing:border-box}
+.co-font-frame img{display:block;width:100%;height:100%;object-fit:contain;object-position:left center}
 .co-font-none{display:grid;place-items:center;height:100%;padding:6px;font-size:11px;line-height:1.3;color:#6b6b6b;text-align:center}
 .co-opt.off{opacity:.5;cursor:not-allowed}
 
@@ -216,3 +218,25 @@
 .co-restore-stage .oa-view-img{max-height:min(60vh,520px);max-width:100%}
 .co-restore-notes{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--t3)}
 .co-restore-notes ul{margin:0;padding-left:18px}
+
+/* Placement of the text on the sheet: four margins and the line spacing, side by side; they wrap on a phone. */
+.co-place-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;border-radius:12px;overflow:hidden}
+@media (max-width:640px){.co-place-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Styles of parts of the text: a toolbar under the message box and the list of formatted parts. Theme tokens only. */
+.co-fmt{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.co-fmt-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.co-fmt-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line-strong);border-radius:999px;background:transparent;color:var(--t1);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.co-fmt-btn:hover{background:var(--tray)}
+.co-fmt-btn:focus-visible,.co-fmt-part:focus-visible,.co-fmt-x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.co-fmt-size{display:inline-flex;align-items:center;gap:8px;padding:4px 12px;border:1px solid var(--line-strong);border-radius:999px;font-size:13px;font-weight:600;color:var(--t3)}
+.co-fmt-size input{width:56px;padding:4px 0;border:none;background:transparent;color:var(--t1);font-family:inherit;font-size:14px;outline:none}
+.co-fmt-note{font-size:13px;color:var(--danger,#c0392b)}
+.co-fmt-list{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.co-fmt-list ul{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.co-fmt-list li{display:flex;align-items:stretch;gap:6px}
+.co-fmt-part{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:8px 12px;border:1px solid var(--line-strong);border-radius:10px;background:transparent;color:var(--t1);font-family:inherit;font-size:13px;text-align:left;cursor:pointer}
+.co-fmt-words{font-weight:600;overflow-wrap:anywhere}
+.co-fmt-tags{color:var(--t3)}
+.co-fmt-x{display:grid;place-items:center;width:36px;border:1px solid var(--line-strong);border-radius:10px;background:transparent;color:var(--t3);cursor:pointer}
+.co-fmt-all{align-self:flex-start}

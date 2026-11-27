@@ -1,8 +1,12 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Request, Response, status
 
 from app.api.deps import PrincipalDep, SessionDep, client_ip
-from app.api.schemas import AccountOut, ChangePasswordIn, OtpSentOut, PhoneOtpVerifyIn, ProfileUpdateIn, account_out
+from app.api.schemas import (AccountOut, ChangePasswordIn, FirebasePhoneIn, OtpSentOut, PhoneOtpVerifyIn, ProfileUpdateIn,
+                             account_out)
 from app.core.ratelimit import rate_limit
+from app.integrations.firebase_auth import FirebaseVerifier, get_firebase_verifier
 from app.integrations.sms import get_sms_sender
 from app.repositories.sessions import SessionRepository
 from app.services.accounts import ProfileService
@@ -57,4 +61,21 @@ def send_phone_otp(principal: PrincipalDep, session: SessionDep, request: Reques
              responses=_OTP_ERRORS)
 def verify_phone(body: PhoneOtpVerifyIn, principal: PrincipalDep, session: SessionDep, request: Request) -> AccountOut:
     acc = PhoneOtpService(session, get_sms_sender(), client_ip(request)).confirm_verification(principal.account, body.code)
+    return account_out(acc)
+
+
+@router.post("/phone/verify-firebase", response_model=AccountOut,
+             summary="FR-53 Xác minh số điện thoại bằng đăng nhập Firebase (Google gửi SMS)",
+             dependencies=[Depends(rate_limit("phone_verify", 20, 900))],
+             description="Web chạy luồng số điện thoại của Firebase với SỐ TRONG HỒ SƠ (`signInWithPhoneNumber` → `confirm(code)`) "
+                         "rồi gửi `user.getIdToken()`. Token phải của project Firebase của hệ thống, đăng nhập bằng số điện thoại, "
+                         "trong 10 phút gần đây, và số trong token trùng số trong hồ sơ. Đúng thì `phone_verified=true`.",
+             responses={400: {"description": "PHONE_MISMATCH: số vừa xác minh khác số trong hồ sơ"},
+                        401: {"description": "FIREBASE_TOKEN_INVALID / FIREBASE_TOKEN_EXPIRED"},
+                        409: {"description": "PHONE_ALREADY_VERIFIED / PHONE_TAKEN"}, 422: {"description": "PHONE_MISSING"},
+                        503: {"description": "FIREBASE_NOT_CONFIGURED / FIREBASE_UNAVAILABLE"}})
+def verify_phone_firebase(body: FirebasePhoneIn, principal: PrincipalDep, session: SessionDep, request: Request,
+                          firebase: Annotated[FirebaseVerifier, Depends(get_firebase_verifier)]) -> AccountOut:
+    proof = firebase.verify_phone(body.id_token)
+    acc = PhoneOtpService(session, None, client_ip(request)).confirm_verification_by_proof(principal.account, proof.phone)
     return account_out(acc)

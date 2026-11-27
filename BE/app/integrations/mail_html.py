@@ -24,7 +24,7 @@ LOGO_DARK_PATH = ASSETS / "email_logo_dark.png"    # 360x146, white on transpare
 LOGO_CID = "ai-vhrs-logo"
 LOGO_DARK_CID = "ai-vhrs-logo-dark"
 BUTTON_LABEL = "Mở liên kết"
-BUTTON_LABELS = {"/reset-password": "Đặt lại mật khẩu"}   # path of the link -> text of its button
+BUTTON_LABELS = {"/reset-password": "Đặt lại mật khẩu", "/login": "Đăng nhập"}   # path of the link -> text of its button
 
 _URL = re.compile(r"https?://[^\s<>\"']+")
 _ONLY_URL = re.compile(r"^\s*(https?://\S+)\s*$")

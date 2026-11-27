@@ -915,3 +915,48 @@ def test_template_preview_is_a_public_png(client, wcat):
     assert client.get(f"{API}/catalog/templates/99999999/preview").status_code == 404
     assert client.get(f"{API}/catalog/templates/{wcat['tpl']}/preview", params={"text": "x" * 201}).status_code == 422
     assert client.get(f"{API}/catalog/templates/{wcat['tpl']}/preview", params={"text": "漢"}).status_code == 422
+
+
+def test_customer_previews_show_only_the_strokes(client, wcat):
+    """2026-11-27: no stroke-start dots in what a customer sees; a card picture cut to the text; longer text; the paper."""
+    import cv2
+    import numpy as np
+
+    def picture(resp):
+        assert resp.status_code == 200, resp.text
+        return cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_COLOR)
+
+    def green(img) -> int:                                   # the stroke-start dot is BGR (60, 170, 60)
+        b, g, r = img[:, :, 0].astype(int), img[:, :, 1].astype(int), img[:, :, 2].astype(int)
+        return int(((g - r > 40) & (g - b > 40)).sum())
+
+    url = f"{API}/catalog/templates/{wcat['tpl']}/preview"
+    page = client.get(url, params={"text": "Nét Việt"})
+    card = client.get(url, params={"text": "Nét Việt", "fit": "text"})
+    sheet, cut = picture(page), picture(card)
+    assert green(sheet) == 0 and green(cut) == 0
+    assert page.headers["cache-control"] == "public, max-age=3600" and card.headers["cache-control"] == "public, max-age=3600"
+    assert sheet.shape[:2] == (840, 592)                                             # the whole A5 sheet at 4 px / mm
+    assert cut.shape[0] < 200 and cut.shape[1] < sheet.shape[1] and (cut < 128).any()   # only the words, and ink in it
+    assert client.get(url, params={"text": "x", "fit": "sheet"}).status_code == 422
+    # the styled preview: as much text as a page holds, and the sheet of the chosen paper
+    long = client.post(url, json={"text": "Chúc mừng sinh nhật. " * 60})
+    assert long.status_code == 200 and green(picture(long)) == 0
+    assert client.post(url, json={"text": "x" * 2001}).status_code == 422
+    a4 = picture(client.post(url, json={"text": "Nét Việt", "paper_size": "A4"}))
+    a6 = picture(client.post(url, json={"text": "Nét Việt", "paper_size": "A6"}))
+    assert a4.shape[:2] == (1188, 840) and a6.shape[:2] == (592, 420)
+    assert client.post(url, json={"text": "Nét", "paper_size": "A3"}).status_code == 422
+
+
+def test_card_picture_of_an_empty_page_and_dots_for_staff():
+    from app.services.stroke_ai.trajectory import Page, Stroke, render_card, render_preview
+    import cv2
+    import numpy as np
+    blank = cv2.imdecode(np.frombuffer(render_card(Page("A5")), np.uint8), cv2.IMREAD_COLOR)
+    assert blank.shape[0] > 0 and (blank == 255).all()
+    page = Page("A5")
+    page.strokes.append(Stroke(points=[(20.0, 20.0), (60.0, 20.0)]))
+    with_dots = cv2.imdecode(np.frombuffer(render_preview(page, px_per_mm=4.0), np.uint8), cv2.IMREAD_COLOR)
+    without = cv2.imdecode(np.frombuffer(render_preview(page, px_per_mm=4.0, starts=False), np.uint8), cv2.IMREAD_COLOR)
+    assert (with_dots != without).any() and without.shape == with_dots.shape      # the technical preview keeps its dots

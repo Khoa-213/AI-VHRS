@@ -140,9 +140,11 @@ def parse(data: Any) -> list[Page]:
     return pages
 
 
-def render_preview(page: Page, px_per_mm: float = 2.0, margins=None) -> bytes:
+def render_preview(page: Page, px_per_mm: float = 2.0, margins=None, *, starts: bool = True) -> bytes:
     """PNG preview of one page: strokes on white paper, green dot = where each stroke starts. With `margins` (top, bottom,
-    left, right in mm) a faint frame shows the writing area; it is only in the picture, never in the strokes."""
+    left, right in mm) a faint frame shows the writing area; it is only in the picture, never in the strokes.
+    `starts=False` leaves the green dots out: they are a technical mark the robot never writes, so pictures shown to
+    customers have none (owner 2026-11-27: the customer sees only what the robot writes)."""
     w, h = int(round(page.width_mm * px_per_mm)), int(round(page.height_mm * px_per_mm))
     img = np.full((h, w, 3), 255, np.uint8)
     cv2.rectangle(img, (0, 0), (w - 1, h - 1), (200, 200, 200), 1)
@@ -153,9 +155,32 @@ def render_preview(page: Page, px_per_mm: float = 2.0, margins=None) -> bytes:
     for s in page.strokes:
         pts = np.array([[x * px_per_mm, y * px_per_mm] for x, y in s.points], np.float32)
         cv2.polylines(img, [np.round(pts).astype(np.int32)], False, (30, 30, 30), 1, cv2.LINE_AA)
-    for s in page.strokes:
+    for s in page.strokes if starts else ():
         x, y = s.points[0]
         cv2.circle(img, (int(round(x * px_per_mm)), int(round(y * px_per_mm))), 2, (60, 170, 60), -1, cv2.LINE_AA)
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:  # pragma: no cover - imencode only fails on invalid input
+        raise AppError(500, "PREVIEW_FAILED", "Không tạo được ảnh xem trước.")
+    return buf.tobytes()
+
+
+def render_card(page: Page, px_per_mm: float = 6.0, pad_mm: float = 3.0) -> bytes:
+    """PNG of the strokes of one page cut to the strokes themselves (plus `pad_mm` around): the same lines as
+    `render_preview`, without the sheet, the frame or the start dots. For the small pictures of a writing style, where a
+    whole sheet would be mostly empty paper. A page without strokes gives a small blank picture."""
+    xs = [x for s in page.strokes for x, _ in s.points]
+    ys = [y for s in page.strokes for _, y in s.points]
+    if not xs:
+        x0 = y0 = 0.0
+        x1, y1 = 40.0, 12.0
+    else:
+        x0, y0 = max(0.0, min(xs) - pad_mm), max(0.0, min(ys) - pad_mm)
+        x1, y1 = min(page.width_mm, max(xs) + pad_mm), min(page.height_mm, max(ys) + pad_mm)
+    w, h = max(8, int(round((x1 - x0) * px_per_mm))), max(8, int(round((y1 - y0) * px_per_mm)))
+    img = np.full((h, w, 3), 255, np.uint8)
+    for s in page.strokes:
+        pts = np.array([[(x - x0) * px_per_mm, (y - y0) * px_per_mm] for x, y in s.points], np.float32)
+        cv2.polylines(img, [np.round(pts).astype(np.int32)], False, (30, 30, 30), 1, cv2.LINE_AA)
     ok, buf = cv2.imencode(".png", img)
     if not ok:  # pragma: no cover - imencode only fails on invalid input
         raise AppError(500, "PREVIEW_FAILED", "Không tạo được ảnh xem trước.")

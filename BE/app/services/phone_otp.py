@@ -161,6 +161,16 @@ class PhoneOtpService:
     def confirm_verification(self, acc: Account, code: str) -> Account:
         phone = self._own_phone(acc)
         self._check(acc.id, phone, code)
+        return self._mark_verified(acc, phone)
+
+    def confirm_verification_by_proof(self, acc: Account, proven_phone: str) -> Account:
+        """Firebase phone sign-in (2026-11-27): the number the person just proved must be the one in the profile."""
+        phone = self._own_phone(acc)
+        if normalize_phone(proven_phone) != phone:
+            raise AppError(400, "PHONE_MISMATCH", "Số vừa xác minh không trùng với số điện thoại trong hồ sơ.")
+        return self._mark_verified(acc, phone, via="FIREBASE")
+
+    def _mark_verified(self, acc: Account, phone: str, via: str | None = None) -> Account:
         try:
             with self.session.begin_nested():
                 acc.phone, acc.phone_verified_at = phone, _now()
@@ -168,7 +178,7 @@ class PhoneOtpService:
         except IntegrityError as exc:                                  # another account verified it a moment ago
             raise AppError(409, "PHONE_TAKEN", _TAKEN) from exc
         audit.record(self.session, actor_id=acc.id, action="PHONE_VERIFY", entity_type="account", entity_id=acc.id,
-                     new={"phone": mask(phone)}, ip=self.ip)
+                     new={"phone": mask(phone), **({"via": via} if via else {})}, ip=self.ip)
         return acc
 
     # ------------------------------------------------------------------ recovery (signed out)
@@ -195,4 +205,25 @@ class PhoneOtpService:
         self._check(acc.id, normalize_phone(acc.phone or phone), code)
         audit.record(self.session, actor_id=acc.id, action="PASSWORD_RESET_PHONE", entity_type="account", entity_id=acc.id,
                      ip=self.ip)
+        return acc
+
+    def reset_owner_by_proof(self, proven_phone: str, id_token: str) -> Account:
+        """Firebase phone sign-in (2026-11-27): the active account whose VERIFIED number the person just proved. The token
+        works once: its HMAC is kept in `phone_otps` (key `fb:<account id>`), so a copied token cannot reset the password
+        again while it is still fresh. The person proved the number, so "no account for it" may be said plainly."""
+        acc = self._reset_owner(normalize_phone(proven_phone))
+        if acc is None:
+            raise AppError(400, "PHONE_NOT_VERIFIED", "Số điện thoại này chưa được xác minh cho tài khoản nào.")
+        self._lock_account(acc.id)
+        key, digest = f"fb:{acc.id}", _digest(acc.id, "firebase", id_token)
+        if self.session.execute(select(PhoneOtp.id).where(PhoneOtp.account_id == acc.id, PhoneOtp.phone == key,
+                                                          PhoneOtp.otp_hash == digest).limit(1)).first() is not None:
+            raise AppError(401, "FIREBASE_TOKEN_INVALID", "Phiên xác minh số điện thoại không hợp lệ hoặc đã được dùng.")
+        now = _now()
+        self.session.add(PhoneOtp(account_id=acc.id, phone=key, otp_hash=digest, used_at=now, attempt_count=0,
+                                  expires_at=now + timedelta(seconds=self.cfg.firebase_phone_max_age_seconds),
+                                  max_attempts=self.cfg.otp_max_attempts, created_at=now))
+        self.session.flush()
+        audit.record(self.session, actor_id=acc.id, action="PASSWORD_RESET_PHONE", entity_type="account", entity_id=acc.id,
+                     new={"via": "FIREBASE"}, ip=self.ip)
         return acc

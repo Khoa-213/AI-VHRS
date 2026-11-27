@@ -145,13 +145,26 @@ class AuthService:
         acc = PhoneOtpService(self.session, None, ip).confirm_reset(phone, code)
         self._set_password(acc, new_password)
 
+    def confirm_password_reset_firebase(self, id_token: str, new_password: str, verifier, *, ip: str | None = None) -> None:
+        """A Firebase phone sign-in the person just made (Google sent the SMS) stands for the SMS code (2026-11-27)."""
+        security.validate_password_strength(new_password)          # before the token is used up
+        proof = verifier.verify_phone(id_token)
+        acc = PhoneOtpService(self.session, None, ip).reset_owner_by_proof(proof.phone, id_token)
+        self._set_password(acc, new_password)
+
     def _set_password(self, acc: Account, new_password: str) -> None:
         acc.password_hash = security.hash_password(new_password)
         acc.failed_login_count, acc.locked_until = 0, None
         self.sessions.revoke_all(acc.id)  # a reset must sign out every device
+        # the link stands alone on its line: the HTML part shows it as a "Đăng nhập" button (mail_html.BUTTON_LABELS);
+        # /login on the web app opens the sign-in dialog (owner request 2026-11-27)
         self.mailer.send(acc.email, "Mật khẩu AI-VHRS đã được đổi",
-                         "Mật khẩu tài khoản của bạn vừa được đặt lại và mọi thiết bị đã bị đăng xuất. "
-                         "Nếu không phải bạn thực hiện, hãy liên hệ xưởng ngay.")
+                         "Xin chào,\n\n"
+                         "Mật khẩu tài khoản AI-VHRS của bạn vừa được đặt lại và mọi thiết bị đã bị đăng xuất.\n\n"
+                         "Đăng nhập lại bằng mật khẩu mới:\n"
+                         f"{web_url(self.cfg)}/login\n\n"
+                         "Nếu không phải bạn thực hiện, hãy đặt lại mật khẩu ngay và liên hệ xưởng.\n\n"
+                         "Xưởng Nét Việt")
 
     def logout(self, session_id: uuid.UUID) -> None:
         self.sessions.revoke(session_id)

@@ -99,6 +99,14 @@ export async function apiSendPhoneOtp(): Promise<{ phoneMasked: string; expiresI
 export const apiVerifyPhone = async (code: string) =>
   toUser(await api<Account>('/me/phone/verify', { method: 'POST', body: { code } }))
 
+/**
+ * `POST /me/phone/verify-firebase`: the ID token of a Firebase phone sign-in made with the profile's number (Google sent
+ * the SMS, `services/firebasePhone.ts`) marks the number verified. Errors: `PHONE_MISMATCH`, `PHONE_TAKEN`,
+ * `PHONE_ALREADY_VERIFIED`, `PHONE_MISSING`, `FIREBASE_TOKEN_*`, `FIREBASE_NOT_CONFIGURED` / `FIREBASE_UNAVAILABLE`.
+ */
+export const apiVerifyPhoneFirebase = async (idToken: string) =>
+  toUser(await api<Account>('/me/phone/verify-firebase', { method: 'POST', body: { id_token: idToken } }))
+
 /** `POST /me/change-password`: signs out the other devices. */
 export const apiChangePassword = (current_password: string, new_password: string) =>
   api('/me/change-password', { method: 'POST', body: { current_password, new_password } })
@@ -122,6 +130,14 @@ export const apiRequestPhoneReset = (phone: string) =>
  */
 export const apiConfirmResetCode = (to: { email: string } | { phone: string }, code: string, new_password: string) =>
   api('/auth/password-reset/confirm', { method: 'POST', body: { ...to, code, new_password }, auth: false })
+
+/**
+ * `POST /auth/password-reset/confirm` with the ID token of a Firebase phone sign-in the person just made, in place of a
+ * code (2026-11-27). The number must be verified on an active account (`PHONE_NOT_VERIFIED` otherwise); the token works
+ * once and for 10 minutes (`FIREBASE_TOKEN_INVALID`, `FIREBASE_TOKEN_EXPIRED`). Signs out every device.
+ */
+export const apiConfirmResetFirebase = (firebase_id_token: string, new_password: string) =>
+  api('/auth/password-reset/confirm', { method: 'POST', body: { firebase_id_token, new_password }, auth: false })
 
 /** Same rules as the backend. */
 export const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/
