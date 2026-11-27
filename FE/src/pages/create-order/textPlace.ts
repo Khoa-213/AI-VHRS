@@ -1,8 +1,8 @@
 /**
  * Where the text sits on the sheet, as the order form edits it: top / middle / bottom, the four margins and the line
  * spacing. These are keys of the text input's `layout` (`BE/docs/FE_API_GUIDE.md`, `GET /catalog/text-styles`):
- * `vertical_align`, `margins_mm`, `line_spacing`. The other keys of a stored layout (styles of parts of the text, per
- * paragraph settings, made by the assistant or the studio) are carried along untouched.
+ * `vertical_align`, `margins_mm`, `line_spacing`. The styles of parts of the text (`spans`) are edited beside them
+ * (`textSpans.ts`); per paragraph settings of a stored layout (made by the assistant or the studio) are carried along.
  */
 import type { TextLayout } from '../../services/orders'
 
@@ -66,6 +66,9 @@ export const placeKey = (place: Place): string => {
   return JSON.stringify([l.vertical_align, l.margins_mm, l.line_spacing])
 }
 
-/** A stored layout that styles parts of the text or single paragraphs (made outside this form). */
-export const hasRichLayout = (layout: TextLayout | null | undefined): boolean =>
-  (Array.isArray(layout?.spans) && layout.spans.length > 0) || (Array.isArray(layout?.paragraphs) && layout.paragraphs.length > 0)
+/**
+ * A stored layout with settings of single paragraphs (made by the assistant or the studio; this form does not edit them).
+ * They are numbered by paragraph, so only the backend can carry them over an edit of the words (`keep_layout`).
+ */
+export const hasParagraphs = (layout: TextLayout | null | undefined): boolean =>
+  Array.isArray(layout?.paragraphs) && layout.paragraphs.length > 0

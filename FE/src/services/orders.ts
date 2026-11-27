@@ -163,7 +163,7 @@ export async function fetchStyledPreview(
     headers: { 'Content-Type': 'application/json' },
     signal,
     body: JSON.stringify({
-      text: (text.trim() || 'Nét Việt').slice(0, 2000),
+      text: (text.trim() ? text : 'Nét Việt').slice(0, 2000),      // not trimmed: the layout's offsets count from the first character
       alignment: alignment ?? 'CENTER',
       paper_size: paperSize,
       ...(layout ? { layout } : {}),
