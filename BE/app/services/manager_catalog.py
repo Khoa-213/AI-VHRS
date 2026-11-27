@@ -25,6 +25,7 @@ from app.services import handwriting_styles as styles_svc
 from app.repositories.ops import JobRepository, RobotRepository
 from app.domain import material_specs
 from app.services import audit, catalog_media
+from app.services.stock import Ledger
 from app.services.stroke_ai.outline_font import OUTLINE_PREFIX
 from app.services.stroke_ai.text_to_stroke import FONT_PREFIX, SUPPORTED_FONTS
 
@@ -79,22 +80,26 @@ class ManagerCatalogService:
 
     # ------------------------------------------------------------------ papers
     def create_paper(self, data: dict[str, Any]) -> PaperType:
+        data = {k: v for k, v in data.items() if not (k == "min_qty" and v is None)}     # null: the column default
         self._new_code(PaperType, data["code"])
         row = self.catalog.add(PaperType(**data))
         self._audit("CATALOG_PAPER_CREATE", "paper_type", row.id, new=_snapshot(row, list(data)))
+        self._opening_stock("PAPER", row)
         return row
 
     def update_paper(self, paper_id: int, changes: dict[str, Any]) -> PaperType:
         row = self._locked(PaperType, paper_id, "Không tìm thấy loại giấy.")
-        old, new = self._apply(row, changes, ("name", "gsm", "surface", "size", "unit_price", "is_active"))
+        old, new = self._apply(row, changes, ("name", "gsm", "surface", "size", "unit_price", "is_active", "min_qty"))
         self._audit("CATALOG_PAPER_UPDATE", "paper_type", row.id, old, new)
         return row
 
     # ------------------------------------------------------------------ pens / inks
     def create_pen(self, data: dict[str, Any]) -> PenType:
+        data = {k: v for k, v in data.items() if not (k == "min_qty" and v is None)}     # null: the column default
         self._new_code(PenType, data["code"])
         row = self.catalog.add(PenType(**data))
         self._audit("CATALOG_PEN_CREATE", "pen_type", row.id, new=_snapshot(row, list(data)))
+        self._opening_stock("PEN", row)
         return row
 
     def update_pen(self, pen_id: int, changes: dict[str, Any]) -> PenType:
@@ -104,22 +109,24 @@ class ManagerCatalogService:
         if not (0 < merged["f_min_n"] < merged["f_target_n"] < merged["f_max_n"] < merged["f_hard_n"]):
             raise AppError(422, "INVALID_FORCE_PROFILE", "Cần 0 < F_min < F_target < F_max < F_hard.")
         old, new = self._apply(row, changes, ("name", "category", "stroke_width_mm", "f_target_n", "f_min_n", "f_max_n",
-                                              "f_hard_n", "v_max_mm_s", "surcharge", "is_active"))
+                                              "f_hard_n", "v_max_mm_s", "surcharge", "is_active", "min_qty"))
         self._audit("CATALOG_PEN_UPDATE", "pen_type", row.id, old, new)
         return row
 
     def create_ink(self, pen_id: int, data: dict[str, Any]) -> InkColor:
+        data = {k: v for k, v in data.items() if not (k == "min_qty" and v is None)}     # null: the column default
         if self.catalog.pen(pen_id) is None:
             raise AppError(404, "PEN_NOT_FOUND", "Không tìm thấy loại bút.")
         if any(i.name.lower() == data["name"].lower() for i in self.catalog.all_inks(pen_id)):
             raise AppError(409, "NAME_TAKEN", "Bút này đã có màu mực cùng tên.")
         row = self.catalog.add(InkColor(pen_type_id=pen_id, **data))
         self._audit("CATALOG_INK_CREATE", "ink_color", row.id, new=_snapshot(row, ["pen_type_id", *data]))
+        self._opening_stock("INK", row)
         return row
 
     def update_ink(self, ink_id: int, changes: dict[str, Any]) -> InkColor:
         row = self._locked(InkColor, ink_id, "Không tìm thấy màu mực.")
-        old, new = self._apply(row, changes, ("name", "hex_code", "unit_price", "is_active"))
+        old, new = self._apply(row, changes, ("name", "hex_code", "unit_price", "is_active", "min_qty"))
         self._audit("CATALOG_INK_UPDATE", "ink_color", row.id, old, new)
         return row
 
@@ -172,18 +179,28 @@ class ManagerCatalogService:
 
     # ------------------------------------------------------------------ stock (FR-41)
     def adjust_stock(self, kind: str, row_id: int, mode: str, quantity: int, reason: str) -> Any:
+        """The Manager's count (Kiểm kê) or a manual change: one ADJUST row in the stock ledger (migration 0033)."""
         model = {"paper": PaperType, "pen": PenType, "ink": InkColor}[kind]
         row = self._locked(model, row_id, "Không tìm thấy vật tư.")
         before = row.stock_qty
         after = quantity if mode == "SET" else before + quantity
         if after < 0:
             raise AppError(422, "STOCK_NEGATIVE", "Tồn kho không được âm.", {"current": before})
-        row.stock_qty = after
+        if after != before:
+            Ledger(self.session, self.manager.id).move("ADJUST", kind.upper(), row.id, after - before, reason=reason)
         self.session.flush()
         self.session.refresh(row)
         self._audit("STOCK_ADJUST", {"paper": "paper_type", "pen": "pen_type", "ink": "ink_color"}[kind], row.id,
                     {"stock_qty": before}, {"stock_qty": after}, reason=reason)
         return row
+
+    def _opening_stock(self, item_kind: str, row: Any) -> None:
+        """A material created with stock: the ledger starts with that level, so the ledger always adds up to stock_qty."""
+        if row.stock_qty:
+            qty, row.stock_qty = row.stock_qty, 0
+            self.session.flush()
+            Ledger(self.session, self.manager.id).move("ADJUST", item_kind, row.id, qty, reason="Tồn đầu khi tạo vật tư")
+            self.session.refresh(row)
 
     # ------------------------------------------------------------------ compatibility (BR-05, BR-06)
     def set_compat(self, paper_id: int, pen_id: int, compatible: bool, note: str | None) -> PaperPenCompat:

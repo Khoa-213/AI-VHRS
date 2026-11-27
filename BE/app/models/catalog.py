@@ -35,6 +35,7 @@ class PaperType(Base):
     size: Mapped[PaperSize] = mapped_column(Enum(PaperSize, name="paper_size", create_type=False))
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 0))
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
+    min_qty: Mapped[int] = mapped_column(Integer, default=10, server_default="10")     # 0033: Manager minimum level
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
     image_path: Mapped[str | None] = mapped_column(Text)        # 0030: the workshop's photo, path in the public media bucket
@@ -60,6 +61,7 @@ class PenType(Base):
     v_max_mm_s: Mapped[Decimal] = mapped_column(Numeric(5, 1))
     surcharge: Mapped[Decimal] = mapped_column(Numeric(14, 0))
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
+    min_qty: Mapped[int] = mapped_column(Integer, default=1, server_default="1")       # 0033
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
     image_path: Mapped[str | None] = mapped_column(Text)        # 0030: the workshop's photo, path in the public media bucket
@@ -78,6 +80,7 @@ class InkColor(Base):
     hex_code: Mapped[str | None] = mapped_column(String(7))
     unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 0))
     stock_qty: Mapped[int] = mapped_column(Integer, default=0)
+    min_qty: Mapped[int] = mapped_column(Integer, default=1, server_default="1")       # 0033 (unit: pens of this colour)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     specs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")     # U6
     image_path: Mapped[str | None] = mapped_column(Text)        # 0030: the workshop's photo, path in the public media bucket

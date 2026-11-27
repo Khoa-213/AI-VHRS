@@ -97,6 +97,13 @@ const _broken = RobotStatus(
 class _Api implements TechApi {
   final chosen = <(int, int)>[];
   final calibrations = <Map<String, dynamic>>[];
+  final issues = <(int, int, bool, int)>[];
+
+  @override
+  Future<JobStock> issueStock(int id, {required int paper, bool newPen = false, required int seenIssued}) async {
+    issues.add((id, paper, newPen, seenIssued));
+    return const JobStock(issued: true, canIssue: true);
+  }
 
   @override
   Future<TechJob> chooseRobot(int id, int robotId) async {
@@ -121,6 +128,8 @@ Future<GoRouter> _pump(
   Stream<TechJobDetail> Function(int id)? detail,
   String lang = 'en',
   TechApi? api,
+  JobReference? reference,
+  JobStock? stock,
 }) async {
   final my = mine ?? status;
   tester.view.physicalSize = size;
@@ -174,6 +183,12 @@ Future<GoRouter> _pump(
       if (api != null) techApiProvider.overrideWithValue(api),
       techJobProvider.overrideWith((ref, id) => detail?.call(id) ?? Stream.value(_detail(id))),
       jobEventsProvider.overrideWith((ref, id) async => const []),
+      // An older server has no /reference: the column falls back to the names of the job detail.
+      jobReferenceProvider.overrideWith(
+          (ref, id) => reference == null ? Stream<JobReference>.error(const NotFoundException('x', 'NOT_FOUND')) : Stream.value(reference)),
+      // An older server has no stock sheet either (0033): Prepare is then left to the server.
+      jobStockProvider.overrideWith(
+          (ref, id) => stock == null ? Stream<JobStock>.error(const NotFoundException('x', 'NOT_FOUND')) : Stream.value(stock)),
     ],
     child: MaterialApp.router(routerConfig: router),
   ));
@@ -288,12 +303,12 @@ void main() {
     for (final size in const [Size(1440, 1000), Size(390, 844)]) {
       testWidgets('at ${size.width}: list and job are separate pages, and back keeps the filter', (tester) async {
         final router = await _pump(tester, size, '/tech/jobs?filter=history');
-        expect(find.text('Materials and instructions'), findsNothing);
+        expect(find.text('Final sketch'), findsNothing);
         await tester.tap(find.text('VHRS-279'));
         await tester.pumpAndSettle();
         expect(router.routerDelegate.currentConfiguration.uri.toString(), '/tech/jobs/279?filter=history');
         expect(find.text('Job for VHRS-279'), findsOneWidget);
-        expect(find.text('Materials and instructions'), findsOneWidget);
+        expect(find.text('Final sketch'), findsOneWidget, reason: 'the reference column stays beside the steps');
         expect(find.text('Find a job'), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.tap(find.text('Back to jobs'));
@@ -316,6 +331,107 @@ void main() {
       // A written job opens its photos page, which lives under /tech/qc.
       expect(router.routerDelegate.currentConfiguration.uri.toString(), '/tech/qc/280');
     });
+  });
+
+  group('job page: steps, step work and the reference column (2026-11-27)', () {
+    const ref = JobReference(
+      pages: 2,
+      pagesAssumed: false,
+      sketchVersion: 3,
+      paper: RefMaterial(name: 'Art A5', spec: 'A5 · 120 gsm · ART', need: 4, stock: 1),
+      pen: RefMaterial(name: 'Gel 0.5', spec: 'GEL · 0.5 mm', need: 1, stock: 12),
+      ink: RefMaterial(name: 'Black', spec: '#000000', hex: '#000000', need: 1, stock: 30),
+      approachNote: 'Write the signature lower right.',
+    );
+
+    const taken = JobStock(issued: true, canIssue: true, pages: 2, lines: [
+      StockLine(kind: 'PAPER', itemId: 1, name: 'Art A5', unit: 'tờ', need: 4, issued: 4, stock: 1),
+      StockLine(kind: 'PEN', itemId: 2, name: 'Gel 0.5', unit: 'cây', need: 0, issued: 0, stock: 12),
+      StockLine(kind: 'INK', itemId: 3, name: 'Black', unit: 'cây', need: 0, issued: 0, stock: 30),
+    ]);
+
+    testWidgets('the current step opens, its materials light up, and what was taken shows', (tester) async {
+      await _pump(tester, const Size(1440, 2000), '/tech/jobs/276', reference: ref, stock: taken);
+      expect(find.text('Step 4 of 12'), findsOneWidget, reason: 'a preparing job without calibration is on Calibrate');
+      expect(find.text('Final sketch'), findsOneWidget);
+      expect(find.text('Approved · v3'), findsOneWidget);
+      expect(find.text('2 page(s) per copy'), findsOneWidget);
+      expect(find.text('Need 4 · in stock 1 · Not enough in stock'), findsOneWidget);
+      expect(find.text('Paper · Used in this step'), findsOneWidget);
+      expect(find.text('Pen · Used in this step'), findsOneWidget);
+      expect(find.text('Ink'), findsWidgets);
+      expect(find.text('Write the signature lower right.'), findsOneWidget);
+      expect(find.text('Paper taken'), findsOneWidget);
+      expect(find.text('Taken 4/4'), findsOneWidget);
+      expect(find.text('On pen change'), findsNWidgets(2), reason: 'pens and ink are taken only when the pen is replaced (Q1)');
+
+      await tester.tap(find.text('Choose the robot').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Step 2 of 12'), findsOneWidget);
+      expect(find.text('This step is done.'), findsOneWidget);
+      expect(find.text('Paper · Used in this step'), findsNothing);
+      await tester.tap(find.byTooltip('Next step'));
+      await tester.pumpAndSettle();
+      expect(find.text('Step 3 of 12'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('without /reference the column keeps the names and says what is missing', (tester) async {
+      await _pump(tester, const Size(1440, 2000), '/tech/jobs/276');
+      expect(find.text('Ballpoint'), findsOneWidget);
+      expect(find.text('Quantities and the preview are not available from the server yet.'), findsOneWidget);
+      expect(find.text('No preview image. Download the job package to see the writing path.'), findsOneWidget);
+    });
+
+    testWidgets('Prepare: take the paper (plus spare) before preparing, never twice from one screen', (tester) async {
+      final api = _Api();
+      const waiting = JobStock(issued: false, canIssue: true, pages: 2, lines: [
+        StockLine(kind: 'PAPER', itemId: 1, name: 'Art A5', unit: 'tờ', need: 4, issued: 0, stock: 50),
+        StockLine(kind: 'PEN', itemId: 2, name: 'Gel 0.5', unit: 'cây', need: 0, issued: 0, stock: 0),
+      ]);
+      await _pump(tester, const Size(1440, 2400), '/tech/jobs/282', api: api, stock: waiting, mine: const [_danger, _writer]);
+      await tester.tap(find.text('Choose the robot').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Next step'));
+      await tester.pumpAndSettle();
+      expect(find.text('Take materials from stock'), findsOneWidget);
+      expect(find.text('Need 4 sheets · taken 0 · in stock 50'), findsOneWidget);
+      expect(find.text('Take the paper in the card above first.'), findsOneWidget);
+      expect(find.text('Paper not taken'), findsOneWidget);
+      await tester.tap(find.byTooltip('One more'));
+      await tester.pumpAndSettle();
+      // a new pen with no pen in stock cannot be taken
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TechButton>(find.widgetWithText(TechButton, 'Take 5 sheets and a new pen')).onPressed, isNull);
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TechButton, 'Take 5 sheets'));
+      await tester.pumpAndSettle();
+      expect(api.issues, [(282, 5, false, 0)], reason: 'need + 1 spare, with the issued count the screen showed');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('short stock blocks the issue and says to ask the manager', (tester) async {
+      const short = JobStock(issued: false, canIssue: true, lines: [
+        StockLine(kind: 'PAPER', itemId: 1, name: 'Art A5', unit: 'tờ', need: 4, issued: 0, stock: 3),
+      ]);
+      await _pump(tester, const Size(1440, 2400), '/tech/jobs/282', stock: short, mine: const [_danger, _writer]);
+      await tester.tap(find.text('Choose the robot').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Next step'));
+      await tester.pumpAndSettle();
+      expect(find.text('Only 3 sheets left in stock. Ask the Manager to receive more.'), findsOneWidget);
+      expect(tester.widget<TechButton>(find.widgetWithText(TechButton, 'Take 4 sheets')).onPressed, isNull);
+    });
+
+    for (final w in [1000.0, 390.0]) {
+      testWidgets('the three parts fit a $w window', (tester) async {
+        await _pump(tester, Size(w, 4000), '/tech/jobs/276', reference: ref);
+        expect(find.text('Final sketch'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('my robots and the robot choice (migration 0032)', () {
@@ -352,6 +468,10 @@ void main() {
       await _pump(tester, const Size(1440, 2400), '/tech/jobs/282', mine: const [_danger, _writer, _broken], api: api);
       expect(find.text('No robot chosen'), findsWidgets);
       expect(find.text('Download the job package first.'), findsOneWidget, reason: 'the step list says why Prepare waits');
+      // The rail opens the current step (the package); the robot choice is the work of step 2.
+      expect(find.widgetWithText(TechButton, 'Choose this robot'), findsNothing);
+      await tester.tap(find.text('Choose the robot').first);
+      await tester.pumpAndSettle();
       final choose = find.widgetWithText(TechButton, 'Choose this robot');
       expect(tester.widget<TechButton>(choose).onPressed, isNull);
 

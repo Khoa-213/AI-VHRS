@@ -5,7 +5,7 @@ Real database. The agent is simulated by the test (it calls the same HTTP routes
 import pytest
 
 from app.services.robot_link import hub
-from tests.test_api_orders import API, _sql
+from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
 from tests.test_api_technician import CAL, T, _err, _job, _post, _running
 from tests.test_api_workshop import _user, cust, policy, staff, store, wcat  # noqa: F401
@@ -100,6 +100,7 @@ def test_validation_of_commands(client, cust, staff, mgr, wcat, robot, tech):
     assert notyet.status_code == 409 and _err(notyet) == "JOB_STATE_CONFLICT"            # the job must be started (WRITING) first
     assert _err(post(kind="DRY_RUN", job_id=jid, params={"mode": "SIM"})) == "JOB_STATE_CONFLICT"      # still SCHEDULED, not PREPARING
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200
+    issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
     assert post(kind="RUN", job_id=jid, params={"mode": "SIM"}).status_code == 409          # PREPARING is still not WRITING
     _post(client, tech, jid, "calibration", CAL, status=201)

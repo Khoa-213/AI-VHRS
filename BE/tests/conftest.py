@@ -81,6 +81,14 @@ def _cleanup() -> None:
                        f"or authorized_by in {_TEST_IDS} or robot_id in (select id from robots where code like '{_LIKE}')"))
         c.execute(text(f"delete from robot_commands where created_by in {_TEST_IDS} or job_id in {_jobs_of_tests} "
                        f"or robot_id in (select id from robots where code like '{_LIKE}')"))
+        # 0033 stock ledger: the rows of test materials (no FK on the item), then the test Managers' empty receipts
+        c.execute(text(f"""delete from stock_movements where
+            (item_kind = 'PAPER' and item_id in (select id from paper_types where code like '{_LIKE}'))
+            or (item_kind = 'PEN' and item_id in (select id from pen_types where code like '{_LIKE}'))
+            or (item_kind = 'INK' and item_id in (select i.id from ink_colors i join pen_types p on p.id = i.pen_type_id
+                                                   where p.code like '{_LIKE}'))"""))
+        c.execute(text(f"delete from stock_receipts r where created_by in {_TEST_IDS} "
+                       "and not exists (select 1 from stock_movements m where m.receipt_id = r.id)"))
         c.execute(text(f"delete from robot_agents where created_by in {_TEST_IDS} "
                        f"or robot_id in (select id from robots where code like '{_LIKE}')"))
         c.execute(text(f"delete from audit_logs where entity_type = 'alert_catalog' and actor_id in {_TEST_IDS}"))

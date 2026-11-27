@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import get_engine
-from tests.test_api_orders import API, _sql
+from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_payments import _paid
 from tests.test_api_scheduling import M, _at, _give, _iso, _robot, _sched, mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import _err, _user, cust, manager, policy, staff, store, wcat  # noqa: F401
@@ -164,6 +164,7 @@ def test_the_technician_picks_one_of_their_robots_before_preparing(client, cust,
     client.post(f"{M}/jobs/{legacy['id']}/unschedule", headers=mgr, json={"reason": "x"})
 
     # once preparing, the robot is fixed
+    issue_paper(client, tech[0], jid)
     assert client.post(f"{T}/jobs/{jid}/prepare", headers=tech[0]).status_code == 200
     r = pick(robot)
     assert r.status_code == 409 and _err(r) == "JOB_STATE_CONFLICT"

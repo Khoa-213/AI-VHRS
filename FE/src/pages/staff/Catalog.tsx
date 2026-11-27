@@ -11,8 +11,9 @@ import { orderErrorKey } from '../../services/orders'
 import { fmt } from '../../utils/format'
 import { ErrorLine, decOnly, intOnly, useRun } from './catalogKit'
 import Materials from './Materials'
+import Stock from './Stock'
 
-const TABS = ['materials', 'templates', 'styles', 'robots'] as const
+const TABS = ['materials', 'stock', 'templates', 'styles', 'robots'] as const
 type Tab = (typeof TABS)[number]
 
 /** Manager only: the catalog the customer chooses from, its stock, the writing templates, the robots and the price list. */
@@ -28,6 +29,7 @@ export default function Catalog() {
           ))}
         </div>
         {tab === 'materials' && <Materials />}
+        {tab === 'stock' && <Stock />}
         {tab === 'templates' && <Templates />}
         {tab === 'styles' && <Styles />}
         {tab === 'robots' && <Robots />}

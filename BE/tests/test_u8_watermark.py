@@ -16,7 +16,7 @@ from app.services import certificates as cert_mod
 from app.services.stroke_ai import physical_mark as pm
 from app.services.stroke_ai import trajectory as tj
 from app.services.stroke_ai.trajectory import Page, Stroke
-from tests.test_api_orders import API, _png, _sql, _upload
+from tests.test_api_orders import API, _png, _sql, _upload, issue_paper
 from tests.test_api_scheduling import _at, _sched, mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import W, _err, _ot3, cust, policy, staff, store, wcat  # noqa: F401
 from tests.test_api_technician import CAL
@@ -242,6 +242,7 @@ def test_public_verification_and_the_certificate_card(client, cust, staff, mgr, 
     assert r.status_code == 200 and r.headers["content-type"] == "application/pdf" and r.content.startswith(b"%PDF")
     assert code in r.headers["content-disposition"]
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200            # the real path to WRITTEN
+    issue_paper(client, tech[0], jid)
     for path, body in (("prepare", None), ("calibration", CAL), ("simulation", {"passed": True}), ("start", None),
                        ("finish", None)):
         assert client.post(f"{T}/jobs/{jid}/{path}", headers=tech[0], json=body).status_code in (200, 201), path

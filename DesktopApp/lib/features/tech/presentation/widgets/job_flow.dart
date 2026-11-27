@@ -26,6 +26,7 @@ Future<void> refreshJob(WidgetRef ref, int id) async {
   ref.invalidate(jobEventsProvider(id));
   ref.invalidate(jobPhotosProvider(id));
   ref.invalidate(jobCommandsProvider(id));
+  ref.invalidate(jobStockProvider(id));
   try {
     // ignore: unused_result
     await ref.refresh(techJobProvider(id).future);

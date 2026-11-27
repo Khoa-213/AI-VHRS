@@ -6,7 +6,7 @@ import json
 from types import SimpleNamespace
 
 from app.core.config import get_settings
-from tests.test_api_orders import _sql
+from tests.test_api_orders import _sql, issue_paper
 from tests.test_api_technician import CAL, _err, _job, _post, T
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import cust, policy, staff, store, wcat  # noqa: F401
@@ -29,6 +29,7 @@ def _cal(**over):
 def _prepared(client, cust, staff, mgr, wcat, robot, tech):
     oid, jid = _job(client, cust, staff, mgr, wcat, robot, tech)
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200
+    issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
     return jid
 
