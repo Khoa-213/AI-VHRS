@@ -43,8 +43,9 @@ Mở `http://<IP máy trạm>:8765/`: đăng nhập bằng **tài khoản hệ t
   Kiểm giao diện: `TECH_BROWSER_PATH=<Chrome/Edge> node scripts/check_workspace_browser.mjs` (mọi API giả lập; `WS_SHOTS=<thư mục>` lưu ảnh chụp).
 
 Started by the desktop app, the agent also gets `VHRS_SCREEN_CODE` (random, 64 hex): `POST /api/screen-login {"code": ...}`
-signs the workstation screen in as `VHRS_TECH_EMAIL` without a second login (401 `SCREEN_CODE_INVALID` otherwise, and always
-when the agent was not started with a code). The app opens the screen with the code in the URL fragment.
+signs the desktop app in to the agent's local API as `VHRS_TECH_EMAIL` without a second login (401 `SCREEN_CODE_INVALID` otherwise, and always
+when the agent was not started with a code). The app uses it for its REAL button; `real-enable` also accepts a job
+loaded through the backend link (LOAD sent from the app) when the caller is that same technician (`link_owner`).
 
 ## Chạy thử không cần robot
 

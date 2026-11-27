@@ -10,13 +10,12 @@ import '../../data/providers.dart';
 import '../../domain/robot.dart';
 import '../../i18n/tech_strings.dart';
 import '../widgets/job_widgets.dart';
-import '../widgets/robot_view_3d.dart';
 import '../widgets/tech_shell.dart';
 import '../widgets/tech_ui.dart';
 
-/// The Robot Agent of this workstation, a section of Overview (owner 2026-11-26): its state, stop / start, the read-only
-/// robot connection check, and the agent's workstation screen embedded below, signed in as the app's technician.
-/// On a computer without `robot_agent` it says so (Overview holds nothing else).
+/// The Robot Agent of this workstation, a card on Overview under My robots (owner 2026-11-26): its state, stop / start, the
+/// read-only robot connection check and its log. The agent's own web screen is no longer embedded: the app's Jobs, job page
+/// and robot control do the work, and the REAL switch is a button on the job's REAL step (`RealSwitch`).
 class AgentPanel extends ConsumerStatefulWidget {
   const AgentPanel({super.key});
 
@@ -142,6 +141,7 @@ class _AgentPanelState extends ConsumerState<AgentPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          CardHead(t('dk.agent.title')),
           Wrap(
             spacing: 12,
             runSpacing: 8,
@@ -180,32 +180,7 @@ class _AgentPanelState extends ConsumerState<AgentPanel> {
       ),
     );
 
-    // The state card on top (scrolls on its own if checks and log make it tall), the workstation screen fills the rest.
-    return LayoutBuilder(
-      builder: (context, c) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: c.maxHeight * 0.45),
-            child: SingleChildScrollView(child: head),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: agent.screenReady
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(TechRadius.card),
-                    child: ref.watch(robotWebViewProvider)(agent.screenLoginUrl),
-                  )
-                : SingleChildScrollView(
-                    child: EmptyCard(
-                      title: t('dk.agent.screen'),
-                      body: agent.phase == AgentPhase.starting ? t('dk.agent.waitScreen') : t('dk.agent.noScreen'),
-                    ),
-                  ),
-          ),
-        ],
-      ),
-    );
+    return head;
   }
 }
 

@@ -87,7 +87,8 @@ class AgentState {
   /// True once the workstation screen answers on [screenUrl].
   final bool screenReady;
 
-  /// One-time code for this run of the agent: the embedded screen opens with it and is signed in as the app's technician.
+  /// Random code for this run of the agent: the app trades it at `POST /api/screen-login` for a session on the agent's own
+  /// API as the technician it started the agent as (the REAL switch uses it).
   final String? screenCode;
   const AgentState({
     required this.phase,
@@ -102,9 +103,6 @@ class AgentState {
   static const host = '127.0.0.1';
   static const port = 8765;
   String get screenUrl => 'http://$host:$port/';
-
-  /// The screen, signed in as the technician who started the agent (the code rides in the fragment, which is never sent).
-  String get screenLoginUrl => screenCode == null ? screenUrl : '$screenUrl#code=$screenCode';
 
   AgentState copyWith({AgentPhase? phase, String? error, bool clearError = false, List<String>? log, bool? linked, bool? screenReady}) =>
       AgentState(
@@ -193,7 +191,7 @@ class AgentController extends StateNotifier<AgentState> {
           'VHRS_TECH_EMAIL': email,
           'VHRS_TECH_PASSWORD': password,
           'VHRS_AGENT_KEY': '', // a key left in the shell must not replace this technician's session
-          'VHRS_SCREEN_CODE': code, // signs the embedded screen in as this technician (POST /api/screen-login)
+          'VHRS_SCREEN_CODE': code, // the app's sign-in to the agent's local API as this technician (POST /api/screen-login)
           'PYTHONUNBUFFERED': '1',
           'PYTHONIOENCODING': 'utf-8',
         },
@@ -290,3 +288,72 @@ Future<String?> probeController(String ip, {int port = 20003, Duration timeout =
     return e.osError?.message ?? e.message;
   }
 }
+
+/// An error from the agent's local API: its `error.code` and message, or AGENT_UNREACHABLE.
+class AgentApiError implements Exception {
+  final int status;
+  final String code;
+  final String message;
+  const AgentApiError(this.status, this.code, this.message);
+  @override
+  String toString() => '$code: $message';
+}
+
+/// The agent on this computer (127.0.0.1 only), called as the technician the app started it as: the run's code buys a
+/// session once (`POST /api/screen-login`). Used for the REAL switch, which on purpose has no backend API.
+class AgentLocalApi {
+  final String base;
+  final String code;
+  final HttpClient Function() _client;
+  String? _token;
+  AgentLocalApi({required this.base, required this.code, HttpClient Function()? client}) : _client = client ?? HttpClient.new;
+
+  Future<Map<String, dynamic>> _send(String method, String path, {Map<String, dynamic>? body, bool auth = true, bool retry = true}) async {
+    final c = _client()..connectionTimeout = const Duration(seconds: 3);
+    try {
+      final req = await c.openUrl(method, Uri.parse('$base${path.substring(1)}'));
+      req.headers.contentType = ContentType.json;
+      if (auth) req.headers.set('Authorization', 'Bearer ${await _login()}');
+      if (body != null) req.write(jsonEncode(body));
+      // real-enable checks the real robot first (SDK connect and reads): give it time.
+      final res = await req.close().timeout(const Duration(seconds: 60));
+      final text = await res.transform(utf8.decoder).join();
+      final j = text.isEmpty ? <String, dynamic>{} : jsonDecode(text) as Map<String, dynamic>;
+      if (res.statusCode == 401 && auth && retry) {
+        _token = null; // the session ended (agent restarted): sign in again once
+        return await _send(method, path, body: body, retry: false);
+      }
+      if (res.statusCode >= 400) {
+        final e = j['error'] is Map ? j['error'] as Map : const {};
+        throw AgentApiError(res.statusCode, '${e['code'] ?? 'HTTP_${res.statusCode}'}', '${e['message'] ?? text}');
+      }
+      return j;
+    } on SocketException catch (e) {
+      throw AgentApiError(0, 'AGENT_UNREACHABLE', e.message);
+    } on TimeoutException {
+      throw const AgentApiError(0, 'AGENT_UNREACHABLE', 'timeout');
+    } finally {
+      c.close(force: true);
+    }
+  }
+
+  Future<String> _login() async =>
+      _token ??= (await _send('POST', '/api/screen-login', body: {'code': code}, auth: false))['access_token'] as String;
+
+  /// The REAL switch: `{job_id, expires_at, enabled_by, waive_dry_run}` or null when off or expired.
+  Future<Map<String, dynamic>?> realState() async => (await _send('GET', '/api/real'))['real_enabled'] as Map<String, dynamic>?;
+
+  /// Checks the real robot read-only, then allows the real arm for [jobId] for [minutes] (502 ROBOT_UNREACHABLE,
+  /// 409 ROBOT_CONFIG_MISMATCH, 409 JOB_NOT_LOADED, 409 AGENT_BUSY otherwise).
+  Future<Map<String, dynamic>> realEnable(int jobId, {int minutes = 30}) =>
+      _send('POST', '/api/jobs/$jobId/real-enable', body: {'minutes': minutes});
+
+  Future<void> realDisable() => _send('DELETE', '/api/real-enable');
+}
+
+/// The local API of the agent this app runs, while it runs; null otherwise (another computer, stopped, tests).
+final agentLocalApiProvider = Provider<AgentLocalApi?>((ref) {
+  final (phase, code) = ref.watch(agentControllerProvider.select((a) => (a.phase, a.screenCode)));
+  if (phase != AgentPhase.running || code == null) return null;
+  return AgentLocalApi(base: 'http://${AgentState.host}:${AgentState.port}/', code: code);
+});

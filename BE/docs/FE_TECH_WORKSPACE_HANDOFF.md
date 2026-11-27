@@ -214,3 +214,10 @@ Body của `POST /api/technician/jobs/{id}/calibration`:
 - **Đồng bộ trạng thái REAL:** agent gửi `real_enabled` lên BE trong mỗi lần đồng bộ, nên Manager thấy được trạng thái này qua `live.status`. **BE không có lệnh nào bật REAL được.**
 - **Thông báo in-app** (`/notifications`) chưa đi qua proxy của agent. Nếu màn desktop cần thì báo để mở thêm.
 - Không có thông báo khi Manager giao hoặc thu hồi robot.
+
+### Desktop app: REAL button (2026-11-27)
+The DesktopApp shows **Turn REAL on (30 min)** on a job's REAL step when it runs the agent of that job's robot: it calls
+the agent's local API on 127.0.0.1 (`POST /api/jobs/{id}/real-enable`, signed in with `POST /api/screen-login` and the code it
+gave the agent at start). Still no backend API for REAL. The agent accepts it for a job loaded from the app (LOAD through the
+backend link) when the caller is the technician the app started the agent as. The agent's web screen is no longer embedded.
+
