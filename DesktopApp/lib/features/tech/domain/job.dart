@@ -536,3 +536,129 @@ class QualityEvaluation {
 
   List<String> get warnings => [for (final w in (metrics['warnings'] as List<dynamic>? ?? const [])) if (w is String) w];
 }
+
+// ─── Reference beside the steps ──────────────────────────────────────
+
+/// One material of the job as `GET /technician/jobs/{id}/reference` gives it: what this job uses up ([need], what finishing
+/// deducts) against the catalog stock now.
+class RefMaterial {
+  final String name;
+  final String spec;
+  final String? hex;
+  final int need, stock;
+  const RefMaterial({required this.name, this.spec = '', this.hex, required this.need, required this.stock});
+
+  bool get short => stock < need;
+}
+
+/// The approved sketch, the materials and the instructions kept beside the job steps (read only, no DOWNLOADED event).
+class JobReference {
+  final int pages;
+  final bool pagesAssumed;
+  final String? previewUrl;
+  final int? sketchVersion;
+  final RefMaterial? paper, pen, ink;
+  final String? approachNote;
+  const JobReference({
+    this.pages = 1,
+    this.pagesAssumed = true,
+    this.previewUrl,
+    this.sketchVersion,
+    this.paper,
+    this.pen,
+    this.ink,
+    this.approachNote,
+  });
+
+  factory JobReference.fromJson(Map<String, dynamic> j) {
+    int n(Object? v) => (v as num?)?.toInt() ?? 0;
+    String spec(List<Object?> parts) => parts.where((p) => p != null && '$p'.isNotEmpty).join(' · ');
+    final paper = j['paper'] as Map<String, dynamic>?;
+    final pen = j['pen'] as Map<String, dynamic>?;
+    final ink = j['ink'] as Map<String, dynamic>?;
+    return JobReference(
+      pages: n(j['pages']).clamp(1, 999),
+      pagesAssumed: j['pages_assumed'] as bool? ?? true,
+      previewUrl: j['preview_url'] as String?,
+      sketchVersion: (j['sketch_version'] as num?)?.toInt(),
+      paper: paper == null
+          ? null
+          : RefMaterial(
+              name: paper['name'] as String,
+              spec: spec([paper['size'], paper['gsm'] == null ? null : '${paper['gsm']} gsm', paper['surface']]),
+              need: n(paper['need']),
+              stock: n(paper['stock']),
+            ),
+      pen: pen == null
+          ? null
+          : RefMaterial(
+              name: pen['name'] as String,
+              spec: spec([pen['category'], pen['stroke_width_mm'] == null ? null : '${pen['stroke_width_mm']} mm']),
+              need: n(pen['need']),
+              stock: n(pen['stock']),
+            ),
+      ink: ink == null
+          ? null
+          : RefMaterial(name: ink['name'] as String, spec: ink['hex'] as String? ?? '', hex: ink['hex'] as String?,
+              need: n(ink['need']), stock: n(ink['stock'])),
+      approachNote: j['approach_note'] as String?,
+    );
+  }
+}
+
+/// One material of a job's stock sheet (`GET /technician/jobs/{id}/stock`, migration 0033).
+class StockLine {
+  final String kind; // PAPER | PEN | INK
+  final int itemId;
+  final String name, spec, unit;
+  final String? hex;
+  final int need, issued, stock;
+  const StockLine({
+    required this.kind,
+    required this.itemId,
+    required this.name,
+    this.spec = '',
+    required this.unit,
+    this.hex,
+    required this.need,
+    required this.issued,
+    required this.stock,
+  });
+
+  factory StockLine.fromJson(Map<String, dynamic> j) => StockLine(
+        kind: j['item_kind'] as String,
+        itemId: (j['item_id'] as num).toInt(),
+        name: j['name'] as String? ?? '',
+        spec: j['spec'] as String? ?? '',
+        unit: j['unit'] as String? ?? '',
+        hex: j['hex_code'] as String?,
+        need: (j['need'] as num?)?.toInt() ?? 0,
+        issued: (j['issued'] as num?)?.toInt() ?? 0,
+        stock: (j['stock'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// What a job has taken from the shelf. Prepare opens once [issued] (the paper it needs is taken).
+class JobStock {
+  final int pages;
+  final bool pagesAssumed, issued, canIssue;
+  final List<StockLine> lines;
+  const JobStock({this.pages = 1, this.pagesAssumed = true, required this.issued, required this.canIssue, this.lines = const []});
+
+  StockLine? line(String kind) {
+    for (final l in lines) {
+      if (l.kind == kind) return l;
+    }
+    return null;
+  }
+
+  StockLine? get paper => line('PAPER');
+
+  factory JobStock.fromJson(Map<String, dynamic> j) => JobStock(
+        pages: (j['pages'] as num?)?.toInt() ?? 1,
+        pagesAssumed: j['pages_assumed'] as bool? ?? true,
+        issued: j['issued'] as bool? ?? false,
+        canIssue: j['can_issue'] as bool? ?? false,
+        lines: [for (final l in j['lines'] as List<dynamic>? ?? const []) StockLine.fromJson(l as Map<String, dynamic>)],
+      );
+}

@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0032 (alembic head), generated 2026-11-26 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0033 (alembic head), generated 2026-11-27 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0032);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0032;
+--      baseline schema and every migration up to 0033);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0033;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -1192,6 +1192,8 @@ CREATE TABLE public.ink_colors (
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
     image_path text,
     image_updated_at timestamp with time zone,
+    min_qty integer DEFAULT 1 NOT NULL,
+    CONSTRAINT chk_ink_min_qty CHECK ((min_qty >= 0)),
     CONSTRAINT ink_colors_hex_code_check CHECK ((hex_code ~ '^#[0-9A-Fa-f]{6}$'::text)),
     CONSTRAINT ink_colors_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT ink_colors_unit_price_check CHECK ((unit_price >= (0)::numeric))
@@ -1202,6 +1204,12 @@ CREATE TABLE public.ink_colors (
 --
 
 COMMENT ON COLUMN public.ink_colors.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
+
+--
+-- Name: COLUMN ink_colors.min_qty; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ink_colors.min_qty IS 'Manager minimum level (unit: pens of this colour)';
 
 --
 -- Name: ink_colors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -1528,6 +1536,8 @@ CREATE TABLE public.paper_types (
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
     image_path text,
     image_updated_at timestamp with time zone,
+    min_qty integer DEFAULT 10 NOT NULL,
+    CONSTRAINT chk_paper_min_qty CHECK ((min_qty >= 0)),
     CONSTRAINT paper_types_gsm_check CHECK ((gsm > 0)),
     CONSTRAINT paper_types_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT paper_types_unit_price_check CHECK ((unit_price >= (0)::numeric))
@@ -1538,6 +1548,12 @@ CREATE TABLE public.paper_types (
 --
 
 COMMENT ON COLUMN public.paper_types.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
+
+--
+-- Name: COLUMN paper_types.min_qty; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.paper_types.min_qty IS 'Manager minimum level: below it the item is shown as low stock';
 
 --
 -- Name: paper_types_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -1616,7 +1632,9 @@ CREATE TABLE public.pen_types (
     specs jsonb DEFAULT '{}'::jsonb NOT NULL,
     image_path text,
     image_updated_at timestamp with time zone,
+    min_qty integer DEFAULT 1 NOT NULL,
     CONSTRAINT chk_pen_force_band CHECK (((f_min_n > (0)::numeric) AND (f_min_n < f_target_n) AND (f_target_n < f_max_n) AND (f_max_n < f_hard_n))),
+    CONSTRAINT chk_pen_min_qty CHECK ((min_qty >= 0)),
     CONSTRAINT pen_types_f_target_n_check CHECK (((f_target_n >= 0.3) AND (f_target_n <= 2.0))),
     CONSTRAINT pen_types_stock_qty_check CHECK ((stock_qty >= 0)),
     CONSTRAINT pen_types_stroke_width_mm_check CHECK ((stroke_width_mm > (0)::numeric)),
@@ -1629,6 +1647,12 @@ CREATE TABLE public.pen_types (
 --
 
 COMMENT ON COLUMN public.pen_types.image_path IS 'Object path of the product photo in the public catalog media bucket (NULL: none)';
+
+--
+-- Name: COLUMN pen_types.min_qty; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.pen_types.min_qty IS 'Manager minimum level: below it the item is shown as low stock';
 
 --
 -- Name: pen_types_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -2532,6 +2556,99 @@ ALTER TABLE public.status_histories ALTER COLUMN id ADD GENERATED ALWAYS AS IDEN
 );
 
 --
+-- Name: stock_movements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_movements (
+    id bigint NOT NULL,
+    kind character varying(10) NOT NULL,
+    item_kind character varying(5) NOT NULL,
+    item_id bigint NOT NULL,
+    quantity integer NOT NULL,
+    stock_after integer NOT NULL,
+    shortfall integer DEFAULT 0 NOT NULL,
+    job_id bigint,
+    receipt_id bigint,
+    actor_id bigint,
+    reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_stock_move_links CHECK (((((kind)::text = 'RECEIPT'::text) AND (receipt_id IS NOT NULL)) OR (((kind)::text = ANY ((ARRAY['ISSUE'::character varying, 'RETURN'::character varying])::text[])) AND (job_id IS NOT NULL)) OR ((kind)::text = 'ADJUST'::text))),
+    CONSTRAINT chk_stock_move_sign CHECK (((((kind)::text = ANY ((ARRAY['RECEIPT'::character varying, 'RETURN'::character varying])::text[])) AND (quantity > 0)) OR (((kind)::text = 'ISSUE'::text) AND (quantity < 0)) OR ((kind)::text = 'ADJUST'::text))),
+    CONSTRAINT stock_movements_item_kind_check CHECK (((item_kind)::text = ANY ((ARRAY['PAPER'::character varying, 'PEN'::character varying, 'INK'::character varying])::text[]))),
+    CONSTRAINT stock_movements_kind_check CHECK (((kind)::text = ANY ((ARRAY['RECEIPT'::character varying, 'ISSUE'::character varying, 'RETURN'::character varying, 'ADJUST'::character varying])::text[]))),
+    CONSTRAINT stock_movements_quantity_check CHECK ((quantity <> 0)),
+    CONSTRAINT stock_movements_shortfall_check CHECK ((shortfall >= 0)),
+    CONSTRAINT stock_movements_stock_after_check CHECK ((stock_after >= 0))
+);
+
+--
+-- Name: TABLE stock_movements; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.stock_movements IS 'Append-only stock ledger: every change of stock_qty of a paper, pen or ink';
+
+--
+-- Name: COLUMN stock_movements.shortfall; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.stock_movements.shortfall IS 'Units that were missing when an over-use at Writing done could not be covered (stock floored at 0)';
+
+--
+-- Name: stock_movements_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.stock_movements_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: stock_movements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.stock_movements_id_seq OWNED BY public.stock_movements.id;
+
+--
+-- Name: stock_receipts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_receipts (
+    id bigint NOT NULL,
+    code character varying(20),
+    supplier character varying(200),
+    received_on date DEFAULT CURRENT_DATE NOT NULL,
+    note text,
+    client_ref character varying(64),
+    created_by bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: TABLE stock_receipts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.stock_receipts IS 'Goods receipt entered by the Manager (NK-xxxx); its lines are RECEIPT rows of stock_movements';
+
+--
+-- Name: stock_receipts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.stock_receipts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+--
+-- Name: stock_receipts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.stock_receipts_id_seq OWNED BY public.stock_receipts.id;
+
+--
 -- Name: studio_drafts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2782,6 +2899,18 @@ ALTER TABLE ONLY public.sketch_regions ALTER COLUMN id SET DEFAULT nextval('publ
 --
 
 ALTER TABLE ONLY public.sketch_revisions ALTER COLUMN id SET DEFAULT nextval('public.sketch_revisions_id_seq'::regclass);
+
+--
+-- Name: stock_movements id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements ALTER COLUMN id SET DEFAULT nextval('public.stock_movements_id_seq'::regclass);
+
+--
+-- Name: stock_receipts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_receipts ALTER COLUMN id SET DEFAULT nextval('public.stock_receipts_id_seq'::regclass);
 
 --
 -- Name: studio_drafts id; Type: DEFAULT; Schema: public; Owner: -
@@ -3286,6 +3415,34 @@ ALTER TABLE ONLY public.status_histories
     ADD CONSTRAINT status_histories_pkey PRIMARY KEY (id);
 
 --
+-- Name: stock_movements stock_movements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements
+    ADD CONSTRAINT stock_movements_pkey PRIMARY KEY (id);
+
+--
+-- Name: stock_receipts stock_receipts_client_ref_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_receipts
+    ADD CONSTRAINT stock_receipts_client_ref_key UNIQUE (client_ref);
+
+--
+-- Name: stock_receipts stock_receipts_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_receipts
+    ADD CONSTRAINT stock_receipts_code_key UNIQUE (code);
+
+--
+-- Name: stock_receipts stock_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_receipts
+    ADD CONSTRAINT stock_receipts_pkey PRIMARY KEY (id);
+
+--
 -- Name: studio_drafts studio_drafts_order_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3697,6 +3854,24 @@ CREATE INDEX ix_sketch_revisions_order ON public.sketch_revisions USING btree (o
 --
 
 CREATE INDEX ix_status_histories_order ON public.status_histories USING btree (order_id, created_at);
+
+--
+-- Name: ix_stock_movements_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_stock_movements_created ON public.stock_movements USING btree (created_at DESC);
+
+--
+-- Name: ix_stock_movements_item; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_stock_movements_item ON public.stock_movements USING btree (item_kind, item_id, created_at DESC);
+
+--
+-- Name: ix_stock_movements_job; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_stock_movements_job ON public.stock_movements USING btree (job_id) WHERE (job_id IS NOT NULL);
 
 --
 -- Name: ix_studio_drafts_customer; Type: INDEX; Schema: public; Owner: -
@@ -4875,6 +5050,34 @@ ALTER TABLE ONLY public.status_histories
     ADD CONSTRAINT status_histories_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
 
 --
+-- Name: stock_movements stock_movements_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements
+    ADD CONSTRAINT stock_movements_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+--
+-- Name: stock_movements stock_movements_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements
+    ADD CONSTRAINT stock_movements_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.production_jobs(id) ON DELETE SET NULL;
+
+--
+-- Name: stock_movements stock_movements_receipt_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements
+    ADD CONSTRAINT stock_movements_receipt_id_fkey FOREIGN KEY (receipt_id) REFERENCES public.stock_receipts(id) ON DELETE RESTRICT;
+
+--
+-- Name: stock_receipts stock_receipts_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_receipts
+    ADD CONSTRAINT stock_receipts_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.accounts(id) ON DELETE SET NULL;
+
+--
 -- Name: studio_drafts studio_drafts_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5172,6 +5375,18 @@ ALTER TABLE public.sketches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.status_histories ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: stock_movements; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: stock_receipts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_receipts ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: system_settings; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -5200,7 +5415,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0032');
+INSERT INTO alembic_version (version_num) VALUES ('0033');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

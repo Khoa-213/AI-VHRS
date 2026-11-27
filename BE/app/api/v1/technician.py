@@ -10,8 +10,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import (CalibrationIn, CalibrationOut, IncidentIn, IncidentOut, JobEventIn, JobEventOut,
-                                 JobOut, JobPackageOut, SimulationIn, TechJobDetail)
+from app.api.ops_schemas import (FinishIn, IssueIn, JobStockOut, CalibrationIn, CalibrationOut, IncidentIn, IncidentOut, JobEventIn, JobEventOut,
+                                 JobOut, JobPackageOut, JobReferenceOut, SimulationIn, TechJobDetail)
 from app.api.robot_schemas import ChooseRobotIn
 from app.api.photo_schemas import PhotoOut, PhotoQcIn, PhotoRegisterIn, PhotoUploadIn, PhotoUploadOut, QcFailIn
 from app.api.schemas import ErrorOut, Page
@@ -73,6 +73,12 @@ def job_detail(job_id: int, svc: Svc) -> TechJobDetail:
     extra["calibration"] = CalibrationOut.model_validate(extra["calibration"]) if extra["calibration"] else None
     extra["incidents"] = [IncidentOut.model_validate(i) for i in extra["incidents"]]
     return TechJobDetail(**base, **extra)
+
+
+@router.get("/jobs/{job_id}/reference", response_model=JobReferenceOut,
+            summary="Tham chiếu bên cạnh các bước: sketch đã duyệt (ảnh trang 1), vật tư cần dùng / tồn kho, hướng dẫn. Chỉ đọc")
+def reference(job_id: int, svc: Svc) -> JobReferenceOut:
+    return JobReferenceOut(**svc.reference(job_id))
 
 
 @router.get("/jobs/{job_id}/package", response_model=JobPackageOut,
@@ -137,9 +143,24 @@ def events(job_id: int, svc: Svc, page: int = Query(1, ge=1), page_size: int = Q
 
 
 @router.post("/jobs/{job_id}/finish", response_model=JobOut,
-             summary="UC-39 Viết xong (WRITING → WRITTEN). Trừ tồn kho giấy/bút/mực (FR-41)", responses=CONFLICT)
-def finish(job_id: int, svc: Svc) -> JobOut:
-    return _jobs_out(svc, [svc.finish(job_id)])[0]
+             summary="UC-39 Viết xong (WRITING → WRITTEN). Giấy đã xuất mà không dùng được trả về kho; `waste` = tờ hỏng "
+                     "(0033). Job chuẩn bị trước khi có xuất kho: trừ giấy như cũ", responses=CONFLICT)
+def finish(job_id: int, svc: Svc, body: FinishIn | None = None) -> JobOut:
+    return _jobs_out(svc, [svc.finish(job_id, waste=body.waste if body else 0)])[0]
+
+
+@router.get("/jobs/{job_id}/stock", response_model=JobStockOut,
+            summary="Vật tư của job: giấy cần (số bản × số trang), đã lấy, tồn kho; `issued` = đã đủ giấy để Chuẩn bị")
+def job_stock(job_id: int, svc: Svc) -> JobStockOut:
+    return JobStockOut(**svc.stock_status(job_id))
+
+
+@router.post("/jobs/{job_id}/stock/issue", response_model=JobStockOut,
+             summary="Xuất kho cho job: giấy (cần + dự phòng) và, khi thay bút trên robot, 1 bút + 1 mực cùng màu (0033)",
+             responses={409: {"model": ErrorOut, "description": "STOCK_SHORT / STOCK_CHANGED / JOB_NOT_ACTIVE"},
+                        422: {"model": ErrorOut, "description": "NOTHING_TO_ISSUE / NO_PAPER_ON_ORDER / NO_PEN_ON_ORDER"}})
+def job_issue(job_id: int, body: IssueIn, svc: Svc) -> JobStockOut:
+    return JobStockOut(**svc.issue(job_id, paper=body.paper, new_pen=body.new_pen, seen_issued=body.seen_issued))
 
 
 @router.post("/jobs/{job_id}/incidents", response_model=IncidentOut, status_code=status.HTTP_201_CREATED,

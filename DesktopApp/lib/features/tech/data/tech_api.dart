@@ -99,6 +99,9 @@ class TechApi {
     return TechJobDetail.fromJson(await _get(_job(id)));
   }
 
+  /// The sketch, materials and instructions beside the steps. Read only: unlike the package it logs no download.
+  Future<JobReference> reference(int id) async => JobReference.fromJson(await _get('${_job(id)}/reference'));
+
   Future<TechJob> _action(int id, String action, [Object? body]) async =>
       TechJob.fromJson(await _post('${_job(id)}/$action', body));
 
@@ -111,7 +114,16 @@ class TechApi {
   /// (on a PAUSED job it makes it stale), so preflight and simulation have to run again.
   Future<void> calibrate(int id, Map<String, dynamic> body) => _post('${_job(id)}/calibration', body);
   Future<TechJob> start(int id) => _action(id, 'start');
-  Future<TechJob> finish(int id) => _action(id, 'finish');
+  /// Writing done. [waste]: sheets spoiled at the robot; the paper the job took and did not use goes back to the stock.
+  Future<TechJob> finish(int id, {int waste = 0}) => _action(id, 'finish', {'waste': waste});
+
+  /// `GET /technician/jobs/{id}/stock` (migration 0033): what the job needs and has taken from the shelf.
+  Future<JobStock> stock(int id) async => JobStock.fromJson(await _get('${_job(id)}/stock'));
+
+  /// Takes [paper] sheets (and a new pen with its ink when [newPen]) for the job. [seenIssued] is the paper the screen
+  /// showed as taken: someone else taking stock meanwhile (a double click too) answers 409 STOCK_CHANGED.
+  Future<JobStock> issueStock(int id, {required int paper, bool newPen = false, required int seenIssued}) async =>
+      JobStock.fromJson(await _post('${_job(id)}/stock/issue', {'paper': paper, 'new_pen': newPen, 'seen_issued': seenIssued}));
   Future<TechJob> simulate(int id, {required bool passed, List<String> errors = const [], Map<String, dynamic>? report}) =>
       _action(id, 'simulation', {'passed': passed, 'errors': errors, if (report != null) 'report': report});
 

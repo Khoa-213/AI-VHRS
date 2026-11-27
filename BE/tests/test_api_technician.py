@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.api.v1.orders import optional_storage
 from app.main import app
 from tests.conftest import auth
-from tests.test_api_orders import API, _sql
+from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_payments import _paid
 from tests.test_api_scheduling import _at, _prod, _sched, mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import _err, _user, cust, policy, staff, store, wcat  # noqa: F401
@@ -45,6 +45,7 @@ def _ready(client, cust, staff, mgr, wcat, robot, tech, **kw):
     """Downloaded, preparing, calibrated and simulated (passed): one call from START."""
     oid, jid = _job(client, cust, staff, mgr, wcat, robot, tech, **kw)
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200
+    issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
     _post(client, tech, jid, "calibration", CAL, status=201)
     _post(client, tech, jid, "simulation", {"passed": True}, status=200)
@@ -96,6 +97,30 @@ def test_only_the_assigned_technician_can_see_or_touch_a_job(client, cust, staff
     # the Manager's scheduling step already packaged the job (FR-38)
     assert _sql("""select package_uri is not null and packaged_at is not null and package_hash is not null
                    from production_jobs where id=:j""", j=jid)
+
+
+def test_reference_shows_sketch_materials_and_stock_without_side_effects(client, cust, staff, mgr, wcat, robot, tech, store):
+    oid, jid = _job(client, cust, staff, mgr, wcat, robot, tech)
+    r = client.get(f"{T}/jobs/{jid}/reference", headers=tech[0])
+    assert r.status_code == 200, r.text
+    ref = r.json()
+    qty = _sql("select quantity from orders where id=:o", o=oid)
+    assert ref["job_id"] == jid and ref["quantity"] == qty and ref["pages"] >= 1 and ref["pages_assumed"] is False
+    assert ref["preview_url"] and ref["preview_url_expires_in"] > 0 and ref["sketch_version"] >= 1
+    assert ref["paper"]["name"] == "Giay test A5" and ref["paper"]["need"] == qty * ref["pages"]
+    assert ref["paper"]["stock"] == _sql("select p.stock_qty from paper_types p join orders o on o.paper_type_id=p.id where o.id=:o", o=oid)
+    # 0033 (Q1): a pen and its ink are taken only when the pen on the robot is replaced, never per job
+    assert ref["pen"]["need"] == 0 and ref["pen"]["category"] == "GEL" and ref["ink"] == {
+        "name": "Den", "hex": "#000000", "need": 0, "stock": ref["ink"]["stock"]}
+    assert "customer_note" not in ref                                       # no customer data on the floor
+    assert _event_types(client, tech[0], jid) == []                          # read only: not a download
+    assert _sql("select downloaded_at is null from production_jobs where id=:j", j=jid)
+
+    app.dependency_overrides[optional_storage] = lambda: None
+    ref = client.get(f"{T}/jobs/{jid}/reference", headers=tech[0]).json()
+    assert ref["preview_url"] is None and ref["pages"] == 1 and ref["pages_assumed"] is True
+    app.dependency_overrides[optional_storage] = lambda: store
+    assert client.get(f"{T}/jobs/{jid}/reference", headers=staff[0]).status_code == 403
 
 
 # ---- UC-32: the package and its hash ----------------------------------------------------------------
@@ -151,6 +176,11 @@ def test_job_lifecycle_from_download_to_written(client, cust, staff, mgr, wcat, 
         assert _err(_post(client, tech, jid, path, body, status=409)) == "JOB_STATE_CONFLICT", path
     pkg = client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).json()
 
+    # 0033 (Q3): the paper is taken from the shelf before Prepare; one spare sheet comes back at Writing done
+    r = _post(client, tech, jid, "prepare", status=409)
+    assert _err(r) == "STOCK_NOT_ISSUED" and r.json()["error"]["details"] == {"need": 3 * pkg["pages"], "issued": 0}
+    st = issue_paper(client, tech[0], jid, spare=1)
+    assert st["issued"] is True and st["lines"][0]["issued"] == 3 * pkg["pages"] + 1
     r = _post(client, tech, jid, "prepare", status=200)
     assert r.json()["status"] == "PREPARING" and _prod(oid) == "PREPARING"
     assert _err(_post(client, tech, jid, "prepare", status=409)) == "JOB_STATE_CONFLICT"      # not twice
@@ -235,12 +265,15 @@ def test_job_lifecycle_from_download_to_written(client, cust, staff, mgr, wcat, 
     assert r.json()["status"] == "WRITTEN" and float(r.json()["progress_pct"]) == 100.0 and r.json()["finished_at"]
     assert _status(jid) == "WRITTEN" and _prod(oid) == "WRITTEN"
     assert _sql("select order_status::text from orders where id=:o", o=oid) == "CONFIRMED"
-    # FR-41: stock is deducted when writing is done (3 copies x sheets per copy; 1 pen; 1 ink)
+    # FR-41 + 0033: the sheets used (3 copies x sheets per copy) left the stock; the spare one came back; pens are not used
+    # up per job (Q1)
     paper1, pen1, ink1 = (_sql(f"select stock_qty from {t} where id=:i", i=i) for t, i in (
         ("paper_types", wcat["paper"]), ("pen_types", wcat["gel"]), ("ink_colors", wcat["gel_ink"])))
-    assert (paper0 - paper1, pen0 - pen1, ink0 - ink1) == (3 * pkg["pages"], 1, 1)
+    assert (paper0 - paper1, pen0 - pen1, ink0 - ink1) == (3 * pkg["pages"], 0, 0)
     written = _sql("select payload->'stock'->'paper'->>'used' from job_events where job_id=:j and event_type='WRITTEN'", j=jid)
     assert written == str(3 * pkg["pages"])
+    assert _sql("select string_agg(kind || ':' || quantity, ',' order by id) from stock_movements where job_id=:j", j=jid) == \
+        f"ISSUE:-{3 * pkg['pages'] + 1},RETURN:1"
 
     # after WRITTEN the job is closed to everything but a closing force summary
     assert _err(ev("PROGRESS", 409, progress_pct=99)) == "JOB_STATE_CONFLICT"
@@ -285,19 +318,23 @@ def test_finish_is_idempotent_under_concurrency_and_never_blocked_by_stale_stock
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech, qty=3)
     pages = _sql("select (payload->>'pages')::int from job_events where job_id=:j and event_type='DOWNLOADED'", j=jid)
     need = 3 * pages
-    _sql("update paper_types set stock_qty=:n where id=:i returning 1", n=need - 1, i=wcat["paper"])   # count is 1 sheet short
+    assert need >= 1
+    # 3 sheets spoiled at the robot: 3 more than were taken; the shelf holds only 2 of them now
+    _sql("update paper_types set stock_qty=2 where id=:i returning 1", i=wcat["paper"])
     pen0 = _sql("select stock_qty from pen_types where id=:i", i=wcat["gel"])
 
     def finish(_):
         with TestClient(app) as c:
-            return c.post(f"{T}/jobs/{jid}/finish", headers=tech[0]).status_code
+            return c.post(f"{T}/jobs/{jid}/finish", headers=tech[0], json={"waste": 3}).status_code
 
     with ThreadPoolExecutor(2) as ex:
         codes = sorted(ex.map(finish, range(2)))
     assert codes == [200, 409], codes                                                            # exactly one wins
     assert _status(jid) == "WRITTEN" and _prod(oid) == "WRITTEN"
     assert _sql("select stock_qty from paper_types where id=:i", i=wcat["paper"]) == 0           # floor at 0, no violation
-    assert pen0 - _sql("select stock_qty from pen_types where id=:i", i=wcat["gel"]) == 1         # deducted once, not twice
+    assert pen0 == _sql("select stock_qty from pen_types where id=:i", i=wcat["gel"])             # pens: not per job (Q1)
+    assert _sql("select count(*) from stock_movements where job_id=:j and kind='ISSUE' and reason like 'Dùng thêm%'",
+                j=jid) == 1                                                                   # once, not twice
     assert _sql("select count(*) from job_events where job_id=:j and event_type='WRITTEN'", j=jid) == 1
     assert int(_sql("select payload->'stock'->'paper'->>'shortfall' from job_events where job_id=:j and event_type='WRITTEN'",
                     j=jid)) == 1                                                                 # the gap is reported, not hidden

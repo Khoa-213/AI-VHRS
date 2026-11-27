@@ -183,7 +183,7 @@ class _StepRow extends ConsumerWidget {
                       const SizedBox(height: 4),
                       Text(t('tw.realHelp'), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
                       const SizedBox(height: 8),
-                      RealSwitch(jobId: jobId, robotId: robotId, fallback: _CopyCommand(command: realEnableCommand(jobId))),
+                      RealSwitch(jobId: jobId, robotId: robotId, fallback: CopyCommand(command: realEnableCommand(jobId))),
                     ],
                   ],
                 ),
@@ -196,15 +196,15 @@ class _StepRow extends ConsumerWidget {
   }
 }
 
-class _CopyCommand extends ConsumerStatefulWidget {
+class CopyCommand extends ConsumerStatefulWidget {
   final String command;
-  const _CopyCommand({required this.command});
+  const CopyCommand({super.key, required this.command});
 
   @override
-  ConsumerState<_CopyCommand> createState() => _CopyCommandState();
+  ConsumerState<CopyCommand> createState() => _CopyCommandState();
 }
 
-class _CopyCommandState extends ConsumerState<_CopyCommand> {
+class _CopyCommandState extends ConsumerState<CopyCommand> {
   bool _copied = false;
 
   @override

@@ -12,7 +12,7 @@ from sqlalchemy.exc import DBAPIError
 
 from app.core import production_signing as ps
 from app.core.config import get_settings
-from tests.test_api_orders import API, _sql
+from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_payments import _paid
 from tests.test_api_scheduling import _at, _sched, mgr, robot, tech  # noqa: F401
 from tests.test_api_technician import CAL, _event_types, _job, _post, _ready
@@ -191,6 +191,7 @@ def test_a_job_from_before_the_upgrade_keeps_the_hash_check_only(client, cust, s
     _sql("update production_jobs set snapshot_id=null where id=:j returning 1", j=jid)
     pkg = _package(client, tech, jid).json()
     assert pkg["snapshot"] is None and pkg["material_drift"] == [] and pkg["pen"]["v_max_mm_s"] == 30.0
+    issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
     _post(client, tech, jid, "calibration", CAL, status=201)
 
