@@ -86,12 +86,19 @@ def rig(monkeypatch):
     robot.disconnect()
 
 
-def test_merging_preserves_corners_reversals_and_lowest_speed():
+def test_merging_preserves_corners_reversals_and_uses_the_cruise_speed_under_the_cap():
     points = [[0, 0, 0], [1, 0, 0], [2, 0, 0], [2, 1, 0], [2, 0, 0]]
-    result = list(segments(points, [10, 2, 10, 8, 10], 5, 5))
+    result = list(segments(points, [3, 2, 4, 8, 10], 5, 5))
     assert len(result) == 3
     assert [b.tolist() for _, b, _ in result] == [[2, 0, 0], [2, 1, 0], [2, 0, 0]]
-    assert [v for _, _, v in result] == [2, 5, 5]
+    assert [v for _, _, v in result] == [4, 5, 5]                      # highest planned speed on the line, never above the cap
+
+
+def test_a_straight_stroke_is_not_throttled_by_its_slow_ends():
+    points = np.column_stack([np.linspace(0, 15, 76), np.zeros((76, 2))])
+    speeds = np.minimum(40.0, np.minimum(5 + 2 * np.linspace(0, 15, 76) * 10, 5 + 2 * np.linspace(15, 0, 76) * 10))  # 5 mm/s at both ends
+    result = list(segments(points, speeds, 40, 15))
+    assert len(result) == 1 and result[0][2] == 40
 
 
 def test_long_line_is_bounded_without_altering_geometry():

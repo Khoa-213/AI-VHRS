@@ -56,7 +56,7 @@ List<JobStep> jobSteps(TechJobDetail d, {required bool verified, List<RobotComma
     JobStep('real', manual: true, why: prepared ? null : 'tw.why.prepare'),
     JobStep('preflight', done: checked, why: loaded ? null : 'tw.why.load'),
     JobStep('simulate', done: simulated, why: calibrated ? null : 'tw.why.calibrate'),
-    JobStep('dryRun', done: started || ran(CommandKind.dryRun), why: simulated ? null : 'tw.why.simulate'),
+    JobStep('dryRun', done: finished || ran(CommandKind.dryRun), why: simulated ? null : 'tw.why.simulate'),
     JobStep('write', done: started, why: simulated ? null : 'tw.why.simulate'),
     JobStep('finish', done: finished, why: s == JobStatus.writing || finished ? null : 'tw.why.finish'),
     JobStep('photos', done: s == JobStatus.photoUploaded || s == JobStatus.done, why: finished ? null : 'tw.why.photos'),

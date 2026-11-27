@@ -24,10 +24,10 @@ class _FakeApi extends AgentLocalApi {
   }
 
   @override
-  Future<Map<String, dynamic>> realEnable(int jobId, {int minutes = 30}) async {
-    calls.add('enable $jobId $minutes');
+  Future<Map<String, dynamic>> realEnable(int jobId, {int minutes = 30, bool waiveDryRun = false}) async {
+    calls.add('enable $jobId $minutes${waiveDryRun ? ' waive' : ''}');
     if (refuse != null) throw refuse!;
-    real = {'job_id': jobId, 'expires_at': DateTime.now().millisecondsSinceEpoch / 1000 + 1800};
+    real = {'job_id': jobId, 'expires_at': DateTime.now().millisecondsSinceEpoch / 1000 + 1800, 'waive_dry_run': waiveDryRun};
     return {'real_enabled': real, 'robot_check': {'ok': true, 'controller': {'controller': 'V3.8.25'}}};
   }
 
@@ -102,5 +102,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('The real robot does not answer'), findsOneWidget);
     expect(find.textContaining('REAL on until'), findsNothing);
+  });
+
+  testWidgets('the pen-up dry run can be skipped in the confirmation, with a warning, and the switch says so', (tester) async {
+    final api = _FakeApi();
+    await pump(tester, api: api);
+    await tester.tap(find.text('Turn REAL on (30 min)'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('touches the paper on the first stroke'), findsNothing);
+    await tester.tap(find.text('Skip the pen-up dry run'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('touches the paper on the first stroke'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Turn REAL on (30 min)'));
+    await tester.pumpAndSettle();
+    expect(api.calls, contains('enable 276 30 waive'));
+    expect(find.text('Dry run skipped'), findsOneWidget);
   });
 }

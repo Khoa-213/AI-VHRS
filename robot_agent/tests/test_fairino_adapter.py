@@ -186,6 +186,22 @@ def test_invalid_speed_cap_is_refused_before_connecting_to_the_controller(cap):
     assert err.value.code == "INVALID_CONFIG" and not rpc.calls
 
 
+@pytest.mark.parametrize("seg,ok", [(12.0, True), (12.1, False), (0.0, False)])
+def test_movel_segment_limit_is_12_mm(seg, ok):
+    rpc = FakeRPC()
+    robot = make(rpc, motion_method="movel", speed_cap_mm_s=40.0, linear_accel_mm_s2=100.0,
+                 linear_max_segment_mm=seg)
+    if ok:  # the fake controller lacks MoveL IK, so connect may stop later, but never on the config check
+        try:
+            robot.connect()
+        except RobotError as e:
+            assert e.code != "INVALID_CONFIG"
+    else:
+        with pytest.raises(RobotError) as err:
+            robot.connect()
+        assert err.value.code == "INVALID_CONFIG" and not rpc.calls
+
+
 def test_stop_request_sends_stop_motion():
     rpc = FakeRPC()
     r = make(rpc)

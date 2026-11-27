@@ -311,8 +311,13 @@ class RobotLinkService:
             raise AppError(422, "AUTHORIZATION_REQUIRED", "Chạy robot thật cần mã xác nhận AUTHORIZE-<job>-<mã kế hoạch> của người vận hành.")
         if job is not None and job.status not in ACTIVE_JOB_STATUSES and kind in JOB_KINDS:
             raise AppError(409, "JOB_NOT_ACTIVE", f"Job đã {job.status.value}.", {"job_status": job.status.value})
-        if job is not None and kind == "DRY_RUN" and job.status not in (JobStatus.PREPARING, JobStatus.PAUSED):
-            raise AppError(409, "JOB_STATE_CONFLICT", "Chạy thử chỉ khi job đang chuẩn bị (đã hiệu chuẩn, chưa bắt đầu viết) hoặc đang tạm dừng sau một lần dừng.",
+        # A pen-up rehearsal is also allowed while WRITING when the robot is idle (2026-11-27): "start" may be recorded before the
+        # REAL dry run, and the agent refuses a REAL RUN without one (DRY_RUN_REQUIRED), so without this the job could not go on.
+        if job is not None and kind == "DRY_RUN" and not (
+                job.status in (JobStatus.PREPARING, JobStatus.PAUSED)
+                or (job.status == JobStatus.WRITING and self.session.scalar(select(RobotRun.run_id).where(
+                    RobotRun.robot_id == robot.id, RobotRun.ended_at.is_(None)).limit(1)) is None)):
+            raise AppError(409, "JOB_STATE_CONFLICT", "Chạy thử chỉ khi job đang chuẩn bị, đang tạm dừng, hoặc đã bắt đầu viết nhưng robot đang rảnh.",
                            {"job_status": job.status.value})
         if job is not None and kind == "RUN" and job.status not in (JobStatus.WRITING, JobStatus.PAUSED):
             raise AppError(409, "JOB_STATE_CONFLICT", "Hãy bấm Bắt đầu viết (POST /technician/jobs/{id}/start) trước khi gửi lệnh RUN.",

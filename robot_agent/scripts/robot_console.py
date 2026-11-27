@@ -19,6 +19,9 @@ Commands, in the order of a job:
                              orientation. REAL: the arm MOVES slowly; asks you to type YES. Fixes START_ORIENTATION_MISMATCH.
   home                       STOP any run, wait until the arm is still, then bring the pen to the fixed start point (like align-start).
                              Software stop only: if anything is dangerous press the E-Stop first. Asks you to type YES for REAL.
+  pen-mount [--corner TL]    pen-mount pose: up to the pen-up height, across above a sheet corner (TL = P0, TR, BL, BR), then slowly DOWN
+                             until the tool point is ON the paper, so you can fit the pen with its tip just touching it. REAL: the arm
+                             MOVES; asks you to type YES. Afterwards `home` lifts it straight up and goes back to the start.
   reset-progress             forget what this job already wrote (LOCAL file on this PC): use ONLY after you put a NEW blank sheet in place.
                              Keeps the finished REAL pen-up rehearsal. Asks you to type YES.
   start                      mark the job WRITING (needed before `run`)
@@ -250,6 +253,15 @@ def cmd_align_start(c: Client, a: argparse.Namespace) -> None:
         print("  Xong. Bút đang ở điểm bắt đầu, đúng góc viết. Giờ chạy `preflight` rồi `run`.")
 
 
+def cmd_pen_mount(c: Client, a: argparse.Namespace) -> None:
+    confirm_real(a.mode, f"Đưa đầu bút XUỐNG MẶT GIẤY ở góc {a.corner} để lắp bút")
+    cmd = c.command("ALIGN_START", {"mode": a.mode, "corner": a.corner, **_auth(c, a.mode)}, wait_s=180)
+    show_cmd(cmd, ("corner", "target_mm", "final_pose", "details"))
+    if cmd["status"] == "DONE":
+        print("  Xong. Điểm dụng cụ đang nằm trên mặt giấy ở góc này: lắp bút cho đầu bút vừa chạm giấy rồi siết chặt.")
+        print("  Sau đó chạy `home` để nhấc bút thẳng lên và về điểm chuẩn bị viết.")
+
+
 def cmd_home(c: Client, a: argparse.Namespace) -> None:
     confirm_real(a.mode, "DỪNG rồi đưa bút về điểm chờ")
     stop = c.command("STOP", wait_s=30)
@@ -340,7 +352,7 @@ def cmd_watch(c: Client, _a: argparse.Namespace) -> None:
 
 
 COMMANDS = {"status": cmd_status, "prepare": cmd_prepare, "calibrate": cmd_calibrate, "simulate": cmd_simulate, "load": cmd_load,
-            "identify": cmd_identify, "preflight": cmd_preflight, "dry-run": cmd_dry_run, "align-start": cmd_align_start, "home": cmd_home, "reset-progress": cmd_reset_progress, "start": cmd_start, "run": cmd_run,
+            "identify": cmd_identify, "preflight": cmd_preflight, "dry-run": cmd_dry_run, "align-start": cmd_align_start, "pen-mount": cmd_pen_mount, "home": cmd_home, "reset-progress": cmd_reset_progress, "start": cmd_start, "run": cmd_run,
             "pause": _ctl("PAUSE"), "resume": _ctl("RESUME"), "stop": _ctl("STOP"), "watch": cmd_watch, "finish": cmd_finish}
 
 
@@ -350,6 +362,7 @@ def main(argv: list[str] | None = None, transport: httpx.BaseTransport | None = 
     p.add_argument("--config", default=str(ROOT / "console.json"))
     p.add_argument("--file", default=str(ROOT / "calibration.json"), help="calibrate: file số đo")
     p.add_argument("--mode", choices=["MOCK", "SIM", "REAL"], default=None, help="mặc định lấy từ console.json")
+    p.add_argument("--corner", choices=["TL", "TR", "BL", "BR"], default="TL", help="pen-mount: góc giấy (TL = P0 trên-trái)")
     p.add_argument("--speed", type=float, default=None, help="SIM: hệ số tốc độ mô phỏng (1 = thời gian thật)")
     p.add_argument("--resume-from", type=int, default=None, dest="resume_from", help="run: viết tiếp từ nét số (chỉ khi job viết dở)")
     p.add_argument("--agent-config", default=str(ROOT / "agent.json"), help="reset-progress: agent.json để biết thư mục runs")

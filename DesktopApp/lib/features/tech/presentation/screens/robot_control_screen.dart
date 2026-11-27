@@ -542,7 +542,10 @@ class _RobotControlScreenState extends ConsumerState<RobotControlScreen> with Jo
               child: TechButton(
                 t('rb.do.DRY_RUN', {'mode': _mode}),
                 small: true,
-                onPressed: locked || busy || loaded == null || !(j.status == JobStatus.preparing || j.status == JobStatus.paused) || !authValid
+                onPressed: locked || busy || loaded == null ||
+                        // WRITING too (backend 2026-11-27): "start" may be recorded before the REAL rehearsal the agent requires
+                        !(j.status == JobStatus.preparing || j.status == JobStatus.paused || j.status == JobStatus.writing) ||
+                        !authValid
                     ? null
                     : () => _exec(CommandKind.dryRun, params: _modeParams(), confirm: t('rb.confirmReal')),
               ),

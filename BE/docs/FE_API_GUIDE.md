@@ -542,7 +542,7 @@ App kỹ thuật viên ──POST robot-commands──▶ BE (Render) ◀──P
 |---|---|---|---|
 | `LOAD` | (không) | job đang hoạt động | tóm tắt job, `validation`, `plan_digest`, **`authorization_token`** (mã người vận hành xác nhận khi chạy THẬT), `scene` (cho 3D) |
 | `PREFLIGHT` | `mode` | đang hoạt động | `{ok, moves, plan_digest}` hoặc `{ok:false, code, message}`; robot không di chuyển |
-| `DRY_RUN` | `mode`, `speed?` | job `PREPARING` | `{started:true}`; chạy thử pen-up (bút không chạm giấy); xem kết quả qua `live` |
+| `DRY_RUN` | `mode`, `speed?` | job `PREPARING` / `PAUSED`, hoặc `WRITING` khi robot không có lần chạy đang mở (2026-11-27: đã bấm `start` trước khi chạy thử REAL vẫn chạy thử được) | `{started:true}`; chạy thử pen-up (bút không chạm giấy); xem kết quả qua `live` |
 | `RUN` | `mode`, `authorization?`, `resume_from?`, `confirm_unknown?`, `speed?` | job `WRITING`/`PAUSED` (**bấm `POST /technician/jobs/{id}/start` trước**) | `{started:true}`; theo dõi bằng `live` |
 | `PAUSE` / `RESUME` / `STOP` | (không) | có lần chạy | `{ok}`; `STOP` chỉ dừng phần mềm, **không thay nút E-Stop** |
 | `PAPER_CHANGED` | (không) | đang đợi thay giấy | `{ok}` |

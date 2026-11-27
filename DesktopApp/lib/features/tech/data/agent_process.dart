@@ -345,8 +345,13 @@ class AgentLocalApi {
 
   /// Checks the real robot read-only, then allows the real arm for [jobId] for [minutes] (502 ROBOT_UNREACHABLE,
   /// 409 ROBOT_CONFIG_MISMATCH, 409 JOB_NOT_LOADED, 409 AGENT_BUSY otherwise).
-  Future<Map<String, dynamic>> realEnable(int jobId, {int minutes = 30}) =>
-      _send('POST', '/api/jobs/$jobId/real-enable', body: {'minutes': minutes});
+  /// [waiveDryRun]: the person at the workstation skips the REAL pen-up rehearsal for this job (the pen touches the paper on
+  /// the first stroke). The agent asks for the literal confirmation `SKIP-DRY-RUN` and records it in the run log.
+  Future<Map<String, dynamic>> realEnable(int jobId, {int minutes = 30, bool waiveDryRun = false}) =>
+      _send('POST', '/api/jobs/$jobId/real-enable', body: {
+        'minutes': minutes,
+        if (waiveDryRun) ...{'waive_dry_run': true, 'confirm_waive': 'SKIP-DRY-RUN'},
+      });
 
   Future<void> realDisable() => _send('DELETE', '/api/real-enable');
 }
