@@ -35,6 +35,14 @@ def carriers_on():
     cx.use_adapters(None)
 
 
+@pytest.fixture
+def carriers_off():
+    cx.use_flags({"GHN": False})                         # the carrier's API counts as disabled, whatever the live DB flag says
+    yield
+    cx.use_flags(None)
+    cx.use_adapters(None)
+
+
 def _choose(carrier="GHN", service="EXPRESS", **over):
     return {"method": "DELIVERY", "address": {**ADDRESS, **over}, "carrier": carrier, "service_code": service}
 
@@ -109,8 +117,8 @@ def test_customer_sees_each_carriers_services_and_the_choice_is_kept(client, cus
     assert client.post(f"{O}/{oid}/delivery-quote", headers=auth(client, "CUSTOMER"), json={"address": ADDRESS}).status_code == 404
 
 
-def test_carriers_whose_api_is_off_are_offered_at_the_fallback_fee(client, cust, staff, mgr, wcat, robot, tech, store):
-    oid = _final_stage(client, cust, staff, mgr, wcat, robot, tech, store)                   # flags stay as in the database: off
+def test_carriers_whose_api_is_off_are_offered_at_the_fallback_fee(client, cust, staff, mgr, wcat, robot, tech, store, carriers_off):
+    oid = _final_stage(client, cust, staff, mgr, wcat, robot, tech, store)                   # GHN API off: fallback fee
     fee = Decimal(_sql("select value->>'FLAT_BOX_A5' from system_settings where key='fallback_shipping_fees'"))
     q = client.post(f"{O}/{oid}/delivery-quote", headers=cust, json={"address": ADDRESS}).json()
     assert [(s["carrier"], s["service_code"], Decimal(s["fee"]), s["is_fallback_fee"], s["mode"], s["eta"]) for s in q["services"]] == [
@@ -285,8 +293,8 @@ def test_waybill_preconditions_and_permissions(client, cust, staff, mgr, wcat, r
     assert _err(_create_raw(client, staff, pick_oid)) == "SHIPMENT_NOT_EXPECTED"
 
 
-def test_the_fallback_flag_is_recorded_on_the_waybill(client, cust, staff, mgr, wcat, robot, tech, store):
-    oid, _ = _ready(client, cust, staff, mgr, wcat, robot, tech, store, body=_choose("GHN", "STANDARD"))      # flags off: fallback
+def test_the_fallback_flag_is_recorded_on_the_waybill(client, cust, staff, mgr, wcat, robot, tech, store, carriers_off):
+    oid, _ = _ready(client, cust, staff, mgr, wcat, robot, tech, store, body=_choose("GHN", "STANDARD"))      # GHN API off: fallback
     s = _create(client, staff, oid)
     assert s["is_fallback_fee"] is True and s["service_code"] == "STANDARD" and s["waybill_code"].startswith("MOCK-GHN-")
 

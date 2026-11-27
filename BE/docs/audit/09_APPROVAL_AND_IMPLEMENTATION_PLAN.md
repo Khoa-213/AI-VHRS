@@ -193,7 +193,7 @@ Mọi lượt test dưới đây chạy trên Postgres cục bộ tạm, **chưa
 | 3 — D04 (huỷ đơn `ACCEPTED`), D05 (chặn khoá / đổi vai trò khi còn việc), D06 ("viết xong" cần lần chạy `DONE`) | Xong | BE **1.128 đạt, 0 hỏng**, 5 bỏ qua; agent 197 đạt. 8 test mới ở `tests/test_audit_workflow.py`; D06 kiểm trong `tests/test_api_technician.py` và `tests/test_api_robot_ops.py` |
 | 4 — D02 (trợ lý AI tự áp dụng có chọn lọc + hoàn lại đề xuất), G5 (AI-02, AI-03, AI-04, AI-06), G6 (SR-01, SR-03) | Xong | BE **1.144 đạt, 0 hỏng**, 5 bỏ qua. 11 test mới ở `tests/test_audit_assistant.py`, 5 ở `tests/test_audit_accounts.py`. Web: `tsc -b`, `i18n:check` (3.487 khoá), `npm run build` đạt; **chưa mở trình duyệt để xem bằng mắt** |
 | 5 — G7 + D07 + D10 (tài liệu) | Xong | Sửa `PROJECT_STATUS.md` (changelog, hai dòng "robot thật", câu "không gọi dịch vụ ngoài"), `docs/FE_API_GUIDE.md` (mục 7z mới), `docs/source/README.md` (bảng quyết định sau audit), `docs/ROBOT_INTEGRATION.md`, `README.md`, `HANDOFF.md`, `robot_agent/README.md`, `FE/AGENTS.md`; nhãn "Độ giống bản gốc" trên web đổi thành "Nét khớp với mực đã tách" |
-| D08-B — lối ra cho đơn kẹt sau sản xuất | Xong (BE) | Migration `0033` (thử upgrade, downgrade, upgrade trên DB cục bộ); `database/AI-VHRS_database_full.sql` sinh lại ở 0033. BE **1.149 đạt, 0 hỏng**. 5 test mới ở `tests/test_audit_order_exits.py`. **Chưa áp lên Supabase**; web chưa có màn cho hai endpoint mới |
+| D08-B — lối ra cho đơn kẹt sau sản xuất | Xong (BE) | Migration `0034` (ban đầu đánh số 0033, đổi khi gộp `main` vì `main` đã có `0033_stock_movements`) (thử upgrade, downgrade, upgrade trên DB cục bộ); `database/AI-VHRS_database_full.sql` sinh lại ở 0033. BE **1.149 đạt, 0 hỏng**. 5 test mới ở `tests/test_audit_order_exits.py`. **Chưa áp lên Supabase**; web chưa có màn cho hai endpoint mới |
 | D09 | Chờ chủ dự án trả lời điểm chưa rõ | |
 
 ### Thay đổi hành vi cần nhóm biết (đợt 1)
@@ -265,11 +265,11 @@ Tài khoản:
 
 ### Thay đổi hành vi cần nhóm biết (D08 và đợt 5)
 
-- **D08.** Migration `0033` thêm ba chuyển trạng thái vào trigger: `AWAITING_FINAL_PAYMENT → CANCELLED`, `READY_TO_DELIVER → CANCELLED`, `DELIVERING → READY_TO_DELIVER | CANCELLED`. Không đụng dữ liệu.
+- **D08.** Migration `0034` thêm ba chuyển trạng thái vào trigger: `AWAITING_FINAL_PAYMENT → CANCELLED`, `READY_TO_DELIVER → CANCELLED`, `DELIVERING → READY_TO_DELIVER | CANCELLED`. Không đụng dữ liệu.
   - `POST /workshop/orders/{id}/shipment/to-pickup` (Staff phụ trách): giao thất bại hoặc hàng hoàn thì chuyển đơn sang nhận tại xưởng. Phí vận chuyển đã trả không tự hoàn.
   - `POST /manager/orders/{id}/close` (Manager): đóng đơn chờ thanh toán cuối, chờ nhận, hoặc giao không được; kèm số tiền hoàn do Manager quyết định (0 tới số đã trả chưa hoàn). Mở yêu cầu hoàn `PENDING` với `rule = MANAGER_CLOSE` để Staff chuyển khoản và xác nhận. Sản phẩm đã viết nên `production_status` giữ `FINISHED`.
   - Tác vụ nền `stuck_orders`: nhắc khách sau 3 ngày chưa thanh toán phần còn lại; báo mọi Manager sau 7 ngày chờ thanh toán cuối hoặc 7 ngày chờ khách đến nhận. Ba tham số Admin mới. Chỉ chạy khi `BACKGROUND_JOBS_ENABLED=true`.
-  - **Merge vào `main` sẽ làm Render chạy `alembic upgrade head`, tức áp 0033 lên Supabase.**
+  - **Merge vào `main` sẽ làm Render chạy `alembic upgrade head`, tức áp 0034 lên Supabase.**
 - Yêu cầu hoàn của lối đóng đơn dùng loại `CANCELLATION` sẵn có với `rule` mới, vì API và web chỉ biết hai loại `CANCELLATION` / `ORPHAN` (bản đầu tôi dùng loại mới và làm hỏng màn danh sách hoàn tiền; test bắt được).
 - `database/AI-VHRS_database_full.sql` sinh lại bằng `scripts/build_database_script.py` từ DB cục bộ. Khác bản cũ ở 3 dòng trigger, số revision, và cách `pg_dump` viết lại khoảng 30 ràng buộc CHECK (cùng nghĩa, chỉ khác cách viết ép kiểu).
 
@@ -296,7 +296,7 @@ Tính theo mức ưu tiên: 3 trong 6 mục P0 đã sửa ở phần mềm (TP-0
 3. ~~Đợt 5~~ đã xong.
 4. D09: chờ chủ dự án trả lời điểm chưa rõ.
 5. Chưa commit gì. Chưa chạy test trên Supabase. Chưa áp gì lên Supabase hay Render.
-6. Chạy toàn bộ suite trên Supabase (luật dự án, D12) khi chủ dự án cho phép; áp 0033 lên Supabase.
+6. Chạy toàn bộ suite trên Supabase (luật dự án, D12) khi chủ dự án cho phép; áp 0034 lên Supabase.
 7. Mở web bằng trình duyệt để xem thẻ đề xuất mới (Áp dụng / Bỏ qua / Hoàn lại) ở ba ngôn ngữ; chạy `node scripts/check-order-ai-browser.mjs`.
 8. Kiểm DesktopApp chạy trọn luồng với BE hiện tại (D10) và xử lý các mã lỗi mới: `RED_ALERT_OPEN`, `RUN_OPEN`, `RUN_EVIDENCE_REQUIRED`.
 9. Trên robot thật, có người vận hành: tập trọn luồng với `station_limits` và 4 điểm dò; thu video, log (D11).

@@ -16,7 +16,7 @@ from app.db.session import get_engine
 from app.domain import photo_rules as pr
 from app.main import app
 from tests.conftest import auth
-from tests.test_api_orders import API, _sql
+from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_scheduling import _at, _prod, _sched, mgr, robot, tech  # noqa: F401
 from tests.test_api_technician import CAL, T, _post, _robot_wrote, _running, _status  # noqa: F401
 from tests.test_api_workshop import _err, _user, cust, manager, policy, staff, store, wcat  # noqa: F401
@@ -81,6 +81,7 @@ def _awaiting(client, cust, staff, mgr, wcat, robot, tech, store, **kw):
 def _run_job(client, tech, jid):
     """The technician's whole path for one scheduled job, up to WRITTEN."""
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200
+    issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
     _post(client, tech, jid, "calibration", CAL, status=201)
     _post(client, tech, jid, "simulation", {"passed": True}, status=200)

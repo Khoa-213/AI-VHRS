@@ -1,4 +1,4 @@
-"""Ways out for an order that is stuck after production (audit 2026-11-27, D08; state transitions: migration 0033).
+"""Ways out for an order that is stuck after production (audit 2026-11-27, D08; state transitions: migration 0034).
 
 Before this, an order whose product was written could only move forward: the customer pays the balance, the carrier
 delivers, or the customer collects. When none of that happens the order stayed open for ever and the product sat in the

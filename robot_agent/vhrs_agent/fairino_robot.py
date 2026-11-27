@@ -304,7 +304,7 @@ class FairinoRobot(RobotPort):
         if self.cfg.motion_method == "movel" and (
                 self.cfg.speed_cap_mm_s is None
                 or not 0 < self.cfg.linear_accel_mm_s2 <= 100
-                or not 0 < self.cfg.linear_max_segment_mm <= 5):
+                or not 0 < self.cfg.linear_max_segment_mm <= 12):  # 12 mm: owner 2026-11-27, one MoveL per 10.3 mm plunge
             raise RobotError("INVALID_CONFIG", "MoveL cần giới hạn tốc độ, gia tốc và độ dài đoạn hợp lệ.")
         if self.cfg.servo_cmd_period_s is None or self.cfg.servo_cmd_period_s <= 0:
             raise RobotError("UNCONFIGURED", "servo_cmd_period_s chưa được cấu hình (cần đo ở bước spike).")
@@ -481,9 +481,9 @@ class FairinoRobot(RobotPort):
                 break
         return problems
 
-    def align_to(self, target_mm: np.ndarray, ctl: Control, box=None) -> dict:
+    def align_to(self, target_mm: np.ndarray, ctl: Control, box=None, speed_mm_s: float | None = None) -> dict:
         from vhrs_agent.linear_motion import align_to_start
-        return align_to_start(self, target_mm, ctl, box)
+        return align_to_start(self, target_mm, ctl, box, speed_mm_s)
 
     def execute(self, points_mm: np.ndarray, speeds_mm_s: np.ndarray, ctl: Control, on_tcp: TcpCallback) -> None:
         """Stream Cartesian targets, one per control period, spaced by the planned speed."""

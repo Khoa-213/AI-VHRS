@@ -9,11 +9,15 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../data/providers.dart';
 import '../../domain/job.dart';
+import '../../domain/robot.dart';
 import '../../i18n/tech_strings.dart';
 import 'job_flow.dart';
 import 'job_sections.dart';
 import 'job_setup.dart';
+import 'job_stock.dart';
 import 'job_widgets.dart';
+import 'job_workspace.dart';
+import 'real_switch.dart';
 import 'tech_shell.dart';
 import 'tech_ui.dart';
 
@@ -32,6 +36,9 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
   int get runnerJobId => widget.jobId;
 
   bool _manualOpen = false;
+
+  /// The step the technician opened; null follows the current step.
+  String? _pickKey;
   String _simResult = '';
   final _simErrors = TextEditingController();
 
@@ -63,26 +70,6 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
     final canControl = previewJobStatuses.contains(j.status);
     final hasPhotos = const [JobStatus.written, JobStatus.photoUploaded, JobStatus.done, JobStatus.rewriteRequired].contains(j.status);
 
-    String name(String? s) => s == null ? t('td.api.unavailable') : t.tn(s);
-    String stamp(DateTime? v) => v == null ? t('td.api.unavailable') : jobStamp(t, v);
-    String outcome(bool? v) => t(v == null ? 'td.api.notRecorded' : v ? 'td.api.passed' : 'td.api.notPassed');
-    Color outcomeColor(bool? v) => v == null ? AppColors.warning : v ? AppColors.success : AppColors.error;
-
-    Widget step(String label, String value, Color color) => Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.divider))),
-          child: Row(
-            children: [
-              Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Text(value, textAlign: TextAlign.right, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
-              ),
-            ],
-          ),
-        );
-    Widget stampStep(String label, DateTime? v) =>
-        step(label, stamp(v), v == null ? AppColors.textSecondary : AppColors.success);
     Widget fact(String label, String value) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
@@ -152,37 +139,6 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
               MonoText('${pct.round()}%'),
             ],
           ),
-        ],
-      ),
-    );
-
-    final materials = TechCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          CardHead(t('td.api.materials')),
-          FactList([
-            (t('po.paper'), valueText(name(d.paper))),
-            (t('po.pen'), valueText(name(d.pen))),
-            (t('po.ink'), valueText(name(d.ink))),
-          ]),
-          if (d.note != null) ...[
-            const SizedBox(height: 12),
-            Text(d.note!, style: const TextStyle(fontSize: 14, height: 1.5)),
-          ],
-        ],
-      ),
-    );
-    final steps = TechCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          CardHead(t('td.api.progress')),
-          stampStep(t('td.api.downloaded'), j.downloadedAt),
-          step(t('td.api.calibration'), outcome(d.calibration?.isValid), outcomeColor(d.calibration?.isValid)),
-          step(t('td.api.simulation'), outcome(j.simulationPassed), outcomeColor(j.simulationPassed)),
-          stampStep(t('td.api.started'), j.startedAt),
-          stampStep(t('td.api.finished'), j.finishedAt),
         ],
       ),
     );
@@ -274,59 +230,38 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
         errorLines.every((v) => v.length <= 500) &&
         (_simResult != 'pass' || errorLines.isEmpty);
 
-    return Column(
+    // 0033 (Q3): Prepare waits until the job's paper is taken from the shelf.
+    final stockReady = stockLetsPrepare(ref.watch(jobStockProvider(j.id)));
+    final Widget prepareCard = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        feedback,
-        summary,
+        StockIssueCard(jobId: j.id, disabled: disabled, run: run),
         const SizedBox(height: 16),
-        JobStepList(detail: d, verified: current != null),
-        const SizedBox(height: 16),
-        LayoutBuilder(builder: (context, c) {
-          if (c.maxWidth < 640) {
-            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [materials, const SizedBox(height: 16), steps]);
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [Expanded(child: materials), const SizedBox(width: 16), Expanded(child: steps)],
-          );
-        }),
-        const SizedBox(height: 16),
-        Text(t('td.flow.scope'), style: const TextStyle(fontSize: 13, color: AppColors.warning, height: 1.4)),
-        const SizedBox(height: 12),
-        FlowMessages(busy: flowBusy, error: flowError, notice: flowNotice),
-        if (package != null) ...[package, const SizedBox(height: 16)],
-        if (gates.chooseRobot) ...[
-          ChooseRobotCard(job: j, disabled: disabled, run: run),
-          const SizedBox(height: 16),
-        ],
-        if (j.status == JobStatus.scheduled) ...[
-          TechCard(
+        TechCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 CardHead(t('td.flow.prepare')),
                 Text(t('td.flow.prepareHelp'), style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)),
+                if (!stockReady) ...[
+                  const SizedBox(height: 6),
+                  Text(t('dk.st.prepareWait'), style: const TextStyle(fontSize: 13, color: AppColors.warning, height: 1.4)),
+                ],
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TechButton(
                     t('td.flow.prepare'),
                     small: true,
-                    onPressed: disabled || !gates.prepare ? null : () => run(() => ref.read(techApiProvider).prepare(j.id)),
+                    onPressed: disabled || !gates.prepare || !stockReady ? null : () => run(() => ref.read(techApiProvider).prepare(j.id)),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-        ],
-        if (gates.calibrate) ...[
-          CalibrationCard(detail: d, disabled: disabled, run: run),
-          const SizedBox(height: 16),
-        ],
-        if (j.status == JobStatus.preparing || j.status == JobStatus.paused) ...[
-          TechCard(
+      ],
+    );
+    final Widget simulationCard = TechCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -381,31 +316,110 @@ class _JobDetailPaneState extends ConsumerState<JobDetailPane> with JobRunner {
                 ],
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-        ],
-        JobEventCards(job: d, disabled: disabled, run: run),
-        if (gates.finish) ...[
-          TechCard(
+          );
+    final Widget finishCard = FinishStockCard(jobId: j.id, disabled: disabled, run: run);
+
+    final commands = ref.watch(jobCommandsProvider(j.id)).valueOrNull ?? const <RobotCommand>[];
+    final steps = jobSteps(d, verified: current != null, commands: commands);
+    final live = !const [JobStatus.cancelled, JobStatus.failed, JobStatus.rewriteRequired].contains(j.status);
+    final now = live ? currentStepIndex(steps) : -1;
+    final picked = _pickKey == null ? -1 : steps.indexWhere((s) => s.key == _pickKey);
+    final fallback = now >= 0 ? now : (steps.lastIndexWhere((s) => s.done) + 1).clamp(0, steps.length - 1);
+    final sel = picked >= 0 ? picked : fallback;
+    final step = steps[sel];
+    void pick(int i) => setState(() => _pickKey = i == now ? null : steps[i].key);
+
+    final control = canControl && j.robotId != null
+        ? TechCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                CardHead(t('td.flow.finish')),
-                Text(t('td.flow.finishHelp'), style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)),
+                Text(t('dk.ws.controlHelp'), style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)),
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: TechButton(
-                    t('td.flow.finish'),
-                    small: true,
-                    onPressed: disabled ? null : () => run(() => ref.read(techApiProvider).finish(j.id), confirm: t('td.flow.confirmFinish')),
-                  ),
+                  child: TechButton(t('dk.ws.openControl'), small: true, onPressed: () => context.go('${jobPath(j.id)}/control')),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-        ],
+          )
+        : null;
+    final Widget? work = switch (step.key) {
+      'package' => package,
+      'robot' => gates.chooseRobot ? ChooseRobotCard(job: j, disabled: disabled, run: run) : null,
+      'prepare' => j.status == JobStatus.scheduled ? prepareCard : null,
+      'calibrate' => gates.calibrate ? CalibrationCard(detail: d, disabled: disabled, run: run) : null,
+      'real' => step.why == null
+          ? TechCard(child: RealSwitch(jobId: j.id, robotId: j.robotId, fallback: CopyCommand(command: realEnableCommand(j.id))))
+          : null,
+      'simulate' => j.status == JobStatus.preparing || j.status == JobStatus.paused ? simulationCard : null,
+      'load' || 'preflight' || 'dryRun' || 'write' => control,
+      'finish' => gates.finish ? finishCard : null,
+      'photos' => hasPhotos
+          ? TechCard(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TechButton(t('dk.ws.openPhotos'), small: true, onPressed: () => context.go('/tech/qc/${j.id}')),
+              ),
+            )
+          : null,
+      _ => null,
+    };
+
+    final rail = StepRail(steps: steps, current: now, selected: sel, onSelect: pick);
+    final center = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FlowMessages(busy: flowBusy, error: flowError, notice: flowNotice),
+        StepPanel(
+          index: sel,
+          total: steps.length,
+          step: step,
+          current: sel == now,
+          work: work,
+          onPrev: sel > 0 ? () => pick(sel - 1) : null,
+          onNext: sel < steps.length - 1 ? () => pick(sel + 1) : null,
+        ),
+      ],
+    );
+    final reference = JobReferenceColumn(
+      detail: d,
+      verifiedPages: current?.pages,
+      highlight: (stepUses[step.key] ?? const <String>[]).toSet(),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        feedback,
+        summary,
+        const SizedBox(height: 12),
+        Text(t('td.flow.scope'), style: const TextStyle(fontSize: 13, color: AppColors.warning, height: 1.4)),
+        const SizedBox(height: 16),
+        // Always the three columns of the design (steps | work of the step | sketch, materials, instructions), whatever
+        // the step; the side columns narrow with the window. Only a phone-width window stacks them.
+        LayoutBuilder(builder: (context, c) {
+          if (c.maxWidth >= 860) {
+            final railW = (c.maxWidth * 0.22).clamp(220.0, 280.0);
+            final refW = (c.maxWidth * 0.28).clamp(280.0, 400.0);
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: railW, child: rail),
+                const SizedBox(width: 16),
+                Expanded(child: center),
+                const SizedBox(width: 16),
+                SizedBox(width: refW, child: reference),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [rail, const SizedBox(height: 16), center, const SizedBox(height: 16), reference],
+          );
+        }),
+        const SizedBox(height: 16),
+        JobEventCards(job: d, disabled: disabled, run: run),
         JobHistoryCards(job: d),
       ],
     );

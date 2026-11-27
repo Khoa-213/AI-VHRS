@@ -192,7 +192,7 @@ class LinkClient:
             return svc.start(self._ctx(job_id), self._key, "app", mode=mode, dry_run=kind == "DRY_RUN", authorization=p.get("authorization"),
                              resume_from=p.get("resume_from"), confirm_unknown=bool(p.get("confirm_unknown", False)), speed=p.get("speed"))
         if kind == "ALIGN_START":
-            return svc.do_align(self._ctx(job_id), mode, p.get("authorization"))
+            return svc.do_align(self._ctx(job_id), mode, p.get("authorization"), corner=p.get("corner"))
         if kind == "IDENTIFY":
             return svc.do_identify(mode)
         if kind == "PAPER_CHANGED":

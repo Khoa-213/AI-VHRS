@@ -129,6 +129,21 @@ final techJobProvider = StreamProvider.autoDispose.family<TechJobDetail, int>((r
           : const Duration(seconds: 30),
     ));
 
+/// The sketch, materials and instructions beside a job's steps. The preview link is signed for 30 minutes: fetched again
+/// every 20.
+final jobReferenceProvider = StreamProvider.autoDispose.family<JobReference, int>((ref, id) => pollStream(
+      ref,
+      () => ref.read(techApiProvider).reference(id),
+      next: (_) => const Duration(minutes: 20),
+    ));
+
+/// What the job has taken from the shelf (migration 0033), every minute; refreshed after every action on the job.
+final jobStockProvider = StreamProvider.autoDispose.family<JobStock, int>((ref, id) => pollStream(
+      ref,
+      () => ref.read(techApiProvider).stock(id),
+      next: (_) => const Duration(minutes: 1),
+    ));
+
 /// The job package this client downloaded and verified, kept while moving between a job's pages.
 final verifiedPackageProvider = StateProvider.family<VerifiedPackage?, int>((ref, id) => null);
 

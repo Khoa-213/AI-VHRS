@@ -18,7 +18,6 @@ TZ = "Asia/Ho_Chi_Minh"
 VN = timezone(timedelta(hours=7))
 GROUPS = ("day", "week", "month")
 MAX_DAYS = 366
-LOW_PAPER = 10                              # sheets
 ETA_OPEN = ("CONFIRMED", "AWAITING_ACCEPTANCE", "AWAITING_FINAL_PAYMENT", "READY_TO_DELIVER", "DELIVERING")
 
 
@@ -63,10 +62,13 @@ class ReportService:
             from orders where eta between :d and :d + 2 and order_status::text in ('CONFIRMED', 'AWAITING_ACCEPTANCE')
             order by eta, id limit 100""", d=today)
         low_stock = (
-            _rows(s, "select 'PAPER' as kind, id, name, stock_qty from paper_types where is_active and stock_qty < :n "
-                     "order by stock_qty, id", n=LOW_PAPER)
-            + _rows(s, "select 'PEN' as kind, id, name, stock_qty from pen_types where is_active and stock_qty < 1 order by id")
-            + _rows(s, "select 'INK' as kind, id, name, stock_qty from ink_colors where is_active and stock_qty < 1 order by id"))
+            # 0033: each item's own minimum level (defaults keep the old rule: paper below 10, pen and ink below 1)
+            _rows(s, "select 'PAPER' as kind, id, name, stock_qty, min_qty from paper_types where is_active "
+                     "and stock_qty < min_qty order by stock_qty, id")
+            + _rows(s, "select 'PEN' as kind, id, name, stock_qty, min_qty from pen_types where is_active "
+                       "and stock_qty < min_qty order by stock_qty, id")
+            + _rows(s, "select 'INK' as kind, id, name, stock_qty, min_qty from ink_colors where is_active "
+                       "and stock_qty < min_qty order by stock_qty, id"))
         return {
             "date": today, "orders_by_status": by_status, "jobs_today": jobs_today, "jobs_next_7_days": upcoming,
             "late_orders": late, "due_in_2_days": due_soon, "low_stock": low_stock,

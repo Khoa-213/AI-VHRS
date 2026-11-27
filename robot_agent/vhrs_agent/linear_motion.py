@@ -20,10 +20,14 @@ PRE_MOVE_DEADLINE_S = 2.0   # between segments the robot stands still: a slow an
 
 
 def segments(points, speeds, cap, max_length):
-    """Merge only collinear forward points; retain every bend and minimum speed.
+    """Merge only collinear forward points; retain every bend.
 
     Split long lines to bound the distance covered by a single accepted command.
-    The speed never exceeds any original speed on the merged interval.
+    Speed (owner 2026-11-27, faster writing): the planner's cruise speed on the merged straight interval, i.e. its highest planned
+    speed there, capped. Every MoveL starts and ends standing still and the controller ramps it with `linear_accel_mm_s2`, so the
+    slow end/corner speeds and the ramps the planner put next to them must not throttle the whole line (before: a 15 mm straight
+    stroke ran entirely at the 5 mm/s end-of-stroke floor). A straight line has no curvature limit, so its cruise speed is the pen's
+    own maximum or less.
     """
     points, speeds = np.asarray(points, float), np.asarray(speeds, float)
     if (points.ndim != 2 or points.shape[1] != 3 or len(points) < 2
@@ -47,7 +51,7 @@ def segments(points, speeds, cap, max_length):
                 break
             end += 1
             length = along
-        speed = min(float(np.min(speeds[start:end + 1])), cap)
+        speed = min(float(np.max(speeds[start:end + 1])), cap)
         count = max(1, math.ceil(length / max_length))
         for i in range(count):
             a = points[start] + (points[end] - points[start]) * (i / count)
@@ -207,7 +211,7 @@ ALIGN_ARRIVE_MM = 0.3
 ALIGN_ARRIVE_DEG = 0.1            # same tolerance the writing moves demand at their start (START_ANGLE_TOL_DEG)
 
 
-def align_to_start(robot, target, ctl, box=None):
+def align_to_start(robot, target, ctl, box=None, speed_mm_s=None):
     """One controller-planned straight MoveL from where the arm is to `target` WITH the fixed writing orientation.
 
     For the operator who has put the arm near the start by hand: it removes the few-degree orientation error that makes the writing
@@ -258,6 +262,10 @@ def align_to_start(robot, target, ctl, box=None):
     if limits is None or len(limits) != 12 or any(q < limits[2 * j] + 5 or q > limits[2 * j + 1] - 5 for j, q in enumerate(joints)):
         raise RobotError("JOINT_LIMIT", "Nghiệm gần giới hạn khớp; không di chuyển.")
     speed = float(cfg.speed_cap_mm_s)
+    if speed_mm_s is not None:                                # slower only (the pen-mount descent to the paper), never above the cap
+        if not (np.isfinite(speed_mm_s) and speed_mm_s > 0):
+            raise RobotError("INVALID_CONFIG", "Tốc độ căn điểm phải là số dương.")
+        speed = min(speed, float(speed_mm_s))
     previous_packet = robot._rpc.robot_state_pkg
     robot._send_linear(payload(robot._pose(target), joints, cfg.tool_id, speed, cfg.linear_accel_mm_s2))
     started = time.perf_counter()

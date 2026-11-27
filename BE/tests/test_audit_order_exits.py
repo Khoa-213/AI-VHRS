@@ -1,4 +1,4 @@
-"""Audit 2026-11-27, D08 (owner chose the full version): ways out for an order stuck after production (migration 0033).
+"""Audit 2026-11-27, D08 (owner chose the full version): ways out for an order stuck after production (migration 0034).
 
 * the delivery failed: the Staff in charge switch the order to collection at the workshop
 * a Manager closes an order that will not complete, with a reason and the amount to give back
@@ -137,7 +137,7 @@ def test_the_job_reminds_the_customer_then_tells_the_managers_once_each(client, 
 
 
 def test_the_new_transitions_are_the_only_ones_the_database_gained():
-    """The guard still refuses what it refused before; only the three exits of migration 0033 were added."""
+    """The guard still refuses what it refused before; only the three exits of migration 0034 were added."""
     body = _sql("select pg_get_functiondef('fn_order_state_guard()'::regprocedure)")
     assert "WHEN 'AWAITING_FINAL_PAYMENT' THEN NEW.order_status IN ('READY_TO_DELIVER','CANCELLED')" in body
     assert "WHEN 'READY_TO_DELIVER'       THEN NEW.order_status IN ('DELIVERING','COMPLETED','CANCELLED')" in body

@@ -10,7 +10,7 @@ import uuid
 import pytest
 
 from app.integrations.mailer import ConsoleMailer
-from tests.test_api_orders import API, _sql
+from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
 from tests.test_api_technician import CAL, T, _err, _job, _post, _ready, _running
 from tests.test_api_workshop import _user, cust, policy, staff, store, wcat  # noqa: F401
@@ -55,6 +55,7 @@ def test_run_lifecycle_and_the_rules_around_it(client, cust, staff, mgr, wcat, r
     r, key = open_run(client, tech, jid)
     assert r.status_code == 409 and _err(r) == "JOB_STATE_CONFLICT"                # a write run needs WRITING
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200
+    issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
     _post(client, tech, jid, "calibration", CAL, status=201)
     _post(client, tech, jid, "simulation", {"passed": True}, status=200)

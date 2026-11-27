@@ -21,6 +21,7 @@ import { Sparkle } from '@phosphor-icons/react'
 import OrderAssistant from './ai/OrderAssistant'
 import AiPolicyDialog from './ai/AiPolicyDialog'
 import SketchView from './ai/SketchView'
+import PaperPhoto, { PaperThumb } from './PaperPhoto'
 import PhotoRow from './PhotoRow'
 import TemplateCard from './TemplateCard'
 import TextStyleBar from './TextStyleBar'
@@ -938,6 +939,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                           )}
                         </div>
                         {previewSrc && <span className="co-sub-hint">{t('co.place.sheet', { size: sheet })}</span>}
+                        <PaperPhoto paper={paper} />
 
                         <label className="co-cell">
                           {t('co.fontSize')}
@@ -1000,7 +1002,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                           {restoring && <p className="co-hint" role="status">{t('co.restore.wait')}</p>}
                           {sketch && (
                             <div className="co-restore-stage">
-                              <SketchView orderId={order.id} sketch={sketch} outdatedKey="co.restore.stale" />
+                              <SketchView orderId={order.id} sketch={sketch} paper={paper} outdatedKey="co.restore.stale" />
                               {restoreStale && <span className="oa-stale" role="status">{t('co.restore.stale')}</span>}
                             </div>
                           )}
@@ -1058,7 +1060,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                   {notice && <p className="co-notice" role="status">{t(notice)}</p>}
 
                   <ol className="co-chain" aria-label={t('co.chain')}>
-                    <li className={paper ? 'done' : 'now'}><b>1</b> {t('co.paper')}: <span>{paper?.name ?? t(suggest ? 'co.chain.workshop' : 'co.sum.notChosen')}</span></li>
+                    <li className={paper ? 'done' : 'now'}><b>1</b> {t('co.paper')}: <span>{paper ? <><PaperThumb photo={paper.imageUrl} small /> {paper.name}</> : t(suggest ? 'co.chain.workshop' : 'co.sum.notChosen')}</span></li>
                     <li className={pen ? 'done' : paper ? 'now' : ''}><b>2</b> {t('co.pen')}: <span>{pen?.name ?? t(suggest ? 'co.chain.workshop' : 'co.sum.notChosen')}</span></li>
                     <li className={ink ? 'done' : pen ? 'now' : ''}>
                       <b>3</b> {t('co.ink')}:{' '}
@@ -1077,7 +1079,8 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                     </div>
                     <div className="co-tray co-tray--4">
                       {(papers.data ?? []).filter((o) => !sizeFilter || o.size === sizeFilter).map((o) => (
-                        <button key={o.id} className={`co-opt co-opt--row${paperId === o.id ? ' on' : ''}`} onClick={() => pickPaper(o.id)}>
+                        <button key={o.id} className={`co-opt co-opt--row${paperId === o.id ? ' on' : ''}`} onClick={() => pickPaper(o.id)} aria-pressed={paperId === o.id}>
+                          <PaperThumb photo={o.imageUrl} />
                           <span className="co-choice-text">
                             <span className="co-opt-name">{o.name}</span>
                             <span className="co-opt-sub">{t('co.paperSpec', { gsm: o.gsm, surface: t(`surface.${o.surface}`), size: o.size })}</span>
@@ -1200,7 +1203,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                 </div>
                 <div className={`co-sketch-stage${aiBusy ? ' busy' : ''}`} aria-busy={aiBusy}>
                   {order && sketch ? (
-                    <SketchView orderId={order.id} sketch={sketch} selection={selection} onSelection={setSelection} pickLocked={aiBusy} />
+                    <SketchView orderId={order.id} sketch={sketch} paper={paper} selection={selection} onSelection={setSelection} pickLocked={aiBusy} />
                   ) : (
                     <span className="co-hint">{t('oa.sketchEmpty')}</span>
                   )}
@@ -1252,6 +1255,7 @@ export default function CreateOrder({ orderId: given = null }: { orderId?: numbe
                     <span className="co-hint">{t('co.previewEmpty')}</span>
                   )}
                 </div>
+                <PaperPhoto paper={paper} />
                 <div className="co-rail-body">
                   <span className="co-est-title">{t('co.estimate')}</span>
                   <div className="co-lines">

@@ -25,6 +25,24 @@ def _sql(stmt: str, **params):
         return c.execute(text(stmt), params).scalar()
 
 
+def issue_paper(client, headers, jid, spare=0):
+    """0033: take the paper a job needs (plus `spare`) so Prepare may run; tops the shelf up first when a long test module
+    has used it up (the stock is test data, the point here is the job's flow)."""
+    st = client.get(f"{API}/technician/jobs/{jid}/stock", headers=headers).json()
+    paper = next((ln for ln in st["lines"] if ln["item_kind"] == "PAPER"), None)
+    if paper is None:
+        return st
+    want = max(paper["need"] - paper["issued"], 0) + spare
+    if want == 0:
+        return st
+    if paper["stock"] < want:
+        _sql("update paper_types set stock_qty=stock_qty+:n where id=:i returning 1", n=want + 100, i=paper["item_id"])
+    r = client.post(f"{API}/technician/jobs/{jid}/stock/issue", headers=headers,
+                    json={"paper": want, "new_pen": False, "seen_issued": paper["issued"]})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
 @pytest.fixture(scope="module")
 def catalog():
     tag = fresh_code(6)

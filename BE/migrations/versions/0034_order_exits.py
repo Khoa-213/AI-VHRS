@@ -10,16 +10,16 @@ back therefore left the order open for ever. Three transitions are added, nothin
   collection at the workshop.
 
 The function is patched in place from its current definition, as migration 0014 did; upgrade refuses when a line it expects
-is not found exactly once. No data is touched. Rollback: `alembic downgrade 0032` (refused by the patch check if the
+is not found exactly once. No data is touched. Rollback: `alembic downgrade 0033` (refused by the patch check if the
 function was changed again in between; orders already moved by the new transitions keep their status).
 
-Revision ID: 0033
-Revises: 0032
+Revision ID: 0034
+Revises: 0033
 """
 from alembic import op
 
-revision = "0033"
-down_revision = "0032"
+revision = "0034"
+down_revision = "0033"
 branch_labels = None
 depends_on = None
 

@@ -63,6 +63,8 @@ export interface Paper {
   surface: string
   size: string
   unitPrice: number
+  /** Public photo supplied by the workshop; absent on older catalog responses. */
+  imageUrl: string | null
 }
 
 export interface Pen {
@@ -93,13 +95,15 @@ export interface Template {
 
 export const num = (s: string | number | null | undefined): number | null => (s === null || s === undefined || s === '' ? null : Number(s))
 
-interface RawPaper { id: number; code: string; name: string; gsm: number; surface: string; size: string; unit_price: string }
+interface RawPaper { id: number; code: string; name: string; gsm: number; surface: string; size: string; unit_price: string; image_url?: string | null }
 interface RawPen { id: number; code: string; name: string; category: string; stroke_width_mm: string; surcharge: string }
 interface RawInk { id: number; pen_type_id: number; name: string; hex_code: string | null; unit_price: string }
 interface RawTemplate { id: number; code: string; name: string; kind: string; preview_url?: string | null }
 
 export const getPapers = async (): Promise<Paper[]> =>
-  (await api<RawPaper[]>('/catalog/papers', { auth: false })).map((p) => ({ ...p, unitPrice: num(p.unit_price) ?? 0 }))
+  (await api<RawPaper[]>('/catalog/papers', { auth: false })).map((p) => ({
+    ...p, unitPrice: num(p.unit_price) ?? 0, imageUrl: p.image_url ?? null,
+  }))
 
 export const getPens = async (paperId?: number | null): Promise<Pen[]> =>
   (await api<RawPen[]>(`/catalog/pens${paperId ? `?paper_id=${paperId}` : ''}`, { auth: false })).map((p) => ({

@@ -213,3 +213,92 @@ const toPrice = (p: RawPrice): PriceList => ({
 export const priceVersions = async () => (await api<RawPrice[]>('/manager/pricing-config/versions')).map(toPrice)
 /** Sends only the fields that changed; the backend copies the rest and makes version N+1 active. */
 export const savePrice = async (b: Record<string, unknown>) => toPrice(await api<RawPrice>('/manager/pricing-config', { method: 'POST', body: b }))
+
+// ---------- stock in and out (migration 0033) ----------
+
+export type ItemKind = 'PAPER' | 'PEN' | 'INK'
+export type MoveKind = 'RECEIPT' | 'ISSUE' | 'RETURN' | 'ADJUST'
+
+export interface StockItem {
+  kind: ItemKind
+  id: number
+  code: string | null
+  name: string
+  spec: string
+  unit: string
+  hex: string | null
+  active: boolean
+  stock: number
+  min: number
+  kept: number
+  free: number
+  status: 'OK' | 'LOW' | 'SHORT'
+}
+interface RawStockItem {
+  item_kind: ItemKind; item_id: number; code: string | null; name: string; spec: string; unit: string; hex_code: string | null
+  is_active: boolean; stock_qty: number; min_qty: number; kept_for_jobs: number; free: number; status: 'OK' | 'LOW' | 'SHORT'
+}
+export const stockOverview = async (): Promise<StockItem[]> =>
+  (await api<RawStockItem[]>('/manager/stock')).map((r) => ({
+    kind: r.item_kind, id: r.item_id, code: r.code, name: r.name, spec: r.spec, unit: r.unit, hex: r.hex_code, active: r.is_active,
+    stock: r.stock_qty, min: r.min_qty, kept: r.kept_for_jobs, free: r.free, status: r.status,
+  }))
+
+export interface ReceiptLine { item_kind: ItemKind; item_id: number; quantity: number }
+export interface Receipt {
+  id: number
+  code: string | null
+  supplier: string | null
+  receivedOn: string
+  created: boolean
+  lines: { kind: ItemKind; id: number; name: string; quantity: number; after: number }[]
+}
+interface RawReceipt {
+  id: number; code: string | null; supplier: string | null; received_on: string; created: boolean
+  lines: { item_kind: ItemKind; item_id: number; name: string; quantity: number; stock_after: number }[]
+}
+/** `client_ref` is made once per open form: sending the same form twice returns the first receipt (`created: false`). */
+export const createReceipt = async (b: { supplier?: string | null; received_on?: string | null; note?: string | null; client_ref: string; lines: ReceiptLine[] }): Promise<Receipt> => {
+  const r = await api<RawReceipt>('/manager/stock/receipts', { method: 'POST', body: b })
+  return {
+    id: r.id, code: r.code, supplier: r.supplier, receivedOn: r.received_on, created: r.created,
+    lines: r.lines.map((l) => ({ kind: l.item_kind, id: l.item_id, name: l.name, quantity: l.quantity, after: l.stock_after })),
+  }
+}
+
+export interface StockMove {
+  id: number
+  kind: MoveKind
+  itemKind: ItemKind
+  itemId: number
+  itemName: string
+  unit: string
+  quantity: number
+  after: number
+  shortfall: number
+  jobId: number | null
+  receiptCode: string | null
+  actor: string | null
+  reason: string | null
+  at: string
+}
+interface RawMove {
+  id: number; kind: MoveKind; item_kind: ItemKind; item_id: number; item_name: string; unit: string; quantity: number; stock_after: number
+  shortfall: number; job_id: number | null; receipt_code: string | null; actor_name: string | null; reason: string | null; created_at: string
+}
+export const stockMoves = async (q: { kind?: MoveKind; item_kind?: ItemKind; page?: number; page_size?: number } = {}) => {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(q)) if (v !== undefined) p.set(k, String(v))
+  const r = await api<{ items: RawMove[]; total: number; page: number; page_size: number }>(`/manager/stock/movements?${p}`)
+  return {
+    total: r.total, page: r.page, pageSize: r.page_size,
+    items: r.items.map((m): StockMove => ({
+      id: m.id, kind: m.kind, itemKind: m.item_kind, itemId: m.item_id, itemName: m.item_name, unit: m.unit, quantity: m.quantity,
+      after: m.stock_after, shortfall: m.shortfall, jobId: m.job_id, receiptCode: m.receipt_code, actor: m.actor_name, reason: m.reason, at: m.created_at,
+    })),
+  }
+}
+
+/** Minimum level of one item (null = the backend default when creating). */
+export const setMinQty = (kind: ItemKind, id: number, min: number) =>
+  api(kind === 'PAPER' ? `/manager/papers/${id}` : kind === 'PEN' ? `/manager/pens/${id}` : `/manager/inks/${id}`, { method: 'PATCH', body: { min_qty: min } })

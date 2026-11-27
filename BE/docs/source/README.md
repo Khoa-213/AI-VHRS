@@ -45,7 +45,7 @@ Cho tới khi có, nguồn thực tế là trigger DB `fn_order_state_guard` và
 | Trigger: đơn `ACCEPTED` không có service nào huỷ | **D04:** khách và Staff phụ trách huỷ được | Đã làm |
 | Khoá / đổi vai trò tài khoản không kiểm việc đang giữ | **D05:** chặn tới khi phân công lại; có `force` kèm lý do | Đã làm |
 | FR-45/46: kỹ thuật viên xác nhận viết xong | **D06:** cần một lần chạy robot kết thúc `DONE`; Manager ghi đè có lý do | Đã làm |
-| Không có lối ra cho đơn chờ thanh toán cuối, chờ nhận, giao thất bại | **D08 (bản đầy đủ):** Staff chuyển sang nhận tại xưởng khi giao thất bại; Manager đóng đơn kèm số tiền hoàn; tác vụ nền nhắc và báo quá hạn. Migration 0033 | Đã làm (BE); FE chưa có màn |
+| Không có lối ra cho đơn chờ thanh toán cuối, chờ nhận, giao thất bại | **D08 (bản đầy đủ):** Staff chuyển sang nhận tại xưởng khi giao thất bại; Manager đóng đơn kèm số tiền hoàn; tác vụ nền nhắc và báo quá hạn. Migration 0034 | Đã làm (BE); FE chưa có màn |
 | Cổng MOCK dùng được ở mọi môi trường | **D01:** `ALLOW_TEST_PAYMENTS`, mặc định tắt | Đã làm |
 | Bỏ xác nhận "có người cạnh E-Stop", agent mở ra LAN (2026-11-26) | **D03: để sau**, giữ nguyên | Không đổi |
 | Luật: test chạy trên Supabase thật | **D12: giữ luật.** Chỉ sửa để tiến trình test không còn xoá dòng `order_types_enabled` | Đã làm |

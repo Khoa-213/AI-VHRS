@@ -113,6 +113,7 @@ class PaperIn(BaseModel):
     size: PaperSize
     unit_price: Money
     stock_qty: int = Field(default=0, ge=0)
+    min_qty: int | None = Field(default=None, ge=0, le=1_000_000, description="Minimum level (0033); null = default")
     is_active: bool = True
 
 
@@ -123,6 +124,7 @@ class PaperPatch(BaseModel):
     size: PaperSize | None = None
     unit_price: Money | None = None
     is_active: bool | None = None
+    min_qty: int | None = Field(default=None, ge=0, le=1_000_000)
 
 
 class PaperOut(_ORM):
@@ -134,6 +136,7 @@ class PaperOut(_ORM):
     size: PaperSize
     unit_price: Decimal
     stock_qty: int
+    min_qty: int = 0
     is_active: bool
     specs: dict[str, Any] = {}      # U6: {key: {value, source, unit?, note?}}
     image_url: str | None = None    # 0030: the workshop's photo (public URL), null: none yet
@@ -151,6 +154,7 @@ class PenIn(BaseModel):
     v_max_mm_s: Decimal = Field(gt=0, le=9999, decimal_places=1)
     surcharge: Money = 0
     stock_qty: int = Field(default=0, ge=0)
+    min_qty: int | None = Field(default=None, ge=0, le=1_000_000, description="Minimum level (0033); null = default")
     is_active: bool = True
 
     @model_validator(mode="after")
@@ -171,6 +175,7 @@ class PenPatch(BaseModel):
     v_max_mm_s: Decimal | None = Field(default=None, gt=0, le=9999, decimal_places=1)
     surcharge: Money | None = None
     is_active: bool | None = None
+    min_qty: int | None = Field(default=None, ge=0, le=1_000_000)
 
 
 class PenOut(_ORM):
@@ -186,6 +191,7 @@ class PenOut(_ORM):
     v_max_mm_s: Decimal
     surcharge: Decimal
     stock_qty: int
+    min_qty: int = 0
     is_active: bool
     specs: dict[str, Any] = {}
     image_url: str | None = None    # 0030: the workshop's photo (public URL), null: none yet
@@ -196,6 +202,7 @@ class InkIn(BaseModel):
     hex_code: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     unit_price: Money = 0
     stock_qty: int = Field(default=0, ge=0)
+    min_qty: int | None = Field(default=None, ge=0, le=1_000_000, description="Minimum level (0033); null = default")
     is_active: bool = True
 
 
@@ -204,6 +211,7 @@ class InkPatch(BaseModel):
     hex_code: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     unit_price: Money | None = None
     is_active: bool | None = None
+    min_qty: int | None = Field(default=None, ge=0, le=1_000_000)
 
 
 class InkOut(_ORM):
@@ -213,6 +221,7 @@ class InkOut(_ORM):
     hex_code: str | None
     unit_price: Decimal
     stock_qty: int
+    min_qty: int = 0
     is_active: bool
     specs: dict[str, Any] = {}
     image_url: str | None = None    # 0030: the workshop's photo (public URL), null: none yet
@@ -731,6 +740,155 @@ class TechJobDetail(JobOut):
     calibration: CalibrationOut | None = None
     can_start: bool = Field(default=False, description="Downloaded, valid calibration and a passed simulation.")
     incidents: list[IncidentOut] = Field(default_factory=list)
+
+
+class RefPaper(BaseModel):
+    name: str
+    gsm: int | None = None
+    surface: str | None = None
+    size: str | None = None
+    need: int = Field(description="Sheets this job uses up: copies x sheets per copy (what `finish` deducts).")
+    stock: int = Field(description="Catalog stock_qty now.")
+
+
+class RefPen(BaseModel):
+    name: str
+    category: str | None = None
+    stroke_width_mm: float | None = None
+    need: int
+    stock: int
+
+
+class RefInk(BaseModel):
+    name: str
+    hex: str | None = None
+    need: int
+    stock: int
+
+
+class JobReferenceOut(BaseModel):
+    """What stays beside the job steps: the approved sketch, materials (need vs stock) and instructions. Read only."""
+    job_id: int
+    order_code: str
+    quantity: int
+    pages: int = Field(description="Sheets per copy, from the stored trajectory.")
+    pages_assumed: bool = Field(description="True: storage could not answer, `pages` is 1 by assumption.")
+    preview_url: str | None = Field(description="Signed link to the page-1 preview of the approved sketch; null when none.")
+    preview_url_expires_in: int | None = None
+    sketch_version: int | None = None
+    paper: RefPaper | None = None
+    pen: RefPen | None = None
+    ink: RefInk | None = None
+    approach_note: str | None = None
+
+
+# ---------------------------------------------------------------- stock in and out (migration 0033)
+ItemKind = Literal["PAPER", "PEN", "INK"]
+MoveKind = Literal["RECEIPT", "ISSUE", "RETURN", "ADJUST"]
+
+
+class StockItemOut(BaseModel):
+    item_kind: ItemKind
+    item_id: int
+    code: str | None = None
+    name: str
+    spec: str = ""
+    unit: str = Field(description="tờ (paper) or cây (pen, ink: ink is counted in pens of that colour)")
+    hex_code: str | None = None
+    pen_type_id: int | None = Field(default=None, description="Ink only: the pen type it belongs to")
+    is_active: bool
+    stock_qty: int
+    min_qty: int
+    kept_for_jobs: int = Field(description="Paper only: at least one sheet per copy for each SCHEDULED job not issued yet")
+    free: int = Field(description="stock_qty - kept_for_jobs (negative: scheduled jobs will be short)")
+    status: Literal["OK", "LOW", "SHORT"] = Field(description="SHORT: free < 0; LOW: stock_qty < min_qty")
+
+
+class ReceiptLineIn(BaseModel):
+    item_kind: ItemKind
+    item_id: int = Field(gt=0)
+    quantity: int = Field(gt=0, le=1_000_000)
+
+
+class ReceiptIn(BaseModel):
+    supplier: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None = None
+    received_on: date | None = None
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] | None = None
+    client_ref: Annotated[str, StringConstraints(strip_whitespace=True, min_length=8, max_length=64)] | None = Field(
+        default=None, description="A random id the form makes once: sending the same form twice returns the first receipt")
+    lines: list[ReceiptLineIn] = Field(min_length=1, max_length=100)
+
+
+class ReceiptLineOut(BaseModel):
+    item_kind: ItemKind
+    item_id: int
+    name: str
+    quantity: int
+    stock_after: int
+
+
+class ReceiptOut(BaseModel):
+    id: int
+    code: str | None
+    supplier: str | None
+    received_on: date
+    note: str | None
+    created_by: int | None
+    created_at: datetime
+    lines: list[ReceiptLineOut]
+    created: bool = Field(default=True, description="False: this client_ref was already saved; nothing was added again")
+
+
+class StockMovementOut(BaseModel):
+    id: int
+    kind: MoveKind
+    item_kind: ItemKind
+    item_id: int
+    item_name: str
+    unit: str
+    quantity: int = Field(description="Signed: + into the stock, - out of it")
+    stock_after: int
+    shortfall: int = 0
+    job_id: int | None
+    receipt_id: int | None
+    receipt_code: str | None
+    actor_id: int | None
+    actor_name: str | None
+    reason: str | None
+    created_at: datetime
+
+
+class JobStockLine(BaseModel):
+    item_kind: ItemKind
+    item_id: int
+    name: str
+    spec: str = ""
+    unit: str
+    hex_code: str | None = None
+    need: int = Field(description="Paper: copies x sheets per copy. Pen and ink: 0, taken only when the pen is replaced")
+    issued: int = Field(description="Taken for this job so far, minus what went back")
+    stock: int
+
+
+class JobStockOut(BaseModel):
+    job_id: int
+    pages: int
+    pages_assumed: bool
+    issued: bool = Field(description="The paper this job needs has been taken (or the order has no paper): Prepare may run")
+    can_issue: bool = Field(description="The job is in a state where materials may be taken")
+    lines: list[JobStockLine]
+    movements: list[StockMovementOut]
+
+
+class IssueIn(BaseModel):
+    paper: int = Field(ge=0, le=100_000, description="Sheets to take now (need + spare on the first issue)")
+    new_pen: bool = Field(default=False, description="Take one new pen and one ink of the order's colour (Q1)")
+    seen_issued: int = Field(ge=0, description="`lines[PAPER].issued` the screen showed: a different value means someone "
+                                               "else took stock for this job meanwhile (409 STOCK_CHANGED)")
+
+
+class FinishIn(BaseModel):
+    waste: int = Field(default=0, ge=0, le=100_000, description="Sheets spoiled at the robot, not returned")
 
 
 # ---------------------------------------------------------------- cancellation after the deposit and refunds (Phase 4d-1)

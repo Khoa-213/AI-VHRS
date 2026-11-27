@@ -36,6 +36,9 @@ agent's web screen is no longer embedded; it still opens in a browser at `http:/
   signs in to the agent's local API with a random code it gave the agent at start (`VHRS_SCREEN_CODE`,
   `POST /api/screen-login`). A job loaded from the app (LOAD through the backend) may be switched by the technician the app
   started the agent as. Elsewhere the step still shows `real-enable --config agent.json --job N --minutes 30`.
+- **Skip the dry run (2026-11-27, owner)**: the confirmation has a "Skip the pen-up dry run" box. Ticked, it shows a red
+  warning and sends `waive_dry_run` + `confirm_waive: SKIP-DRY-RUN`; the agent then lets a REAL RUN write without a REAL
+  dry run of that plan (recorded in the run log), and the switch shows "Dry run skipped" until REAL goes off or expires.
 
 
 ## Sign in

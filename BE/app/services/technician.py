@@ -38,6 +38,7 @@ from app.repositories.workshop import SketchRepository
 from app.services import audit, notifications
 from app.services.motion import plan as motion_plan
 from app.services.production_snapshot import SnapshotService, material_drift, materials_of
+from app.services.stock import UNIT, Ledger, list_movements
 from app.services.motion import validate as motion_validate
 from app.services.stroke_ai import physical_mark, trajectory as tj
 
@@ -199,6 +200,38 @@ class TechnicianJobService:
                 "can_start": bool(job.status == JobStatus.PREPARING and job.downloaded_at and cal
                                   and job.simulation_passed is True)}
 
+    def reference(self, job_id: int) -> dict[str, Any]:
+        """What the technician keeps beside the steps: the approved sketch, the materials with what this job uses up
+        (the same `stock_use` that `finish` deducts) against the stock today, and the instructions. Read only: no
+        DOWNLOADED event, unlike the package."""
+        job = self._job(job_id)
+        order = self.orders.get(job.order_id)
+        sketch = self.sketches.get_by_id(job.sketch_id)
+        pages, assumed = self._pages(job) if self.storage is not None else (1, True)
+        use = jr.stock_use(order.quantity, pages)
+        paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
+        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        ink = self.catalog.ink(order.ink_color_id) if order.ink_color_id else None
+        preview = None
+        if sketch is not None and sketch.preview_url and self.storage is not None:
+            try:
+                preview = self.storage.create_download_url(sketch.preview_url, PACKAGE_URL_TTL)
+            except AppError:
+                preview = None                                    # a preview is a convenience, the job does not need it
+        return {
+            "job_id": job.id, "order_code": order.code, "quantity": order.quantity,
+            "pages": pages, "pages_assumed": assumed,
+            "preview_url": preview, "preview_url_expires_in": PACKAGE_URL_TTL if preview else None,
+            "sketch_version": sketch.version if sketch is not None else None,
+            "paper": ({"name": paper.name, "gsm": paper.gsm, "surface": paper.surface, "size": paper.size.value,
+                       "need": use.paper, "stock": paper.stock_qty} if paper else None),
+            # Q1 (0033): a pen and its ink are taken only when the pen on the robot is replaced, never per job
+            "pen": ({"name": pen.name, "category": pen.category, "stroke_width_mm": float(pen.stroke_width_mm),
+                     "need": 0, "stock": pen.stock_qty} if pen else None),
+            "ink": ({"name": ink.name, "hex": ink.hex_code, "need": 0, "stock": ink.stock_qty} if ink else None),
+            "approach_note": sketch.approach_note if sketch else None,
+        }
+
     def event_page(self, job_id: int, page: int, page_size: int) -> tuple[list[JobEvent], int]:
         job = self._job(job_id)
         return self.events.for_job(job.id, offset=(page - 1) * page_size, limit=page_size)
@@ -298,6 +331,11 @@ class TechnicianJobService:
         if job.downloaded_at is None:
             raise AppError(409, "JOB_NOT_DOWNLOADED", "Hãy tải gói job và kiểm tra hash trước khi chuẩn bị (UC-32).")
         self._robot_runnable(job)
+        st = self.stock_status(job.id, job=job, order=order)
+        if not st["issued"]:
+            paper = next(ln for ln in st["lines"] if ln["item_kind"] == "PAPER")
+            raise AppError(409, "STOCK_NOT_ISSUED", f"Hãy xuất kho giấy cho job trước khi chuẩn bị: cần {paper['need']} tờ, "
+                           f"đã lấy {paper['issued']}.", {"need": paper["need"], "issued": paper["issued"]})
         self._move(job, order, JobStatus.PREPARING, "Technical Staff bắt đầu chuẩn bị")
         audit.record(self.session, actor_id=self.tech.id, action="JOB_PREPARE", entity_type="production_job",
                      entity_id=job.id, new={"order_id": order.id}, ip=self.ip)
@@ -465,11 +503,17 @@ class TechnicianJobService:
             pass
         return 1, True
 
-    def finish(self, job_id: int, *, override_by: Account | None = None, override_reason: str | None = None) -> ProductionJob:
-        """UC-36: the job is written. D06 (audit 2026-11-27): that needs a robot run of this job that ended DONE (a simulated
-        robot's run counts; the compliance report still says whether it was a REAL one). Before, "start" then "finish" was
-        enough: stock was deducted and the job went on to photos although no robot had written anything. A Manager may
-        record it without that evidence (`override_by`, with a reason): for a station whose agent could not report."""
+    def finish(self, job_id: int, *, waste: int = 0, override_by: Account | None = None,
+               override_reason: str | None = None) -> ProductionJob:
+        """UC-36 / UC-39: the job is written.
+
+        D06 (audit 2026-11-27): that needs a robot run of this job that ended DONE (a simulated robot's run counts; the
+        compliance report still says whether it was a REAL one). Before, "start" then "finish" was enough. A Manager may
+        record it without that evidence (`override_by`, with a reason): for a station whose agent could not report.
+
+        Stock (0033): the paper the job took and did not use goes back to the stock (RETURN); more than it took is
+        recorded as an extra ISSUE that never blocks the finish (stock floors at 0, the shortfall is kept). A job prepared
+        before migration 0033 took nothing: its sheets are deducted here as before. Pens are not used up per job (Q1)."""
         job = self._job(job_id, lock=True)
         order = self._order(job)
         self._require_open(job, order)
@@ -486,16 +530,30 @@ class TechnicianJobService:
                            "Chưa có lần chạy robot nào của job này kết thúc thành công, nên chưa thể ghi nhận viết xong. "
                            "Nếu robot đã viết xong mà máy trạm không báo về được, nhờ Quản lý ghi nhận thay kèm lý do.")
         pages, assumed = self._pages(job)
-        use = jr.stock_use(order.quantity, pages)
+        written = jr.stock_use(order.quantity, pages).paper
         stock: dict[str, Any] = {"pages": pages, "pages_assumed": assumed}
-        for key, model, pk, used in (("paper", PaperType, order.paper_type_id, use.paper),
-                                     ("pen", PenType, order.pen_type_id, use.pen),
-                                     ("ink", InkColor, order.ink_color_id, use.ink)):
-            row = self.catalog.lock(model, pk) if pk else None
-            if row is None:
-                continue                                          # "để xưởng đề xuất" order without that item
-            row.stock_qty, short = jr.deduct(row.stock_qty, used)
-            stock[key] = {"id": pk, "used": used, "left": row.stock_qty, "shortfall": short}
+        if order.paper_type_id:
+            ledger = Ledger(self.session, self.tech.id)
+            moves = ledger.job_moves(job.id)
+            taken = ledger.job_net(job.id)["PAPER"].get(order.paper_type_id, 0)
+            legacy = not any(m.kind == "ISSUE" for m in moves)
+            used = written + waste
+            back = 0 if legacy else taken - used
+            last = None
+            if legacy:
+                last = ledger.move("ISSUE", "PAPER", order.paper_type_id, -written, job_id=job.id, floor=True,
+                                   reason="Trừ khi viết xong (job chuẩn bị trước khi có xuất kho)")
+            elif back > 0:
+                last = ledger.move("RETURN", "PAPER", order.paper_type_id, back, job_id=job.id,
+                                   reason=f"Trả giấy thừa khi viết xong (hỏng {waste})")
+            elif back < 0:
+                last = ledger.move("ISSUE", "PAPER", order.paper_type_id, back, job_id=job.id, floor=True,
+                                   reason=f"Dùng thêm khi viết (hỏng {waste})")
+            row = self.catalog.paper(order.paper_type_id)
+            stock["paper"] = {"id": order.paper_type_id, "used": written, "waste": waste, "taken": taken,
+                              "returned": max(back, 0), "extra": max(-back, 0) if not legacy else written,
+                              "left": last.stock_after if last else row.stock_qty,
+                              "shortfall": last.shortfall if last else 0, "legacy": legacy}
         job.finished_at, job.progress_pct = _now(), 100
         self._move(job, order, JobStatus.WRITTEN, "Robot viết xong")
         self._event(job, JobEventType.WRITTEN, payload={"stock": stock, **({"override_by": override_by.id} if override_by else {})})
@@ -506,6 +564,67 @@ class TechnicianJobService:
                          entity_id=job.id, new={"order_id": order.id, "had_done_run": written_run is not None},
                          reason=override_reason, ip=self.ip)
         return job
+
+    # ------------------------------------------------------------------ 0033: taking materials for a job
+    def stock_status(self, job_id: int, *, job: ProductionJob | None = None, order: Order | None = None) -> dict[str, Any]:
+        job = job or self._job(job_id)
+        order = order or self.orders.get(job.order_id)
+        pages, assumed = self._pages(job) if self.storage is not None else (1, True)
+        need = jr.stock_use(order.quantity, pages).paper
+        ledger = Ledger(self.session, self.tech.id)
+        net = ledger.job_net(job.id)
+        lines = []
+        paper = self.catalog.paper(order.paper_type_id) if order.paper_type_id else None
+        pen = self.catalog.pen(order.pen_type_id) if order.pen_type_id else None
+        ink = self.catalog.ink(order.ink_color_id) if order.ink_color_id else None
+        if paper:
+            lines.append({"item_kind": "PAPER", "item_id": paper.id, "name": paper.name,
+                          "spec": f"{paper.size.value} · {paper.gsm} gsm", "unit": UNIT["PAPER"], "need": need,
+                          "issued": net["PAPER"].get(paper.id, 0), "stock": paper.stock_qty})
+        if pen:
+            lines.append({"item_kind": "PEN", "item_id": pen.id, "name": pen.name,
+                          "spec": f"{pen.category} · {pen.stroke_width_mm} mm", "unit": UNIT["PEN"], "need": 0,
+                          "issued": net["PEN"].get(pen.id, 0), "stock": pen.stock_qty})
+        if ink:
+            lines.append({"item_kind": "INK", "item_id": ink.id, "name": ink.name, "spec": ink.hex_code or "",
+                          "hex_code": ink.hex_code, "unit": UNIT["INK"], "need": 0,
+                          "issued": net["INK"].get(ink.id, 0), "stock": ink.stock_qty})
+        issued = paper is None or net["PAPER"].get(paper.id, 0) >= need
+        rows, _ = list_movements(self.session, job_id=job.id, page_size=200)
+        return {"job_id": job.id, "pages": pages, "pages_assumed": assumed, "issued": issued,
+                "can_issue": job.status in jr.OPEN_STATUSES, "lines": lines, "movements": rows}
+
+    def issue(self, job_id: int, *, paper: int, new_pen: bool, seen_issued: int) -> dict[str, Any]:
+        """Take materials for the job from the shelf: sheets of the order's paper, and a new pen with its ink only when
+        the pen on the robot is replaced (Q1). Refused when the stock is short (409 STOCK_SHORT) or when someone else
+        took stock for this job since the screen was drawn (409 STOCK_CHANGED, a double submit lands here)."""
+        job = self._job(job_id, lock=True)
+        order = self._order(job)
+        self._require_open(job, order)
+        if paper == 0 and not new_pen:
+            raise AppError(422, "NOTHING_TO_ISSUE", "Chưa chọn vật tư nào để xuất.")
+        if paper and not order.paper_type_id:
+            raise AppError(422, "NO_PAPER_ON_ORDER", "Đơn này chưa chọn loại giấy.")
+        if new_pen and not order.pen_type_id:
+            raise AppError(422, "NO_PEN_ON_ORDER", "Đơn này chưa chọn loại bút.")
+        ledger = Ledger(self.session, self.tech.id)
+        current = ledger.job_net(job.id)["PAPER"].get(order.paper_type_id, 0) if order.paper_type_id else 0
+        if current != seen_issued:
+            raise AppError(409, "STOCK_CHANGED", f"Job này đã được xuất {current} tờ (màn hình đang thấy {seen_issued}). "
+                           "Tải lại rồi thử lại.", {"issued": current})
+        moves = []
+        if paper:
+            moves.append(("PAPER", order.paper_type_id, -paper))
+        if new_pen:
+            moves.append(("PEN", order.pen_type_id, -1))
+            if order.ink_color_id:
+                moves.append(("INK", order.ink_color_id, -1))
+        for item_kind, item_id, qty in sorted(moves, key=lambda m: (m[0], m[1])):     # one lock order everywhere
+            ledger.move("ISSUE", item_kind, item_id, qty, job_id=job.id,
+                        reason="Thay bút trên robot" if item_kind != "PAPER" else "Lấy giấy cho job")
+        audit.record(self.session, actor_id=self.tech.id, action="STOCK_ISSUE", entity_type="production_job",
+                     entity_id=job.id, new={"paper": paper, "new_pen": new_pen}, ip=self.ip)
+        return self.stock_status(job.id, job=job, order=order)
 
     # ------------------------------------------------------------------ UC-37: incident
     def report_incident(self, job_id: int, *, kind: IncidentType, description: str, robot_status_after: str | None) -> Incident:

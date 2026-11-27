@@ -11,9 +11,10 @@ from pydantic import BaseModel
 
 from app.services.scheduling import robot_owners
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import (CompatIn, CompatOut, InkIn, InkOut, InkPatch, PaperIn, PaperOut, PaperPatch, PenIn,
+from app.api.ops_schemas import (ItemKind, MoveKind, ReceiptIn, ReceiptOut, StockItemOut, StockMovementOut, CompatIn, CompatOut, InkIn, InkOut, InkPatch, PaperIn, PaperOut, PaperPatch, PenIn,
                                  PenOut, PenPatch, ProfileIn, ProfileOut, ProfilePatch, ProfileVerifyIn, SpecsIn, PricingOut, PricingSaveIn, RobotIn, RobotOut, RobotPatch, StockIn,
                                  StyleOut, TemplateAdminOut, TemplateIn, TemplatePatch)
+from app.api.schemas import ErrorOut, Page
 from app.api.staff_schemas import ReasonIn
 from app.api.v1.orders import optional_storage
 from app.core.errors import AppError
@@ -26,6 +27,7 @@ from app.repositories.ops import RobotRepository
 from app.domain import material_specs
 from app.services import catalog_media
 from app.services.manager_catalog import ManagerCatalogService
+from app.services.stock import StockService
 from app.services.material_profiles import MaterialProfileService
 
 router = APIRouter(prefix="/manager", tags=["Manager"])
@@ -338,3 +340,44 @@ def save_pricing(body: PricingSaveIn, svc: Svc) -> PricingOut:
         changes["discount_tiers"] = [{"min_qty": t["min_qty"], "pct": float(t["pct"]) if t["pct"] % 1 else int(t["pct"])}
                                      for t in changes["discount_tiers"]]
     return PricingOut.model_validate(svc.save_pricing({k: v for k, v in changes.items() if v is not None}, body.note))
+
+
+# ---- stock in and out (migration 0033) ------------------------------------------------------------
+def _stock(session: SessionDep, manager: ManagerDep, request: Request) -> StockService:
+    return StockService(session, manager, client_ip(request))
+
+
+StockSvc = Annotated[StockService, Depends(_stock)]
+
+
+@router.get("/stock", response_model=list[StockItemOut],
+            summary="Tồn kho mọi vật tư: tồn, mức tối thiểu, giấy giữ cho job đã lên lịch, trạng thái OK / LOW / SHORT")
+def stock(svc: StockSvc) -> list[StockItemOut]:
+    return [StockItemOut(**r) for r in svc.overview()]
+
+
+@router.post("/stock/receipts", response_model=ReceiptOut, status_code=status.HTTP_201_CREATED,
+             summary="Phiếu nhập kho nhiều dòng (cộng tồn kho, ghi sổ kho). Gửi lại cùng `client_ref` trả phiếu cũ (200)",
+             responses={404: {"model": ErrorOut, "description": "ITEM_NOT_FOUND"},
+                        422: {"model": ErrorOut, "description": "DUPLICATE_LINE"}})
+def create_receipt(body: ReceiptIn, svc: StockSvc, response: Response) -> ReceiptOut:
+    rec, created = svc.create_receipt(supplier=body.supplier or None, received_on=body.received_on, note=body.note or None,
+                                      client_ref=body.client_ref, lines=[ln.model_dump() for ln in body.lines])
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return ReceiptOut(**rec, created=created)
+
+
+@router.get("/stock/receipts/{receipt_id}", response_model=ReceiptOut, summary="Một phiếu nhập kho và các dòng của nó")
+def get_receipt(receipt_id: int, svc: StockSvc) -> ReceiptOut:
+    return ReceiptOut(**svc.receipt(receipt_id))
+
+
+@router.get("/stock/movements", response_model=Page[StockMovementOut],
+            summary="Sổ kho: mọi lần nhập, xuất cho job, trả lại, kiểm kê (mới nhất trước)")
+def movements(svc: StockSvc, kind: MoveKind | None = Query(default=None), item_kind: ItemKind | None = Query(default=None),
+              item_id: int | None = Query(default=None), job_id: int | None = Query(default=None),
+              page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200)) -> Page[StockMovementOut]:
+    rows, total = svc.movements(kind=kind, item_kind=item_kind, item_id=item_id, job_id=job_id, page=page,
+                                page_size=page_size)
+    return Page(items=[StockMovementOut(**r) for r in rows], total=total, page=page, page_size=page_size)
