@@ -135,6 +135,12 @@ def test_the_app_technician_turns_real_on_for_a_job_loaded_from_the_app_and_nobo
     svc.link_owner = "tech@x.vn"
     ok = c.post("/api/jobs/12/real-enable", json={"minutes": 5}, headers=h)
     assert ok.status_code == 200 and ok.json()["real_enabled"]["job_id"] == 12
+    assert ok.json()["real_enabled"]["waive_dry_run"] is False
+    # the app may skip the pen-up dry run (owner 2026-11-27), only with the literal confirmation
+    bad = c.post("/api/jobs/12/real-enable", json={"minutes": 5, "waive_dry_run": True}, headers=h)
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "CONFIRM_REQUIRED"
+    waived = c.post("/api/jobs/12/real-enable", json={"minutes": 5, "waive_dry_run": True, "confirm_waive": "SKIP-DRY-RUN"}, headers=h)
+    assert waived.status_code == 200 and waived.json()["real_enabled"]["waive_dry_run"] is True
 
 
 def test_websocket_needs_a_token(tmp_path):

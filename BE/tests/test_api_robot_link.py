@@ -108,6 +108,8 @@ def test_validation_of_commands(client, cust, staff, mgr, wcat, robot, tech):
     sync(client, ah)                         # keep the agent online (15 s) on a slow database
     assert post(kind="DRY_RUN", job_id=jid, params={"mode": "SIM"}).status_code == 201       # rehearsal is allowed while PREPARING
     _post(client, tech, jid, "start", status=200)
+    sync(client, ah)
+    assert post(kind="DRY_RUN", job_id=jid, params={"mode": "SIM"}).status_code == 201       # WRITING but robot idle: the rehearsal can still be done
     ok = post(kind="RUN", job_id=jid, params={"mode": "REAL", "authorization": f"AUTHORIZE-{jid}-abcd1234"})
     assert ok.status_code == 201                                                       # the agent still checks the token and the on-site file
     _sql("update production_jobs set status='PAUSED' where id=:j returning 1", j=jid)

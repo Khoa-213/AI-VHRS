@@ -6,6 +6,7 @@ import time
 import uuid
 
 import httpx
+import numpy as np
 import pytest
 
 from vhrs_agent.link import LinkClient
@@ -216,6 +217,35 @@ def test_align_start_from_a_pen_that_rests_on_the_paper_lifts_straight_up_first(
     r = be.results[cid]
     assert r["ok"] is True and r["result"]["lifted_first"] is True and r["result"]["lift_mm"] == pytest.approx(5.5, abs=0.6)   # demo pen-up height 5 mm + 0.5
     assert made[0].commands.count("align_to") == 2                    # up, then to the start
+
+
+def test_pen_mount_goes_above_the_corner_then_down_onto_the_paper_and_home_lifts_it(tmp_path):
+    svc, link, be, _ = make(tmp_path)
+    made = []
+
+    def factory(mode):                                                 # one arm for every command: it stays where the last one left it
+        if not made:
+            made.append(SimRobot((-300.0, 0.0, 60.0), speed_factor=None))
+        return made[0]
+
+    svc.robot_factory = factory
+    be.send("LOAD")
+    link.tick()
+    cid = be.send("ALIGN_START", mode="SIM", corner="tl")
+    link.tick()
+    r = be.results[cid]
+    assert r["ok"] is True and r["result"]["corner"] == "TL" and r["result"]["on_paper"] is True
+    frame_pt = svc.corner_point(link._ctx(12), "TL")
+    assert r["result"]["target_mm"] == [round(float(v), 2) for v in frame_pt]
+    assert made[0].commands.count("align_to") == 2                    # above the corner, then down (it started high enough)
+    assert np.allclose(made[0]._pos, frame_pt)
+    bad = be.send("ALIGN_START", mode="SIM", corner="XX")
+    link.tick()
+    assert be.results[bad]["ok"] is False and be.results[bad]["error_code"] == "INVALID_CORNER"
+    home = be.send("ALIGN_START", mode="SIM")                         # from ON the paper: straight up first, then to the start
+    link.tick()
+    assert be.results[home]["ok"] is True and be.results[home]["result"]["lifted_first"] is True
+    assert made[0].commands.count("align_to") == 4
 
 
 def test_a_configured_start_point_is_used_for_align_and_the_return(tmp_path):

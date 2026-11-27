@@ -47,7 +47,7 @@ class MockRobot(RobotPort):
             self._pos = np.asarray(p, dtype=np.float64)
             on_tcp(self._pos, 0.0)
 
-    def align_to(self, target_mm: np.ndarray, ctl: Control, box=None) -> dict:
+    def align_to(self, target_mm: np.ndarray, ctl: Control, box=None, speed_mm_s: float | None = None) -> dict:
         moved = float(np.linalg.norm(self._pos - np.asarray(target_mm, dtype=np.float64)))
         self._pos = np.asarray(target_mm, dtype=np.float64)
         self.commands.append("align_to")

@@ -90,8 +90,9 @@ class RobotPort(ABC):
         """Joint angles in degrees for the 3D viewer, or None when this robot has no joint model (MOCK, simple SIM)."""
         return None
 
-    def align_to(self, target_mm: np.ndarray, ctl: "Control", box=None) -> dict:
-        """Bring the arm from where it is to `target_mm` with the fixed writing orientation (software robots just jump there)."""
+    def align_to(self, target_mm: np.ndarray, ctl: "Control", box=None, speed_mm_s: float | None = None) -> dict:
+        """Bring the arm from where it is to `target_mm` with the fixed writing orientation (software robots just jump there).
+        `speed_mm_s` lowers the speed below the configured cap (never raises it)."""
         raise NotImplementedError
 
     def check_start_ready(self) -> None:

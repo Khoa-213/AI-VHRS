@@ -71,29 +71,49 @@ class _RealSwitchState extends ConsumerState<RealSwitch> {
 
   Future<void> _on(AgentLocalApi api) async {
     final t = ref.read(tProvider);
-    final ok = await showDialog<bool>(
+    var waive = false;
+    // null = cancelled; otherwise whether the pen-up dry run is skipped (owner 2026-11-27: the dry run may be skipped here)
+    final choice = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(t('dk.real.confirmTitle', {'id': widget.jobId})),
-        content: Text(t('dk.real.confirmBody')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('dk.real.cancel'))),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t('dk.real.on')),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text(t('dk.real.confirmTitle', {'id': widget.jobId})),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t('dk.real.confirmBody')),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: waive,
+                onChanged: (v) => setLocal(() => waive = v ?? false),
+                title: Text(t('dk.real.waive')),
+              ),
+              if (waive)
+                Text(t('dk.real.waiveWarn'), style: const TextStyle(fontSize: 13, height: 1.4, color: AppColors.error)),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('dk.real.cancel'))),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              onPressed: () => Navigator.pop(ctx, waive),
+              child: Text(t('dk.real.on')),
+            ),
+          ],
+        ),
       ),
     );
-    if (ok != true || !mounted) return;
+    if (choice == null || !mounted) return;
     setState(() {
       _busy = true;
       _msg = t('dk.real.checking');
       _msgBad = false;
     });
     try {
-      final r = await api.realEnable(widget.jobId);
+      final r = await api.realEnable(widget.jobId, waiveDryRun: choice);
       final ctl = (r['robot_check'] as Map?)?['controller'];
       final version = ctl is Map ? '${ctl['controller'] ?? ctl['version'] ?? ''}' : '';
       if (!mounted) return;
@@ -160,6 +180,10 @@ class _RealSwitchState extends ConsumerState<RealSwitch> {
             mine ? t('dk.real.onUntil', {'time': until}) : t('dk.real.onOther', {'id': real['job_id'], 'time': until}),
             AppColors.error,
           ),
+          if (mine && real['waive_dry_run'] == true) ...[
+            const SizedBox(height: 6),
+            StatusPill(t('dk.real.waived'), AppColors.error),
+          ],
           const SizedBox(height: 8),
         ],
         Wrap(

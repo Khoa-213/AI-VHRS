@@ -391,9 +391,27 @@ class AgentService:
         lift = float(ctx.cfg.pen_up_clearance_mm or 0.0) + self.ALIGN_EXTRA_CLEARANCE_MM
         return frame.origin + u * frame.x_axis + w * frame.y_axis + (float(frame.height(u, w)) + lift) * frame.normal
 
-    def do_align(self, ctx: "JobCtx", mode: str, authorization: str | None) -> dict[str, Any]:
+    PEN_MOUNT_CORNERS = ("TL", "TR", "BL", "BR")   # sheet corners: TL = P0, TR towards P1, BL towards P2
+
+    def corner_point(self, ctx: "JobCtx", corner: str, lift_mm: float = 0.0) -> np.ndarray:
+        """A corner of the first sheet, `lift_mm` above the paper surface along its normal (0 = on the paper)."""
+        frame = build_frame(ctx.probes)
+        page = ctx.pages[0]
+        u = {"TL": 0.0, "BL": 0.0, "TR": page.width_mm, "BR": page.width_mm}[corner]
+        w = {"TL": 0.0, "TR": 0.0, "BL": page.height_mm, "BR": page.height_mm}[corner]
+        return frame.origin + u * frame.x_axis + w * frame.y_axis + (float(frame.height(u, w)) + lift_mm) * frame.normal
+
+    def do_align(self, ctx: "JobCtx", mode: str, authorization: str | None, corner: str | None = None) -> dict[str, Any]:
         """Move the arm to the job's fixed start pose (position AND the fixed writing orientation). REAL motion: same site switch and plan-bound
-        token as a rehearsal. Refuses when the pen is lower than the pen-up height or the target leaves the safe box."""
+        token as a rehearsal. Refuses when the pen is lower than the pen-up height or the target leaves the safe box.
+
+        With `corner` (TL/TR/BL/BR): the pen-mount pose instead. Up to the pen-up height, across to above that sheet corner, then
+        straight down at the plunge speed until the tool point is ON the paper surface, so the technician can fit the pen with its tip
+        just touching the paper. `home` / `align-start` lifts it straight up again."""
+        if corner is not None:
+            corner = str(corner).upper()
+            if corner not in self.PEN_MOUNT_CORNERS:
+                raise ApiError(422, "INVALID_CORNER", "Góc giấy phải là TL, TR, BL hoặc BR.", {"corner": corner})
         if mode == "real":
             if "real" not in self.cfg.modes:
                 raise ApiError(403, "MODE_DISABLED", "Chế độ REAL không được bật trên agent này.")
@@ -407,16 +425,19 @@ class AgentService:
         robot = None
         try:
             ws = ctx.ws
-            target = self.start_point(ctx)
-            if ws.box_min_mm is None or ws.box_max_mm is None or np.any(target < np.asarray(ws.box_min_mm)) or np.any(target > np.asarray(ws.box_max_mm)):
-                raise ApiError(409, "START_OUTSIDE_WORKSPACE", "Điểm bắt đầu nằm ngoài hộp an toàn (hoặc chưa cấu hình hộp).",
-                               {"target_mm": [round(float(v), 2) for v in target]})
+            target = self.start_point(ctx) if corner is None else self.corner_point(ctx, corner)
+            checks = [target] if corner is None else [target, self.corner_point(ctx, corner, self._pen_up_lift(ctx))]
+            for point in checks:
+                if ws.box_min_mm is None or ws.box_max_mm is None or np.any(point < np.asarray(ws.box_min_mm)) or np.any(point > np.asarray(ws.box_max_mm)):
+                    raise ApiError(409, "START_OUTSIDE_WORKSPACE", "Điểm đến nằm ngoài hộp an toàn (hoặc chưa cấu hình hộp).",
+                                   {"target_mm": [round(float(v), 2) for v in point]})
             robot = self.make_robot(mode, None)
             robot.connect()
             if mode == "real" and not robot.heartbeat():
                 raise ApiError(409, "ROBOT_NOT_READY", "Robot không phản hồi hoặc đang báo lỗi / dừng khẩn.")
-            self.current = {"job_id": ctx.job_id, "mode": mode, "align_start": True, "started_at": time.time()}
-            return {**self.move_to_start(ctx, robot), "mode": mode, "target_mm": [round(float(v), 2) for v in target]}
+            self.current = {"job_id": ctx.job_id, "mode": mode, "align_start": True, "pen_mount": corner, "started_at": time.time()}
+            res = self.move_to_start(ctx, robot) if corner is None else self.move_to_corner(ctx, robot, corner)
+            return {**res, "mode": mode, "target_mm": [round(float(v), 2) for v in target], **({"corner": corner} if corner else {})}
         finally:
             self.align_ctl = None
             self.current = None
@@ -426,6 +447,36 @@ class AgentService:
                 except Exception:                                        # noqa: BLE001
                     pass
             self._busy = False
+
+    def _pen_up_lift(self, ctx: "JobCtx") -> float:
+        return float(ctx.cfg.pen_up_clearance_mm or 0.0) + self.ALIGN_EXTRA_CLEARANCE_MM
+
+    def move_to_corner(self, ctx: "JobCtx", robot: RobotPort, corner: str) -> dict[str, Any]:
+        """Pen-mount pose: pen-up height first (lifting straight up when low), across above the corner, then down onto the paper slowly."""
+        ws = ctx.ws
+        frame = build_frame(ctx.probes)
+        above, surface = self.corner_point(ctx, corner, self._pen_up_lift(ctx)), self.corner_point(ctx, corner)
+        cur = np.asarray(robot.read_tcp(), dtype=np.float64)
+        rel = cur - frame.origin
+        clearance = float(rel @ frame.normal) - float(frame.height(rel @ frame.x_axis, rel @ frame.y_axis))
+        descend = ctx.cfg.approach_speed_mm_s
+        self.align_ctl = Control()
+        try:
+            if clearance < self._pen_up_lift(ctx) - 1.0:
+                way = cur + frame.normal * (self._pen_up_lift(ctx) - clearance)
+                if np.any(way < np.asarray(ws.box_min_mm)) or np.any(way > np.asarray(ws.box_max_mm)):
+                    raise ApiError(409, "START_OUTSIDE_WORKSPACE", "Điểm nhấc bút lên nằm ngoài hộp an toàn: nhấc bút lên bằng tay.",
+                                   {"lift_point_mm": [round(float(v), 2) for v in way]})
+                robot.align_to(way, self.align_ctl)
+            robot.align_to(above, self.align_ctl)
+            res = robot.align_to(surface, self.align_ctl, speed_mm_s=None if descend is None else float(descend))
+            return {**res, "on_paper": True, "descent_mm": round(self._pen_up_lift(ctx), 1)}
+        except StopRequested as exc:
+            raise ApiError(409, "ALIGN_STOPPED", f"Đã dừng khi đưa bút về góc giấy: {exc}") from exc
+        except RobotError as exc:
+            raise ApiError(409, exc.code, exc.message, exc.details) from exc
+        finally:
+            self.align_ctl = None
 
     def move_to_start(self, ctx: "JobCtx", robot: RobotPort) -> dict[str, Any]:
         """With the robot already connected: lift the pen straight up when it is lower than the pen-up height, then go to the fixed start
