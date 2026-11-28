@@ -80,7 +80,9 @@ function answer(method, path, search) {
   // Job 293: failed after taking 4 sheets, not settled yet (stock audit K1).
   if (path === '/manager/jobs/293') return { id: 293, order_id: 103, order_code: 'VHRS-T3', robot_id: 1, robot_code: 'FR3-01', technician_id: 5, technician_name: 'Kỹ thuật viên A', status: 'FAILED', is_rewrite: false, slot_start: now, slot_end: now, estimated_duration_min: 40, package_hash: null, progress_pct: 20, downloaded_at: now, started_at: now, finished_at: null, simulation_passed: true, quantity: 1, copies_written: 0, open_run: null, paper_held: settled ? 1 : 4, can_settle_stock: !settled }
   if (path === '/manager/jobs/293/stock/settle') { settled = true; return { job_id: 293, held: 4, waste: 1, returned: 3 } }
-  if (/^\/manager\/jobs\/\d+$/.test(path)) return { id: 291, order_id: 101, order_code: 'VHRS-T1', robot_id: 1, robot_code: 'FR3-01', technician_id: 5, technician_name: 'Kỹ thuật viên A', status: 'PAUSED', is_rewrite: false, slot_start: now, slot_end: now, estimated_duration_min: 40, package_hash: null, progress_pct: 35, downloaded_at: now, started_at: now, finished_at: null, simulation_passed: true }
+  // Job 291: paused, its technician cannot carry on; the Manager ends it as failed (audit TP-06).
+  if (path === '/manager/jobs/291/fail') { failed291 = true; return { id: 9, job_id: 291, robot_id: 1, reported_by: 1, type: 'OTHER', description: 'Quản lý tiếp quản', photo_urls: [], robot_status_after: null, resolved_at: null, created_at: now } }
+  if (/^\/manager\/jobs\/\d+$/.test(path)) return { id: 291, order_id: 101, order_code: 'VHRS-T1', robot_id: 1, robot_code: 'FR3-01', technician_id: 5, technician_name: 'Kỹ thuật viên A', status: failed291 ? 'FAILED' : 'PAUSED', is_rewrite: false, slot_start: now, slot_end: now, estimated_duration_min: 40, package_hash: null, progress_pct: 35, downloaded_at: now, started_at: now, finished_at: null, simulation_passed: true }
   if (path === '/manager/incidents') return page([{ id: 3, job_id: 291, robot_id: 1, reported_by: 5, type: 'ROBOT', description: 'Cánh tay dừng giữa chừng.', robot_status_after: 'MAINTENANCE', resolved_by: null, resolved_at: null, resolution_note: null, created_at: now }])
   if (/^\/manager\/incidents\/\d+\/resolve$/.test(path)) return {}
   if (path === '/manager/reviews') return page(search.get('hidden') === 'true' ? [review(9, true)] : [review(8, false), review(9, true)], { page_size: 20 })
@@ -114,6 +116,7 @@ const port = server.address().port
 let browser, ws
 const errors = []
 let settled = false          // job 293's paper
+let failed291 = false        // job 291 ended by the Manager
 let bell = []                // what the notification bell lists
 const calls = []
 
@@ -312,7 +315,29 @@ try {
   // A job that is not writing and has no open run shows neither action.
   await go('/staff/robots?job=291', '.mgr-robot')
   await wait(`document.body.innerText.includes('Job #291') && document.body.innerText.includes('0 of 1')`, 'job 291 detail')
-  assert.equal(await evaluate(`!!${jobBtn('Record as written')} || !!${jobBtn('Close the stuck run')}`), false, 'No Manager action on a paused job without an open run')
+  assert.equal(await evaluate(`!!${jobBtn('Record as written')} || !!${jobBtn('Close the stuck run')}`), false, 'A paused job without an open run offers neither "written" nor closing a run')
+
+  // A started job its technician cannot carry on: the Manager ends it as failed (audit TP-06). Reason of 10 characters, a
+  // confirmation, and once it has failed the action is gone.
+  const failBtn = jobBtn('End job as failed')
+  await wait(`!!${failBtn}`, 'ending a started job is offered')
+  assert.equal(await evaluate(`${failBtn}.disabled`), true, 'Ending a job needs a reason')
+  await reasonFor(failBtn, 'too short')
+  assert.equal(await evaluate(`${failBtn}.disabled`), true, 'Ending a job needs at least 10 characters')
+  await reasonFor(failBtn, 'Technician is away, job goes to someone else')
+  await evaluate(`window.confirm=()=>false`)
+  calls.length = 0
+  await evaluate(`${failBtn}.click()`)
+  await sleep(300)
+  assert.ok(!calls.includes('POST /manager/jobs/291/fail'), 'Ending a job does nothing when the confirmation is declined')
+  await evaluate(`${failBtn}.closest('.mgr-actions').scrollIntoView({block:'center'})`)
+  await shot('robots-job-fail')
+  await evaluate(`window.confirm=()=>true`)
+  await evaluate(`${failBtn}.click()`)
+  await wait(`document.body.innerText.includes('The job has ended. The order is back in the planning queue.')`, 'job ended')
+  assert.ok(calls.includes('POST /manager/jobs/291/fail'), 'Ending a job calls the Manager route')
+  await wait(`!${failBtn}`, 'a failed job cannot be ended again')
+  assert.equal(await evaluate(`!!${jobBtn('End job as failed')}`), false, 'No such action on a job that already failed')
 
   // A failed job that still holds paper: the Manager settles it once, with the spoiled sheets (stock audit K1).
   await go('/staff/robots?job=293', '.mgr-robot')

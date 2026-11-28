@@ -6,7 +6,7 @@ import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
 import type { Job } from '../../services/async'
 import {
-  ackManagerAlert, alertCatalog, closeOrphanRun, finishJobOverride, jobCompliance, managerAlerts, managerIncidents, managerJob,
+  ackManagerAlert, alertCatalog, closeOrphanRun, failJobByManager, finishJobOverride, jobCompliance, managerAlerts, managerIncidents, managerJob,
   managerJobEvents, managerJobQuality, managerRobotStatus, managerRuns, patchAlertCatalog, resolveIncident, resolveManagerAlert,
   robotHealth, settleJobStock, type AlertCatalogEntry, type ManagerAlert, type ManagerJob,
 } from '../../services/managerOps'
@@ -20,7 +20,8 @@ const RUN_TONE: Record<string, Tone> = { DONE: 'good', DRY_RUN_DONE: 'good', STO
 const STEP_TONE: Record<string, Tone> = { PASS: 'good', FAIL: 'bad', PENDING: 'mute', NOT_APPLICABLE: 'mute' }
 const VERDICT_TONE: Record<string, Tone> = { PASS: 'good', NEEDS_REVIEW: 'warn', FAIL: 'bad' }
 type Patch = Parameters<typeof patchAlertCatalog>[1]
-const REASON_MIN = 10          // the backend's minimum for a finish override and for closing a run by hand
+const REASON_MIN = 10          // the backend's minimum for a finish override, for ending a job and for closing a run by hand
+const STARTED = ['PREPARING', 'WRITING', 'PAUSED']          // a job the Manager may end as failed (a SCHEDULED one is re-planned)
 
 const stepIcon = (status: string) => {
   if (status === 'PASS') return <CheckCircle size={15} weight="fill" aria-hidden />
@@ -107,6 +108,13 @@ export default function Robots() {
     const reason = (notes[key] ?? '').trim()
     if (reason.length < REASON_MIN || !window.confirm(t('mgr.job.overrideConfirm', { id: x.id, n: x.copiesWritten, total: x.quantity }))) return
     void act(key, () => finishJobOverride(x.id, reason), reloadJob, t('mgr.job.overrideDone'))
+  }
+
+  const failJob = (x: ManagerJob) => {
+    const key = `f${x.id}`
+    const reason = (notes[key] ?? '').trim()
+    if (reason.length < REASON_MIN || !window.confirm(t('mgr.job.failConfirm', { id: x.id, code: x.orderCode }))) return
+    void act(key, () => failJobByManager(x.id, reason), reloadJob, t('mgr.job.failDone'))
   }
 
   const settlePaper = (x: ManagerJob) => {
@@ -434,6 +442,27 @@ export default function Robots() {
                     </label>
                     <button type="button" className="btn danger sm" disabled={!!busy || running || reason.trim().length < REASON_MIN} onClick={() => recordWritten(j)}>
                       <CheckCircle size={16} aria-hidden />{t(busy === key ? 'mgr.working' : 'mgr.job.overrideDo')}
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
+
+            {j && STARTED.includes(j.status) && (() => {
+              const key = `f${j.id}`
+              const reason = notes[key] ?? ''
+              return (
+                <>
+                  <h3 className="mgr-h3">{t('mgr.job.fail')}</h3>
+                  <p className="sub">{t('mgr.job.failHint')}</p>
+                  {!!j.openRun && !j.openRun.orphan && <p className="mgr-callout">{t('mgr.job.failRunning')}</p>}
+                  <div className="mgr-actions">
+                    <label className="vh-label">
+                      {t('mgr.job.reason')}
+                      <input className="vh-input" value={reason} maxLength={500} placeholder={t('mgr.job.failReasonPh')} onChange={(e) => setNotes({ ...notes, [key]: e.target.value })} />
+                    </label>
+                    <button type="button" className="btn danger sm" disabled={!!busy || reason.trim().length < REASON_MIN} onClick={() => failJob(j)}>
+                      <WarningOctagon size={16} aria-hidden />{t(busy === key ? 'mgr.working' : 'mgr.job.failDo')}
                     </button>
                   </div>
                 </>
