@@ -54,8 +54,12 @@ export const allAccounts = async (f: { role?: string; status?: string; q?: strin
 export const createAccount = async (b: { email: string; password: string; full_name: string; phone?: string; role: string }) =>
   toAccount(await api<Account>('/admin/accounts', { method: 'POST', body: b }))
 
-/** Lock, unlock or change the role. The reason (up to 500 characters) goes into the audit log. */
-export const updateAccount = async (id: number, b: { status?: AccountStatus; role?: string; reason?: string }) =>
+/**
+ * Lock, unlock or change the role. The reason (up to 500 characters) goes into the audit log. An account that still holds
+ * orders, production jobs or robots is refused with `409 ACCOUNT_HAS_OPEN_WORK` (`details: {orders?, jobs?, robots?}`, ids);
+ * `force: true` with a reason applies the change anyway and records what was left behind.
+ */
+export const updateAccount = async (id: number, b: { status?: AccountStatus; role?: string; reason?: string; force?: boolean }) =>
   toAccount(await api<Account>(`/admin/accounts/${id}`, { method: 'PATCH', body: b }))
 
 export interface AuditEntry {

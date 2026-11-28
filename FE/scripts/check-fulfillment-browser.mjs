@@ -15,7 +15,8 @@ assert.ok(existsSync(join(root, 'dist/index.html')), 'Run npm.cmd run build firs
 const scratch = await mkdtemp(join(tmpdir(), 'vhrs-fulfillment-browser-'))
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const now = '2026-10-25T00:00:00Z'
-let actorRole = 'STAFF', mutations = 0, nextId = 100, shipmentError = false
+let actorRole = 'STAFF', mutations = 0, nextId = 100, shipmentError = false, closeBlocked = false
+const closed = []          // what the Manager's close sent
 const order = { id: 42, code: 'VH-TEST-SHIPPING', customer_name: 'Test Customer', assigned_staff_id: 17, order_type: 'OT3_TEMPLATE', order_status: 'READY_TO_DELIVER', production_status: 'FINISHED', total_amount: '7400', deposit_amount: '3700', deposit_pct: '50', delivery_method: 'DELIVERY', delivery_address: { receiver: 'Test Recipient', phone: '0901234567', street: 'Test street', ward_name: 'Test ward', district_name: 'Test district', province_name: 'Test city' }, shipping_carrier: 'GHTK', shipping_service_code: 'STANDARD', quantity: 1, inputs: [], created_at: now, submitted_at: now, pickup_slot_start: now, pickup_slot_end: now, completed_at: null, received_confirmed_at: null }
 const payments = ['DEPOSIT','FINAL','SHIPPING'].map((type, i) => ({ id: i + 1, type, amount: i === 2 ? '30000' : '3700', status: 'SUCCESS', gateway: 'VNPAY', mode: 'MOCK', created_at: now }))
 const shipments = []
@@ -63,7 +64,7 @@ try {
     try {
       if (request.method !== 'GET') {
         mutations++
-        assert.ok(actorRole === 'STAFF' || path === '/orders/42/receipt', 'Read-only role attempted a mutation')
+        assert.ok(actorRole === 'STAFF' || path === '/orders/42/receipt' || (actorRole === 'MANAGER' && path === '/manager/orders/42/close'), 'Read-only role attempted a mutation')
       }
       if (path === '/me') data = { id: 17, email: 'test@example.test', full_name: 'Browser Test', role: actorRole, status: 'ACTIVE', addresses: [], created_at: now }
       else if (path === '/workshop/orders/42' || path === '/orders/42') data = order
@@ -71,6 +72,23 @@ try {
       else if (path.endsWith('/payments')) data = payments
       else if (path.endsWith('/quotations') || path.endsWith('/jobs') || path.startsWith('/catalog/')) data = []
       else if (path === '/manager/staff') data = [{ id:17, full_name:'Staff One', open_orders:1 }, { id:18, full_name:'Staff Two', open_orders:0 }]
+      // D08: closing a stuck order (Manager) and turning a failed delivery into a collection (Staff); D04: cancelling an ACCEPTED order
+      else if (path === '/manager/orders/42/close-preview') data = closeBlocked
+        ? { order_id: 42, order_status: order.order_status, allowed: false, error_code: 'SHIPMENT_IN_TRANSIT', message: 'Hàng đang trên đường giao.', refundable: '37400' }
+        : { order_id: 42, order_status: order.order_status, allowed: true, error_code: null, message: null, refundable: '37400' }
+      else if (path === '/manager/orders/42/close') {
+        assert.ok(body.reason.trim().length >= 10 && Number.isInteger(body.refund_amount) && body.refund_amount >= 0 && body.refund_amount <= 37400)
+        closed.push(body); order.order_status = 'CANCELLED'
+        data = { order_id: 42, order_status: 'CANCELLED', refundable_before: '37400', refund_id: body.refund_amount ? 9 : null, refund_amount: String(body.refund_amount) }
+      }
+      else if (path === '/workshop/orders/42/shipment/to-pickup') {
+        assert.equal(order.order_status, 'DELIVERING'); assert.ok(['FAILED', 'RETURNED'].includes(shipments[0].status)); assert.ok(body.reason.trim().length >= 5)
+        order.order_status = 'READY_TO_DELIVER'; order.delivery_method = 'PICKUP'; data = order
+      }
+      else if (path === '/workshop/orders/42/cancel') {
+        assert.equal(order.order_status, 'ACCEPTED'); assert.ok(body.reason.trim().length >= 5)
+        order.order_status = 'CANCELLED'; data = order
+      }
       else if (path.startsWith('/manager/')) data = { items: [], total: 0 }
       else if (path === '/workshop/orders/42/shipment' && request.method === 'POST') {
         assert.equal(order.order_status === 'READY_TO_DELIVER' || order.order_status === 'DELIVERING', true)
@@ -178,6 +196,18 @@ try {
   await check('I understand this test event'); await click('Send simulated carrier event')
   await wait(`document.querySelector('.sp-shipment .chip').textContent==='Returned to workshop'`,'returned shipment')
   assert.equal(order.order_status,'DELIVERING')
+  // D08: the parcel came back. The Staff in charge may turn the order into a collection at the workshop, with a reason.
+  const inFieldset = (legend, value) => evaluate(`(()=>{const f=[...document.querySelectorAll('fieldset')].find(x=>x.querySelector('legend')?.textContent.includes(${JSON.stringify(legend)}));const e=f.querySelector('textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+  assert.ok(await evaluate(`(${button('Switch to collection')}).disabled`), 'Switching to collection needs a reason')
+  await inFieldset('Turn this delivery into a collection', 'no')
+  assert.ok(await evaluate(`(${button('Switch to collection')}).disabled`), 'The reason needs at least 5 characters')
+  await inFieldset('Turn this delivery into a collection', 'Customer will collect on Friday')
+  await click('Switch to collection')
+  await wait(`document.body.textContent.includes('The order now waits for collection at the workshop.')`, 'failed delivery became a collection')
+  assert.equal(order.order_status, 'READY_TO_DELIVER'); assert.equal(order.delivery_method, 'PICKUP')
+  assert.equal(await evaluate(`!!(${button('Switch to collection')})`), false, 'Nothing to switch once the order waits for collection')
+  order.order_status = 'DELIVERING'; order.delivery_method = 'DELIVERY'                     // back to the returned parcel for the retry below
+  await goto(); await wait(`!!(${button('Create replacement waybill')})`, 'returned parcel again')
   await check('I checked the recipient, address and product'); await click('Create replacement waybill')
   await wait(`document.querySelectorAll('.sp-shipment').length===3`,'third waybill')
   await field('.sp-demo select','DELIVERED'); await check('I understand this test event'); await click('Send simulated carrier event')
@@ -203,6 +233,39 @@ try {
   assert.equal(await evaluate(`!!(${button('Create waybill')})`),false)
   assert.equal(await evaluate(`!!document.querySelector('.sp-demo')`),false)
   assert.equal(mutations,before)
+  // D08: the one thing a Manager may do here is close an order that will not complete, with a reason and a refund amount.
+  const exits = 'section[aria-label="Close an order that will not complete"]'
+  closeBlocked = true
+  await click('Close this order')
+  await wait(`document.body.textContent.includes('The parcel is still on its way')`, 'the preview says why it cannot be closed')
+  assert.equal(await evaluate(`!!(${button('Close the order')})`), false, 'No close button while the backend refuses')
+  closeBlocked = false
+  await goto(); await click('Close this order')
+  await wait(`document.body.textContent.includes('Paid by the customer, not refunded yet')`, 'close preview')
+  assert.ok(await evaluate(`(${button('Close the order')}).disabled`), 'Closing needs a reason')
+  await field(`${exits} textarea`, 'Customer never collected after many reminders')
+  await field(`${exits} input`, '99999')
+  assert.ok(await evaluate(`(${button('Close the order')}).disabled`), 'The refund cannot exceed what is refundable')
+  await field(`${exits} input`, '10000')
+  await evaluate(`window.confirm=()=>false`); await click('Close the order'); await sleep(200)
+  assert.equal(closed.length, 0, 'Declining the confirmation sends nothing')
+  await evaluate(`window.confirm=()=>true`); await click('Close the order')
+  await wait(`document.body.textContent.includes('Order closed. A refund request of')`, 'order closed by the Manager')
+  assert.deepEqual(closed, [{ reason: 'Customer never collected after many reminders', refund_amount: 10000 }])
+  assert.equal(order.order_status, 'CANCELLED')
+  assert.equal(mutations, before + 1)
+  // D04: the Staff in charge cancel an ACCEPTED order (nothing paid yet) with a reason; a Manager is not offered it.
+  order.order_status = 'ACCEPTED'
+  await goto(); await wait(`document.body.textContent.includes('VH-TEST-SHIPPING')`, 'accepted order for the Manager')
+  assert.equal(await evaluate(`!!(${button('Cancel this order')})`), false, 'A Manager does not cancel an accepted order')
+  await role('STAFF'); await goto(); await click('Cancel this order')
+  const cancelBox = 'section[aria-label="Cancel an accepted order"]'
+  assert.ok(await evaluate(`(${button('Cancel the order')}).disabled`), 'Cancelling needs a reason')
+  await field(`${cancelBox} textarea`, 'Paper out of stock')
+  await click('Cancel the order')
+  await wait(`document.body.textContent.includes('Order cancelled. The customer has been notified.')`, 'accepted order cancelled')
+  assert.equal(order.order_status, 'CANCELLED')
+  order.order_status = 'READY_TO_DELIVER'; await role('MANAGER')
   await role('STAFF'); order.delivery_method='PICKUP'; await goto()
   await wait(`!!(${button('Confirm workshop handover')})`,'pickup panel')
   assert.ok(await evaluate(`(${button('Confirm workshop handover')}).disabled`))
@@ -236,6 +299,6 @@ try {
   order.delivery_method='DELIVERY'; shipments.push({id:150,order_id:42,carrier:'GHTK',service_code:'STANDARD',waybill_code:'MOCK-CUSTOMER-150',status:'DELIVERED',fee:'30000',mode:'MOCK',eta:now,created_at:now,picked_up_at:now,delivered_at:now,tracking_url:null})
   await goto('/orders/42/review'); await wait(`document.body.textContent.includes('MOCK-CUSTOMER-150')`,'customer tracking')
   assert.deepEqual(errors,[])
-  console.log('PASS: create, label, cancel with reason, replacement, mock pickup, failed/returned delivery and retry, delivery completion, real shipment controls, unpaid/error guards, Manager read-only, pickup phone mismatch and completion, customer tracking/receipt, vi/ja and mobile. All API calls used local fixtures; backend and real orders were not modified.')
+  console.log('PASS: create, label, cancel with reason, replacement, mock pickup, failed/returned delivery, switch to collection and retry, Manager closes a stuck order, Staff cancel an accepted order, delivery completion, real shipment controls, unpaid/error guards, Manager read-only, pickup phone mismatch and completion, customer tracking/receipt, vi/ja and mobile. All API calls used local fixtures; backend and real orders were not modified.')
   console.log('Screenshots: '+scratch)
 } finally { ws?.close(); browser?.kill(); server.closeAllConnections(); server.close() }
