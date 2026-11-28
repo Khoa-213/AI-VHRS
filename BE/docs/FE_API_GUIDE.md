@@ -1438,7 +1438,7 @@ Mọi thay đổi dưới đây đã có test trên Postgres cục bộ; **chưa
 - `GET` và `POST /orders/{id}/delivery-quote` thêm `pickup_hours: {days, start, end, utc_offset_min} | null`. `days` là thứ theo ISO (thứ Hai = 1). `null` khi cấu hình giờ làm việc hỏng.
 
 **Manager**
-- `POST /manager/jobs/{id}/fail {reason}` (lý do ít nhất 10 ký tự) → `201` sự cố. Chỉ với job đã bắt đầu (`PREPARING`, `WRITING`, `PAUSED`); job còn `SCHEDULED` trả `409` (dùng đổi lịch). Sau đó đơn về hàng chờ xếp lịch. **Web chưa có nút cho endpoint này.**
+- `POST /manager/jobs/{id}/fail {reason}` (lý do ít nhất 10 ký tự) → `201` sự cố. Chỉ với job đã bắt đầu (`PREPARING`, `WRITING`, `PAUSED`); job còn `SCHEDULED` trả `409` (dùng đổi lịch). Sau đó đơn về hàng chờ xếp lịch. Web `FE/`: FE đã làm (2026-11-28) ở chi tiết job trên `/staff/robots`, mục "Kết thúc job để giao cho người khác": hiện với job `PREPARING` / `WRITING` / `PAUSED`, đòi lý do và hộp xác nhận; khi máy trạm còn báo robot đang chạy thì có thêm dòng nhắc kiểm tra tại chỗ.
 - Thông báo mới: `ORDER_ASSIGNED` (Staff được giao đơn), `SNAPSHOT_FAILED` với `msg_code = SNAP_FAIL` (đã cọc nhưng chưa khoá được gói sản xuất, gửi Manager). Cả hai mở trang đơn.
 - `GET /manager/stock`: `kept_for_jobs` tính số bản nhân số trang.
 
