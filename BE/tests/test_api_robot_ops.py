@@ -10,6 +10,7 @@ import uuid
 import pytest
 
 from app.integrations.mailer import ConsoleMailer
+from tests.conftest import agent_h
 from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
 from tests.test_api_technician import _err, _job, _post, _ready, _running, CAL, CAL_MOTION, T
@@ -24,7 +25,7 @@ def rid() -> str:
 
 def open_run(client, tech, jid, **kw):
     body = {"run_id": rid(), "mode": "SIM", "dry_run": False, "total_strokes": 10, **kw}
-    return client.post(f"{T}/jobs/{jid}/runs", headers=tech[0], json=body), body["run_id"]
+    return client.post(f"{T}/jobs/{jid}/runs", headers=agent_h(jid), json=body), body["run_id"]
 
 
 def raise_alert(client, tech, robot_id, code, **kw):
@@ -64,12 +65,12 @@ def test_run_lifecycle_and_the_rules_around_it(client, cust, staff, mgr, wcat, r
     assert r.status_code == 201 and r.json()["dry_run"] is True and r.json()["result"] is None
     r2, _ = open_run(client, tech, jid, dry_run=True)
     assert r2.status_code == 409 and _err(r2) == "ROBOT_BUSY"                      # one controller per robot (DB unique index)
-    assert client.patch(f"{T}/runs/{dry_key}", headers=tech[0], json={"result": "DONE"}).status_code == 422
-    ok = client.patch(f"{T}/runs/{dry_key}", headers=tech[0], json={"result": "DRY_RUN_DONE", "completed_strokes": 10, "total_strokes": 10})
+    assert client.patch(f"{T}/runs/{dry_key}", headers=agent_h(run=dry_key), json={"result": "DONE"}).status_code == 422
+    ok = client.patch(f"{T}/runs/{dry_key}", headers=agent_h(run=dry_key), json={"result": "DRY_RUN_DONE", "completed_strokes": 10, "total_strokes": 10})
     assert ok.status_code == 200 and ok.json()["ended_at"]
-    again = client.patch(f"{T}/runs/{dry_key}", headers=tech[0], json={"result": "DRY_RUN_DONE"})
+    again = client.patch(f"{T}/runs/{dry_key}", headers=agent_h(run=dry_key), json={"result": "DRY_RUN_DONE"})
     assert again.status_code == 200                                                # a retried close is idempotent
-    clash = client.patch(f"{T}/runs/{dry_key}", headers=tech[0], json={"result": "FAULT"})
+    clash = client.patch(f"{T}/runs/{dry_key}", headers=agent_h(run=dry_key), json={"result": "FAULT"})
     assert clash.status_code == 409 and _err(clash) == "RUN_ALREADY_CLOSED"
 
     _post(client, tech, jid, "start", status=200)
@@ -77,12 +78,12 @@ def test_run_lifecycle_and_the_rules_around_it(client, cust, staff, mgr, wcat, r
     assert real.status_code == 422 and _err(real) == "AUTHORIZATION_REQUIRED"      # REAL needs the operator's authorization
     real, real_key = open_run(client, tech, jid, mode="REAL", authorized=True, plan_digest="a" * 64)
     assert real.status_code == 201 and real.json()["authorized_by"] == tech[1] and real.json()["authorized_at"]
-    assert client.patch(f"{T}/runs/{real_key}", headers=tech[0],
+    assert client.patch(f"{T}/runs/{real_key}", headers=agent_h(run=real_key),
                         json={"result": "DONE", "completed_strokes": 11, "total_strokes": 10}).status_code == 422
-    done = client.patch(f"{T}/runs/{real_key}", headers=tech[0],
+    done = client.patch(f"{T}/runs/{real_key}", headers=agent_h(run=real_key),
                         json={"result": "DONE", "completed_strokes": 10, "total_strokes": 10, "summary": {"in_band_pct": 97.5}})
     assert done.json()["summary"]["in_band_pct"] == 97.5
-    dup = client.post(f"{T}/jobs/{jid}/runs", headers=tech[0], json={"run_id": real_key, "mode": "SIM"})
+    dup = client.post(f"{T}/jobs/{jid}/runs", headers=agent_h(jid), json={"run_id": real_key, "mode": "SIM"})
     assert dup.status_code == 409 and _err(dup) == "RUN_EXISTS"
 
 
@@ -108,8 +109,12 @@ def test_another_technician_cannot_touch_runs_or_robots(client, cust, staff, mgr
     r, key = open_run(client, tech, jid)
     assert r.status_code == 201
     other = _user(client, "TECHNICAL_STAFF")
-    assert client.post(f"{T}/jobs/{jid}/runs", headers=other[0], json={"run_id": rid(), "mode": "SIM"}).status_code == 404
-    assert client.patch(f"{T}/runs/{key}", headers=other[0], json={"result": "STOPPED"}).status_code == 404
+    # L2: nobody's login reports a run, the job's own technician included; only the robot's agent does (tests/test_audit_crosscheck.py)
+    for who in (other[0], tech[0]):
+        r = client.post(f"{T}/jobs/{jid}/runs", headers=who, json={"run_id": rid(), "mode": "SIM"})
+        assert r.status_code == 403 and _err(r) == "RUN_REPORT_AGENT_ONLY"
+        r = client.patch(f"{T}/runs/{key}", headers=who, json={"result": "STOPPED"})
+        assert r.status_code == 403 and _err(r) == "RUN_REPORT_AGENT_ONLY"
     assert client.put(f"{T}/robots/{robot}/heartbeat", headers=other[0], json={"mode": "SIM"}).status_code == 404
     assert raise_alert(client, other, robot, "OVER_FORCE").status_code == 404
     assert client.get(f"{T}/robot-status", headers=other[0]).json() == []
@@ -275,10 +280,10 @@ def test_compliance_passes_after_dry_run_authorization_and_a_real_run(client, cu
     oid, jid = _ready(client, cust, staff, mgr, wcat, robot, tech, cal=CAL_MOTION)   # A03: REAL needs the server's own validation
     d, dk = open_run(client, tech, jid, dry_run=True)
     assert d.status_code == 201
-    client.patch(f"{T}/runs/{dk}", headers=tech[0], json={"result": "DRY_RUN_DONE"})
+    client.patch(f"{T}/runs/{dk}", headers=agent_h(run=dk), json={"result": "DRY_RUN_DONE"})
     _post(client, tech, jid, "start", status=200)
     r, k = open_run(client, tech, jid, mode="REAL", authorized=True)
-    client.patch(f"{T}/runs/{k}", headers=tech[0], json={"result": "DONE", "completed_strokes": 10, "total_strokes": 10})
+    client.patch(f"{T}/runs/{k}", headers=agent_h(run=k), json={"result": "DONE", "completed_strokes": 10, "total_strokes": 10})
     _post(client, tech, jid, "finish", status=200)
     c = client.get(f"{M}/jobs/{jid}/compliance", headers=mgr).json()
     st = {s["key"]: s for s in c["steps"]}
@@ -289,7 +294,7 @@ def test_compliance_passes_after_dry_run_authorization_and_a_real_run(client, cu
 def test_health_counts_runs_stops_and_alerts(client, cust, staff, mgr, wcat, robot, tech):
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
     r, k = open_run(client, tech, jid)
-    client.patch(f"{T}/runs/{k}", headers=tech[0], json={"result": "STOPPED", "completed_strokes": 4, "summary": {"in_band_pct": 90}})
+    client.patch(f"{T}/runs/{k}", headers=agent_h(run=k), json={"result": "STOPPED", "completed_strokes": 4, "summary": {"in_band_pct": 90}})
     _post(client, tech, jid, "events", {"event_type": "OVER_FORCE"}, status=201)
     raise_alert(client, tech, robot, "OVER_FORCE", job_id=jid)
     raise_alert(client, tech, robot, "STOP_NOT_EFFECTIVE", job_id=jid)

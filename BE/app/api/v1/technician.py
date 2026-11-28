@@ -10,7 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import (FinishIn, IssueIn, JobStockOut, CalibrationIn, CalibrationOut, IncidentIn, IncidentOut, JobEventIn, JobEventOut,
+from app.api.ops_schemas import (FinishIn, IssueIn, JobStockOut, StockSettleIn, CalibrationIn, CalibrationOut, IncidentIn, IncidentOut, JobEventIn, JobEventOut,
                                  JobOut, JobPackageOut, JobReferenceOut, SimulationIn, TechJobDetail)
 from app.api.robot_schemas import ChooseRobotIn
 from app.api.photo_schemas import PhotoOut, PhotoQcIn, PhotoRegisterIn, PhotoUploadIn, PhotoUploadOut, QcFailIn
@@ -161,6 +161,17 @@ def job_stock(job_id: int, svc: Svc) -> JobStockOut:
                         422: {"model": ErrorOut, "description": "NOTHING_TO_ISSUE / NO_PAPER_ON_ORDER / NO_PEN_ON_ORDER"}})
 def job_issue(job_id: int, body: IssueIn, svc: Svc) -> JobStockOut:
     return JobStockOut(**svc.issue(job_id, paper=body.paper, new_pen=body.new_pen, seen_issued=body.seen_issued))
+
+
+@router.post("/jobs/{job_id}/stock/settle", response_model=JobStockOut,
+             summary="Quyết toán giấy của job đã hỏng hoặc đã huỷ: ghi số tờ hỏng, phần còn lại trả về kho (một lần)",
+             description=("Giấy đã xuất cho job chỉ được trả về ở bước Viết xong. Job hỏng (sự cố) hoặc bị huỷ giữa chừng vẫn giữ số "
+                          "giấy đó; endpoint này trả phần không hỏng về kho. Job bị huỷ khi còn SCHEDULED được trả tự động, không cần "
+                          "gọi. `can_settle` trong `GET .../stock` cho biết khi nào gọi được."),
+             responses={409: {"model": ErrorOut, "description": "STOCK_SETTLE_NOT_ALLOWED / STOCK_ALREADY_SETTLED / NOTHING_TO_SETTLE"},
+                        422: {"model": ErrorOut, "description": "WASTE_OUT_OF_RANGE"}})
+def job_stock_settle(job_id: int, body: StockSettleIn, svc: Svc) -> JobStockOut:
+    return JobStockOut(**svc.settle_stock(job_id, body.waste))
 
 
 @router.post("/jobs/{job_id}/incidents", response_model=IncidentOut, status_code=status.HTTP_201_CREATED,

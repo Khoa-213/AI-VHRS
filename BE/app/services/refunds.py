@@ -145,8 +145,16 @@ class CancellationService:
             raise AppError(422, "REFUND_ACCOUNT_REQUIRED",
                            "Tiền cọc đã chuyển khoản qua payOS: hãy nhập tài khoản ngân hàng để xưởng hoàn tiền.")
 
+        unprepared = [j for j in jobs if j.status == JobStatus.SCHEDULED]
         for job in jobs:
             job.status = JobStatus.CANCELLED
+        if unprepared:
+            # K1: a job that was never prepared used nothing: the paper it took goes back at once. A job cancelled half-way
+            # keeps its sheets until somebody counts the spoiled ones (stock settle).
+            from app.services.stock import return_unprepared
+            self.session.flush()
+            for j in unprepared:
+                return_unprepared(self.session, j, actor_id=self.actor.id, reason=f"đơn bị huỷ: {reason}", ip=self.ip)
         if jobs:
             self.session.execute(update(RobotCommand).where(
                 RobotCommand.job_id.in_([j.id for j in jobs]), RobotCommand.status == "PENDING")

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (FinishOverrideIn, IncidentOut, JobEventOut, JobOut, ManagerJobDetail, ProductionQueueRow,
-                                 RescheduleIn, ResolveIncidentIn,
+                                 RescheduleIn, ResolveIncidentIn, StockSettleIn, StockSettleOut,
                                  RobotAssignIn, RobotOut, ScheduleConfigOut, ScheduleIn, SuggestionOut, TechnicianOut,
                                  UnscheduleIn)
 from app.api.schemas import ErrorOut, Page
@@ -107,8 +107,28 @@ def job_detail(job_id: int, svc: Svc, session: SessionDep) -> ManagerJobDetail:
     from app.services.technician import open_run_info, written_runs
     job = svc.get(job_id)
     order = session.get(Order, job.order_id)
+    from app.services.stock import ENDED_UNFINISHED, paper_held, stock_settled
+    held = sum(paper_held(session, job.id).values())
     return ManagerJobDetail(**_jobs_out(svc, [job])[0].model_dump(), quantity=order.quantity if order else 1,
-                            copies_written=len(written_runs(session, job.id)), open_run=open_run_info(session, job.id))
+                            copies_written=len(written_runs(session, job.id)), open_run=open_run_info(session, job.id),
+                            paper_held=held,
+                            can_settle_stock=job.status in ENDED_UNFINISHED and held > 0 and not stock_settled(session, job.id))
+
+
+@router.post("/jobs/{job_id}/stock/settle", response_model=StockSettleOut,
+             summary="Quản lý quyết toán giấy của job đã hỏng hoặc đã huỷ: ghi số tờ hỏng, phần còn lại trả về kho (một lần)",
+             responses={404: {"model": ErrorOut, "description": "JOB_NOT_FOUND"},
+                        409: {"model": ErrorOut, "description": "STOCK_SETTLE_NOT_ALLOWED / STOCK_ALREADY_SETTLED / NOTHING_TO_SETTLE"},
+                        422: {"model": ErrorOut, "description": "WASTE_OUT_OF_RANGE"}})
+def settle_job_stock(job_id: int, body: StockSettleIn, session: SessionDep, manager: ManagerDep, request: Request) -> StockSettleOut:
+    from sqlalchemy import select
+
+    from app.core.errors import AppError
+    from app.services.stock import settle_job
+    job = session.scalar(select(ProductionJob).where(ProductionJob.id == job_id).with_for_update())
+    if job is None:
+        raise AppError(404, "JOB_NOT_FOUND", "Không tìm thấy job.")
+    return StockSettleOut(**settle_job(session, job, actor_id=manager.id, waste=body.waste, ip=client_ip(request)))
 
 
 @router.post("/jobs/{job_id}/finish-override", response_model=JobOut,

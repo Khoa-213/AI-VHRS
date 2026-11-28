@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.models.account import Account
+from app.models.account import Account, AuditLog
 from app.models.catalog import InkColor, PaperType, PenType
 from app.models.ops import JobStatus, ProductionJob
 from app.models.order import Order
@@ -83,6 +83,66 @@ class Ledger:
     def job_moves(self, job_id: int) -> list[StockMovement]:
         return list(self.s.scalars(select(StockMovement).where(StockMovement.job_id == job_id)
                                    .order_by(StockMovement.id)))
+
+
+# ---------------------------------------------------------------------------------------------- K1 (audit 2026-11-28)
+# Paper a job took came back only at "Writing done". A job that failed (incident), or was cancelled (unscheduled, rescheduled,
+# order cancelled), kept its sheets for ever: no stock action is allowed on a job that is no longer open, so the shelf level
+# stayed too low after every incident or re-plan and only a manual count could correct it.
+SETTLE_ACTION = "STOCK_SETTLE"                              # audit row = this job's paper was settled once (the marker)
+ENDED_UNFINISHED = (JobStatus.FAILED, JobStatus.CANCELLED)
+
+
+def paper_held(session: Session, job_id: int) -> dict[int, int]:
+    """Sheets the job still holds, per paper: issued minus returned, where that is above zero."""
+    return {item_id: n for item_id, n in Ledger(session, None).job_net(job_id)["PAPER"].items() if n > 0}
+
+
+def stock_settled(session: Session, job_id: int) -> bool:
+    return session.scalar(select(AuditLog.id).where(AuditLog.action == SETTLE_ACTION, AuditLog.entity_type == "production_job",
+                                                    AuditLog.entity_id == job_id).limit(1)) is not None
+
+
+def _give_back(session: Session, job_id: int, held: dict[int, int], back: int, *, actor_id: int | None, reason: str) -> None:
+    for item_id in sorted(held):                            # one lock order everywhere
+        n = min(held[item_id], back)
+        if n > 0:
+            Ledger(session, actor_id).move("RETURN", "PAPER", item_id, n, job_id=job_id, reason=reason[:500])
+            back -= n
+
+
+def return_unprepared(session: Session, job: ProductionJob, *, actor_id: int | None, reason: str, ip: str | None = None) -> int:
+    """A job that ends while still SCHEDULED was never prepared: it used nothing, so everything it took goes back at once.
+    The caller has just cancelled the job (unschedule, reschedule, order cancelled). Returns the sheets given back."""
+    held = paper_held(session, job.id)
+    total = sum(held.values())
+    if total == 0 or stock_settled(session, job.id):
+        return 0
+    _give_back(session, job.id, held, total, actor_id=actor_id, reason=f"Trả giấy: job huỷ trước khi chuẩn bị ({reason})")
+    audit.record(session, actor_id=actor_id, action=SETTLE_ACTION, entity_type="production_job", entity_id=job.id,
+                 new={"held": total, "waste": 0, "returned": total, "automatic": True}, reason=reason[:500], ip=ip)
+    return total
+
+
+def settle_job(session: Session, job: ProductionJob, *, actor_id: int, waste: int, ip: str | None = None) -> dict[str, int]:
+    """A job that was started and then ended without "written" (an incident, or cancelled half-way). Somebody at the robot
+    counts the sheets that were spoiled; the rest goes back to the shelf. Once per job. The caller holds the job's row lock."""
+    if job.status not in ENDED_UNFINISHED:
+        raise AppError(409, "STOCK_SETTLE_NOT_ALLOWED", "Chỉ quyết toán giấy cho job đã hỏng hoặc đã huỷ. Job đang làm thì giấy thừa "
+                       "được trả ở bước Viết xong.", {"job_status": job.status.value})
+    if stock_settled(session, job.id):
+        raise AppError(409, "STOCK_ALREADY_SETTLED", "Giấy của job này đã được quyết toán rồi.")
+    held = paper_held(session, job.id)
+    total = sum(held.values())
+    if total == 0:
+        raise AppError(409, "NOTHING_TO_SETTLE", "Job này không còn giữ tờ giấy nào.")
+    if waste < 0 or waste > total:
+        raise AppError(422, "WASTE_OUT_OF_RANGE", f"Số tờ hỏng phải từ 0 tới {total} (số tờ job đang giữ).", {"held": total})
+    back = total - waste
+    _give_back(session, job.id, held, back, actor_id=actor_id, reason=f"Quyết toán giấy job {job.status.value} (hỏng {waste})")
+    audit.record(session, actor_id=actor_id, action=SETTLE_ACTION, entity_type="production_job", entity_id=job.id,
+                 new={"held": total, "waste": waste, "returned": back, "automatic": False}, ip=ip)
+    return {"job_id": job.id, "held": total, "waste": waste, "returned": back}
 
 
 def item_name(session: Session, item_kind: str, item_id: int) -> str:

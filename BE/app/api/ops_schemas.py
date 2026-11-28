@@ -753,6 +753,9 @@ class ManagerJobDetail(JobOut):
     copies_written: int = Field(default=0, description="Robot runs of this job that ended DONE (one per copy).")
     open_run: OpenRunInfo | None = Field(default=None, description="The run still open on the server; `orphan` = nobody is "
                                          "executing it, so `POST /manager/runs/{run_id}/close-orphan` may close it.")
+    paper_held: int = Field(default=0, description="Sheets the job still holds (issued minus returned).")
+    can_settle_stock: bool = Field(default=False, description="The job failed or was cancelled, still holds paper and was not "
+                                                              "settled: `POST /manager/jobs/{id}/stock/settle {waste}`.")
 
 
 class TechJobDetail(JobOut):
@@ -908,6 +911,22 @@ class JobStockOut(BaseModel):
     can_issue: bool = Field(description="The job is in a state where materials may be taken")
     lines: list[JobStockLine]
     movements: list[StockMovementOut]
+    paper_held: int = Field(default=0, description="Sheets the job still holds (issued minus returned)")
+    settled: bool = Field(default=False, description="The paper of this ended job was settled (automatically or by a person)")
+    can_settle: bool = Field(default=False, description="The job failed or was cancelled and still holds paper: "
+                                                        "`POST .../stock/settle {waste}` returns what was not spoiled")
+
+
+class StockSettleIn(BaseModel):
+    waste: int = Field(default=0, ge=0, le=100_000, description="Sheets spoiled (not returned). The rest of what the job holds "
+                                                                "goes back to the shelf.")
+
+
+class StockSettleOut(BaseModel):
+    job_id: int
+    held: int = Field(description="Sheets the job held before settling")
+    waste: int
+    returned: int
 
 
 class IssueIn(BaseModel):

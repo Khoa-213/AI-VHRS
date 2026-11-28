@@ -69,6 +69,13 @@ def require_real_write_ready(job: ProductionJob) -> None:
                        {"server_validation": status})
 
 
+def _same_robot(agent_robot_id: int | None, robot_id: int | None) -> None:
+    """A run is reported by the agent of the robot it ran on (L2). None = an internal caller, not an agent."""
+    if agent_robot_id is not None and agent_robot_id != robot_id:
+        raise AppError(403, "RUN_REPORT_WRONG_ROBOT", "Khoá agent này thuộc robot khác với robot của lần chạy.",
+                       {"agent_robot_id": agent_robot_id, "robot_id": robot_id})
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -132,8 +139,9 @@ class RobotOpsService:
     # ------------------------------------------------------------------ runs
     def open_run(self, job_id: int, *, run_id: str, mode: str, dry_run: bool, authorized: bool, plan_digest: str | None,
                  total_strokes: int, agent_version: str | None, robot_info: dict[str, Any] | None,
-                 refused_reason: str | None) -> RobotRun:
+                 refused_reason: str | None, agent_robot_id: int | None = None) -> RobotRun:
         job = self._own_job(job_id, lock=True)
+        _same_robot(agent_robot_id, job.robot_id)
         robot = self._robot(job.robot_id, write=True, lock=True)
         if self.session.scalar(select(RobotRun.id).where(RobotRun.run_id == run_id)) is not None:
             raise AppError(409, "RUN_EXISTS", "run_id đã tồn tại.")
@@ -175,10 +183,11 @@ class RobotOpsService:
         return run
 
     def close_run(self, run_id: str, *, result: str, completed_strokes: int, total_strokes: int | None,
-                  summary: dict[str, Any] | None) -> RobotRun:
+                  summary: dict[str, Any] | None, agent_robot_id: int | None = None) -> RobotRun:
         run = self.session.scalar(select(RobotRun).where(RobotRun.run_id == run_id).with_for_update())
         if run is None:
             raise AppError(404, "RUN_NOT_FOUND", "Không tìm thấy lần chạy.")
+        _same_robot(agent_robot_id, run.robot_id)
         self._own_job(run.job_id)
         late = False
         if run.ended_at is not None:

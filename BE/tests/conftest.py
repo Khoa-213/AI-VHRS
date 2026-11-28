@@ -284,3 +284,35 @@ def auth(client: TestClient, role: str) -> dict[str, str]:
 def mailbox():
     ConsoleMailer.outbox.clear()
     return ConsoleMailer.outbox
+
+
+# ---------------------------------------------------------------------------------------------- the robot's agent
+_RUN_AGENT_KEYS: dict[tuple[int, int], str] = {}
+
+
+def agent_h(jid: int | None = None, *, run: str | None = None) -> dict[str, str]:
+    """The Authorization header of the Robot Agent of this job's (or this run's) robot.
+
+    L2 (audit review 2026-11-28): a robot run is opened and closed by the agent with its own key, never with a person's
+    login. The tests play the agent: a SESSION key of the job's technician for the job's robot, written straight into the
+    table (a key that was used before, so it does not look like another app taking the robot over)."""
+    import secrets
+
+    from app.services.robot_link import AGENT_KEY_PREFIX, hash_key
+    with get_engine().begin() as c:
+        if jid is None:
+            jid = c.execute(text("select job_id from robot_runs where run_id = :r"), {"r": run}).scalar()
+        row = c.execute(text("select robot_id, technician_id from production_jobs where id = :j"), {"j": jid}).first()
+        assert row is not None and row[0] is not None, f"job {jid} has no robot yet"
+        who = (int(row[0]), int(row[1]))
+        key = _RUN_AGENT_KEYS.get(who)
+        alive = key is not None and c.execute(text(
+            "select 1 from robot_agents where key_hash = :h and revoked_at is null and expires_at > now()"), {"h": hash_key(key)}).scalar()
+        if not alive:
+            key = AGENT_KEY_PREFIX + secrets.token_urlsafe(32)
+            c.execute(text("""insert into robot_agents (robot_id, key_hash, key_prefix, created_by, kind, account_id, instance_id,
+                                                        expires_at, last_seen_at)
+                              values (:r, :h, :p, :a, 'SESSION', :a, 'pytest-run-reporter', now() + interval '1 day', now())"""),
+                      {"r": who[0], "h": hash_key(key), "p": key[:12], "a": who[1]})
+            _RUN_AGENT_KEYS[who] = key
+    return {"Authorization": "Bearer " + key}

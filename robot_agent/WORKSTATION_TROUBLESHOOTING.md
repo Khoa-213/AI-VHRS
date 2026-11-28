@@ -79,6 +79,7 @@ Cột "Ai": **VH** = người vận hành tại máy, **QL** = Manager trên web
 |---|---|---|---|
 | `REAL_ONLY_AT_WORKSTATION` (từ máy chủ) | Lệnh REAL không đến từ đúng phiên đăng nhập của app đã khởi động agent (chủ dự án chốt 2026-11-28: robot thật chỉ được khởi động từ máy trạm). Hay gặp nhất **ngay sau khi máy chủ được cập nhật**: khoá cũ của agent chưa gắn phiên | Tại máy trạm: đăng xuất, đăng nhập lại app desktop và khởi động lại agent. Nếu đang ngồi ở máy khác: tới máy trạm | VH |
 | `REAL_ONLY_AT_WORKSTATION` (từ agent) | Bật REAL, chạy REAL, "Tiếp tục" hoặc "đã thay giấy" của lần chạy REAL được gọi từ máy khác, hoặc qua reverse proxy | Thao tác trên chính máy trạm | VH |
+| `BACKEND_UNREACHABLE` kèm `RUN_REPORT_AGENT_ONLY` | Agent không có khoá của agent, nên máy chủ không nhận bản ghi lần chạy (từ 2026-11-28 lần chạy chỉ do agent báo bằng khoá của nó) | Chạy agent từ app desktop (app cấp khoá phiên), hoặc đặt `VHRS_AGENT_KEY` do Manager cấp rồi khởi động lại agent | VH, QL |
 | `MODE_DISABLED` | `agent.json` không có `"real"` trong `modes` | Thêm `"real"` chỉ trên máy nối robot, khởi động lại agent | VH |
 | `REAL_NOT_ENABLED_ON_SITE` | Chưa bật REAL cho đúng job này, hoặc đã hết hạn | Bấm "Bật REAL" cho job trên màn máy trạm / app desktop | VH |
 | `AUTHORIZATION_REQUIRED` | Thiếu hoặc sai mã `AUTHORIZE-<job>-<kế hoạch>`. Mã đổi khi gói job hoặc hiệu chuẩn đổi | Nạp lại job để lấy mã mới | VH |
@@ -161,6 +162,10 @@ Kênh làm việc chính của kỹ thuật viên là app desktop Flutter chạy
 - Nếu vẫn treo: kỹ thuật viên dùng "Đóng lần chạy treo" trên trang máy trạm, hoặc QL dùng nút cùng tên trên web (chi tiết job). Cần lý do ít nhất 10 ký tự. Kết quả ghi là `UNKNOWN`.
 - Bị từ chối `RUN_STILL_ACTIVE`: máy trạm còn báo robot đang chạy. Dừng robot trước.
 - Lần chạy đóng `UNKNOWN` không được tính là một bản đã viết. Nếu sau đó agent gửi được kết quả thật, kết quả thật thay cho `UNKNOWN`.
+
+### 4.4. Job hỏng hoặc bị huỷ mà còn giữ giấy đã xuất
+
+Giấy đã xuất cho job chỉ tự trả về kho ở bước "Viết xong", hoặc khi job bị huỷ lúc chưa chuẩn bị. Job đã bắt đầu rồi báo sự cố (hoặc bị huỷ giữa chừng) vẫn giữ số giấy đó cho tới khi có người quyết toán: đếm số tờ đã hỏng, phần còn lại trả về kho. Kỹ thuật viên gọi `POST /api/technician/jobs/{id}/stock/settle {"waste": <số tờ hỏng>}` (qua proxy của agent); Manager có nút "Quyết toán giấy" trên web ở chi tiết job. Mỗi job chỉ quyết toán một lần.
 
 ### 4.3. Thao tác gắn bút ở góc giấy (hạ đầu bút xuống mặt giấy)
 

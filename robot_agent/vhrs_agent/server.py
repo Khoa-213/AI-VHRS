@@ -216,6 +216,10 @@ class AgentService:
         # reported as UNKNOWN the first time the link works.
         self.closes = CloseOutbox(cfg.run_dir / "pending_closes.json")
         self.closes.recover()
+        # L2: the backend takes a run's opening and closing from the agent's own key only, never from a person's login. The
+        # backend link sets this (a Manager key, or the session key of the app that started the agent). Without a link the
+        # agent cannot report runs: the simulator still runs, the REAL robot refuses to start (it needs the backend record).
+        self.run_key: Callable[[], str] | None = None
 
     def flush_closes(self, token: "str | Callable[[], str]") -> int:
         """Send the run results that are still waiting. Called by the backend link after every successful sync."""
@@ -667,8 +671,9 @@ class AgentService:
     # ---- jobs
     def load_job(self, job_id: int, token: str, who: dict[str, Any]) -> JobCtx:
         br = self.bridge(self.provider(token))
-        try:                                                # A06: an agent without a backend link has no other moment to do this
-            self.flush_closes(self.provider(token))
+        try:                                                # A06: one more moment to send a run result that is still waiting
+            if self.run_key:
+                self.flush_closes(self.run_key)
         except Exception:                                   # noqa: BLE001 - reporting an old run must not stop this job from loading
             pass
         try:
@@ -729,7 +734,7 @@ class AgentService:
         frame = build_frame(ctx.probes)
         gripper = self.make_gripper(mode, ctx, frame)
         br = self.bridge(self.provider(token))
-        ops = OpsReporter(br, robot_id=ctx.robot_id, outbox=self.closes)
+        ops = OpsReporter(self.bridge(self.run_key) if self.run_key else br, robot_id=ctx.robot_id, outbox=self.closes)   # L2
         runner = JobRunner(robot, gripper, run_dir=self.cfg.run_dir, limits=ctx.limits, bridge=br, ops=ops,
                            watchdogs=self.watchdogs(), wait_for_paper=self._wait_for_paper,
                            unsensed=bool(mode == "real" and gripper is None and self.cfg.unsensed_gripper), waive_dry_run=waive_dry_run,

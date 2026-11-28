@@ -44,6 +44,7 @@ class LinkClient:
         if (key is None) == (provider is None):
             raise ValueError("give exactly one of key or provider")
         self.svc, self._fixed_key, self.provider, self.clock = service, key, provider, clock
+        service.run_key = self._key                                 # L2: runs are reported with the agent's key, whoever started them
         cfg = service.cfg
         self.http = httpx.Client(base_url=cfg.backend_url.rstrip("/") + "/api/v1/agent", transport=transport, timeout=8.0)
         self.last_ok = clock()

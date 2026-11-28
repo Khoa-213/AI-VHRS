@@ -16,6 +16,7 @@ from app.services.motion.frame import build_frame
 from app.services.motion.plan import MotionConfig
 from app.services.motion.validate import Workspace, validate
 from app.services.stroke_ai.trajectory import Page, Stroke
+from tests.conftest import agent_h
 from tests.test_api_orders import API, _sql
 from tests.test_api_robot_link import A, fresh_hub, key_for, sync  # noqa: F401
 from tests.test_api_robot_ops import open_run, raise_alert
@@ -103,7 +104,7 @@ def test_written_is_refused_while_a_run_is_still_open(client, cust, staff, mgr, 
     no = _post(client, tech, jid, "finish")
     assert no.status_code == 409 and _err(no) == "RUN_OPEN" and no.json()["error"]["details"]["open_run_id"] == run
     assert _status(jid) == "WRITING"
-    assert client.patch(f"{T}/runs/{run}", headers=tech[0],
+    assert client.patch(f"{T}/runs/{run}", headers=agent_h(run=run),
                         json={"result": "DONE", "completed_strokes": 10, "total_strokes": 10}).status_code == 200
     _post(client, tech, jid, "finish", status=200)
     assert _status(jid) == "WRITTEN"

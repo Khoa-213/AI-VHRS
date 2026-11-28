@@ -8,11 +8,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 
-from app.api.deps import SessionDep, client_ip, require_roles
+from app.api.deps import AGENT_SESSION, Principal, PrincipalDep, SessionDep, client_ip, require_roles
 from app.api.robot_schemas import (AlertOut, AlertRaiseIn, AlertResolveIn, CatalogOut, CatalogPatch, ComplianceOut, HealthOut,
                                    HeartbeatIn, MyRobotsOut, RobotStatusOut, RunCloseIn, RunCloseOrphanIn, RunOpenIn,
                                    RunOut)
 from app.api.schemas import ErrorOut, Page
+from app.core.errors import AppError
 from app.models.account import Account, RoleCode
 from app.models.ops import RobotAlert
 from app.services.robot_ops import OFFLINE_AFTER_S, RobotOpsService, dispatch_mail
@@ -53,17 +54,29 @@ def _flush_mail(svc: RobotOpsService, bg: BackgroundTasks) -> None:
         svc.pending_mail.clear()
 
 
+def _reporting_agent(who: Principal) -> int:
+    """L2 (audit review 2026-11-28): a robot run is evidence that the robot wrote, so it is reported by the Robot Agent with
+    its own key, never with a person's login. Before, anyone signed in as the technician could open a run and close it DONE
+    by hand (the API docs page is enough), and "written" counted it. A run the agent could not close is closed by a person
+    as UNKNOWN through `close-orphan`, with a reason; a Manager records "written" through `finish-override`."""
+    if who.session_id != AGENT_SESSION or who.agent_robot_id is None:
+        raise AppError(403, "RUN_REPORT_AGENT_ONLY",
+                       "Lần chạy robot chỉ do Robot Agent ở máy trạm báo về bằng khoá của agent, không nhận từ tài khoản người dùng. "
+                       "Nếu máy trạm không báo được: đóng lần chạy treo kèm lý do, hoặc nhờ Quản lý ghi nhận viết xong thay.")
+    return who.agent_robot_id
+
+
 # ---------------------------------------------------------------------------------------------- Technical Staff
 @technician_router.post("/jobs/{job_id}/runs", response_model=RunOut, status_code=status.HTTP_201_CREATED, responses=CONFLICT,
                         summary="Robot Agent mở một lần chạy (cả chạy thử pen-up). Chạy robot THẬT cần `authorized:true`")
-def open_run(job_id: int, body: RunOpenIn, svc: TechSvc) -> RunOut:
-    return RunOut.model_validate(svc.open_run(job_id, **body.model_dump()))
+def open_run(job_id: int, body: RunOpenIn, svc: TechSvc, who: PrincipalDep) -> RunOut:
+    return RunOut.model_validate(svc.open_run(job_id, **body.model_dump(), agent_robot_id=_reporting_agent(who)))
 
 
 @technician_router.patch("/runs/{run_id}", response_model=RunOut, responses=CONFLICT,
                          summary="Robot Agent đóng lần chạy với kết quả (DONE/STOPPED/FAULT/UNKNOWN/DRY_RUN_DONE/REFUSED); gọi lại cùng kết quả là idempotent")
-def close_run(run_id: str, body: RunCloseIn, svc: TechSvc) -> RunOut:
-    return RunOut.model_validate(svc.close_run(run_id, **body.model_dump()))
+def close_run(run_id: str, body: RunCloseIn, svc: TechSvc, who: PrincipalDep) -> RunOut:
+    return RunOut.model_validate(svc.close_run(run_id, **body.model_dump(), agent_robot_id=_reporting_agent(who)))
 
 
 ORPHAN = {409: {"model": ErrorOut, "description": "RUN_ALREADY_CLOSED / RUN_STILL_ACTIVE"},

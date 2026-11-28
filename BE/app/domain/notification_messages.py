@@ -104,10 +104,10 @@ CATALOG: dict[str, _T] = {
     "DELIVERY_TO_PICKUP": ("ORDER_STATUS_CHANGED", None, True, False, lambda p: f"Đơn {p['code']}: nhận hàng tại xưởng",
                            lambda p: f"Hãng vận chuyển giao đơn {p['code']} không thành công. Xưởng đang giữ sản phẩm; bạn "
                                      f"vui lòng nhắn xưởng để hẹn giờ đến nhận."),
-    "FINAL_PAYMENT_OVERDUE": ("PAYMENT", None, False, False, lambda p: f"Đơn {p['code']} chờ thanh toán cuối quá lâu",
+    "FINAL_PAYMENT_OVERDUE": ("PAYMENT", "PAY_LATE", False, False, lambda p: f"Đơn {p['code']} chờ thanh toán cuối quá lâu",
                               lambda p: f"Đơn {p['code']} đã chờ khách thanh toán phần còn lại {p.get('days')} ngày. Cần "
                                         f"Quản lý quyết định: liên hệ khách hoặc đóng đơn."),
-    "PICKUP_OVERDUE": ("ORDER_STATUS_CHANGED", None, False, False, lambda p: f"Đơn {p['code']} chưa được nhận tại xưởng",
+    "PICKUP_OVERDUE": ("ORDER_STATUS_CHANGED", "PICK_LATE", False, False, lambda p: f"Đơn {p['code']} chưa được nhận tại xưởng",
                        lambda p: f"Đơn {p['code']} đã chờ khách đến nhận {p.get('days')} ngày. Cần Quản lý quyết định: liên hệ "
                                  f"khách hoặc đóng đơn."),
     "MESSAGE": ("NEW_MESSAGE", None, False, True, lambda p: f"Tin nhắn mới về đơn {p['code']}",
@@ -115,7 +115,8 @@ CATALOG: dict[str, _T] = {
     # ---- workshop staff (in-app only)
     "MESSAGE_UNCLAIMED": ("NEW_MESSAGE", None, False, True, lambda p: f"Tin nhắn ở đơn chưa có Staff: {p['code']}",
                           lambda p: f"Khách của đơn {p['code']} nhắn tin nhưng đơn chưa có Staff phụ trách."),
-    "REFUND_TO_PROCESS": ("PAYMENT", None, False, False, lambda p: f"Cần hoàn tiền đơn {p['code']}",
+    # msg_code REFUND_DUE: the one workshop notification that opens the refunds desk; every other one opens the order
+    "REFUND_TO_PROCESS": ("PAYMENT", "REFUND_DUE", False, False, lambda p: f"Cần hoàn tiền đơn {p['code']}",
                           lambda p: f"Đơn {p['code']} đã huỷ, cần hoàn {money(p.get('amount'))} cho khách."),
     "ORDER_READY_TO_DELIVER": ("ORDER_STATUS_CHANGED", None, False, False, lambda p: f"Đơn {p['code']} sẵn sàng giao",
                                lambda p: f"Khách đã thanh toán đủ, đơn {p['code']} sẵn sàng giao."),
