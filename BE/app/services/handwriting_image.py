@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from app.core.errors import AppError
+from app.services import image_guard
 
 MAX_SIDE_PX = 2000
 SHARPNESS_MIN = 50.0            # Laplacian variance below this -> blurry (MSG04)
@@ -88,7 +89,7 @@ def _estimate_chars(gray: np.ndarray) -> tuple[int, int, int]:
 
 
 def analyze_image(data: bytes, *, rotation_deg: int = 0, crop_box: dict[str, Any] | None = None) -> ImageAnalysis:
-    img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+    img = image_guard.decode(data, cv2.IMREAD_GRAYSCALE)
     if img is None:
         raise AppError(422, "INVALID_IMAGE", "Không đọc được ảnh. Vui lòng tải lại file jpg/png.")
     img = _apply_orientation(img, rotation_deg, crop_box)

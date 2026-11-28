@@ -385,12 +385,20 @@ def test_provide_info_only_from_need_info(client, cust):
     assert r.status_code == 409
 
 
-def test_suspended_order_type_is_refused(client, cust):
-    _sql("""insert into system_settings (key, value) values ('order_types_enabled', '["OT1_COPY_RESTORE","OT3_TEMPLATE"]'::jsonb)
-            on conflict (key) do update set value = excluded.value returning 1""")
-    try:
-        r = client.post(f"{API}/orders", headers=cust, json={"order_type": "OT2_LEARNED_STYLE"})
-        assert r.status_code == 409 and r.json()["error"]["code"] == "ORDER_TYPE_SUSPENDED"
-        assert client.post(f"{API}/orders", headers=cust, json={"order_type": "OT3_TEMPLATE"}).status_code == 201
-    finally:
-        _sql("delete from system_settings where key='order_types_enabled' returning 1")
+def test_suspended_order_type_is_refused(client, cust, monkeypatch):
+    # the list this process accepts (tests/conftest.py opens every type for the suite); the database row is left alone, AI-10
+    from app.domain import order_types
+    monkeypatch.setattr(order_types, "_process_override", ("OT1_COPY_RESTORE", "OT3_TEMPLATE"))
+    r = client.post(f"{API}/orders", headers=cust, json={"order_type": "OT2_LEARNED_STYLE"})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "ORDER_TYPE_SUSPENDED"
+    assert client.post(f"{API}/orders", headers=cust, json={"order_type": "OT3_TEMPLATE"}).status_code == 201
+
+
+def test_a_missing_order_types_setting_means_the_project_default_not_everything(monkeypatch):
+    """AI-10: no row used to mean "every type is open"; it now means OT-1 and OT-3 only."""
+    from app.domain import order_types
+    monkeypatch.setattr(order_types, "_process_override", None)
+    assert order_types.enabled(None) == ("OT1_COPY_RESTORE", "OT3_TEMPLATE")
+    assert "OT2_LEARNED_STYLE" not in order_types.enabled(None)
+    assert order_types.enabled(["OT3_TEMPLATE"]) == ("OT3_TEMPLATE",)                    # the Admin's row is what counts
+    assert order_types.enabled([]) == ()                                                 # an empty list closes everything

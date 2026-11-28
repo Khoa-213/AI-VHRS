@@ -19,7 +19,7 @@ from app.api.v1.payments import payment_out
 from app.domain.refund_rules import Initiator
 from app.models.account import Account, RoleCode
 from app.models.ops import Payment, PaymentStatus
-from app.models.order import Order
+from app.models.order import Order, OrderStatus
 from app.services.refunds import CancelPreview, CancellationService, RefundService, set_refund_account
 
 router = APIRouter(tags=["Refunds"])
@@ -68,9 +68,18 @@ def workshop_preview(order_id: int, session: SessionDep, actor: WorkshopDep) -> 
 
 
 @router.post("/workshop/orders/{order_id}/cancel", response_model=OrderOut, responses=_ERR,
-             summary="FR-19 Staff được giao đơn huỷ đơn đã cọc vì xưởng không làm được: hoàn 100% (yêu cầu hoàn PENDING)")
+             summary="FR-19 · D04 Staff được giao đơn huỷ đơn vì xưởng không làm được: đơn đã cọc (hoàn 100%) hoặc đơn mới tiếp nhận",
+             description=("Đơn `CONFIRMED` (đã cọc): huỷ và mở yêu cầu hoàn 100% (PENDING). Đơn `ACCEPTED` (đã tiếp nhận, chưa gửi "
+                          "báo giá; D04, audit 2026-11-27): huỷ, báo giá đang soạn / đang chờ Quản lý duyệt bị huỷ theo, khách nhận "
+                          "thông báo; lý do cần ít nhất 5 ký tự (`422 REASON_REQUIRED`). Trạng thái khác: `409 "
+                          "ORDER_CANCEL_UNSUPPORTED` (báo giá đã ở chỗ khách thì khách quyết định)."))
 def workshop_cancel(order_id: int, body: WorkshopCancelIn, session: SessionDep, staff: StaffDep,
                     request: Request) -> OrderOut:
+    seen = session.get(Order, order_id)
+    if seen is not None and seen.order_status == OrderStatus.ACCEPTED:
+        from app.services.staff_orders import StaffOrderService          # checks that the caller is the Staff in charge
+        order = StaffOrderService(session, staff, None, client_ip(request)).cancel_accepted(order_id, body.reason)
+        return OrderOut.model_validate(order)
     order, _ = CancellationService(session, staff, Initiator.WORKSHOP, client_ip(request)).cancel(order_id, body.reason)
     return OrderOut.model_validate(order)
 

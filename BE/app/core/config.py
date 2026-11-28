@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # connection pool per process; the sharded test runner lowers it (Supabase's session pooler caps clients)
     db_pool_size: int = 3
     db_max_overflow: int = 2
+    # AR-02 (audit 2026-11-27): how long a statement may wait for a row lock, in milliseconds (0 = wait for ever, as before).
+    # The pool is tiny; a request that waits indefinitely for a lock held by a slow one (an outbound payment call, a stuck
+    # client) takes a connection with it until nothing is left. 20 s is longer than any outbound call made under a lock
+    # (15 s), so only a lock that is really stuck is given up on; the caller gets 409 RESOURCE_BUSY and may retry.
+    db_lock_timeout_ms: int = 20000
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_ttl_min: int = 30
@@ -52,6 +57,11 @@ class Settings(BaseSettings):
     # sandbox = the gateways' TEST environments: real API calls, test money.
     # live    = production: REAL MONEY. Needs production credentials; switch only on the project owner's say.
     payment_mode: Literal["mock", "sandbox", "live"] = "mock"
+    # D01 (audit 2026-11-27): a payment that moves no real money (the MOCK gateway, a gateway's SANDBOX) confirms an order exactly
+    # like a real one: the customer presses "paid" (mock) or uses a published test card (sandbox) and the workshop writes and
+    # ships for nothing. Off by default, so a deployment that takes real orders refuses them; a demo / test environment sets
+    # ALLOW_TEST_PAYMENTS=true. payOS is never a test payment (real bank transfers), whatever this says.
+    allow_test_payments: bool = False
     # Where the gateways send the customer back after paying (a page of the web app). Display only: the order is
     # only ever updated by the gateway's IPN, never by this redirect.
     payment_return_url: str = "http://localhost:5173/payment/result"
@@ -160,6 +170,12 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str | None = None
     llm_timeout_seconds: float = 30.0
+    # AI-02 (audit 2026-11-27): a turn of the assistant keeps one database connection and the order's row lock while it waits
+    # for the model. With a pool of five, a handful of chats at once left nothing for payments or the workshop. At most this
+    # many turns run at the same time in this process (the others get 503 AI_BUSY and retry), and one turn stops asking the
+    # model for more once it has run this long.
+    ai_max_concurrent_turns: int = 2
+    ai_turn_deadline_seconds: float = 90.0
     llm_prices: str | None = None
     # V2 Phase E2b: who reads the customer's photo of an OT-1 letter (page transcript for the region text hints). Only
     # providers that can read images and have a key are used, in this order; the on / off switch and the daily page cap

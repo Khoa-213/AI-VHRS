@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0033 (alembic head), generated 2026-11-27 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0034 (alembic head), generated 2026-11-28 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0033);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0033;
+--      baseline schema and every migration up to 0034);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0034;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -23,8 +23,8 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 18.1
--- Dumped by pg_dump version 18.1
+-- Dumped from database version 18.7 (Homebrew)
+-- Dumped by pg_dump version 18.7 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -470,9 +470,9 @@ BEGIN
       WHEN 'AWAITING_DEPOSIT'       THEN NEW.order_status IN ('CONFIRMED','CANCELLED')
       WHEN 'CONFIRMED'              THEN NEW.order_status IN ('AWAITING_ACCEPTANCE','CANCELLED')
       WHEN 'AWAITING_ACCEPTANCE'    THEN NEW.order_status IN ('AWAITING_FINAL_PAYMENT','CONFIRMED')
-      WHEN 'AWAITING_FINAL_PAYMENT' THEN NEW.order_status IN ('READY_TO_DELIVER')
-      WHEN 'READY_TO_DELIVER'       THEN NEW.order_status IN ('DELIVERING','COMPLETED')
-      WHEN 'DELIVERING'             THEN NEW.order_status IN ('COMPLETED')
+      WHEN 'AWAITING_FINAL_PAYMENT' THEN NEW.order_status IN ('READY_TO_DELIVER','CANCELLED')
+      WHEN 'READY_TO_DELIVER'       THEN NEW.order_status IN ('DELIVERING','COMPLETED','CANCELLED')
+      WHEN 'DELIVERING'             THEN NEW.order_status IN ('COMPLETED','READY_TO_DELIVER','CANCELLED')
       ELSE FALSE
     END;
     IF NOT o_ok THEN
@@ -807,7 +807,7 @@ CREATE TABLE public.ai_proposals (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     decided_at timestamp with time zone,
     CONSTRAINT chk_ai_proposals_decided CHECK ((((status)::text = 'PENDING'::text) = (decided_at IS NULL))),
-    CONSTRAINT chk_ai_proposals_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPLIED'::character varying, 'REJECTED'::character varying])::text[])))
+    CONSTRAINT chk_ai_proposals_status CHECK (((status)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('APPLIED'::character varying)::text, ('REJECTED'::character varying)::text])))
 );
 
 --
@@ -851,7 +851,7 @@ CREATE TABLE public.ai_sessions (
     title character varying(120),
     deleted_at timestamp with time zone,
     deleted_reason character varying(12),
-    CONSTRAINT chk_ai_sessions_deleted CHECK ((((deleted_at IS NULL) = (deleted_reason IS NULL)) AND ((deleted_reason IS NULL) OR ((deleted_reason)::text = ANY ((ARRAY['CUSTOMER'::character varying, 'RETENTION'::character varying])::text[]))))),
+    CONSTRAINT chk_ai_sessions_deleted CHECK ((((deleted_at IS NULL) = (deleted_reason IS NULL)) AND ((deleted_reason IS NULL) OR ((deleted_reason)::text = ANY (ARRAY[('CUSTOMER'::character varying)::text, ('RETENTION'::character varying)::text]))))),
     CONSTRAINT chk_ai_sessions_target CHECK ((num_nonnulls(draft_id, order_id) = 1))
 );
 
@@ -2572,10 +2572,10 @@ CREATE TABLE public.stock_movements (
     actor_id bigint,
     reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_stock_move_links CHECK (((((kind)::text = 'RECEIPT'::text) AND (receipt_id IS NOT NULL)) OR (((kind)::text = ANY ((ARRAY['ISSUE'::character varying, 'RETURN'::character varying])::text[])) AND (job_id IS NOT NULL)) OR ((kind)::text = 'ADJUST'::text))),
-    CONSTRAINT chk_stock_move_sign CHECK (((((kind)::text = ANY ((ARRAY['RECEIPT'::character varying, 'RETURN'::character varying])::text[])) AND (quantity > 0)) OR (((kind)::text = 'ISSUE'::text) AND (quantity < 0)) OR ((kind)::text = 'ADJUST'::text))),
-    CONSTRAINT stock_movements_item_kind_check CHECK (((item_kind)::text = ANY ((ARRAY['PAPER'::character varying, 'PEN'::character varying, 'INK'::character varying])::text[]))),
-    CONSTRAINT stock_movements_kind_check CHECK (((kind)::text = ANY ((ARRAY['RECEIPT'::character varying, 'ISSUE'::character varying, 'RETURN'::character varying, 'ADJUST'::character varying])::text[]))),
+    CONSTRAINT chk_stock_move_links CHECK (((((kind)::text = 'RECEIPT'::text) AND (receipt_id IS NOT NULL)) OR (((kind)::text = ANY (ARRAY[('ISSUE'::character varying)::text, ('RETURN'::character varying)::text])) AND (job_id IS NOT NULL)) OR ((kind)::text = 'ADJUST'::text))),
+    CONSTRAINT chk_stock_move_sign CHECK (((((kind)::text = ANY (ARRAY[('RECEIPT'::character varying)::text, ('RETURN'::character varying)::text])) AND (quantity > 0)) OR (((kind)::text = 'ISSUE'::text) AND (quantity < 0)) OR ((kind)::text = 'ADJUST'::text))),
+    CONSTRAINT stock_movements_item_kind_check CHECK (((item_kind)::text = ANY (ARRAY[('PAPER'::character varying)::text, ('PEN'::character varying)::text, ('INK'::character varying)::text]))),
+    CONSTRAINT stock_movements_kind_check CHECK (((kind)::text = ANY (ARRAY[('RECEIPT'::character varying)::text, ('ISSUE'::character varying)::text, ('RETURN'::character varying)::text, ('ADJUST'::character varying)::text]))),
     CONSTRAINT stock_movements_quantity_check CHECK ((quantity <> 0)),
     CONSTRAINT stock_movements_shortfall_check CHECK ((shortfall >= 0)),
     CONSTRAINT stock_movements_stock_after_check CHECK ((stock_after >= 0))
@@ -5415,7 +5415,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0033');
+INSERT INTO alembic_version (version_num) VALUES ('0034');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

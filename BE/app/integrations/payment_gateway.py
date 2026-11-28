@@ -157,6 +157,17 @@ def real_adapter(gateway: Any, *, strict: bool = True) -> RealGateway | None:
     return None
 
 
+def allows_test_payments() -> bool:
+    return bool(get_settings().allow_test_payments)
+
+
+def require_real_money(mode: str) -> None:
+    """D01: refuse a payment that would move no real money, unless this deployment says test payments are fine."""
+    if mode != "LIVE" and not allows_test_payments():
+        raise AppError(403, "TEST_PAYMENTS_DISABLED", "Cổng thanh toán thử nghiệm không được dùng trên hệ thống này. "
+                       "Hãy chọn cổng thanh toán thật.", {"mode": mode})
+
+
 def ipn_url(gateway: str) -> str | None:
     base = (get_settings().public_base_url or "").rstrip("/")
     return f"{base}/api/v1/webhooks/payments/{gateway.lower()}/ipn" if base else None
@@ -170,6 +181,8 @@ def gateway_status() -> list[dict[str, Any]]:
         try:
             enabled = True if mode == "MOCK" else real_adapter(name) is not None
         except AppError:
+            enabled = False
+        if mode != "LIVE" and not allows_test_payments():        # D01: a test gateway is not offered where real orders are taken
             enabled = False
         out.append({"gateway": name, "mode": mode, "enabled": enabled})
     try:

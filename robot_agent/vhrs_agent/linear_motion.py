@@ -135,6 +135,14 @@ class LinearExecutor:
         except (RobotError, StopRequested):
             robot.stop()
             raise
+        except Exception:
+            # RB-07: a bug in this loop (a TypeError, a bad index) used to leave the last segment running with nobody watching it.
+            # Whatever went wrong, the arm is told to stop; the stop itself must not hide the original error.
+            try:
+                robot.stop()
+            except Exception:                                   # noqa: BLE001
+                pass
+            raise
 
     def wait(self, start, target, speed, previous_packet, ctl, on_tcp):
         robot = self.robot

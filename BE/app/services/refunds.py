@@ -151,6 +151,9 @@ class CancellationService:
             self.session.execute(update(RobotCommand).where(
                 RobotCommand.job_id.in_([j.id for j in jobs]), RobotCommand.status == "PENDING")
                 .values(status="EXPIRED", finished_at=_now(), error_code="ORDER_CANCELLED"))
+            from app.services.robot_link import halt_job        # late import: robot_link pulls in the live hub
+            for j in jobs:                                      # TP-01: a rehearsal may be running on a job being cancelled
+                halt_job(self.session, j, by=self.actor.id, reason=f"Đơn bị huỷ: {reason}", ip=self.ip)
         for pay in self.payments.pending_final(order.id) + self.payments.pending(order.id, PaymentType.DEPOSIT):
             pay.status = PaymentStatus.CANCELLED
             checkout.close(pay)

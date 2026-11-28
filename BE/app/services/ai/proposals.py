@@ -49,6 +49,10 @@ ORDER_FIELDS = ("order_type", "paper_type_id", "pen_type_id", "ink_color_id", "q
 WRITABLE_FIELDS = tuple(f for f in ORDER_FIELDS if f != "order_type")      # the assistant has no tool that changes the type
 TEXT_FIELDS = ("text_content", "template_id", "handwriting_style_id", "font_size_mm", "alignment", "layout")
 DERIVED_FIELDS = ("char_count", "estimated_price_min", "estimated_price_max", "last_saved_at")
+# D02 (audit 2026-11-27): what the sketch box's Undo cannot bring back. The web app applies a proposal by itself only when it
+# touches none of these and throws away nothing the customer did by hand; otherwise the customer decides (Apply / Skip).
+UNTRACKED_FIELDS = ("quantity", "customer_note", "physical_watermark", "restoration_mode", "workshop_suggest_materials")
+DISCARD_ARGS = {"generate_sketch": "discard_edits", "undo_sketch": "discard_input_changes", "redo_sketch": "discard_input_changes"}
 
 
 # ---------------------------------------------------------------------------------------------------------- state
@@ -222,6 +226,50 @@ class ProposalService:
         if (now_hash or self.current_hash(order)) != p.base_state_hash:
             return False, "ORDER_CHANGED"
         return True, None
+
+    def confirm_reasons(self, p: AiProposal) -> list[str]:
+        """Why this proposal waits for the customer instead of being applied by the screen ([] = it may be applied at once):
+        the fields Undo cannot restore, and DISCARDS_MANUAL_EDITS when the assistant redrew over the customer's own edits."""
+        from app.models.studio import AiToolCall
+        reasons = [c["field"] for c in p.changes or [] if c.get("field") in UNTRACKED_FIELDS]
+        message_ids, cur, hops = [], p, 0
+        while cur is not None and hops < 20:                         # a proposal continues the pending ones before it
+            message_ids.append(cur.message_id)
+            cur = self.session.get(AiProposal, cur.parent_proposal_id) if cur.parent_proposal_id else None
+            hops += 1
+        for call in self.session.scalars(select(AiToolCall).where(AiToolCall.message_id.in_(message_ids), AiToolCall.ok.is_(True),
+                                                                AiToolCall.name.in_(tuple(DISCARD_ARGS)))):
+            if isinstance(call.args, dict) and call.args.get(DISCARD_ARGS[call.name]) is True:
+                reasons.append("DISCARDS_MANUAL_EDITS")
+                break
+        return reasons
+
+    def revertible(self, order: Order, p: AiProposal, now_hash: str | None = None) -> bool:
+        """An applied proposal can be taken back while the order is still exactly what applying it made."""
+        from app.services.orders import EDITABLE
+        return (p.status == "APPLIED" and order.order_status in EDITABLE
+                and (now_hash or self.current_hash(order)) == state_hash(p.after_state))
+
+    def revert(self, order_id: int, proposal_id: int) -> tuple[AiProposal, Order]:
+        """D02: put the order back to what it was before this proposal was applied, every field of it (the sketch box's Undo
+        only moves the sketch and what was drawn from). Only while nothing else changed since; the proposal then counts as
+        skipped, so its revisions leave the Redo path like those of any proposal that is not applied."""
+        from app.services.ai.assistant import AssistantService
+        AssistantService(self.session, self.customer, None).lock_order(order_id)
+        order = self._order(order_id, write=True)
+        p = self.get(order_id, proposal_id)
+        if p.status != "APPLIED":
+            raise AppError(409, "PROPOSAL_NOT_APPLIED", "Đề xuất này chưa được áp dụng nên không có gì để hoàn lại.")
+        if not self.revertible(order, p):
+            raise AppError(409, "PROPOSAL_STALE", "Đơn đã thay đổi sau khi áp dụng đề xuất; hãy sửa trực tiếp trên đơn.",
+                           {"reason": "ORDER_CHANGED"})
+        self._check_still_valid(order, p.before_state)
+        restore(self.session, self.customer, order, p.before_state, exact=False)
+        p.status, p.decided_at = "REJECTED", datetime.now(timezone.utc)
+        self.session.flush()
+        audit.record(self.session, actor_id=self.customer.id, action="AI_PROPOSAL_REVERTED", entity_type="order",
+                     entity_id=order.id, new={"proposal_id": p.id, "fields": [c["field"] for c in p.changes or []]}, ip=self.ip)
+        return p, order
 
     def latest_applicable(self, order: Order, session_id: int) -> AiProposal | None:
         now = self.current_hash(order)

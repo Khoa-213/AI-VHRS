@@ -18,7 +18,7 @@ from app.main import app
 from tests.conftest import auth
 from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_scheduling import _at, _prod, _sched, mgr, robot, tech  # noqa: F401
-from tests.test_api_technician import CAL, T, _post, _running, _status  # noqa: F401
+from tests.test_api_technician import CAL, T, _post, _robot_wrote, _running, _status  # noqa: F401
 from tests.test_api_workshop import _err, _user, cust, manager, policy, staff, store, wcat  # noqa: F401
 
 
@@ -64,6 +64,7 @@ def _add(client, tech, store, jid, kind, qc="PASS", note=None, seed=0, data=None
 
 def _written(client, cust, staff, mgr, wcat, robot, tech, **kw):
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech, **kw)
+    _robot_wrote(client, tech, jid)
     _post(client, tech, jid, "finish", status=200)
     return oid, jid
 
@@ -85,6 +86,7 @@ def _run_job(client, tech, jid):
     _post(client, tech, jid, "calibration", CAL, status=201)
     _post(client, tech, jid, "simulation", {"passed": True}, status=200)
     _post(client, tech, jid, "start", status=200)
+    _robot_wrote(client, tech, jid)
     _post(client, tech, jid, "finish", status=200)
 
 
@@ -115,6 +117,7 @@ def test_photo_routes_belong_to_the_assigned_technician_and_the_written_step(cli
         r = _post(client, tech, jid, path, body, status=409)
         assert _err(r) == "JOB_STATE_CONFLICT", path                               # photos only after the robot has written
     assert _post(client, tech, jid, "photos", {"photo_key": "a" * 32 + ".jpg", "kind": "OVERALL"}, status=409)
+    _robot_wrote(client, tech, jid)
     _post(client, tech, jid, "finish", status=200)
 
     other = _user(client, "TECHNICAL_STAFF")

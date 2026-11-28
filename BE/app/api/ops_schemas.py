@@ -78,7 +78,8 @@ class RefundInfo(BaseModel):
     refund_of_id: int
     reason: str | None
     rule: str | None = Field(default=None, description="CANCELLATION: BR14_BEFORE_SCHEDULE | BR14_AFTER_SCHEDULE | "
-                             "BR16_ETA_POSTPONED | WORKSHOP_CANCEL")
+                             "BR16_ETA_POSTPONED | WORKSHOP_CANCEL | MANAGER_CLOSE (D08: a Manager closed an order stuck "
+                             "after production and chose the amount)")
     deduction: int = Field(default=0, description="Kept by the workshop (the setup fee under BR14_AFTER_SCHEDULE).")
     account: RefundAccount | None = None
     reference: str | None = Field(default=None, description="Bank / gateway reference Staff entered when confirming.")
@@ -503,6 +504,29 @@ class UnscheduleIn(BaseModel):
     reason: Reason
 
 
+class CloseOrderIn(BaseModel):
+    reason: str = Field(min_length=10, max_length=1000, description="Why the order is closed; shown to the customer.")
+    refund_amount: Decimal = Field(default=Decimal(0), ge=0, decimal_places=0, description=(
+        "How much of what the customer paid is given back (VND). From 0 to what was paid and not refunded yet; opens a "
+        "refund request the Staff pay out by hand and confirm."))
+
+
+class ToPickupIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000, description="What happened with the delivery (the carrier's reason, what was agreed).")
+
+
+class CloseOrderOut(BaseModel):
+    order_id: int
+    order_status: str
+    refundable_before: Decimal = Field(description="what the customer had paid and not been refunded, before this close")
+    refund_id: int | None = Field(description="the refund request opened (null when nothing is given back)")
+    refund_amount: Decimal
+
+
+class FinishOverrideIn(BaseModel):
+    reason: str = Field(min_length=10, max_length=1000, description="Why the job is recorded as written without a reported robot run.")
+
+
 class JobOut(_ORM):
     id: int
     order_id: int
@@ -705,6 +729,22 @@ class ProductionSnapshotBlock(BaseModel):
 JobPackageOut.model_rebuild()
 
 
+class OpenRunInfo(BaseModel):
+    run_id: str
+    mode: str
+    dry_run: bool
+    started_at: datetime
+    orphan: bool
+
+
+class ManagerJobDetail(JobOut):
+    """`GET /manager/jobs/{id}`: the job, plus what the Manager needs to decide on "written" (A02 / A06)."""
+    quantity: int = Field(default=1, description="Copies the order asks for.")
+    copies_written: int = Field(default=0, description="Robot runs of this job that ended DONE (one per copy).")
+    open_run: OpenRunInfo | None = Field(default=None, description="The run still open on the server; `orphan` = nobody is "
+                                         "executing it, so `POST /manager/runs/{run_id}/close-orphan` may close it.")
+
+
 class TechJobDetail(JobOut):
     order_type: str = ""
     quantity: int = 1
@@ -715,6 +755,10 @@ class TechJobDetail(JobOut):
     approach_note: str | None = None
     calibration: CalibrationOut | None = None
     can_start: bool = Field(default=False, description="Downloaded, valid calibration and a passed simulation.")
+    open_run: OpenRunInfo | None = Field(default=None, description="The robot run of this job that is still open on the server; "
+                                         "`orphan` = nobody is executing it (agent offline or idle): it can be closed by hand.")
+    copies_written: int = Field(default=0, description="Robot runs of this job that ended DONE (one per copy). 'Viết xong' needs "
+                                "as many as `quantity`.")
     incidents: list[IncidentOut] = Field(default_factory=list)
 
 

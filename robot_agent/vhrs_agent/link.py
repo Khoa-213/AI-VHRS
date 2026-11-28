@@ -124,6 +124,12 @@ class LinkClient:
     # ---- link state
     def _on_success(self) -> None:
         self.last_ok = self.clock()
+        try:
+            sent = self.svc.flush_closes(self._key)                 # A06: run results that could not be reported earlier
+            if sent:
+                log.info("reported %d run result(s) the backend had not received", sent)
+        except Exception as exc:                                    # noqa: BLE001 - never let reporting break the link loop
+            log.warning("could not report waiting run results: %s", exc)
         if self.link_lost and not self.lost_reported:
             self.lost_reported = True
             runner = self.svc.hub.runner

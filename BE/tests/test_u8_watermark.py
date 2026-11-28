@@ -19,7 +19,7 @@ from app.services.stroke_ai.trajectory import Page, Stroke
 from tests.test_api_orders import API, _png, _sql, _upload, issue_paper
 from tests.test_api_scheduling import _at, _sched, mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import W, _err, _ot3, cust, policy, staff, store, wcat  # noqa: F401
-from tests.test_api_technician import CAL
+from tests.test_api_technician import CAL, _robot_wrote
 from tests.test_production_snapshot import _forge, _package, _refused, _snap
 
 T = f"{API}/technician"
@@ -243,8 +243,9 @@ def test_public_verification_and_the_certificate_card(client, cust, staff, mgr, 
     assert code in r.headers["content-disposition"]
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200            # the real path to WRITTEN
     issue_paper(client, tech[0], jid)
-    for path, body in (("prepare", None), ("calibration", CAL), ("simulation", {"passed": True}), ("start", None),
-                       ("finish", None)):
+    for path, body in (("prepare", None), ("calibration", CAL), ("simulation", {"passed": True}), ("start", None)):
         assert client.post(f"{T}/jobs/{jid}/{path}", headers=tech[0], json=body).status_code in (200, 201), path
+    _robot_wrote(client, tech, jid)                                                               # D06: the robot's run ended DONE
+    assert client.post(f"{T}/jobs/{jid}/finish", headers=tech[0]).status_code == 200
     v = client.get(f"{API}/verify/{code}").json()
     assert v["status"] == "VALID" and v["written_at"] is not None and v["production_locked_at"] is not None

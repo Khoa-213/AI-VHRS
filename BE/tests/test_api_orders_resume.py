@@ -107,6 +107,10 @@ def test_cancel_rules(client, cust, catalog):
     _sql("update orders set order_status='ACCEPTED', "
          "assigned_staff_id=(select id from accounts where role_id=2 limit 1) where id=:o returning 1", o=oid)
     r = client.post(f"{API}/orders/{oid}/cancel", headers=cust, json={"reason": "x"})
+    assert r.status_code == 200 and r.json()["order_status"] == "CANCELLED"    # D04: an accepted order can be withdrawn
+    done = _submitted(client, cust, catalog)
+    _sql("update orders set order_status='REJECTED', reject_reason='OTHER', reject_note='x' where id=:o returning 1", o=done)
+    r = client.post(f"{API}/orders/{done}/cancel", headers=cust, json={"reason": "x"})
     assert r.status_code == 409 and r.json()["error"]["code"] == "ORDER_CANCEL_UNSUPPORTED"
 
 

@@ -7,7 +7,7 @@ import pytest
 from app.services.robot_link import hub
 from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
-from tests.test_api_technician import CAL, T, _err, _job, _post, _running
+from tests.test_api_technician import _err, _job, _post, _running, CAL, CAL_MOTION, T
 from tests.test_api_workshop import _user, cust, policy, staff, store, wcat  # noqa: F401
 
 M = f"{API}/manager"
@@ -103,7 +103,7 @@ def test_validation_of_commands(client, cust, staff, mgr, wcat, robot, tech):
     issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
     assert post(kind="RUN", job_id=jid, params={"mode": "SIM"}).status_code == 409          # PREPARING is still not WRITING
-    _post(client, tech, jid, "calibration", CAL, status=201)
+    _post(client, tech, jid, "calibration", CAL_MOTION, status=201)
     _post(client, tech, jid, "simulation", {"passed": True}, status=200)
     sync(client, ah)                         # keep the agent online (15 s) on a slow database
     assert post(kind="DRY_RUN", job_id=jid, params={"mode": "SIM"}).status_code == 201       # rehearsal is allowed while PREPARING

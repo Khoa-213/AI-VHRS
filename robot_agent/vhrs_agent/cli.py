@@ -31,7 +31,10 @@ from vhrs_agent.sim import MockRobot, RunawaySimRobot, SimRobot
 from vhrs_agent.viewer import ViewerHub, create_app
 
 # DEMO fixtures only. They exist so the simulator can be watched; they are NOT measurements of any robot or paper.
-DEMO_PROBES = [{"x": -250.0, "y": -74.0, "z": 20.0}, {"x": -250.0, "y": 74.0, "z": 20.0}, {"x": -460.0, "y": -74.0, "z": 20.0}]
+# P0 top-left, P1 top-right, P2 bottom-left, P3 bottom-right (the check point): the sheet as someone standing opposite the robot
+# reads it. Until the 2026-11-27 audit P0 / P1 were the other way round, which made the demo write a mirror image (TP-09).
+DEMO_PROBES = [{"x": -250.0, "y": 74.0, "z": 20.0}, {"x": -250.0, "y": -74.0, "z": 20.0}, {"x": -460.0, "y": 74.0, "z": 20.0},
+               {"x": -460.0, "y": -74.0, "z": 20.0}]
 DEMO_TOOL_MM = 250.0            # wrist3 frame to pen tip (flange ~103 mm + gripper + pen): a demo value, the real one is measured
 DEMO_START = (-350.0, 0.0, 80.0)
 DEMO_CFG = MotionConfig(a_lat_mm_s2=2000.0, a_tan_mm_s2=1000.0, travel_speed_mm_s=100.0, approach_speed_mm_s=10.0,

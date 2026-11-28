@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import security
@@ -58,8 +59,34 @@ class AccountAdminService:
                      entity_id=acc.id, new={"email": acc.email, "role": role_code}, ip=self.ip)
         return acc
 
+    def open_work(self, account_id: int) -> dict[str, list[int]]:
+        """What this account still holds (D05): orders in its hands as Staff, production jobs and robots as Technical Staff."""
+        from app.models.ops import ACTIVE_JOB_STATUSES, ProductionJob, TechnicianRobot
+        from app.models.order import Order, OrderStatus
+        closed = (OrderStatus.DRAFT, OrderStatus.REJECTED, OrderStatus.CANCELLED, OrderStatus.COMPLETED)
+        s = self.session
+        work = {
+            "orders": list(s.scalars(select(Order.id).where(Order.assigned_staff_id == account_id,
+                                                           Order.order_status.not_in(closed)).order_by(Order.id))),
+            "jobs": list(s.scalars(select(ProductionJob.id).where(ProductionJob.technician_id == account_id,
+                                                                  ProductionJob.status.in_(ACTIVE_JOB_STATUSES)).order_by(ProductionJob.id))),
+            "robots": list(s.scalars(select(TechnicianRobot.robot_id).where(TechnicianRobot.technician_id == account_id)
+                                     .order_by(TechnicianRobot.robot_id))),
+        }
+        return {k: v for k, v in work.items() if v}
+
+    def _revoke_agent_keys(self, account_id: int) -> int:
+        """The workstation keys a technician's app holds stop with the account (TP-06): they act AS that technician."""
+        from app.models.ops import RobotAgent
+        from app.services.robot_link import hub
+        n = 0
+        for key in self.session.scalars(select(RobotAgent).where(RobotAgent.account_id == account_id, RobotAgent.revoked_at.is_(None))):
+            key.revoked_at, n = utcnow(), n + 1
+            hub.forget_robot_keys(key.robot_id)
+        return n
+
     def update(self, account_id: int, *, status: AccountStatus | None, role_code: str | None,
-               reason: str | None) -> Account:
+               reason: str | None, force: bool = False) -> Account:
         acc = self.repo.get(account_id)
         if acc is None:
             raise AppError(404, "ACCOUNT_NOT_FOUND", "Không tìm thấy tài khoản.")
@@ -71,6 +98,20 @@ class AccountAdminService:
         old: dict[str, Any] = {}
         new: dict[str, Any] = {}
         action = "ACCOUNT_UPDATE"
+        # D05 (audit 2026-11-27): taking an account out of its job must not strand the work it holds. Until now locking a
+        # Staff left their orders, refunds and ETA changes with nobody (only the assigned Staff may do those), and a locked
+        # technician's started jobs could not be taken over by anyone.
+        leaving = (status is not None and status != AccountStatus.ACTIVE and acc.status == AccountStatus.ACTIVE) or (
+            role_code is not None and role_code != acc.role.code)
+        left_behind: dict[str, list[int]] = {}
+        if leaving:
+            left_behind = self.open_work(acc.id)
+            if left_behind and not force:
+                raise AppError(409, "ACCOUNT_HAS_OPEN_WORK",
+                               "Tài khoản này còn đang giữ việc. Quản lý phân công lại đơn / job / robot trước, hoặc gửi "
+                               "force = true kèm lý do trong trường hợp khẩn cấp.", left_behind)
+            if left_behind and not (reason or "").strip():
+                raise AppError(422, "REASON_REQUIRED", "Khoá hoặc đổi vai trò khi còn việc đang giữ cần ghi rõ lý do.")
         if role_code is not None and role_code != acc.role.code:
             if role_code not in INTERNAL_ROLES or acc.role.code not in INTERNAL_ROLES:
                 raise AppError(422, "ROLE_NOT_ALLOWED", "Chỉ đổi vai trò giữa Staff, Technical Staff và Manager.")
@@ -84,6 +125,12 @@ class AccountAdminService:
             acc.status = status
             if status == AccountStatus.ACTIVE:
                 acc.failed_login_count, acc.locked_until = 0, None
+        if new and leaving:
+            revoked = self._revoke_agent_keys(acc.id)
+            if revoked:
+                new["agent_keys_revoked"] = revoked
+            if left_behind:
+                new["forced_with_open_work"] = left_behind       # what the Manager now has to reassign
         if new:
             audit.record(self.session, actor_id=self.actor.id, action=action, entity_type="account",
                          entity_id=acc.id, old=old, new=new, reason=reason, ip=self.ip)

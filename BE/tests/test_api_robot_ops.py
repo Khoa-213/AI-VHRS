@@ -12,7 +12,7 @@ import pytest
 from app.integrations.mailer import ConsoleMailer
 from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
-from tests.test_api_technician import CAL, T, _err, _job, _post, _ready, _running
+from tests.test_api_technician import _err, _job, _post, _ready, _running, CAL, CAL_MOTION, T
 from tests.test_api_workshop import _user, cust, policy, staff, store, wcat  # noqa: F401
 
 M = f"{API}/manager"
@@ -57,7 +57,7 @@ def test_run_lifecycle_and_the_rules_around_it(client, cust, staff, mgr, wcat, r
     assert client.get(f"{T}/jobs/{jid}/package", headers=tech[0]).status_code == 200
     issue_paper(client, tech[0], jid)
     _post(client, tech, jid, "prepare", status=200)
-    _post(client, tech, jid, "calibration", CAL, status=201)
+    _post(client, tech, jid, "calibration", CAL_MOTION, status=201)
     _post(client, tech, jid, "simulation", {"passed": True}, status=200)
 
     r, dry_key = open_run(client, tech, jid, dry_run=True)
@@ -258,7 +258,12 @@ def test_compliance_follows_the_real_steps_and_flags_a_job_without_a_real_run(cl
     assert st["package"] == "PASS" and st["calibration"] == "PASS" and st["simulation"] == "PASS"
     assert st["dry_run"] == "PENDING" and st["authorized"] == "PENDING" and st["written"] == "PENDING"
     _post(client, tech, jid, "start", status=200)
-    _post(client, tech, jid, "finish", status=200)                                    # recorded as written with NO real run
+    # D06: the technician can no longer record "written" with no robot run at all; a Manager may, with a reason
+    assert _err(_post(client, tech, jid, "finish", status=409)) == "RUN_EVIDENCE_REQUIRED"
+    assert client.post(f"{M}/jobs/{jid}/finish-override", headers=mgr, json={"reason": "ngắn"}).status_code == 422
+    done = client.post(f"{M}/jobs/{jid}/finish-override", headers=mgr, json={"reason": "Máy trạm mất mạng, robot đã viết xong"})
+    assert done.status_code == 200 and done.json()["status"] == "WRITTEN", done.text
+    assert _sql("select reason from audit_logs where action='JOB_FINISH_OVERRIDE' and entity_id=:j", j=jid).startswith("Máy trạm")
     c1 = client.get(f"{M}/jobs/{jid}/compliance", headers=mgr).json()
     st1 = {s["key"]: s for s in c1["steps"]}
     assert st1["written"]["status"] == "PASS" and st1["real_run"]["status"] == "FAIL"
@@ -267,7 +272,7 @@ def test_compliance_follows_the_real_steps_and_flags_a_job_without_a_real_run(cl
 
 
 def test_compliance_passes_after_dry_run_authorization_and_a_real_run(client, cust, staff, mgr, wcat, robot, tech):
-    oid, jid = _ready(client, cust, staff, mgr, wcat, robot, tech)
+    oid, jid = _ready(client, cust, staff, mgr, wcat, robot, tech, cal=CAL_MOTION)   # A03: REAL needs the server's own validation
     d, dk = open_run(client, tech, jid, dry_run=True)
     assert d.status_code == 201
     client.patch(f"{T}/runs/{dk}", headers=tech[0], json={"result": "DRY_RUN_DONE"})

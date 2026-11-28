@@ -120,6 +120,10 @@ def validate(pages: list[Page], probe_points: list[Any], cfg: MotionConfig, work
         _check(rep, "calibration_frame", n)
         return rep, plans
     rep.stats["frame"] = frame.to_dict()
+    if frame.mirrored:
+        # TP-09: not an error here (simulated stations use typed-in points); the Robot Agent refuses a REAL run on it.
+        rep.warn("PROBE_ORDER_MIRRORED", "P0, P1, P2 quay ngược chiều: chữ viết ra sẽ bị soi gương khi nhìn từ trên xuống. "
+                 "Kiểm tra lại P1 (góc trên-phải) và P2 (góc dưới-trái).")
     _check(rep, "calibration_frame", n)
 
     # 3. spring contact is mechanically possible

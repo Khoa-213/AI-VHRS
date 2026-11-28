@@ -1,17 +1,20 @@
 """FR-01 authentication use cases: register, login, refresh, password reset."""
 import logging
 import secrets
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import security
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.db.after_commit import run_after_commit
 from app.integrations.google_auth import GoogleIdentity
-from app.integrations.mailer import Mailer
-from app.models.account import Account, AccountStatus, AuthSession, RoleCode
+from app.integrations.mailer import ConsoleMailer, Mailer
+from app.models.account import Account, AccountStatus, AuditLog, AuthSession, RoleCode
 from app.repositories.accounts import AccountRepository
 from app.repositories.sessions import SessionRepository
 from app.services import audit
@@ -42,6 +45,32 @@ class AuthService:
         self.mailer = mailer
         self.cfg = get_settings()
         self.reminders: list[str] = []          # set by a sign-in: the phone reminders just created
+
+    def _mail(self, to: str, subject: str, body: str) -> None:
+        """SR-03 (audit 2026-11-27): e-mail leaves after the commit, and off the request when it is real SMTP.
+
+        Sent inline, "forgot password" took seconds for an address that exists and no time for one that does not (the uniform
+        answer gave the address away by its timing), and a slow mail server held one of the few database connections."""
+        mailer = self.mailer
+
+        def send() -> None:
+            if isinstance(mailer, ConsoleMailer):        # dev / tests: instant, kept in the request so tests can read it
+                mailer.send(to, subject, body)
+                return
+
+            def work() -> None:
+                try:
+                    mailer.send(to, subject, body)
+                except Exception:                        # noqa: BLE001
+                    log.exception("mail to %s not sent: %s", to, subject)
+            threading.Thread(target=work, name="auth-mail", daemon=True).start()
+        run_after_commit(self.session, send)
+
+    def _knows_google(self, account_id: int) -> bool:
+        """Has this account signed in with Google before? (No schema change: the audit log remembers it.)"""
+        return self.session.scalar(select(AuditLog.id).where(
+            AuditLog.entity_type == "account", AuditLog.entity_id == account_id,
+            AuditLog.action.in_(("ACCOUNT_REGISTER_GOOGLE", "ACCOUNT_GOOGLE_LINK"))).limit(1)) is not None
 
     # UC-05 / BR-01: customers self-register; internal roles are created by Admin.
     def register_customer(self, *, email: str, password: str, full_name: str, phone: str | None) -> Account:
@@ -105,6 +134,25 @@ class AuthService:
             raise AppError(403, "ACCOUNT_DISABLED", "Tài khoản đã bị khoá hoặc vô hiệu hoá.")
         if acc.locked_until and acc.locked_until > now:
             raise AppError(423, "ACCOUNT_TEMP_LOCKED", "Tài khoản tạm khoá do nhập sai nhiều lần. Vui lòng thử lại sau.")
+        if not self._knows_google(acc.id):
+            # SR-01 (audit 2026-11-27): registering needs no proof of the address, so anybody could have created this account
+            # with a password of their own before its real owner arrived through Google, and kept reading the orders, addresses
+            # and handwriting photos with that password. Google has now proved who owns the address: the old password and
+            # every session opened with it end here. The owner keeps signing in with Google, or sets a password with
+            # "forgot password" (which goes to this same address).
+            acc.password_hash = security.hash_password(secrets.token_urlsafe(32))
+            acc.failed_login_count, acc.locked_until = 0, None
+            self.sessions.revoke_all(acc.id)
+            audit.record(self.session, actor_id=acc.id, action="ACCOUNT_GOOGLE_LINK", entity_type="account", entity_id=acc.id,
+                         new={"password_reset": True, "sessions_revoked": True}, ip=ip)
+            self._mail(acc.email, "Tài khoản AI-VHRS đã liên kết đăng nhập Google",
+                       "Xin chào,\n\n"
+                       "Tài khoản AI-VHRS của bạn vừa được đăng nhập bằng Google lần đầu. Để bảo đảm chỉ chủ của địa chỉ email này "
+                       "dùng được tài khoản, mật khẩu đặt trước đó đã bị vô hiệu và mọi thiết bị khác đã bị đăng xuất.\n\n"
+                       "Bạn tiếp tục đăng nhập bằng Google như bình thường. Nếu muốn dùng mật khẩu, bấm \"Quên mật khẩu\" để đặt "
+                       "mật khẩu mới:\n"
+                       f"{web_url(self.cfg)}/login\n\n"
+                       "Xưởng Nét Việt")
         return self._open_session(acc, now, ip, user_agent)
 
     def refresh(self, refresh_token: str) -> tuple[Account, str, str]:
@@ -125,7 +173,7 @@ class AuthService:
         try:
             with self.session.begin_nested():
                 otp._issue(acc.id, email_key(acc.id), EMAIL_RESET.replace("{link}", link),
-                           deliver=lambda body: self.mailer.send(acc.email, "Mã đặt lại mật khẩu AI-VHRS", body),
+                           deliver=lambda body: self._mail(acc.email, "Mã đặt lại mật khẩu AI-VHRS", body),
                            ttl_seconds=EMAIL_OTP_SECONDS)
         except AppError as exc:                    # resend wait / daily limit: same answer, nothing sent
             log.info("password reset mail not sent: %s", exc.code)
@@ -158,7 +206,7 @@ class AuthService:
         self.sessions.revoke_all(acc.id)  # a reset must sign out every device
         # the link stands alone on its line: the HTML part shows it as a "Đăng nhập" button (mail_html.BUTTON_LABELS);
         # /login on the web app opens the sign-in dialog (owner request 2026-11-27)
-        self.mailer.send(acc.email, "Mật khẩu AI-VHRS đã được đổi",
+        self._mail(acc.email, "Mật khẩu AI-VHRS đã được đổi",
                          "Xin chào,\n\n"
                          "Mật khẩu tài khoản AI-VHRS của bạn vừa được đặt lại và mọi thiết bị đã bị đăng xuất.\n\n"
                          "Đăng nhập lại bằng mật khẩu mới:\n"

@@ -6,9 +6,10 @@
   "probe_points": [
     {"x": "<P0 x: góc trên-trái của tờ giấy, đầu bút chạm nhẹ>", "y": "<P0 y>", "z": "<P0 z>"},
     {"x": "<P1 x: góc trên-phải>", "y": "<P1 y>", "z": "<P1 z>"},
-    {"x": "<P2 x: góc dưới-trái>", "y": "<P2 y>", "z": "<P2 z>"}
+    {"x": "<P2 x: góc dưới-trái>", "y": "<P2 y>", "z": "<P2 z>"},
+    {"x": "<P3 x: góc dưới-phải (điểm kiểm tra)>", "y": "<P3 y>", "z": "<P3 z>"}
   ],
-  "_probe_note": "Read the pen-tip position (x, y, z in mm, base frame) from the robot web page / pendant after touching each corner lightly. P0,P1,P2 must not be on one line.",
+  "_probe_note": "Read the pen-tip position (x, y, z in mm, base frame) from the robot web page / pendant after touching each corner lightly. P0,P1,P2 must not be on one line. REAL needs P3 (or more points): three points always fit a plane, so only a fourth can show that one was measured or typed wrong. Keep the order P0 top-left, P1 top-right, P2 bottom-left as someone reading the sheet sees it: swapped, the writing is a mirror image and REAL refuses (PROBE_ORDER_MIRRORED).",
   "frame_transform": {
     "schema": "vhrs-motion/1",
     "motion": {

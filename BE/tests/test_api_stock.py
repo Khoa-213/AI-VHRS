@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from tests.test_api_manager_ops import _paper, _pen
 from tests.test_api_orders import API, _sql, issue_paper
-from tests.test_api_technician import _job, _post, _running
+from tests.test_api_technician import _job, _post, _robot_wrote, _running
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
 from tests.test_api_workshop import _err, _user, cust, policy, staff, store, wcat  # noqa: F401
 
@@ -235,6 +235,7 @@ def test_finish_returns_unused_paper_and_records_waste(client, cust, staff, mgr,
     assert taken == need
     issue_paper(client, tech[0], jid, spare=4)                                  # 4 more sheets while running
     before = _stock("PAPER", wcat["paper"])
+    _robot_wrote(client, tech, jid)                                             # D06: "written" needs a robot run that ended DONE
     r = client.post(f"{T}/jobs/{jid}/finish", headers=tech[0], json={"waste": 1})
     assert r.status_code == 200, r.text
     assert _stock("PAPER", wcat["paper"]) == before + 3                          # 4 spare - 1 spoiled

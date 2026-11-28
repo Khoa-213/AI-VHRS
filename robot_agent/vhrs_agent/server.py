@@ -42,9 +42,9 @@ from app.services.motion.validate import Workspace, validate
 from vhrs_agent import __version__
 from vhrs_agent.bridge import BackendBridge, BridgeError
 from vhrs_agent.gripper import ForceLimits, GripperPort, SimGripper
-from vhrs_agent.ops import OpsReporter
+from vhrs_agent.ops import CloseOutbox, OpsReporter
 from vhrs_agent.port import Control, Mode, RobotError, RobotPort, StopRequested
-from vhrs_agent.runner import JobRunner, RunRefused, Watchdogs, authorization_token, plan_digest
+from vhrs_agent.runner import authorization_token, JobRunner, plan_digest, RunRefused, StationLimits, Watchdogs
 from vhrs_agent.sim import MockRobot, SimRobot
 from vhrs_agent.viewer import ViewerHub, create_app
 
@@ -93,6 +93,7 @@ class ServerConfig:
     lan_server: bool = True                               # false: only the outbound link, no local web console / LAN API
     production_public_keys: dict[str, str] | None = None  # U1: {key_id: base64 Ed25519 public key} of the backend (scripts/production_key.py public)
     require_signed_packages: bool = False                 # U1: refuse packages without a signed snapshot (after the legacy jobs are done)
+    station_limits: dict[str, float] | None = None        # RB-02: {z_floor_mm, max_press_mm} of THIS workstation; REAL refuses without them
 
     @classmethod
     def from_file(cls, path: str | Path) -> "ServerConfig":
@@ -194,6 +195,16 @@ class AgentService:
         self.paper_event = threading.Event()
         self.hub.paper_confirmed = self.paper_event                              # POST /api/paper-changed releases the runner's wait
         cfg.run_dir.mkdir(parents=True, exist_ok=True)
+        # A06: run results the backend has not received yet, kept across restarts. A run the previous process left open is
+        # reported as UNKNOWN the first time the link works.
+        self.closes = CloseOutbox(cfg.run_dir / "pending_closes.json")
+        self.closes.recover()
+
+    def flush_closes(self, token: "str | Callable[[], str]") -> int:
+        """Send the run results that are still waiting. Called by the backend link after every successful sync."""
+        if not self.closes.pending():
+            return 0
+        return self.closes.flush(self.bridge(token).close_run)
 
     # ---- backend
     def bridge(self, token: "str | Callable[[], str]") -> BackendBridge:
@@ -334,9 +345,22 @@ class AgentService:
 
         return SimGripper(depth, float(ctx.cfg.spring_k_n_per_mm or 0.4), ctx.limits.f_hard, float(ctx.cfg.max_spring_travel_mm or 6.0))
 
+    def _hold(self) -> None:
+        """RB-05: take the agent for one robot operation. Checking `_busy` without the lock let a run start between the check and
+        the work; the hub then pointed at the other operation's runner and STOP reached a robot that was not connected."""
+        with self._lock:
+            if self._busy:
+                raise ApiError(409, "AGENT_BUSY", "Agent đang chạy một job.", self.current)
+            self._busy = True
+
     def do_identify(self, mode: str) -> dict[str, Any]:
-        if self._busy:
-            raise ApiError(409, "AGENT_BUSY", "Agent đang chạy một job.", self.current)
+        self._hold()
+        try:
+            return self._identify(mode)
+        finally:
+            self._busy = False
+
+    def _identify(self, mode: str) -> dict[str, Any]:
         robot = self.make_robot(mode, None)
         try:
             info = robot.connect()                                            # read-only identification, no motion, no enable
@@ -361,8 +385,13 @@ class AgentService:
         return {"ok": True, "controller": r["info"], "tcp_mm": r["tcp_mm"], "checked_at": time.time()}
 
     def do_preflight(self, ctx: "JobCtx", mode: str, token: str) -> dict[str, Any]:
-        if self._busy:
-            raise ApiError(409, "AGENT_BUSY", "Agent đang chạy một job.", self.current)
+        self._hold()
+        try:
+            return self._preflight(ctx, mode, token)
+        finally:
+            self._busy = False
+
+    def _preflight(self, ctx: "JobCtx", mode: str, token: str) -> dict[str, Any]:
         runner, robot = self._runner(ctx, mode, None, token)
         try:
             plans, _, digest = runner.preflight(job_id=ctx.job_id, pages=ctx.pages, package_hash=ctx.package_hash, probes=ctx.probes,
@@ -418,6 +447,8 @@ class AgentService:
             self.real_gate(ctx.job_id)
             if authorization != authorization_token(ctx.job_id, ctx.summary["plan_digest"]):
                 raise ApiError(409, "AUTHORIZATION_REQUIRED", "Chưa có xác nhận của người vận hành cho job và kế hoạch này.")
+            if corner is not None:
+                self._check_pen_mount(ctx, corner)
         with self._lock:
             if self._busy:
                 raise ApiError(409, "AGENT_BUSY", "Agent đang chạy một job khác.", self.current)
@@ -447,6 +478,26 @@ class AgentService:
                 except Exception:                                        # noqa: BLE001
                     pass
             self._busy = False
+
+    def _check_pen_mount(self, ctx: "JobCtx", corner: str) -> None:
+        """The pen-mount move is the one REAL move outside a run that goes DOWN to the paper, to a height computed from the
+        hand-typed probe points. It does not pass the runner's preflight, so the same station locks are applied here
+        (cross-check 2026-11-28; the locks themselves: RB-02 and TP-09 of the 2026-11 audit)."""
+        station = self.station()
+        if not (station and station.configured()):
+            raise ApiError(409, "STATION_LIMITS_UNCONFIGURED", "Chưa đặt giới hạn cứng của máy trạm trong agent.json (station_limits: "
+                           "z_floor_mm, max_press_mm). Không hạ đầu bút xuống mặt giấy khi độ cao chỉ dựa vào điểm dò nhập tay.")
+        if len(ctx.probes) < 4:
+            raise ApiError(409, "PROBE_CHECK_POINT_REQUIRED", "Hạ bút xuống mặt giấy bằng robot thật cần ít nhất 4 điểm dò: ba điểm "
+                           "luôn nằm trên một mặt phẳng nên không phát hiện được điểm nào đo hoặc nhập sai.", {"probes": len(ctx.probes)})
+        if build_frame(ctx.probes).mirrored:
+            raise ApiError(409, "PROBE_ORDER_MIRRORED", "P0, P1, P2 quay ngược chiều: góc giấy được chọn sẽ là góc khác trên bàn. Kiểm "
+                           "tra lại P1 (góc trên-phải) và P2 (góc dưới-trái) rồi hiệu chuẩn lại.")
+        z = float(self.corner_point(ctx, corner)[2])
+        if z < station.z_floor_mm:
+            raise ApiError(409, "BELOW_Z_FLOOR", f"Mặt giấy ở góc {corner} tính ra z = {z:.2f} mm, thấp hơn sàn của máy trạm "
+                           f"{station.z_floor_mm:g} mm (station_limits.z_floor_mm). Kiểm tra lại các điểm dò.",
+                           {"target_z_mm": round(z, 3), "z_floor_mm": station.z_floor_mm})
 
     def _pen_up_lift(self, ctx: "JobCtx") -> float:
         return float(ctx.cfg.pen_up_clearance_mm or 0.0) + self.ALIGN_EXTRA_CLEARANCE_MM
@@ -618,7 +669,7 @@ class AgentService:
                    "job_status": detail["status"], "pages": len(job["pages"]), "strokes": sum(len(p.strokes) for p in job["pages"]),
                    "package_hash": job["hash"], "plan_digest": digest, "pen": pen["name"],
                    "estimated_seconds": report.stats.get("estimated_seconds"), "validation": report.as_dict(),
-                   "authorization_token": authorization_token(job_id, digest)}
+                   "authorization_token": authorization_token(job_id, digest), "signed": job.get("signed") is not None}
         ctx = JobCtx(job_id, who["id"], detail["robot_id"], job["pages"], job["hash"], cal["probe_points"], cfg, ws, limits,
                      pen["name"], summary)
         self.jobs[job_id] = ctx
@@ -646,16 +697,20 @@ class AgentService:
     def watchdogs(self) -> Watchdogs | None:
         return Watchdogs(**self.cfg.watchdogs) if self.cfg.watchdogs else None
 
+    def station(self) -> StationLimits | None:
+        return StationLimits(**self.cfg.station_limits) if self.cfg.station_limits else None
+
     # ---- running
     def _runner(self, ctx: JobCtx, mode: str, speed: float | None, token: str, waive_dry_run: bool = False) -> tuple[JobRunner, RobotPort]:
         robot = self.make_robot(mode, speed)
         frame = build_frame(ctx.probes)
         gripper = self.make_gripper(mode, ctx, frame)
         br = self.bridge(self.provider(token))
-        ops = OpsReporter(br, robot_id=ctx.robot_id)
+        ops = OpsReporter(br, robot_id=ctx.robot_id, outbox=self.closes)
         runner = JobRunner(robot, gripper, run_dir=self.cfg.run_dir, limits=ctx.limits, bridge=br, ops=ops,
                            watchdogs=self.watchdogs(), wait_for_paper=self._wait_for_paper,
-                           unsensed=bool(mode == "real" and gripper is None and self.cfg.unsensed_gripper), waive_dry_run=waive_dry_run)
+                           unsensed=bool(mode == "real" and gripper is None and self.cfg.unsensed_gripper), waive_dry_run=waive_dry_run,
+                           station=self.station())
         tool = float(self.cfg.sim["tool_offset_mm"]) if mode != "real" else float((self.cfg.fairino or {}).get("tcp_offset_mm") or 0) or None
         self.hub.attach(runner, ctx.pages, frame, ctx.limits, ctx.cfg.press_mm, ctx.cfg.pen_up_clearance_mm or 0.0, ctx.job_id, tool_mm=tool)
         return runner, robot
@@ -676,6 +731,10 @@ class AgentService:
         if mode == "real":
             if "real" not in self.cfg.modes:
                 raise ApiError(403, "MODE_DISABLED", "Chế độ REAL không được bật trên agent này.")
+            if not dry_run and not ctx.summary.get("signed"):
+                # A08: `require_signed_packages` (off by default, for jobs older than the signing) must not decide this for REAL
+                raise ApiError(409, "PACKAGE_NOT_SIGNED", "Gói job không có chữ ký sản xuất. Robot thật chỉ viết gói đã ký; nhờ "
+                               "Quản lý xếp lịch lại job để phát hành gói ký.")
             waive = bool(self.real_gate(ctx.job_id).get("waive_dry_run")) and not dry_run
         else:
             waive = False
@@ -705,6 +764,7 @@ class AgentService:
                 self.last = {"error": f"{type(exc).__name__}: {exc}", "job_id": ctx.job_id}
             finally:
                 try:
+                    runner.wait_stop_verified()                               # RB-05: the "did it really stop?" check still needs the connection
                     robot.disconnect()
                 except Exception:                                             # noqa: BLE001
                     pass

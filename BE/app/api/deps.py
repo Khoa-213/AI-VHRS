@@ -41,6 +41,10 @@ def _agent_principal(session: Session, token: str, request: Request) -> Principa
     ident = agent_identity(session, token)
     m = _JOB_IN_PATH.search(path)
     acc = technician_for_agent(session, ident.robot_id, int(m.group(1)) if m else None, ident.account_id)
+    # TP-06: the agent acts AS this technician, so it must stop working the moment the account does (locked, disabled).
+    if (acc is None or acc.status != AccountStatus.ACTIVE
+            or (acc.locked_until and acc.locked_until > datetime.now(timezone.utc))):
+        raise AppError(401, "AGENT_ACCOUNT_INACTIVE", "Tài khoản kỹ thuật viên của job này đã bị khoá hoặc vô hiệu hoá.")
     return Principal(account=acc, session_id=AGENT_SESSION)
 
 
@@ -78,6 +82,18 @@ def require_roles(*codes: str) -> Callable[[Account], Account]:
             raise AppError(403, "FORBIDDEN", "Bạn không có quyền thực hiện thao tác này.")
         return acc
     return checker
+
+
+async def raw_body(request: Request) -> bytes:
+    """The request body, read on the event loop (AR-02).
+
+    A webhook needs the raw bytes (signature) or the parsed JSON, and reading them is the only thing that must be awaited.
+    The handler itself is a plain `def`, so FastAPI runs it in the thread pool: the synchronous database work (row locks
+    included) no longer stops the one event loop, and with it every other request, while a callback is being processed."""
+    return await request.body()
+
+
+RawBody = Annotated[bytes, Depends(raw_body)]
 
 
 def client_ip(request: Request) -> str | None:

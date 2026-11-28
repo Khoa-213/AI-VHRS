@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.domain import order_types
 from app.db.session import set_actor
 from app.domain import text_layout
 from app.integrations.storage import ObjectStorage
@@ -113,8 +114,7 @@ class StudioService:
     def create(self, mode: str, title: str | None = None) -> StudioDraft:
         if mode not in MODES:
             raise AppError(422, "INVALID_MODE", "Chế độ phải là TEXT (soạn chữ) hoặc RESTORE (phục dựng ảnh).")
-        enabled = self.catalog.setting("order_types_enabled")
-        if enabled is not None and MODES[mode].value not in enabled:          # MSG03: same rule as creating an order
+        if MODES[mode].value not in order_types.enabled(self.catalog.setting("order_types_enabled")):   # MSG03: as for an order
             raise AppError(409, "ORDER_TYPE_SUSPENDED", "Loại dịch vụ này đang tạm ngừng nhận đơn.")
         open_count = self.session.scalar(select(func.count()).select_from(StudioDraft).where(
             StudioDraft.customer_id == self.customer.id, StudioDraft.status == "OPEN"))

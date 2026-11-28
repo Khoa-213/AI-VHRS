@@ -86,6 +86,13 @@ def _after_soft_rollback(session: Session, previous_transaction) -> None:
 
 
 def _after_commit(session: Session) -> None:
+    # AR-08 (audit 2026-11-27): SQLAlchemy fires "after_commit" for the release of a SAVEPOINT too, not only for the real
+    # commit. Nothing is committed at that point and the request still holds its row locks.
+    if session.in_nested_transaction():
+        return
+    # Acting on a SAVEPOINT release here read the rows from a second connection before they existed for it (the push and the
+    # e-mail of every notification but the last of a request were silently dropped) and, with the pool busy, waited for a
+    # connection while holding the order's lock: a deadlock that only the 30 s pool timeout ended.
     ids = session.info.pop(_PENDING, None)
     if ids:
         dispatch(ids)

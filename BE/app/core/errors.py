@@ -6,11 +6,14 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, IntegrityError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger("app")
 
 # Raised by the DB state-guard triggers (invalid order/production transition, BR-xx).
 STATE_CONFLICT_SQLSTATE = "P0409"
+LOCK_TIMEOUT_SQLSTATE = "55P03"                  # lock_not_available: `lock_timeout` ran out (db/session.py, AR-02)
+_HTTP_CODES = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}
 
 
 class AppError(Exception):
@@ -41,7 +44,23 @@ def register_error_handlers(app: FastAPI) -> None:
         sqlstate = getattr(exc.orig, "sqlstate", None)
         if sqlstate == STATE_CONFLICT_SQLSTATE:
             return JSONResponse(_body("STATE_CONFLICT", str(exc.orig).splitlines()[0]), status_code=409)
+        if sqlstate == LOCK_TIMEOUT_SQLSTATE:
+            return JSONResponse(_body("RESOURCE_BUSY", "Dữ liệu đang được một thao tác khác xử lý. Vui lòng thử lại sau giây lát."),
+                                status_code=409, headers={"Retry-After": "5"})
         if isinstance(exc, IntegrityError):
             return JSONResponse(_body("CONFLICT", "Dữ liệu xung đột với ràng buộc hiện có."), status_code=409)
         log.exception("Database error")
         return JSONResponse(_body("INTERNAL_ERROR", "Lỗi hệ thống."), status_code=500)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+        """AR-05: an unknown route or method answered {"detail": ...}, the only replies without the error envelope. `detail`
+        is kept beside it for anything that still reads the old shape."""
+        code = _HTTP_CODES.get(exc.status_code, "HTTP_ERROR")
+        body = {**_body(code, str(exc.detail)), "detail": exc.detail}
+        return JSONResponse(body, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+
+def internal_error_response() -> JSONResponse:
+    """What an unexpected failure answers (AR-05): the envelope, never a stack trace or the exception text."""
+    return JSONResponse(_body("INTERNAL_ERROR", "Lỗi hệ thống."), status_code=500)

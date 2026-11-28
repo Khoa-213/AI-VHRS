@@ -67,6 +67,8 @@ and are enforced in `services/quotations.py`.
 
 ### AI pipelines (`app/services/stroke_ai/`, no external service, no model weights)
 
+> 2026-11-28: this heading is about turning text / photos into strokes. The order assistant (`app/services/ai/`, added later) does call external language models (Claude / GPT / Gemini); it never produces stroke coordinates.
+
 | Order type | Pipeline |
 |---|---|
 | OT-1 copy / restore | illumination flattening, Otsu, deskew, **Zhang-Suen thinning**, skeleton graph, stroke pairing by direction continuity at junctions, spur pruning, reading-order + diacritic-after-word ordering, fit on paper. Similarity = pixel IoU of the original ink vs the redrawn strokes |

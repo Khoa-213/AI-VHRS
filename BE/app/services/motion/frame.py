@@ -49,6 +49,10 @@ class PaperFrame:
     n_probes: int
     plane_rms_mm: float                  # RMS distance of all probes to the fitted plane (0.0 with 3 probes)
     plane_max_mm: float
+    # TP-09: True when P0 -> P1 -> P2 turn the "wrong" way seen from the tool side. A sheet read from above has its y axis
+    # to the right-hand side of its x axis, so x_hat x y_hat points INTO the paper; when it points up instead, P1 and P2 were
+    # probed in the other order (or typed the other way round) and everything written comes out as a mirror image.
+    mirrored: bool = False
 
     def height(self, x_mm: float | np.ndarray, y_mm: float | np.ndarray) -> float | np.ndarray:
         a, b, c = self.height_coeffs
@@ -64,7 +68,7 @@ class PaperFrame:
     def to_dict(self) -> dict[str, Any]:
         return {"origin": self.origin.tolist(), "x_axis": self.x_axis.tolist(), "y_axis": self.y_axis.tolist(),
                 "normal": self.normal.tolist(), "height_coeffs": list(self.height_coeffs), "n_probes": self.n_probes,
-                "plane_rms_mm": self.plane_rms_mm, "plane_max_mm": self.plane_max_mm}
+                "plane_rms_mm": self.plane_rms_mm, "plane_max_mm": self.plane_max_mm, "mirrored": self.mirrored}
 
 
 def _vec(p: Any, i: int) -> np.ndarray:
@@ -101,6 +105,7 @@ def build_frame(probe_points: Sequence[Any], checks: FrameChecks = FrameChecks()
                          f"P0-P1 và P0-P2 lệch vuông góc {skew:.2f} độ (tối đa {checks.max_axes_skew_deg:g}).",
                          {"skew_deg": skew})
     normal = np.cross(x_hat, y_hat)
+    mirrored = bool(normal[2] > 0)                            # before the flip below: which way the probes turn (TP-09)
     if normal[2] < 0:
         normal = -normal                                      # the tool side is the side that looks up
     if abs(float(normal[2])) < checks.min_normal_z:
@@ -123,4 +128,4 @@ def build_frame(probe_points: Sequence[Any], checks: FrameChecks = FrameChecks()
     else:
         coeffs, rms, mx = (0.0, 0.0, 0.0), 0.0, 0.0
     return PaperFrame(origin=p0, x_axis=x_hat, y_axis=y_hat, normal=normal, height_coeffs=coeffs,
-                      n_probes=len(pts), plane_rms_mm=rms, plane_max_mm=mx)
+                      n_probes=len(pts), plane_rms_mm=rms, plane_max_mm=mx, mirrored=mirrored)

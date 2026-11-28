@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core import production_signing as ps
 from app.services.stroke_ai import text_to_stroke as tts
 from app.services.stroke_ai import trajectory as tj
 
@@ -28,6 +29,13 @@ RAW = tj.dumps(tj.to_dict(PAGES, {"name": "test"}))
 HASH = tj.content_hash(RAW)
 PEN = {"name": "Gel 0.5", "f_target_n": 1.0, "f_min_n": 0.6, "f_max_n": 1.6, "f_hard_n": 4.0, "v_max_mm_s": 40.0}
 MOTION = {k: v for k, v in DEMO_CFG.__dict__.items() if k not in ("f_target_n", "v_max_mm_s")}
+# A08: the REAL robot writes only a package that carries the backend's production signature (checked with the station's public key)
+SIGNING_KEY = ps.generate_private_key()
+KEY_RING = {"k1": ps.public_key_of(SIGNING_KEY)}
+_SIGNED = ps.canonical({"schema": ps.SCHEMA, "order": {"id": 5, "type": "OT3_TEMPLATE"}, "sketch": {"id": 6, "trajectory_sha256": HASH},
+                        "materials": {"pen": {k: str(PEN[k]) for k in ("f_target_n", "f_min_n", "f_max_n", "f_hard_n", "v_max_mm_s")}}})
+SNAPSHOT = {"snapshot_id": 1, "package_id": "x", "schema": ps.SCHEMA, "payload": _SIGNED, "payload_sha256": ps.sha256_hex(_SIGNED),
+            "signature": ps.sign(_SIGNED, SIGNING_KEY), "key_id": "k1"}
 WSD = {"box_min_mm": list(DEMO_WS.box_min_mm), "box_max_mm": list(DEMO_WS.box_max_mm)}
 
 
@@ -35,6 +43,7 @@ class FakeBackend:
     def __init__(self):
         self.calls: list[tuple[str, str, dict | None]] = []
         self.calibration = {"probe_points": DEMO_PROBES, "frame_transform": {"schema": "vhrs-motion/1", "motion": MOTION, "workspace": WSD}}
+        self.signed = True                                       # False: a job scheduled before the packages were signed
 
     def __call__(self, req: httpx.Request) -> httpx.Response:
         path = req.url.path.removeprefix("/api/v1")
@@ -51,7 +60,8 @@ class FakeBackend:
         if path == "/me":
             return httpx.Response(200, json=USERS[tok])
         if path.endswith("/package"):
-            return httpx.Response(200, json={"job_id": 12, "order_code": "VHRS-T", "package_hash": HASH, "trajectory_url": "https://store/x", "pen": PEN})
+            return httpx.Response(200, json={"job_id": 12, "order_code": "VHRS-T", "package_hash": HASH, "trajectory_url": "https://store/x", "pen": PEN,
+                                             "snapshot": SNAPSHOT if self.signed else None})
         if path == "/technician/jobs/12":
             return httpx.Response(200, json={"id": 12, "robot_id": 3, "status": "PREPARING", "calibration": self.calibration})
         if path.endswith("/runs") or path.startswith("/technician/runs/") or path.endswith("/events") or path.endswith("/alerts"):
@@ -65,7 +75,8 @@ def make(tmp_path, *, modes=("mock", "sim"), robot_factory=None, speed=None, wat
     backend = backend or FakeBackend()
     cfg = ServerConfig(backend_url="https://be.test", modes=modes, run_dir=tmp_path,
                        sim={"tool_offset_mm": 250.0, "table_z_mm": 19.0, "start_mm": list(DEMO_START), "speed_factor": speed, "yaw_deg": 0.0},
-                       watchdogs=watchdogs, unsensed_gripper=unsensed)
+                       watchdogs=watchdogs, unsensed_gripper=unsensed, production_public_keys=KEY_RING,
+                       station_limits={"z_floor_mm": 15.0, "max_press_mm": 4.0} if "real" in modes else None)
     svc = AgentService(cfg, transport=httpx.MockTransport(backend), downloader=lambda url: RAW,
                        robot_factory=robot_factory or (lambda mode: SimRobot(DEMO_START, speed_factor=None)),
                        gripper_factory=gripper_factory)

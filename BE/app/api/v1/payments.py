@@ -10,7 +10,9 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 
-from app.api.deps import SessionDep, client_ip, require_roles
+import json
+
+from app.api.deps import RawBody, SessionDep, client_ip, require_roles
 from app.api.ops_schemas import (GatewayInfo, MockCheckoutIn, PaymentOut, RefundAccount, RefundInfo, StartDepositIn, VnpayIpnAck,
                                  WebhookResult)
 from app.api.schemas import ErrorOut
@@ -77,18 +79,24 @@ def mock_checkout(payment_id: int, body: MockCheckoutIn, session: SessionDep, cu
     return WebhookResult(**PaymentService(session, customer, client_ip(request)).mock_checkout(payment_id, body.result))
 
 
+def _json_object(raw: bytes, message: str) -> dict[str, Any]:
+    """The JSON object a gateway posted (422 INVALID_WEBHOOK for anything else)."""
+    try:
+        body = json.loads(raw)
+    except ValueError as exc:                       # UnicodeDecodeError is a ValueError too
+        raise AppError(422, "INVALID_WEBHOOK", message) from exc
+    if not isinstance(body, dict):
+        raise AppError(422, "INVALID_WEBHOOK", message)
+    return body
+
+
 @router.post("/webhooks/payments/payos", status_code=status.HTTP_200_OK,
              dependencies=[Depends(rate_limit("payment_webhook", 120, 60))],
              summary="Webhook của payOS (POST JSON có `signature` HMAC-SHA256). Trả 200 cho mọi webhook hợp lệ, kể cả trùng lặp",
              responses={401: {"model": ErrorOut, "description": "INVALID_SIGNATURE"},
                         422: {"model": ErrorOut, "description": "INVALID_WEBHOOK"}})
-async def payos_webhook(request: Request, session: SessionDep) -> dict[str, Any]:
-    try:
-        body = await request.json()
-    except ValueError as exc:
-        raise AppError(422, "INVALID_WEBHOOK", "Nội dung webhook không hợp lệ.") from exc
-    if not isinstance(body, dict):
-        raise AppError(422, "INVALID_WEBHOOK", "Nội dung webhook không hợp lệ.")
+def payos_webhook(request: Request, session: SessionDep, raw: RawBody) -> dict[str, Any]:
+    body = _json_object(raw, "Nội dung webhook không hợp lệ.")
     out = PaymentService(session, None, client_ip(request)).handle_payos_webhook(body)
     return {"success": True, **out}
 
@@ -100,9 +108,8 @@ async def payos_webhook(request: Request, session: SessionDep) -> dict[str, Any]
                          "trả `ALREADY_PROCESSED` và không đổi dữ liệu.",
              responses={401: {"model": ErrorOut, "description": "INVALID_SIGNATURE"},
                         422: {"model": ErrorOut, "description": "PAYMENT_MISMATCH / INVALID_WEBHOOK"}})
-async def payment_webhook(gateway: PaymentGateway, request: Request, session: SessionDep,
-                          x_signature: Annotated[str | None, Header(alias=SIGNATURE_HEADER)] = None) -> WebhookResult:
-    body = await request.body()
+def payment_webhook(gateway: PaymentGateway, request: Request, session: SessionDep, body: RawBody,
+                    x_signature: Annotated[str | None, Header(alias=SIGNATURE_HEADER)] = None) -> WebhookResult:
     return WebhookResult(**PaymentService(session, None, client_ip(request)).handle_webhook(gateway, body, x_signature))
 
 
@@ -137,12 +144,7 @@ def vnpay_ipn(request: Request, session: SessionDep) -> VnpayIpnAck:
              summary="IPN của MoMo (POST JSON có `signature` HMAC-SHA256). Trả 204 khi đã xử lý (kể cả trùng lặp)",
              responses={401: {"model": ErrorOut, "description": "INVALID_SIGNATURE"},
                         422: {"model": ErrorOut, "description": "PAYMENT_MISMATCH / INVALID_WEBHOOK"}})
-async def momo_ipn(request: Request, session: SessionDep) -> Response:
-    try:
-        body = await request.json()
-    except ValueError as exc:
-        raise AppError(422, "INVALID_WEBHOOK", "Nội dung IPN không hợp lệ.") from exc
-    if not isinstance(body, dict):
-        raise AppError(422, "INVALID_WEBHOOK", "Nội dung IPN không hợp lệ.")
+def momo_ipn(request: Request, session: SessionDep, raw: RawBody) -> Response:
+    body = _json_object(raw, "Nội dung IPN không hợp lệ.")
     PaymentService(session, None, client_ip(request)).handle_momo_ipn(body)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

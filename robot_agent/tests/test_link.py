@@ -13,7 +13,7 @@ from vhrs_agent.link import LinkClient
 from vhrs_agent.port import Mode
 from vhrs_agent.server import AgentService, ServerConfig
 from vhrs_agent.sim import SimRobot
-from test_server_api import DEMO_START, RAW, FakeBackend, USERS
+from test_server_api import DEMO_START, KEY_RING, RAW, FakeBackend, USERS
 
 KEY = "vhrs_ak_testkey"
 USERS[KEY] = {"id": 5, "role": "TECHNICAL_STAFF", "full_name": "Ky Thuat"}      # the key acts as the job's technician on /technician/*
@@ -60,6 +60,7 @@ class Clock:
 def make(tmp_path, *, speed=None, modes=("mock", "sim"), grace=6.0):
     be = LinkBackend()
     cfg = ServerConfig(backend_url="https://be.test", modes=modes, run_dir=tmp_path, link_loss_grace_s=grace,
+                       production_public_keys=KEY_RING,
                        sim={"tool_offset_mm": 250.0, "table_z_mm": 19.0, "start_mm": list(DEMO_START), "speed_factor": speed, "yaw_deg": 0.0})
     svc = AgentService(cfg, transport=httpx.MockTransport(be), downloader=lambda url: RAW,
                        robot_factory=lambda mode: SimRobot(DEMO_START, speed_factor=speed))

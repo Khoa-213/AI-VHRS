@@ -52,6 +52,10 @@ class RunCloseIn(BaseModel):
         return self
 
 
+class RunCloseOrphanIn(BaseModel):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=10, max_length=500)]
+
+
 class RunOut(_ORM):
     id: int
     run_id: str

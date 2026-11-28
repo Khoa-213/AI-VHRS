@@ -4,8 +4,10 @@ The technician sees only the jobs assigned to them (BR-19: another technician's 
 guards the job's life: package download with hash check, preparation, calibration, simulation result, start, progress
 and safety events, the end of writing (stock is deducted then, FR-41) and incidents.
 
-Nothing here talks to a robot yet (connecting it is deferred until the project owner asks): the client reports what
-happened (simulation result, progress, safety stops) and the server records and guards it.
+This module does not move a robot. The workstation's Robot Agent (`robot_agent/`, see docs/ROBOT_INTEGRATION.md) does, and
+reports through `services/robot_ops.py` (runs, alerts) and `services/robot_link.py` (commands). What arrives here is what the
+technician or the agent reports (simulation result, progress, safety stops); the server records and guards it, and since the
+2026-11 audit "written" needs the agent's finished runs, one per copy.
 Every change of the job mirrors onto the order's production status in the same transaction (BR-17, FR-25); the database
 trigger `fn_order_state_guard` has the last word.
 """
@@ -15,6 +17,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,7 +30,7 @@ from app.integrations.storage import ObjectStorage
 from app.models.account import Account
 from app.models.catalog import InkColor, PaperType, PenType
 from app.models.ops import (Calibration, Incident, IncidentType, JobEvent, JobEventType, JobStatus, ProductionJob, Robot,
-                            RobotStatus)
+                            RobotRun, RobotStatus)
 from app.models.order import Order, OrderStatus, ProductionStatus
 from app.repositories.accounts import AccountRepository
 from app.repositories.catalog import CatalogRepository
@@ -193,6 +196,8 @@ class TechnicianJobService:
         ink = self.catalog.ink(order.ink_color_id) if order.ink_color_id else None
         cal = self.calibrations.valid(job.id)
         return {"order_type": order.order_type.value, "quantity": order.quantity, "eta": order.eta,
+                "copies_written": len(self._written_runs(job.id)),
+                "open_run": self._open_run_info(job.id),
                 "paper_name": paper.name if paper else None, "pen_name": pen.name if pen else None,
                 "ink_name": ink.name if ink else None, "approach_note": sketch.approach_note if sketch else None,
                 "calibration": cal, "incidents": self.incidents.for_job(job.id),
@@ -502,14 +507,54 @@ class TechnicianJobService:
             pass
         return 1, True
 
-    def finish(self, job_id: int, *, waste: int = 0) -> ProductionJob:
-        """Writing done. The paper the job took and did not use goes back to the stock (RETURN); more than it took is
+    def _open_run_info(self, job_id: int) -> dict[str, Any] | None:
+        return open_run_info(self.session, job_id)
+
+    def _written_runs(self, job_id: int) -> list[str]:
+        return written_runs(self.session, job_id)
+
+    def finish(self, job_id: int, *, waste: int = 0, override_by: Account | None = None,
+               override_reason: str | None = None) -> ProductionJob:
+        """UC-36 / UC-39: the job is written.
+
+        D06 (audit 2026-11-27): that needs a robot run of this job that ended DONE (a simulated robot's run counts; the
+        compliance report still says whether it was a REAL one), and one such run per copy of the order (A02: a run writes
+        one copy). Before, "start" then "finish" was enough. A Manager may record it without that evidence (`override_by`,
+        with a reason): for a station whose agent could not report.
+
+        Stock (0033): the paper the job took and did not use goes back to the stock (RETURN); more than it took is
         recorded as an extra ISSUE that never blocks the finish (stock floors at 0, the shortfall is kept). A job prepared
         before migration 0033 took nothing: its sheets are deducted here as before. Pens are not used up per job (Q1)."""
         job = self._job(job_id, lock=True)
         order = self._order(job)
         self._require_open(job, order)
         self._require_status(job, JobStatus.WRITING, what="Chỉ kết thúc viết")
+        open_run = self.session.scalar(select(RobotRun).where(RobotRun.job_id == job.id, RobotRun.ended_at.is_(None))
+                                       .with_for_update().limit(1))
+        if open_run is not None:
+            from app.services.robot_link import close_orphan, run_orphaned     # late import: robot_link pulls in the live hub
+            orphan = run_orphaned(open_run)
+            if orphan and override_by is not None:
+                # A06: the agent is gone or idle and never closed this run. The Manager's override, with its reason, closes it.
+                close_orphan(self.session, open_run, by=override_by.id, reason=override_reason or "", ip=self.ip)
+            else:
+                # TP-01: "written" while the agent still has a run open would say the job is over with the arm possibly moving
+                raise AppError(409, "RUN_OPEN", "Robot còn một lần chạy chưa kết thúc cho job này. Chờ robot viết xong (hoặc dừng "
+                               "robot) rồi mới ghi nhận viết xong. Nếu robot đã dừng mà lần chạy vẫn mở (máy trạm mất kết nối "
+                               "lúc kết thúc), hãy đóng lần chạy đó kèm lý do rồi thử lại.",
+                               {"open_run_id": open_run.run_id, "orphan": orphan})
+        done_runs = self._written_runs(job.id)
+        written_run = done_runs[-1] if done_runs else None
+        if not done_runs and override_by is None:
+            raise AppError(409, "RUN_EVIDENCE_REQUIRED",
+                           "Chưa có lần chạy robot nào của job này kết thúc thành công, nên chưa thể ghi nhận viết xong. "
+                           "Nếu robot đã viết xong mà máy trạm không báo về được, nhờ Quản lý ghi nhận thay kèm lý do.")
+        if len(done_runs) < order.quantity and override_by is None:
+            # A02 (cross-check 2026-11-28): one run writes one copy; the agent never repeats a job by itself
+            raise AppError(409, "COPIES_MISSING",
+                           f"Đơn cần {order.quantity} bản, robot mới viết xong {len(done_runs)} bản. Đặt tờ giấy mới, xác nhận "
+                           "giấy mới ở máy trạm rồi cho robot viết bản tiếp theo. Nếu đã đủ bản mà máy trạm không báo về được, "
+                           "nhờ Quản lý ghi nhận thay kèm lý do.", {"written": len(done_runs), "quantity": order.quantity})
         pages, assumed = self._pages(job)
         written = jr.stock_use(order.quantity, pages).paper
         stock: dict[str, Any] = {"pages": pages, "pages_assumed": assumed}
@@ -537,9 +582,15 @@ class TechnicianJobService:
                               "shortfall": last.shortfall if last else 0, "legacy": legacy}
         job.finished_at, job.progress_pct = _now(), 100
         self._move(job, order, JobStatus.WRITTEN, "Robot viết xong")
-        self._event(job, JobEventType.WRITTEN, payload={"stock": stock})
+        self._event(job, JobEventType.WRITTEN, payload={"stock": stock, **({"override_by": override_by.id} if override_by else {})})
         audit.record(self.session, actor_id=self.tech.id, action="JOB_WRITTEN", entity_type="production_job",
-                     entity_id=job.id, new={"order_id": order.id, "stock": stock}, ip=self.ip)
+                     entity_id=job.id, new={"order_id": order.id, "stock": stock, "run_id": written_run,
+                                            "copies_written": len(done_runs), "quantity": order.quantity}, ip=self.ip)
+        if override_by is not None:
+            audit.record(self.session, actor_id=override_by.id, action="JOB_FINISH_OVERRIDE", entity_type="production_job",
+                         entity_id=job.id, new={"order_id": order.id, "had_done_run": written_run is not None,
+                                                  "copies_written": len(done_runs), "quantity": order.quantity},
+                         reason=override_reason, ip=self.ip)
         return job
 
     # ------------------------------------------------------------------ 0033: taking materials for a job
@@ -616,6 +667,8 @@ class TechnicianJobService:
             robot = self.robots.get(job.robot_id, lock=True)
             robot.status = RobotStatus(robot_status_after)
         job.finished_at = _now()
+        from app.services.robot_link import halt_job            # late import: robot_link pulls in the live hub
+        halt_job(self.session, job, by=self.tech.id, reason=f"Sự cố: {description}", ip=self.ip)   # TP-01: stop the arm too
         self._move(job, order, JobStatus.FAILED, f"Sự cố: {description}"[:200])   # order -> FAILED, back to the Manager's queue
         self._event(job, JobEventType.INCIDENT, incident_id=incident.id, payload={"type": kind.value})
         audit.record(self.session, actor_id=self.tech.id, action="INCIDENT_REPORT", entity_type="incident",
@@ -624,3 +677,32 @@ class TechnicianJobService:
         notifications.notify(self.session, account_id=job.scheduled_by, order_id=order.id, msg_code="INCIDENT_REPORTED",
                              code=order.code, robot_id=job.robot_id)
         return incident
+
+
+def open_run_info(session: Session, job_id: int) -> dict[str, Any] | None:
+    """The run of this job the server still holds open, and whether anyone is executing it (A06)."""
+    run = session.scalar(select(RobotRun).where(RobotRun.job_id == job_id, RobotRun.ended_at.is_(None)).limit(1))
+    if run is None:
+        return None
+    from app.services.robot_link import run_orphaned                       # late import: robot_link pulls in the live hub
+    return {"run_id": run.run_id, "mode": run.mode, "dry_run": run.dry_run, "started_at": run.started_at,
+            "orphan": run_orphaned(run)}
+
+
+def written_runs(session: Session, job_id: int) -> list[str]:
+    """The robot runs of this job that wrote a whole copy (not a rehearsal, ended DONE), oldest first."""
+    return list(session.scalars(select(RobotRun.run_id).where(
+        RobotRun.job_id == job_id, RobotRun.dry_run.is_(False), RobotRun.result == "DONE").order_by(RobotRun.id)))
+
+
+def finish_by_manager(session: Session, manager: Account, job_id: int, reason: str, ip: str | None = None) -> ProductionJob:
+    """D06: a Manager records "written" for a job whose robot run was not reported. Same steps as the technician's finish
+    (stock, state, event), without the run evidence, with a reason, audited under the Manager's name."""
+    reason = (reason or "").strip()
+    if len(reason) < 10:
+        raise AppError(422, "REASON_REQUIRED", "Ghi nhận viết xong thay kỹ thuật viên cần lý do (ít nhất 10 ký tự).")
+    job = session.get(ProductionJob, job_id)
+    tech = session.get(Account, job.technician_id) if job is not None else None
+    if job is None or tech is None:
+        raise AppError(404, "JOB_NOT_FOUND", "Không tìm thấy job.")
+    return TechnicianJobService(session, tech, None, ip).finish(job_id, override_by=manager, override_reason=reason)

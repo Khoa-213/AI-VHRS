@@ -16,6 +16,7 @@ import cv2
 import httpx
 import numpy as np
 
+from app.services import image_guard
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.services.ai.llm import ProviderError, _HttpProvider
@@ -47,7 +48,7 @@ class Reading:
 
 def page_jpeg(data: bytes, rotation_deg: int = 0, crop_box: dict[str, Any] | None = None) -> bytes:
     """The photo as the customer set it (rotation, crop), scaled down, as JPEG."""
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    img = image_guard.decode(data, cv2.IMREAD_COLOR)
     if img is None:
         raise AppError(422, "INVALID_IMAGE", "Không đọc được ảnh.")
     img = _apply_orientation(img, rotation_deg, crop_box)

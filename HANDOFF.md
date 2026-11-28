@@ -1,5 +1,7 @@
 # Handoff: AI-VHRS, tiến độ ngày 2026-10-29
 
+> **Tài liệu này là ảnh chụp ngày 2026-10-29 và đã lỗi thời ở mục 4 và 5** (ghi chú 2026-11-28, audit DOC-12): DesktopApp không còn chạy trên mock; thanh toán cuối và giao hàng đã nối ở web; trang kỹ thuật viên trên web đã bị gỡ. Trạng thái hiện tại: `BE/PROJECT_STATUS.md` và `BE/docs/audit/00_EXECUTIVE_SUMMARY.md`.
+
 ## 1. Repo và trạng thái git
 - **Monorepo** `AI-VHRS/`, nhánh `main`, HEAD `45c9e39`. Thư mục:
   - `FE/`: React 19 + Vite + TypeScript.
@@ -59,4 +61,4 @@
 - **Chat:** chỉ lấy `page_size=100`, mà BE sắp tin cũ trước, nên tin thứ 101 trở đi không bao giờ hiện. Ngoài ra `read_at` lưu trên tin nhắn (dùng chung cho mọi người đọc) chứ không theo từng người, vẫn chờ chọn hướng sửa.
 - **Thiếu ở FE:** kiểu chữ theo đoạn (`text-styles`, `layout`), địa chỉ hồ sơ hai cấp (`PATCH /me addresses`), Service G (`evaluate`), các màn vận hành robot cho Quản lý.
 - **Deploy:** cần thêm origin của Vercel vào `CORS_ORIGINS` của BE thì khung 3D mới nhúng được ở bản production.
-- **Robot thật chưa từng chạy:** muốn thử phải có agent online, `real-enable` tại máy trạm và người vận hành xác nhận.
+- **Robot thật** (sửa 2026-11-28; bản 2026-10-29 ghi "chưa từng chạy", không đúng): robot thật đã chạy MỘT PHẦN ngày 2026-10-25 do người vận hành (chạy thử nhấc bút 45/45 nét trong 489 s, viết có mực 2 nét đầu; xem changelog cùng ngày); **chưa có lần viết trọn trang nào**, và code sau 2026-10-26 (gói ký, nút REAL, giao robot cố định, các sửa an toàn của đợt audit 2026-11-27) chưa chạy trên robot. Muốn thử phải có agent online, `real-enable` tại máy trạm và người vận hành xác nhận.

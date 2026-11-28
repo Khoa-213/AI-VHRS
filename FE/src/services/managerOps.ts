@@ -300,20 +300,43 @@ export interface ManagerJob {
   id: number; orderId: number; orderCode: string; robotCode: string; technicianName: string; status: string; isRewrite: boolean
   slotStart: string; slotEnd: string; estimatedMin: number; progressPct: number | null; startedAt: string | null; finishedAt: string | null
   simulationPassed: boolean | null
+  /** Copies the order asks for, and how many the robot has finished (one run that ended DONE per copy). */
+  quantity: number
+  copiesWritten: number
+  /** The run the server still holds open for this job. `orphan`: the workstation is not running it, so a Manager may close it. */
+  openRun: { runId: string; mode: string; dryRun: boolean; startedAt: string; orphan: boolean } | null
 }
 
 export async function managerJob(jobId: number): Promise<ManagerJob> {
   const j = await api<{
     id: number; order_id: number; order_code: string; robot_code: string; technician_name: string; status: string; is_rewrite: boolean
     slot_start: string; slot_end: string; estimated_duration_min: number; progress_pct: number | null; started_at: string | null
-    finished_at: string | null; simulation_passed: boolean | null
+    finished_at: string | null; simulation_passed: boolean | null; quantity?: number; copies_written?: number
+    open_run?: { run_id: string; mode: string; dry_run: boolean; started_at: string; orphan: boolean } | null
   }>(`/manager/jobs/${jobId}`)
   return {
     id: j.id, orderId: j.order_id, orderCode: j.order_code, robotCode: j.robot_code, technicianName: j.technician_name, status: j.status,
     isRewrite: j.is_rewrite, slotStart: j.slot_start, slotEnd: j.slot_end, estimatedMin: j.estimated_duration_min, progressPct: j.progress_pct,
     startedAt: j.started_at, finishedAt: j.finished_at, simulationPassed: j.simulation_passed,
+    quantity: j.quantity ?? 1, copiesWritten: j.copies_written ?? 0,
+    openRun: j.open_run ? { runId: j.open_run.run_id, mode: j.open_run.mode, dryRun: j.open_run.dry_run, startedAt: j.open_run.started_at, orphan: j.open_run.orphan } : null,
   }
 }
+
+/**
+ * The Manager records "writing done" in the technician's place (`POST /manager/jobs/{id}/finish-override`): for a job whose robot
+ * runs the workstation could not report. The backend skips the "one finished run per copy" check, closes a run nobody is executing,
+ * still refuses while the workstation says the robot is running (`409 RUN_OPEN`), and logs the Manager and the reason.
+ */
+export const finishJobOverride = (jobId: number, reason: string): Promise<unknown> =>
+  api(`/manager/jobs/${jobId}/finish-override`, { method: 'POST', body: { reason } })
+
+/**
+ * Closes a run the workstation left open (`POST /manager/runs/{run_id}/close-orphan`, result UNKNOWN, reason of 10 characters or
+ * more). Refused with `409 RUN_STILL_ACTIVE` while the workstation reports that it is still running it.
+ */
+export const closeOrphanRun = (runId: string, reason: string): Promise<unknown> =>
+  api(`/manager/runs/${encodeURIComponent(runId)}/close-orphan`, { method: 'POST', body: { reason } })
 
 export interface JobEventRow { id: number; type: string; strokeIndex: number | null; incidentId: number | null; at: string }
 

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,7 +17,7 @@ from app.api.v1 import (reviews, quality, robot_link, acceptance, admin, robot_o
                         manager_ops, me, conversations, eta, messages, notifications, orders, payments, pricing, refunds, reports, scheduling, shipments,
                         studio, styles, technician, verify, workshop, order_sketch, order_assistant, ai_chat)
 from app.core.config import get_settings
-from app.core.errors import register_error_handlers
+from app.core.errors import internal_error_response, register_error_handlers
 
 DESCRIPTION = """
 Backend của **AI-VHRS – Xưởng Nét Việt** (đơn đặt viết tay bằng robot FR3).
@@ -48,7 +49,7 @@ TAGS = [
     {"name": "ETA", "description": "FR-26 · UC-30 · BR-15, BR-16 · MSG11. Ngày giao dự kiến: tự tính khi cọc, tự dời khi lịch sản xuất / sự cố / viết lại / hãng vận chuyển cần thêm thời gian, Staff đổi tay kèm lý do; lịch sử dời và quyền huỷ hoàn 100%."},
     {"name": "Notifications", "description": "FR-27 · FR-57 · MSG07/08/10/11/12/15. Trung tâm thông báo của mọi vai trò: danh sách, số chưa đọc, đánh dấu đã đọc, nhận tức thời qua Server-Sent Events; email cho các thông báo SRS đánh dấu Email + in-app."},
     {"name": "Scheduling", "description": "FR-37, FR-40 · BR-18. Manager: hàng đợi, gợi ý và xếp lịch sản xuất, đổi lịch."},
-    {"name": "Technician", "description": "UC-31..39 · FR-43..49 · BR-19. Chỉ TECHNICAL_STAFF, chỉ job được giao: tải gói job (hash), chuẩn bị, hiệu chuẩn, kết quả mô phỏng, bắt đầu/kết thúc viết, sự kiện an toàn, sự cố. Chưa kết nối robot (chỉ làm khi chủ dự án yêu cầu)."},
+    {"name": "Technician", "description": "UC-31..39 · FR-43..49 · BR-19. Chỉ TECHNICAL_STAFF, chỉ job được giao: tải gói job (hash), chuẩn bị, hiệu chuẩn, kết quả mô phỏng, bắt đầu/kết thúc viết, sự kiện an toàn, sự cố. Robot do Robot Agent ở máy trạm điều khiển và báo về qua nhóm Robot operations / Robot link; \"viết xong\" cần đủ lần chạy robot kết thúc DONE (mỗi bản một lần)."},
     {"name": "Robot operations", "description": "Vận hành robot: lần chạy của Robot Agent, cảnh báo 4 mức (đỏ = bấm E-Stop ngay, kèm email), heartbeat, tình trạng robot, sức khoẻ, tuân thủ quy trình, danh mục cảnh báo."},
     {"name": "Acceptance", "description": "UC-18 · FR-28 · BR-13. Khách xem ảnh sản phẩm thật, nghiệm thu hoặc yêu cầu viết lại (1 lần miễn phí); tự nghiệm thu sau 7 ngày."},
     {"name": "Delivery", "description": "FR-18, FR-21, FR-23 · UC-20. Khách chọn giao hàng / nhận tại xưởng, thanh toán cuối (G − D) + phí ship (MOCK), xác nhận đã nhận. Staff bàn giao tại xưởng (`/workshop/orders/{id}/pickup/confirm`)."},
@@ -91,6 +92,28 @@ app = FastAPI(lifespan=_lifespan,
     redoc_url="/redoc" if _settings.enable_docs else None,
     openapi_url="/openapi.json" if _settings.enable_docs else None,
 )
+if not logging.getLogger().handlers and "pytest" not in sys.modules:
+    # AR-05: nothing configured logging, so every `log.info(...)` of the application was dropped and an unexpected error
+    # left no trace beyond uvicorn's own line. One plain handler on stdout (the platform collects it). Not under the test
+    # runner, which captures logging itself (a handler here only slows the worker threads the tests wait for).
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # httpx logs every outbound request line at INFO, URL included: signed storage links, tokens in query strings. Never that.
+    for _noisy in ("httpx", "httpcore"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+
+@app.middleware("http")
+async def unexpected_errors(request: Request, call_next):
+    """AR-05: an error nobody handled used to leave as a bare text/plain 500 from OUTSIDE the CORS layer, so the web app saw a
+    "CORS error" instead of a failure and nothing useful was logged. Registered before CORSMiddleware, hence inside it: the
+    reply is the usual error envelope, carries the CORS headers, and the traceback is logged with the request line."""
+    try:
+        return await call_next(request)
+    except Exception:                                            # noqa: BLE001
+        logging.getLogger("app").exception("unhandled error: %s %s", request.method, request.url.path[:300])
+        return internal_error_response()
+
+
 app.add_middleware(CORSMiddleware, allow_origins=_settings.cors_origins,
                    allow_origin_regex=_settings.cors_origin_regex,
                    allow_methods=["*"], allow_headers=["*"], allow_credentials=True)

@@ -291,8 +291,19 @@ def ai_chat_purge(session: Session, *, order_ids: list[int] | None = None, enabl
     return {"dry_run": False, "deleted": deleted}
 
 
+def stuck_orders(session: Session, *, order_ids: list[int] | None = None, **_: Any) -> dict[str, Any]:
+    """D08 (audit 2026-11-27): remind the customer of an unpaid balance; tell the Managers about an order that has waited too
+    long for the balance or for collection (services/order_exits.py)."""
+    from app.services import order_exits as ox
+    return ox.follow_up(session, order_ids=order_ids, settings={
+        "remind": _int_setting(session, "final_payment_remind_days", ox.DEFAULT_REMIND_DAYS),
+        "overdue": _int_setting(session, "final_payment_overdue_days", ox.DEFAULT_OVERDUE_DAYS),
+        "pickup": _int_setting(session, "pickup_overdue_days", ox.DEFAULT_OVERDUE_DAYS)})
+
+
 JOBS: dict[str, Callable[..., dict[str, Any]]] = {
     "quotation_expiry": quotation_expiry, "deposit_deadline": deposit_deadline, "acceptance": acceptance,
+    "stuck_orders": stuck_orders,
     "email_retry": email_retry, "photo_purge": photo_purge, "ai_chat_purge": ai_chat_purge,
 }
 

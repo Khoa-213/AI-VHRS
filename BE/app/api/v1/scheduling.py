@@ -8,7 +8,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import (IncidentOut, JobEventOut, JobOut, ProductionQueueRow, RescheduleIn, ResolveIncidentIn,
+from app.api.ops_schemas import (FinishOverrideIn, IncidentOut, JobEventOut, JobOut, ManagerJobDetail, ProductionQueueRow,
+                                 RescheduleIn, ResolveIncidentIn,
                                  RobotAssignIn, RobotOut, ScheduleConfigOut, ScheduleIn, SuggestionOut, TechnicianOut,
                                  UnscheduleIn)
 from app.api.schemas import ErrorOut, Page
@@ -97,8 +98,30 @@ def jobs(svc: Svc, status_: Annotated[list[JobStatus] | None, Query(alias="statu
     return Page(items=_jobs_out(svc, rows), total=total, page=page, page_size=page_size)
 
 
-@router.get("/jobs/{job_id}", response_model=JobOut, summary="Chi tiết job")
-def job_detail(job_id: int, svc: Svc) -> JobOut:
+@router.get("/jobs/{job_id}", response_model=ManagerJobDetail,
+            summary="Chi tiết job, kèm số bản robot đã viết xong và lần chạy còn mở (để quyết định ghi nhận viết xong thay)")
+def job_detail(job_id: int, svc: Svc, session: SessionDep) -> ManagerJobDetail:
+    from app.models.order import Order
+    from app.services.technician import open_run_info, written_runs
+    job = svc.get(job_id)
+    order = session.get(Order, job.order_id)
+    return ManagerJobDetail(**_jobs_out(svc, [job])[0].model_dump(), quantity=order.quantity if order else 1,
+                            copies_written=len(written_runs(session, job.id)), open_run=open_run_info(session, job.id))
+
+
+@router.post("/jobs/{job_id}/finish-override", response_model=JobOut,
+             summary="D06 Quản lý ghi nhận job đã viết xong khi máy trạm không báo được lần chạy (bắt buộc lý do, có nhật ký)",
+             description=("Bình thường kỹ thuật viên chỉ ghi nhận viết xong được khi job có một lần chạy robot kết thúc DONE "
+                          "(`409 RUN_EVIDENCE_REQUIRED`), đủ một lần cho mỗi bản của đơn (`409 COPIES_MISSING`). Endpoint này bỏ qua "
+                          "hai điều kiện đó. Job vẫn phải đang WRITING. Một lần chạy còn mở mà không ai thực hiện (máy trạm mất "
+                          "kết nối hoặc đang rảnh) được đóng luôn với kết quả UNKNOWN; nếu máy trạm còn báo robot đang chạy thì "
+                          "vẫn `409 RUN_OPEN`. Ghi `JOB_FINISH_OVERRIDE` vào nhật ký dưới tên Quản lý."),
+             responses={409: {"model": ErrorOut, "description": "JOB_STATE_CONFLICT / RUN_OPEN"},
+                        422: {"model": ErrorOut, "description": "REASON_REQUIRED"}})
+def finish_override(job_id: int, body: FinishOverrideIn, svc: Svc, session: SessionDep, manager: ManagerDep,
+                    request: Request) -> JobOut:
+    from app.services.technician import finish_by_manager
+    finish_by_manager(session, manager, job_id, body.reason, client_ip(request))
     return _jobs_out(svc, [svc.get(job_id)])[0]
 
 

@@ -1322,6 +1322,72 @@ dự án bật; FE có thể làm trước theo đây.
 - Đơn OT-2 chỉ có ảnh mẫu chữ tự do (không chọn bộ nét) → `422 AI_TYPE_UNSUPPORTED` như trước; Staff tải phác thảo thủ công
   hoặc từ chối.
 
+## 7z. Thay đổi API sau đợt audit 2026-11-27 (migration 0034; chi tiết và lý do ở `docs/audit/09_APPROVAL_AND_IMPLEMENTATION_PLAN.md` mục 6)
+
+Mọi thay đổi dưới đây đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Mục nào ghi "FE đã làm" là đã sửa trong `FE/` cùng đợt; còn lại FE chưa có màn.
+
+**Thanh toán**
+- Biến môi trường mới `ALLOW_TEST_PAYMENTS` (mặc định `false`). Khi tắt, `GET /payments/gateways` trả `enabled: false` cho cổng `MOCK` / `SANDBOX`; `POST /orders/{id}/payments/deposit`, `.../payments/final`, `POST /payments/{id}/mock-checkout` và webhook mô phỏng trả `403 TEST_PAYMENTS_DISABLED`. FE không cần đổi (đã lọc theo `enabled`). **Môi trường demo phải bật cờ này.**
+- `POST /orders/{id}/quotation/approve`: FE đã gửi `sketch_id` (lấy từ `sketch.id` của báo giá); `409 SKETCH_VERSION_STALE` thì tải lại trang. BE vẫn nhận request không có `sketch_id`.
+
+**Huỷ đơn**
+- `POST /orders/{id}/cancel` (khách): nhận thêm đơn `ACCEPTED`.
+- `POST /workshop/orders/{id}/cancel` (Staff phụ trách): ngoài đơn `CONFIRMED` (hoàn 100%) nay nhận đơn `ACCEPTED`: lý do ≥ 5 ký tự (`422 REASON_REQUIRED`), báo giá đang soạn bị huỷ theo, khách nhận thông báo. FE chưa có nút cho trường hợp `ACCEPTED`.
+
+**Đơn kẹt sau sản xuất (D08, migration 0034)**
+- `POST /workshop/orders/{id}/shipment/to-pickup {reason}` (Staff phụ trách): vận đơn mới nhất `FAILED` / `RETURNED` → đơn về `READY_TO_DELIVER` với `delivery_method = PICKUP`, không có khung giờ; bàn giao bằng `POST /workshop/orders/{id}/pickup/confirm` như cũ (đối chiếu số điện thoại người nhận của địa chỉ giao). Lỗi: `409 ORDER_NOT_DELIVERING`, `SHIPMENT_NOT_FAILED`, `PICKUP_CONTACT_MISSING`. FE chưa có nút.
+- `POST /manager/orders/{id}/close {reason (≥ 10 ký tự), refund_amount}` (Manager): đơn `AWAITING_FINAL_PAYMENT` / `READY_TO_DELIVER` / `DELIVERING` (vận đơn đã `FAILED`, `RETURNED` hoặc `CANCELLED`) → `CANCELLED`. Trả `{order_id, order_status, refundable_before, refund_id, refund_amount}`. `refund_amount > 0` mở một yêu cầu hoàn `PENDING` (hiện ở `GET /workshop/refunds`, `refund.rule = "MANAGER_CLOSE"`; FE đã có nhãn `rf.rule.MANAGER_CLOSE`). Lỗi: `409 ORDER_CLOSE_UNSUPPORTED`, `SHIPMENT_IN_TRANSIT`; `422 REFUND_AMOUNT_INVALID {refundable}`. FE chưa có màn.
+- Tác vụ nền mới `stuck_orders` (hiện trong `GET /admin/jobs/last`): nhắc khách thanh toán phần còn lại, báo Manager khi đơn chờ thanh toán cuối hoặc chờ khách đến nhận quá hạn. Ba tham số Admin mới: `final_payment_remind_days` (3), `final_payment_overdue_days` (7), `pickup_overdue_days` (7).
+
+**Tài khoản**
+- `PATCH /admin/accounts/{id}`: thêm `force` (mặc định `false`). Khoá / vô hiệu hoá / đổi vai trò tài khoản còn giữ việc trả `409 ACCOUNT_HAS_OPEN_WORK` với `details = {orders: [...], jobs: [...], robots: [...]}`; `force: true` cần `reason` (`422 REASON_REQUIRED`). FE Admin chưa xử lý mã lỗi này (hiện câu của BE).
+- `POST /auth/google`: lần đầu vào một tài khoản tạo bằng mật khẩu thì mật khẩu cũ bị vô hiệu và các phiên khác bị đăng xuất (khách nhận email). Không đổi request / response.
+
+**Trợ lý AI trên đơn** (FE đã làm)
+- `ProposalOut` thêm `needs_confirmation`, `confirm_reasons` (`quantity`, `customer_note`, `physical_watermark`, `restoration_mode`, `workshop_suggest_materials`, `DISCARDS_MANUAL_EDITS`), `revertible`.
+- `POST /orders/{id}/assistant/proposals/{pid}/revert` → `ApplyOut`: đưa đơn về như trước khi áp dụng; `409 PROPOSAL_NOT_APPLIED`, `409 PROPOSAL_STALE {reason: ORDER_CHANGED}`.
+- `POST /orders/{id}/assistant/messages[/stream]`: thêm `503 AI_BUSY {retry_after_seconds}` khi quá nhiều lượt chạy cùng lúc. Tool `undo_sketch` / `redo_sketch` của trợ lý có thể trả lỗi `CANVAS_WOULD_CHANGE` (chỉ model thấy).
+
+**Kỹ thuật viên và robot** (màn máy trạm của Robot Agent và DesktopApp; web không dùng)
+- `POST /technician/robot-commands` và `POST /technician/jobs/{id}/runs`: thêm `409 RED_ALERT_OPEN {alert_id, code}` (còn cảnh báo mức 4 chưa đóng) và `409 ROBOT_UNAVAILABLE` (robot `MAINTENANCE` / `BROKEN`) cho `RUN`, `DRY_RUN`, `RESUME`, `ALIGN_START` và lần chạy không phải bản ghi từ chối. `PAUSE`, `STOP` không bị chặn.
+- `POST /manager/robots/{id}/robot-commands`: Manager chỉ còn `PAUSE`, `STOP` (`RESUME` trả 403).
+- `POST /technician/jobs/{id}/finish`: thêm `409 RUN_OPEN {open_run_id}` và `409 RUN_EVIDENCE_REQUIRED` (cần một lần chạy không phải chạy thử kết thúc `DONE`; MOCK / SIM được tính).
+- `POST /manager/jobs/{id}/finish-override {reason (≥ 10 ký tự)}` → `JobOut`: Manager ghi nhận viết xong thay khi máy trạm không báo được lần chạy.
+- Báo sự cố, huỷ đơn sau cọc, đặt robot `MAINTENANCE` / `BROKEN`: backend tự xếp lệnh `STOP` (`params.system = true`) khi còn lần chạy mở; lệnh đang chờ của job có `status = EXPIRED`, `error_code = JOB_ENDED`.
+- Khoá agent: `401 AGENT_ACCOUNT_INACTIVE` khi tài khoản kỹ thuật viên bị khoá; vẫn đóng được lần chạy của chính nó sau khi job rời trạng thái đang chạy.
+- Báo cáo kiểm chuyển động: cảnh báo `PROBE_ORDER_MIRRORED`, trường `stats.frame.mirrored`.
+
+**Chung**
+- Ảnh trên 40 triệu điểm ảnh: `422 IMAGE_TOO_LARGE {width, height, max_pixels}` ở mọi endpoint xử lý ảnh khách hoặc ảnh sản phẩm.
+- Chờ khoá dòng quá 20 giây: `409 RESOURCE_BUSY` kèm header `Retry-After: 5` (gửi lại được).
+- Route không tồn tại / sai method: `{"error": {"code": "NOT_FOUND" | "METHOD_NOT_ALLOWED", ...}, "detail": "..."}`. Lỗi không lường trước: `500 {"error": {"code": "INTERNAL_ERROR", ...}}`, có header CORS.
+- Thiếu dòng `order_types_enabled` trong `system_settings` nay nghĩa là chỉ OT-1 và OT-3.
+
+## 7z-2. Thay đổi API sau đợt đối chiếu audit 2026-11-28 (không đổi DB; lý do ở `docs/audit/09_APPROVAL_AND_IMPLEMENTATION_PLAN.md` mục 7)
+
+Đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Trang máy trạm (`robot_agent/.../static`) đã dùng các trường và endpoint mới. Web `FE/`: màn Manager "Robot và cảnh báo" (`/staff/robots`, phần chi tiết job) đã có hai nút "Đóng lần chạy treo" và "Ghi nhận viết xong" (FE đã làm, 2026-11-28). App desktop chưa.
+
+**Số bản của đơn**
+- `GET /technician/jobs/{id}`: thêm `copies_written` (số lần chạy robot của job kết thúc `DONE`, mỗi lần là một bản) và `open_run` (`null`, hoặc `{run_id, mode, dry_run, started_at, orphan}`: lần chạy máy chủ còn giữ mở; `orphan = true` nghĩa là không ai đang thực hiện nó).
+- `POST /technician/jobs/{id}/finish`: `409 COPIES_MISSING` với `details: {written, quantity}` khi `copies_written < quantity`. UI nên khoá nút "Viết xong" và hiện "đã viết k/N bản". `409 RUN_OPEN` giờ có `details: {open_run_id, orphan}`.
+- `PATCH /technician/runs/{run_id}` với `result: DONE` cần `completed_strokes == total_strokes`, không thì `422 RESULT_INVALID`. Lần chạy dừng giữa chừng dùng `STOPPED`, `FAULT` hoặc `UNKNOWN`.
+- `GET /manager/jobs/{id}`: thêm `quantity`, `copies_written` và `open_run` (cùng dạng với phía kỹ thuật viên). Web dùng ba trường này để hiện "k trên N bản", khối "lần chạy còn mở" và quyết định nút nào bật. Các endpoint danh sách job không đổi.
+- `POST /manager/jobs/{id}/finish-override`: bỏ qua cả điều kiện số bản; tự đóng lần chạy mồ côi (`UNKNOWN`). Vẫn `409 RUN_OPEN` khi máy trạm còn báo robot đang chạy.
+
+**Lần chạy mồ côi**
+- `POST /technician/runs/{run_id}/close-orphan` và `POST /manager/runs/{run_id}/close-orphan`, body `{reason}` (10–500 ký tự). Trả `RunOut` với `result: UNKNOWN`. Lỗi: `409 RUN_STILL_ACTIVE` (máy trạm đang báo bận: dừng robot trước), `409 RUN_ALREADY_CLOSED`, `422`, `404 RUN_NOT_FOUND`.
+- Nếu sau đó máy trạm gửi được kết quả thật của lần chạy đó, kết quả thật thay cho `UNKNOWN`; `summary` giữ `closed_by_person` và `reason`.
+
+**Lệnh robot**
+- Một lệnh có thể kết thúc `FAILED` với `error_code: NO_ANSWER`: máy trạm đã nhận lệnh nhưng không báo kết quả trong 30 giây (PAUSE, RESUME, STOP) hoặc 300 giây (lệnh khác). UI hiện `error_message` và **không tự gửi lại lệnh chạy**.
+- Gửi lại cùng `idempotency_key` với `params` hoặc robot khác: `409 IDEMPOTENCY_KEY_REUSED`. Mỗi lần bấm nên sinh một khoá mới (trang máy trạm đã làm vậy).
+
+**Robot thật**
+- `POST /technician/jobs/{id}/runs` với `mode: REAL, dry_run: false`, và `POST /technician/robot-commands` với `kind: RUN, params.mode: REAL`: thêm `409 SERVER_VALIDATION_REQUIRED` (`details.server_validation`: `NOT_RUN` hoặc `FAIL`) và `409 PACKAGE_NOT_SIGNED`. Để qua: gửi hiệu chuẩn có `frame_transform` (`schema: vhrs-motion/1`, lấy từ `calibration.json` của máy trạm) rồi ghi lại kết quả mô phỏng. Chạy thử, SIM và MOCK không đổi.
+
+**Thanh toán**
+- Webhook báo `SUCCESS` cho giao dịch đã `FAILED`: nếu đơn còn chờ đúng khoản đó thì giao dịch thành `SUCCESS` và đơn đi tiếp như một lần thanh toán thường; ngược lại giao dịch giữ `FAILED`, có `needs_refund` và hiện trong `GET /workshop/refunds`. FE không phải đổi gì.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |

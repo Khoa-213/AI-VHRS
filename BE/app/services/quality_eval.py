@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 
 from app.core.errors import AppError
+from app.services import image_guard
 from app.services.stroke_ai import recovery
 from app.services.stroke_ai.trajectory import Page
 
@@ -148,7 +149,7 @@ def _align(ink: np.ndarray, thick: np.ndarray) -> tuple[np.ndarray, dict[str, fl
 # ---------------------------------------------------------------------------------------------- the evaluation
 def evaluate(photo: bytes, page: Page, *, stroke_width_mm: float = 0.5, tol_mm: float | None = None) -> Measured:
     tol = tol_mm or THRESHOLDS["tol_mm"]
-    img = cv2.imdecode(np.frombuffer(photo, np.uint8), cv2.IMREAD_COLOR)
+    img = image_guard.decode(photo, cv2.IMREAD_COLOR)
     if img is None:
         raise EvalError(422, "PHOTO_UNREADABLE", "Không đọc được ảnh.")
     if max(img.shape[:2]) > MAX_SIDE_PX:

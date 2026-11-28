@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -36,6 +37,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select, text as sql
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.models.account import Account
 from app.models.studio import AiMessage, AiSession, AiToolCall, StudioDraft
@@ -80,8 +82,10 @@ Bạn giúp khách soạn đơn hàng (đơn đang là bản nháp) và chỉnh 
 Trả lời bằng tiếng Việt, ngắn gọn, lịch sự.
 
 Cách làm việc: mọi thay đổi bạn làm trong một lượt (nội dung, bố cục, vật tư, tuỳ chọn, phác thảo) được gom thành MỘT ĐỀ XUẤT.
-Khách xem đề xuất (ảnh phác thảo, phần thay đổi, giá ước tính mới) rồi tự bấm "Áp dụng vào đơn" hoặc "Bỏ qua"; đơn chỉ đổi khi
-khách áp dụng. Vì vậy trong câu trả lời hãy tóm tắt bạn đề xuất gì và mời khách xem, đừng nói là "đã sửa đơn". Nếu <don_hang> có
+Đề xuất chỉ đổi nội dung, bố cục, vật tư hoặc phác thảo được màn hình đưa vào đơn ngay và khách bấm "Hoàn lại" nếu không ưng.
+Đề xuất đổi số bản, ghi chú, dòng xác thực, chế độ phục dựng, hoặc vẽ lại làm mất nét khách đã tự sửa thì chờ khách bấm
+"Áp dụng vào đơn" hoặc "Bỏ qua". Vì vậy trong câu trả lời hãy tóm tắt bạn đề xuất gì và mời khách xem lại; đừng khẳng định đơn
+đã đổi, và đừng mời khách bấm một nút cụ thể. Nếu <don_hang> có
 `proposal_base`, đơn bạn đang thấy đã gồm đề xuất trước đó (khách chưa áp dụng); đề xuất mới sẽ gồm cả phần cũ lẫn phần bạn sửa thêm.
 Bạn đồng hành với khách suốt quá trình tạo đơn: soạn nội dung, chọn mẫu chữ, giấy, bút, mực, số bản, xem giá ước tính, tạo và
 chỉnh phác thảo. Khi đơn còn thiếu bước nào (check_order), gợi ý bước tiếp theo.
@@ -253,8 +257,10 @@ class AssistantService:
         """The stored turn of a message already sent with this `client_ref` (None: not sent yet)."""
         if not client_ref:
             return None
+        # AI-05: this runs before the owner check of the turn, so it must itself be limited to the caller's own conversations
         user = self.session.scalar(select(AiMessage).join(AiSession, AiSession.id == AiMessage.session_id)
-                                   .where(AiSession.order_id == order_id, AiMessage.client_ref == client_ref)
+                                   .where(AiSession.order_id == order_id, AiSession.customer_id == self.customer.id,
+                                          AiMessage.client_ref == client_ref)
                                    .order_by(AiMessage.id.desc()).limit(1))
         if user is None:
             return None
@@ -387,6 +393,16 @@ class AssistantService:
 
     def _run(self, sess: AiSession, tools: Any, text: str, on_event: Callable[[str, dict[str, Any]], None] | None,
              client_ref: str | None) -> dict[str, Any]:
+        if not _turn_slots().acquire(blocking=False):                  # AI-02
+            raise AppError(503, "AI_BUSY", "Trợ lý đang phục vụ nhiều người cùng lúc. Vui lòng gửi lại sau ít giây.",
+                           {"retry_after_seconds": 5})
+        try:
+            return self._run_turn(sess, tools, text, on_event, client_ref)
+        finally:
+            _turn_slots().release()
+
+    def _run_turn(self, sess: AiSession, tools: Any, text: str, on_event: Callable[[str, dict[str, Any]], None] | None,
+                  client_ref: str | None) -> dict[str, Any]:
         emit = on_event or (lambda name, data: None)
         providers = self.providers()
         history = self._history(sess)
@@ -400,29 +416,38 @@ class AssistantService:
         attempts: list[dict[str, Any]] = []
         started = time.monotonic()
         max_tools = int(self.setting("ai_max_tool_calls"))
+        deadline = started + float(get_settings().ai_turn_deadline_seconds)
         result = None
+        wasted_calls = 0                                              # AI-06: calls of providers that failed still cost and count
         for provider in ordered:
             emit("provider", {"provider": provider.name, "model": provider.model})
             tools.bind(provider)
             try:
-                result = self._turn(provider, tools, history, text, max_tools, emit)
+                # AI-04: whatever a provider's tools changed before it failed is undone, so the next provider starts from the
+                # order as the customer left it, and a turn in which every provider failed leaves no revision behind for
+                # the customer's Redo button to walk into.
+                with self.session.begin_nested():
+                    result = self._turn(provider, tools, history, text, max_tools, emit, deadline)
                 attempts.append({"provider": provider.name, "model": provider.model, "ok": True})
                 break
             except llm.ProviderError as exc:
+                wasted_calls += int(getattr(exc, "calls_made", 0)) + 1
                 attempts.append({"provider": provider.name, "model": provider.model, "ok": False, "reason": exc.reason,
                                  "status": exc.status})
                 emit("failover", {"provider": provider.name, "reason": exc.reason})
+                if time.monotonic() >= deadline:                      # AI-02: no more providers once the turn is out of time
+                    break
         latency = int((time.monotonic() - started) * 1000)
         if result is None:
             reply = AiMessage(session_id=sess.id, role="ASSISTANT", content=FAILED_TEXT, status="FAILED", attempts=attempts,
-                              model_calls=0, latency_ms=latency)
+                              model_calls=wasted_calls, latency_ms=latency)
             self.session.add(reply)
             sess.last_message_at = datetime.now(timezone.utc)
             self.session.flush()
             return {"user": user_msg, "reply": reply, "tool_calls": [], "replayed": False}
         provider, out = result["provider"], result
         reply = AiMessage(session_id=sess.id, role="ASSISTANT", content=out["text"], status="OK", provider=provider.name,
-                          model=provider.model, model_calls=out["calls"], input_tokens=out["input_tokens"],
+                          model=provider.model, model_calls=out["calls"] + wasted_calls, input_tokens=out["input_tokens"],
                           output_tokens=out["output_tokens"],
                           cost_usd=llm.cost_usd(provider.model, out["input_tokens"], out["output_tokens"]),
                           latency_ms=latency, input_sha256=out["input_sha256"], attempts=attempts)
@@ -439,7 +464,8 @@ class AssistantService:
         return {"user": user_msg, "reply": reply, "tool_calls": logged, "replayed": False}
 
     def _turn(self, provider: llm.Provider, tools: Any, history: list[dict[str, Any]], text: str,
-              max_tools: int, emit: Callable[[str, dict[str, Any]], None] = lambda name, data: None) -> dict[str, Any]:
+              max_tools: int, emit: Callable[[str, dict[str, Any]], None] = lambda name, data: None,
+              deadline: float | None = None) -> dict[str, Any]:
         system = self._system(tools)
         transcript = [*history, {"role": "user", "text": text}]
         digest = hashlib.sha256(json.dumps({"system": system, "transcript": transcript}, ensure_ascii=False,
@@ -448,13 +474,26 @@ class AssistantService:
         calls = used = tin = tout = 0
         log: list[dict[str, Any]] = []
         while True:
-            reply = provider.complete(system, transcript, specs)
+            try:
+                reply = provider.complete(system, transcript, specs)
+            except llm.ProviderError as exc:
+                exc.calls_made = calls                                # AI-06: what this provider already cost before failing
+                raise
             calls += 1
             tin, tout = tin + reply.input_tokens, tout + reply.output_tokens
             if not reply.tool_calls:
+                if not (reply.text or "").strip() and used == 0:
+                    # AI-06: nothing said and nothing done (cut off, blocked, a broken function call). Answering "I have
+                    # updated the draft" here told the customer about a change that never happened.
+                    err = llm.ProviderError("BAD_RESPONSE", None, "empty reply")
+                    err.calls_made = calls - 1                       # the failover adds the failing call itself
+                    raise err
                 final = reply.text or "Tôi đã cập nhật bản nháp. Bạn xem bản xem trước nhé."
                 break
             if used >= max_tools:
+                final = reply.text or LIMIT_TEXT
+                break
+            if deadline is not None and time.monotonic() >= deadline:    # AI-02: out of time, keep what is done so far
                 final = reply.text or LIMIT_TEXT
                 break
             transcript.append({"role": "assistant", "text": reply.text, "tool_calls": reply.tool_calls, "raw": reply.raw,
@@ -475,6 +514,19 @@ class AssistantService:
             transcript.append({"role": "tool", "results": results})
         return {"provider": provider, "text": final[:4000], "calls": calls, "input_tokens": tin, "output_tokens": tout,
                 "tool_log": log, "input_sha256": digest}
+
+
+_slots: threading.BoundedSemaphore | None = None
+_slots_size = 0
+
+
+def _turn_slots() -> threading.BoundedSemaphore:
+    """How many assistant turns may run at once in this process (AI-02); rebuilt when the setting changes."""
+    global _slots, _slots_size
+    size = max(1, int(get_settings().ai_max_concurrent_turns))
+    if _slots is None or size != _slots_size:
+        _slots, _slots_size = threading.BoundedSemaphore(size), size
+    return _slots
 
 
 def order_assistant_log(session: Session, order_id: int) -> dict[str, Any]:

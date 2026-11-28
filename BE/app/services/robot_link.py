@@ -33,17 +33,25 @@ from app.domain import job_rules as jr
 from app.models.account import Account, RoleCode
 from app.models.ops import ACTIVE_JOB_STATUSES, JobStatus, ProductionJob, Robot, RobotAgent, RobotCommand, RobotRun
 from app.services import audit
-from app.services.robot_ops import OFFLINE_AFTER_S, RobotOpsService
+from app.services.robot_ops import OFFLINE_AFTER_S, RobotOpsService, require_motion_allowed, require_real_write_ready
 
 AGENT_KEY_PREFIX = "vhrs_ak_"
 KINDS = ("LOAD", "PREFLIGHT", "DRY_RUN", "RUN", "PAUSE", "RESUME", "STOP", "PAPER_CHANGED", "IDENTIFY", "ALIGN_START")
 JOB_KINDS = ("LOAD", "PREFLIGHT", "DRY_RUN", "RUN", "PAPER_CHANGED", "ALIGN_START")
 CONTROL_KINDS = ("PAUSE", "RESUME", "STOP")
-MANAGER_KINDS = ("PAUSE", "RESUME", "STOP")             # a Manager may watch and pause/stop, never start a run
+MANAGER_KINDS = ("PAUSE", "STOP")                       # a Manager may watch and halt, never put the arm in motion (TP-03)
+MOTION_KINDS = ("RUN", "DRY_RUN", "RESUME", "ALIGN_START")   # everything that moves the arm; held back by require_motion_allowed
 # Safety (owner decision 2026-11-26): a technician who holds a live job on the robot may always halt it, even while another
 # technician's app holds the robot. Starting or resuming motion stays with the holder (ROBOT_IN_USE).
 HALT_KINDS = ("PAUSE", "STOP")
 TTL_S = {"CONTROL": 20, "DEFAULT": 60}
+# A05 (cross-check 2026-11-28): a command the agent pulled but never answered. Before, it stayed DELIVERED for ever, so a STOP
+# whose hand-over was lost on the wire looked exactly like one that arrived.
+ANSWER_TIMEOUT_S = {"CONTROL": 30, "DEFAULT": 300}      # after this without an answer: FAILED / NO_ANSWER (ALIGN_START may take minutes)
+HALT_REDELIVER_S = 3.0                                  # an unanswered PAUSE / STOP is handed out again (stopping twice is harmless)
+NO_ANSWER = "NO_ANSWER"
+NO_ANSWER_TEXT = ("Máy trạm đã nhận lệnh nhưng không báo kết quả. Chưa biết lệnh có được thực hiện hay không: kiểm tra tại máy "
+                  "trạm (nếu đang có nguy hiểm: nhấn nút E-Stop vật lý).")
 AUTH_CACHE_S = 60.0
 FRAME_KEEP = 300                                        # ~75 s at 4 frames/s
 HEARTBEAT_EVERY_S = 10.0
@@ -159,8 +167,76 @@ def technician_for_agent(session: Session, robot_id: int, job_id: int | None, ac
         stmt = stmt.where(ProductionJob.technician_id == account_id)
     job = session.scalar(stmt.order_by(ProductionJob.slot_start).limit(1))
     if job is None:
+        # TP-07: the job may have left its live states (incident, cancelled order, "finished") while the agent's run is still
+        # open. The agent must still be able to close THAT run and say how it ended, or the open run blocks the robot for good.
+        stmt = select(ProductionJob).join(RobotRun, RobotRun.job_id == ProductionJob.id).where(
+            RobotRun.robot_id == robot_id, RobotRun.ended_at.is_(None))
+        if job_id is not None:
+            stmt = stmt.where(ProductionJob.id == job_id)
+        if account_id is not None:
+            stmt = stmt.where(ProductionJob.technician_id == account_id)
+        job = session.scalar(stmt.limit(1))
+    if job is None:
         raise AppError(401, "AGENT_HAS_NO_ACTIVE_JOB", "Robot này hiện không có job đang hoạt động; agent không có quyền gọi API kỹ thuật viên.")
     return session.get(Account, job.technician_id)
+
+
+def halt_job(session: Session, job: ProductionJob, *, by: int, reason: str, ip: str | None = None) -> RobotCommand | None:
+    """TP-01: the job is ending behind the robot's back (incident, cancelled order, robot taken out of service).
+
+    Until now the backend only changed rows: the job read FAILED while the arm kept writing, and the run stayed open and blocked
+    the next job. Here nothing still queued for the job may reach the agent, and when the arm may be moving (a run is open, or
+    a motion command was handed to the agent and has not come back) a STOP is queued for it. The run itself is closed by the
+    agent once the arm has stopped (it keeps that right, see `technician_for_agent`); the backend cannot know the outcome.
+    Returns the STOP command, or None when nothing was moving. A STOP that finds no agent simply expires: the red e-mailed
+    alert for a silent agent during a run (`sweep_stale`) covers that case, and the physical E-Stop is the last word."""
+    if job.robot_id is None:
+        return None
+    now = _now()
+    for c in session.scalars(select(RobotCommand).where(RobotCommand.job_id == job.id, RobotCommand.status == "PENDING",
+                                                        RobotCommand.kind.not_in(HALT_KINDS)).with_for_update()):
+        c.status, c.finished_at, c.error_code = "EXPIRED", now, "JOB_ENDED"
+    run_open = session.scalar(select(RobotRun.run_id).where(RobotRun.job_id == job.id, RobotRun.ended_at.is_(None)).limit(1))
+    moving = session.scalar(select(RobotCommand.id).where(RobotCommand.job_id == job.id, RobotCommand.status == "DELIVERED",
+                                                          RobotCommand.kind.in_(MOTION_KINDS)).limit(1))
+    if run_open is None and moving is None:
+        return None
+    cmd = RobotCommand(id=str(uuid.uuid4()), robot_id=job.robot_id, job_id=job.id, kind="STOP",
+                       params={"system": True, "reason": reason[:200]}, status="PENDING", created_by=by,
+                       expires_at=now + timedelta(seconds=TTL_S["CONTROL"]))
+    session.add(cmd)
+    session.flush()
+    audit.record(session, actor_id=by, action="ROBOT_COMMAND", entity_type="robot", entity_id=job.robot_id,
+                 new={"command_id": cmd.id, "kind": "STOP", "job_id": job.id, "system": True, "open_run": run_open}, reason=reason, ip=ip)
+    hub.notify_command(job.robot_id)
+    return cmd
+
+
+def run_orphaned(run: RobotRun) -> bool:
+    """A06: an open run that nobody is executing any more. The robot's agent is offline, or it is connected and reports that it
+    is not running anything (it finished or crashed, and its "run closed" message never reached us)."""
+    return not hub.online(run.robot_id) or not bool(hub.live(run.robot_id).status.get("busy"))
+
+
+def close_orphan(session: Session, run: RobotRun, *, by: int, reason: str, ip: str | None = None) -> RobotRun:
+    """Close an orphaned run as UNKNOWN on a person's word. The robot is free for the next run; what is on the paper is for the
+    person to judge. If the agent's own report still arrives, it replaces the UNKNOWN (RobotOpsService.close_run)."""
+    online = hub.online(run.robot_id)
+    run.ended_at, run.result = _now(), "UNKNOWN"
+    run.summary = {**(run.summary or {}), "closed_by_person": by, "reason": reason[:500], "agent_online": online}
+    audit.record(session, actor_id=by, action="ROBOT_RUN_CLOSE_ORPHAN", entity_type="robot_run", entity_id=run.id,
+                 new={"run_id": run.run_id, "job_id": run.job_id, "robot_id": run.robot_id, "agent_online": online},
+                 reason=reason[:500], ip=ip)
+    return run
+
+
+def halt_robot(session: Session, robot_id: int, *, by: int, reason: str, ip: str | None = None) -> list[RobotCommand]:
+    """STOP for whatever is live on a robot that is being taken out of service (see `halt_job`)."""
+    jobs = session.scalars(select(ProductionJob).where(
+        ProductionJob.robot_id == robot_id,
+        or_(ProductionJob.status.in_(ACTIVE_JOB_STATUSES),
+            ProductionJob.id.in_(select(RobotRun.job_id).where(RobotRun.robot_id == robot_id, RobotRun.ended_at.is_(None))))))
+    return [c for c in (halt_job(session, j, by=by, reason=reason, ip=ip) for j in jobs) if c is not None]
 
 
 class RobotLinkService:
@@ -283,7 +359,8 @@ class RobotLinkService:
         if kind not in KINDS:
             raise AppError(422, "UNKNOWN_COMMAND", f"Lệnh không hợp lệ: {kind}.")
         if self.is_manager and kind not in MANAGER_KINDS:
-            raise AppError(403, "FORBIDDEN", "Quản lý chỉ được tạm dừng, tiếp tục hoặc dừng robot.")
+            raise AppError(403, "FORBIDDEN", "Quản lý chỉ được tạm dừng hoặc dừng robot; cho robot chạy tiếp là việc của "
+                           "kỹ thuật viên đứng tại máy.")
         if kind in JOB_KINDS and job_id is None:
             raise AppError(422, "JOB_REQUIRED", f"Lệnh {kind} cần job_id.")
         job = None
@@ -297,11 +374,13 @@ class RobotLinkService:
         if robot_id is None:
             raise AppError(422, "ROBOT_REQUIRED", "Cần robot_id hoặc job_id.")
         robot = self.ops._robot(robot_id, write=True, lock=True)
+        # TP-03: RESUME may come with only a robot_id. It still resumes one particular job, and that job's rules apply.
+        live_job = job if job is not None else (self._live_job(robot.id) if kind == "RESUME" else None)
         if self.actor and idempotency_key:
             prior = self.session.scalar(select(RobotCommand).where(RobotCommand.created_by == self.actor.id,
                                                                     RobotCommand.idempotency_key == idempotency_key))
             if prior is not None:
-                if prior.kind != kind or prior.job_id != job_id:
+                if prior.kind != kind or prior.job_id != job_id or prior.robot_id != robot.id or (prior.params or {}) != (params or {}):
                     raise AppError(409, "IDEMPOTENCY_KEY_REUSED", "idempotency_key đã dùng cho một lệnh khác.")
                 return prior
         mode = str(params.get("mode", "")).upper()
@@ -322,9 +401,13 @@ class RobotLinkService:
         if job is not None and kind == "RUN" and job.status not in (JobStatus.WRITING, JobStatus.PAUSED):
             raise AppError(409, "JOB_STATE_CONFLICT", "Hãy bấm Bắt đầu viết (POST /technician/jobs/{id}/start) trước khi gửi lệnh RUN.",
                            {"job_status": job.status.value})
-        if (job is not None and kind in ("RUN", "RESUME") and job.status == JobStatus.PAUSED
-                and jr.simulation_stale(job.simulation_report)):
-            raise AppError(409, *jr.STALE_SIMULATION, {"job_status": job.status.value})
+        if (live_job is not None and kind in ("RUN", "RESUME") and live_job.status == JobStatus.PAUSED
+                and jr.simulation_stale(live_job.simulation_report)):
+            raise AppError(409, *jr.STALE_SIMULATION, {"job_status": live_job.status.value})
+        if job is not None and kind == "RUN" and mode == "REAL":
+            require_real_write_ready(job)                           # A03 / A08: told here, before the agent is asked to move
+        if kind in MOTION_KINDS:
+            require_motion_allowed(self.session, robot)             # TP-02: out of service, or a red alert nobody closed
         if not self._agent_online(robot):
             raise AppError(409, "AGENT_OFFLINE", "Máy trạm của robot chưa kết nối tới hệ thống. Không gửi lệnh; kiểm tra Robot Agent "
                            "(nếu đang có nguy hiểm: nhấn nút E-Stop vật lý).", {"robot_id": robot.id})
@@ -348,12 +431,40 @@ class RobotLinkService:
         hub.notify_command(robot.id)
         return cmd
 
+    def close_orphan_run(self, run_id: str, reason: str) -> RobotRun:
+        """A06: the technician of the job, or a Manager, closes a run the agent left open. Refused while the agent says it is
+        still running: stop the robot first."""
+        reason = (reason or "").strip()
+        if len(reason) < 10:
+            raise AppError(422, "REASON_REQUIRED", "Đóng lần chạy thay máy trạm cần lý do (ít nhất 10 ký tự).")
+        run = self.session.scalar(select(RobotRun).where(RobotRun.run_id == run_id).with_for_update())
+        if run is None:
+            raise AppError(404, "RUN_NOT_FOUND", "Không tìm thấy lần chạy.")
+        self.ops._own_job(run.job_id)
+        if run.ended_at is not None:
+            raise AppError(409, "RUN_ALREADY_CLOSED", f"Lần chạy đã kết thúc với kết quả {run.result}.")
+        if not run_orphaned(run):
+            raise AppError(409, "RUN_STILL_ACTIVE", "Máy trạm đang báo robot còn chạy lần này. Dừng robot (hoặc chờ robot viết xong) "
+                           "rồi mới đóng lần chạy.", {"run_id": run.run_id})
+        return close_orphan(self.session, run, by=self.actor.id, reason=reason, ip=self.ip)
+
+    def _live_job(self, robot_id: int) -> ProductionJob | None:
+        """The job a bare RESUME would resume on this robot: the one whose run is still open, else the one writing / paused."""
+        run_job = self.session.scalar(select(ProductionJob).join(RobotRun, RobotRun.job_id == ProductionJob.id).where(
+            RobotRun.robot_id == robot_id, RobotRun.ended_at.is_(None)).limit(1))
+        if run_job is not None:
+            return run_job
+        return self.session.scalar(select(ProductionJob).where(
+            ProductionJob.robot_id == robot_id, ProductionJob.status.in_((JobStatus.WRITING, JobStatus.PAUSED)))
+            .order_by(ProductionJob.slot_start).limit(1))
+
     def command(self, command_id: str) -> RobotCommand:
         cmd = self.session.get(RobotCommand, command_id)
         if cmd is None:
             raise AppError(404, "COMMAND_NOT_FOUND", "Không tìm thấy lệnh.")
         if cmd.status == "PENDING" and cmd.expires_at <= _now():
             cmd.status, cmd.finished_at = "EXPIRED", _now()
+        self._give_up_unanswered([cmd])
         self.ops._robot(cmd.robot_id)                       # raises 404 for someone who holds no job on this robot
         if not self.is_manager and self.actor and cmd.created_by != self.actor.id:
             job = self.session.get(ProductionJob, cmd.job_id) if cmd.job_id else None
@@ -372,6 +483,25 @@ class RobotLinkService:
         for c in self.session.scalars(select(RobotCommand).where(RobotCommand.robot_id == robot_id, RobotCommand.status == "PENDING",
                                                                  RobotCommand.expires_at <= _now()).with_for_update()):
             c.status, c.finished_at = "EXPIRED", _now()
+        self._give_up_unanswered(self._delivered(robot_id))
+
+    def _delivered(self, robot_id: int) -> list[RobotCommand]:
+        return list(self.session.scalars(select(RobotCommand).where(
+            RobotCommand.robot_id == robot_id, RobotCommand.status == "DELIVERED").order_by(RobotCommand.created_at).with_for_update()))
+
+    @staticmethod
+    def _answer_limit(cmd: RobotCommand) -> float:
+        return ANSWER_TIMEOUT_S["CONTROL" if cmd.kind in CONTROL_KINDS else "DEFAULT"]
+
+    def _give_up_unanswered(self, commands: list[RobotCommand]) -> None:
+        """A05: DELIVERED and silent for too long becomes FAILED / NO_ANSWER. The outcome is unknown, and the record says so."""
+        now = _now()
+        for c in commands:
+            if c.status != "DELIVERED" or c.delivered_at is None:
+                continue
+            since = c.created_at if c.kind in HALT_KINDS else c.delivered_at    # a halt is handed out again and again: count from its start
+            if (now - since).total_seconds() > self._answer_limit(c):
+                c.status, c.finished_at, c.error_code, c.error_message = "FAILED", now, NO_ANSWER, NO_ANSWER_TEXT
 
     # ------------------------------------------------------------------ live view (app side)
     def live(self, robot_id: int, after: int = 0) -> dict[str, Any]:
@@ -419,19 +549,25 @@ class RobotLinkService:
                                          .order_by(RobotCommand.created_at).with_for_update()))
         # control commands (STOP first) go ahead of everything else
         rows.sort(key=lambda c: (0 if c.kind == "STOP" else 1 if c.kind in CONTROL_KINDS else 2, c.created_at))
-        for c in rows:
-            c.status, c.delivered_at = "DELIVERED", _now()
-        lv.pending = False
-        return rows
+        now = _now()
+        # A05: a PAUSE / STOP the agent pulled but did not answer goes out again until it answers or the wait runs out (the agent
+        # stops again, which is harmless). A command that moves the arm (RUN, RESUME, ALIGN_START ...) is NEVER handed out twice.
+        waiting = [c for c in self._delivered(robot_id) if c.kind in HALT_KINDS and c.delivered_at is not None]
+        again = [c for c in waiting if (now - c.delivered_at).total_seconds() >= HALT_REDELIVER_S]
+        for c in rows + again:
+            c.status, c.delivered_at = "DELIVERED", now
+        lv.pending = bool(waiting) or any(c.kind in HALT_KINDS for c in rows)     # look again on the next sync while a halt is unanswered
+        return sorted(again, key=lambda c: (0 if c.kind == "STOP" else 1, c.created_at)) + rows
 
     def finish_command(self, robot_id: int, command_id: str, *, ok: bool, result: dict[str, Any] | None, error_code: str | None,
                        message: str | None) -> RobotCommand:
         cmd = self.session.scalar(select(RobotCommand).where(RobotCommand.id == command_id, RobotCommand.robot_id == robot_id).with_for_update())
         if cmd is None:
             raise AppError(404, "COMMAND_NOT_FOUND", "Không tìm thấy lệnh.")
-        if cmd.status in ("DONE", "FAILED"):
+        gave_up = cmd.status == "FAILED" and cmd.error_code == NO_ANSWER     # A05: the answer came after we stopped waiting
+        if cmd.status in ("DONE", "FAILED") and not gave_up:
             return cmd                                      # idempotent
-        if cmd.status != "DELIVERED":
+        if cmd.status != "DELIVERED" and not gave_up:
             raise AppError(409, "COMMAND_NOT_DELIVERED", f"Lệnh đang {cmd.status}, chưa được giao cho agent.")
         cmd.status, cmd.result, cmd.finished_at = ("DONE" if ok else "FAILED"), result, _now()
         cmd.error_code, cmd.error_message = (None, None) if ok else ((error_code or "AGENT_ERROR")[:40], message)

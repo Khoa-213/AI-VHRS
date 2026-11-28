@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.domain import order_types
 from app.domain import text_layout
 from app.db.session import set_actor
 from app.integrations.storage import ObjectStorage
@@ -31,7 +32,19 @@ from app.services.pricing import (MaterialPrices, PricingParams, canvas_chars, c
                                   parse_tiers)
 
 EDITABLE = {OrderStatus.DRAFT, OrderStatus.NEED_INFO}
-CANCELLABLE_ONLINE = {OrderStatus.SUBMITTED, OrderStatus.NEED_INFO, OrderStatus.QUOTED, OrderStatus.AWAITING_DEPOSIT}
+# D04 (audit 2026-11-27): ACCEPTED is here too. The database always allowed ACCEPTED -> CANCELLED, but nothing used it, so an
+# order the workshop had accepted (or one sent back by "request changes" on the quotation) could not be withdrawn by anybody.
+CANCELLABLE_ONLINE = {OrderStatus.SUBMITTED, OrderStatus.NEED_INFO, OrderStatus.ACCEPTED, OrderStatus.QUOTED,
+                      OrderStatus.AWAITING_DEPOSIT}
+OPEN_QUOTATIONS = (QuotationStatus.DRAFT, QuotationStatus.PENDING_APPROVAL, QuotationStatus.SENT)
+
+
+def close_open_quotations(session: Session, order_id: int) -> None:
+    """The order is being cancelled before any payment: its quotation still being prepared or shown must not stay live."""
+    quotes = QuotationRepository(session)
+    while (live := quotes.latest(order_id, OPEN_QUOTATIONS)) is not None:
+        live.status = QuotationStatus.CANCELLED
+        session.flush()
 ALLOWED_INPUTS: dict[OrderType, set[OrderInputKind]] = {  # BR-03: one order type per order
     OrderType.OT1_COPY_RESTORE: {OrderInputKind.ORIGINAL_IMAGE},
     OrderType.OT2_LEARNED_STYLE: {OrderInputKind.HANDWRITING_SAMPLE, OrderInputKind.TEXT_CONTENT},
@@ -171,8 +184,7 @@ class OrderService:
 
     # ---- orders ----
     def create(self, order_type: OrderType, quantity: int) -> Order:
-        enabled = self.catalog.setting("order_types_enabled")
-        if enabled is not None and order_type.value not in enabled:  # MSG03 / LI-10
+        if order_type.value not in order_types.enabled(self.catalog.setting("order_types_enabled")):  # MSG03 / LI-10
             raise AppError(409, "ORDER_TYPE_SUSPENDED", "Loại dịch vụ này đang tạm ngừng nhận đơn.")
         set_actor(self.session, self.customer.id)
         order = self.orders.add(Order(code="VHRS-" + uuid.uuid4().hex[:8].upper(), customer_id=self.customer.id,
@@ -210,8 +222,7 @@ class OrderService:
         input is valid for the new type; otherwise the customer removes those inputs first."""
         if order.order_status != OrderStatus.DRAFT:
             raise AppError(409, "ORDER_TYPE_LOCKED", "Đơn đã gửi, không thể đổi loại đơn.")
-        enabled = self.catalog.setting("order_types_enabled")
-        if enabled is not None and new_type.value not in enabled:
+        if new_type.value not in order_types.enabled(self.catalog.setting("order_types_enabled")):
             raise AppError(409, "ORDER_TYPE_SUSPENDED", "Loại dịch vụ này đang tạm ngừng nhận đơn.")
         blocking = [r.kind.value for r in self.orders.inputs(order.id) if r.kind not in ALLOWED_INPUTS[new_type]]
         if blocking:
@@ -268,6 +279,9 @@ class OrderService:
         self.session.refresh(order)          # the object was loaded before the lock: a deposit confirmed meanwhile must be seen
         if order.order_status not in CANCELLABLE_ONLINE:
             raise AppError(409, "ORDER_CANCEL_UNSUPPORTED", "Đơn ở trạng thái này chưa thể hủy trực tuyến.")
+        was = order.order_status
+        if was == OrderStatus.ACCEPTED:
+            close_open_quotations(self.session, order.id)        # D04: the Staff's draft / one waiting for the Manager
         if order.order_status in (OrderStatus.QUOTED, OrderStatus.AWAITING_DEPOSIT):
             live = QuotationRepository(self.session).latest(order.id, (QuotationStatus.SENT,))
             if live is not None:
@@ -282,6 +296,10 @@ class OrderService:
         self.session.refresh(order)
         audit.record(self.session, actor_id=self.customer.id, action="ORDER_CANCEL", entity_type="order",
                      entity_id=order.id, reason=reason, ip=self.ip)
+        if was == OrderStatus.ACCEPTED and order.assigned_staff_id:
+            from app.services import notifications                # the Staff were working on it: tell them it is gone
+            notifications.notify(self.session, account_id=order.assigned_staff_id, order_id=order.id, msg_code="ORDER_CANCELLED",
+                                 code=order.code)
         return order
 
     def file_url(self, order_id: int, input_id: int) -> tuple[str, int]:

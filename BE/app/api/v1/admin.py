@@ -43,7 +43,7 @@ def create_account(body: AdminAccountCreateIn, admin: AdminDep, session: Session
 def update_account(account_id: int, body: AdminAccountUpdateIn, admin: AdminDep, session: SessionDep,
                    request: Request) -> AccountOut:
     svc = AccountAdminService(session, admin, client_ip(request))
-    return account_out(svc.update(account_id, status=body.status, role_code=body.role, reason=body.reason))
+    return account_out(svc.update(account_id, status=body.status, role_code=body.role, reason=body.reason, force=body.force))
 
 
 @router.get("/audit-logs", response_model=Page[AuditLogOut], summary="UC-51 Nhật ký hoạt động")
