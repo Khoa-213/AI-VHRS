@@ -29,6 +29,7 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 const port = server.address().port
 let browser, ws
 const errors = []
+const patches = []          // what the account form sent
 
 try {
   browser = spawn(edge, ['--headless=new', '--no-sandbox', '--disable-extensions', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--remote-debugging-port=0', `--user-data-dir=${scratch}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' })
@@ -60,6 +61,13 @@ try {
       if(path==='/me') data=account
       else if(path==='/admin/dashboard') data={generated_at:now,database_ms:48,accounts:{by_role:{ADMIN:{ACTIVE:1,LOCKED:2}},new_last_7_days:1,active_sessions:1},robots:{total:1,online:1,by_status:{IDLE:1}},integrations:[],background_jobs:{enabled:true,interval_seconds:60,last_run:null},notifications:{emails_failed_last_24h:3}}
       else if(path==='/admin/accounts') data={...page,items:[account,{...account,id:18,role:'STAFF'}],total:2}
+      // D05: account 18 still holds two orders and a job. The change is refused until it is forced with a reason.
+      else if(path==='/admin/accounts/18' && request.method==='PATCH') {
+        const body=JSON.parse(request.postData||'{}'); patches.push(body)
+        if(!body.force) return void fulfill(requestId,{error:{code:'ACCOUNT_HAS_OPEN_WORK',message:'Tài khoản còn giữ việc.',details:{orders:[101,102],jobs:[7]}}},409)
+        assert.ok(body.reason && body.reason.trim(),'A forced change needs a reason')
+        data={...account,id:18,role:'STAFF',status:body.status}
+      }
       else if(path==='/admin/audit-logs') data=page
       else if(path==='/admin/settings'||path==='/admin/integrations') data=[]
       else if(path.endsWith('/notifications')) data={items:[],unread_count:0,next_before_id:null}
@@ -138,8 +146,26 @@ try {
   await evaluate(`[...document.querySelectorAll('.adm-person-act button')].at(-1).click()`)
   await wait(`!!document.querySelector('.adm-edit .adm-select-trigger')`,'edit select')
   assert.equal(await evaluate(`document.querySelector('.adm-edit .adm-select-trigger').disabled`),true,'Self role stays disabled')
+  // D05: locking an account that still holds work shows what it holds and offers "Apply anyway" only with a reason.
+  await evaluate(`localStorage.setItem('aivhrs-lang','en')`)
+  await go('/admin/accounts')
+  await wait(`!!document.querySelector('.adm-person-act button')`,'accounts loaded in English')
+  await evaluate(`document.querySelector('.adm-person-act button').click()`)
+  await wait(`!!document.querySelector('.adm-edit input[type=radio]')`,'edit form of the Staff account')
+  await evaluate(`[...document.querySelectorAll('.adm-edit input[type=radio]')][1].click()`)
+  await evaluate(`document.querySelector('.adm-edit .adm-btn--solid').click()`)
+  await wait(`!!document.querySelector('.adm-consequence[role=alert]')`,'held work shown')
+  const heldText = await evaluate(`document.querySelector('.adm-consequence[role=alert]').innerText`)
+  assert.ok(heldText.includes('Orders in hand (2): #101, #102') && heldText.includes('Production jobs in hand (1): #7') && !heldText.includes('Robots assigned'), heldText)
+  assert.equal(await evaluate(`(${button('Apply anyway')}).disabled`),true,'Forcing needs a reason')
+  await evaluate(`(()=>{const i=document.querySelector('.adm-edit input[maxlength="500"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,'Suspected leaked password');i.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+  await evaluate(`window.confirm=()=>false`); await click('Apply anyway'); await sleep(200)
+  assert.equal(patches.length,1,'Declining the confirmation sends nothing')
+  await evaluate(`window.confirm=()=>true`); await click('Apply anyway')
+  await wait(`!!document.querySelector('.adm-note')`,'forced change saved')
+  assert.deepEqual(patches,[{status:'LOCKED'},{status:'LOCKED',reason:'Suspected leaked password',force:true}])
   assert.deepEqual(errors,[])
-  console.log('PASS: widget navigation and back links; dropdown pointer/keyboard selection, Escape, focus, viewport positioning, disabled self role; light/dark, vi/ja, desktop/mobile. API fixture isolation.')
+  console.log('PASS: widget navigation and back links; dropdown pointer/keyboard selection, Escape, focus, viewport positioning, disabled self role; locking an account that holds work (list, forced with a reason); light/dark, vi/ja, desktop/mobile. API fixture isolation.')
 
 } finally {
   ws?.close(); browser?.kill(); server.closeAllConnections(); server.close()

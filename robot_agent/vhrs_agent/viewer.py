@@ -166,7 +166,7 @@ def create_app(hub: ViewerHub) -> FastAPI:
 
     @app.post("/api/resume")
     def resume(request: Request) -> dict[str, str]:
-        hub.guard("control", request)
+        hub.guard("resume", request)                # puts the arm back in motion: the technician, at the workstation for a REAL run
         _need_runner().resume()
         return {"ok": "resumed"}
 
@@ -178,7 +178,7 @@ def create_app(hub: ViewerHub) -> FastAPI:
 
     @app.post("/api/paper-changed")
     def paper(request: Request) -> dict[str, str]:
-        hub.guard("operate", request)
+        hub.guard("resume", request)                # the next page starts at once: same rule as resume
         hub.paper_confirmed.set()
         return {"ok": "confirmed"}
 

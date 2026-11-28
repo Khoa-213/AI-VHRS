@@ -80,7 +80,8 @@ def make(tmp_path, *, modes=("mock", "sim"), robot_factory=None, speed=None, wat
     svc = AgentService(cfg, transport=httpx.MockTransport(backend), downloader=lambda url: RAW,
                        robot_factory=robot_factory or (lambda mode: SimRobot(DEMO_START, speed_factor=None)),
                        gripper_factory=gripper_factory)
-    return svc, TestClient(create_server_app(svc)), backend
+    # the tests act as a person at the workstation (D03 / 1a: REAL is switched on and started from this computer only)
+    return svc, TestClient(create_server_app(svc), client=("127.0.0.1", 50000)), backend
 
 
 def auth(tok="tech-token"):
@@ -225,7 +226,8 @@ def test_a_second_run_is_refused_while_one_is_active_and_stop_works_for_a_manage
     busy = c.post("/api/jobs/12/run", headers=auth(), json={"mode": "sim"})
     assert busy.status_code == 409 and busy.json()["error"]["code"] == "AGENT_BUSY"
     assert c.post("/api/pause", headers=auth("mgr-token")).status_code == 200
-    assert c.post("/api/resume", headers=auth("mgr-token")).status_code == 200
+    assert c.post("/api/resume", headers=auth("mgr-token")).status_code == 403                   # a Manager halts, never puts the arm back in motion (TP-03)
+    assert c.post("/api/resume", headers=auth()).status_code == 200                               # the technician does
     assert c.post("/api/stop", headers=auth("mgr-token")).status_code == 200
     a = wait_idle(c, 30)
     assert a["last"]["result"]["state"] == "STOPPED"

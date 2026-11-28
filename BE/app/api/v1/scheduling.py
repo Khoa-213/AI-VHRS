@@ -13,6 +13,8 @@ from app.api.ops_schemas import (FinishOverrideIn, IncidentOut, JobEventOut, Job
                                  RobotAssignIn, RobotOut, ScheduleConfigOut, ScheduleIn, SuggestionOut, TechnicianOut,
                                  UnscheduleIn)
 from app.api.schemas import ErrorOut, Page
+from app.api.v1.orders import optional_storage
+from app.integrations.storage import ObjectStorage
 from app.models.account import Account, RoleCode
 from app.models.ops import JobStatus, ProductionJob
 from app.services.scheduling import SchedulingService, robot_owners
@@ -119,9 +121,9 @@ def job_detail(job_id: int, svc: Svc, session: SessionDep) -> ManagerJobDetail:
              responses={409: {"model": ErrorOut, "description": "JOB_STATE_CONFLICT / RUN_OPEN"},
                         422: {"model": ErrorOut, "description": "REASON_REQUIRED"}})
 def finish_override(job_id: int, body: FinishOverrideIn, svc: Svc, session: SessionDep, manager: ManagerDep,
-                    request: Request) -> JobOut:
+                    request: Request, store: Annotated[ObjectStorage | None, Depends(optional_storage)]) -> JobOut:
     from app.services.technician import finish_by_manager
-    finish_by_manager(session, manager, job_id, body.reason, client_ip(request))
+    finish_by_manager(session, manager, job_id, body.reason, client_ip(request), storage=store)
     return _jobs_out(svc, [svc.get(job_id)])[0]
 
 

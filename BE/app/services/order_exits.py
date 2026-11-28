@@ -88,6 +88,31 @@ def refundable(session: Session, order_id: int) -> Decimal:
     return max(paid - back, Decimal(0))
 
 
+def _close_blocked(session: Session, order: Order) -> AppError | None:
+    """Why a Manager cannot close this order now (None = it can be closed)."""
+    if order.order_status not in CLOSABLE:
+        return AppError(409, "ORDER_CLOSE_UNSUPPORTED",
+                        "Quản lý chỉ đóng được đơn đang chờ thanh toán cuối, chờ nhận hàng hoặc đang giao mà không hoàn tất được.",
+                        {"order_status": order.order_status.value})
+    if order.order_status == OrderStatus.DELIVERING:
+        shipment = _latest_shipment(session, order.id)
+        if shipment is not None and shipment.status not in NOT_MOVING:
+            return AppError(409, "SHIPMENT_IN_TRANSIT", "Hàng đang trên đường giao; chờ hãng báo kết quả rồi mới đóng đơn.",
+                            {"shipment_status": shipment.status.value})
+    return None
+
+
+def close_preview(session: Session, order_id: int) -> dict[str, Any]:
+    """What the Manager's screen shows before closing: may it be closed now, and how much could be given back. Reads only."""
+    order = OrderRepository(session).get(order_id)
+    if order is None or order.order_status == OrderStatus.DRAFT:
+        raise AppError(404, "ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.")
+    blocked = _close_blocked(session, order)
+    return {"order_id": order.id, "order_status": order.order_status.value, "allowed": blocked is None,
+            "error_code": blocked.code if blocked else None, "message": blocked.message if blocked else None,
+            "refundable": refundable(session, order.id)}
+
+
 def close_by_manager(session: Session, manager: Account, order_id: int, reason: str, refund_amount: Decimal,
                      ip: str | None = None) -> tuple[Order, Payment | None]:
     reason = (reason or "").strip()
@@ -97,15 +122,9 @@ def close_by_manager(session: Session, manager: Account, order_id: int, reason: 
     if order is None or order.order_status == OrderStatus.DRAFT:
         raise AppError(404, "ORDER_NOT_FOUND", "Không tìm thấy đơn hàng.")
     session.refresh(order)
-    if order.order_status not in CLOSABLE:
-        raise AppError(409, "ORDER_CLOSE_UNSUPPORTED",
-                       "Quản lý chỉ đóng được đơn đang chờ thanh toán cuối, chờ nhận hàng hoặc đang giao mà không hoàn tất được.",
-                       {"order_status": order.order_status.value})
-    if order.order_status == OrderStatus.DELIVERING:
-        shipment = _latest_shipment(session, order.id)
-        if shipment is not None and shipment.status not in NOT_MOVING:
-            raise AppError(409, "SHIPMENT_IN_TRANSIT", "Hàng đang trên đường giao; chờ hãng báo kết quả rồi mới đóng đơn.",
-                           {"shipment_status": shipment.status.value})
+    blocked = _close_blocked(session, order)
+    if blocked is not None:
+        raise blocked
     can_refund = refundable(session, order.id)
     refund_amount = Decimal(refund_amount)
     if refund_amount < 0 or refund_amount > can_refund:

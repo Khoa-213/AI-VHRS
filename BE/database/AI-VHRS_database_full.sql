@@ -1,12 +1,12 @@
 -- =====================================================================================================================
 -- AI-VHRS (Xuong Net Viet) - full database script for PostgreSQL 15+ (Supabase uses 17).
--- Revision 0034 (alembic head), generated 2026-11-28 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
+-- Revision 0035 (alembic head), generated 2026-11-28 by scripts/build_database_script.py. DO NOT EDIT BY HAND:
 -- change the database with an Alembic migration, then rebuild this file.
 --
 -- What it contains
 --   1. the schema: extension, enum types, tables, constraints, indexes, functions, triggers, row-level security (all of the
---      baseline schema and every migration up to 0034);
---   2. the `alembic_version` row, so the application's migrations see this database as already at 0034;
+--      baseline schema and every migration up to 0035);
+--   2. the `alembic_version` row, so the application's migrations see this database as already at 0035;
 --   3. reference data: the 5 roles, the demo accounts (password ChangeMe@123: CHANGE IT before any real use), the first price list,
 --      the pen types, the default system settings and the robot alert catalogue.
 -- It does NOT contain the catalogue and policy text that `scripts/seed_workshop_data.py` loads (papers, inks, templates, the
@@ -2076,8 +2076,15 @@ CREATE TABLE public.robot_agents (
     account_id bigint,
     instance_id character varying(64),
     expires_at timestamp with time zone,
+    auth_session_id uuid,
     CONSTRAINT chk_robot_agents_kind CHECK (((((kind)::text = 'MANAGER'::text) AND (account_id IS NULL) AND (instance_id IS NULL)) OR (((kind)::text = 'SESSION'::text) AND (account_id IS NOT NULL) AND (instance_id IS NOT NULL) AND (expires_at IS NOT NULL))))
 );
+
+--
+-- Name: COLUMN robot_agents.auth_session_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.robot_agents.auth_session_id IS 'Login session (auth_sessions.id) that asked for this SESSION key: REAL motion commands are accepted only from it (D03 / 1a). NULL for Manager keys and keys issued before 0035';
 
 --
 -- Name: robot_agents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -5415,7 +5422,7 @@ SET search_path TO public;
 -- =====================================================================================================================
 -- 2. Migration marker
 -- =====================================================================================================================
-INSERT INTO alembic_version (version_num) VALUES ('0034');
+INSERT INTO alembic_version (version_num) VALUES ('0035');
 
 -- =====================================================================================================================
 -- 3. Reference data (roles, demo accounts, first price list, pen types) - from the baseline script, section 9

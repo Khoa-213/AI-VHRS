@@ -47,6 +47,13 @@ export const mockShipmentEvent = (id: number, status: ShipmentStatus, reason: st
   api<{ result: string; status: string; order_status?: string }>(`/workshop/shipments/${id}/mock-event`, {
     method: 'POST', body: { status, reason: reason.trim() || null },
   })
+/**
+ * The delivery failed or the parcel came back: the Staff in charge turn the order into a collection at the workshop
+ * (DELIVERING to READY_TO_DELIVER, `delivery_method = PICKUP`). The reason (5 characters or more) goes into the audit log.
+ */
+export const switchToPickup = (id: number, reason: string) => api(`/workshop/orders/${id}/shipment/to-pickup`, {
+  method: 'POST', body: { reason: reason.trim() },
+})
 export const confirmPickup = (id: number, phone: string) => api(`/workshop/orders/${id}/pickup/confirm`, {
   method: 'POST', body: { phone: phone.trim() },
 })

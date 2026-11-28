@@ -1,7 +1,8 @@
 {
   "_comment": "Copy to agent.json (git-ignored) and fill in. Every number marked MEASURE must be measured on the robot; nothing here is a default to trust.",
   "backend_url": "https://ai-vhrs.onrender.com",
-  "host": "0.0.0.0",
+  "host": "127.0.0.1",
+  "_host": "127.0.0.1 = only this computer opens the agent's page (owner decision D03 / 1a, 2026-11-28). The real robot is switched on and started from this computer only, whatever this says. Managers watch and stop robots through the web app, which goes through the backend, not through this port. Set 0.0.0.0 only to let other computers on the LAN open the page for simulation or viewing.",
   "port": 8765,
   "lan_server": true,
   "_link": "Key of this robot (Manager: POST /manager/robots/{id}/agent-key) goes in the environment variable VHRS_AGENT_KEY, never in this file. link_loss_grace_s is a policy default, not a measured value.",

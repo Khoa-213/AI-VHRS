@@ -110,8 +110,10 @@ def test_validation_of_commands(client, cust, staff, mgr, wcat, robot, tech):
     _post(client, tech, jid, "start", status=200)
     sync(client, ah)
     assert post(kind="DRY_RUN", job_id=jid, params={"mode": "SIM"}).status_code == 201       # WRITING but robot idle: the rehearsal can still be done
-    ok = post(kind="RUN", job_id=jid, params={"mode": "REAL", "authorization": f"AUTHORIZE-{jid}-abcd1234"})
-    assert ok.status_code == 201                                                       # the agent still checks the token and the on-site file
+    far = post(kind="RUN", job_id=jid, params={"mode": "REAL", "authorization": f"AUTHORIZE-{jid}-abcd1234"})
+    # D03 / 1a: this agent runs on a Manager key, so no app session is bound to it. A REAL run is started at the workstation
+    # (the agent's own page, or the app that started the agent): tests/test_audit_crosscheck.py has the accepted case.
+    assert far.status_code == 403 and _err(far) == "REAL_ONLY_AT_WORKSTATION"
     _sql("update production_jobs set status='PAUSED' where id=:j returning 1", j=jid)
     assert post(kind="DRY_RUN", job_id=jid, params={"mode": "SIM"}).status_code == 201      # a pen-up rehearsal is allowed after an abort (PAUSED)
     assert post(kind="RUN", job_id=jid + 999999, params={"mode": "SIM"}).status_code == 404
@@ -349,7 +351,7 @@ def test_a_workstation_key_from_the_manager_also_holds_the_robot(client, cust, s
 
 def test_align_start_is_a_job_command_that_needs_the_authorization_for_real(client, cust, staff, mgr, wcat, robot, tech):
     oid, jid = _job(client, cust, staff, mgr, wcat, robot, tech)
-    _, ah = key_for(client, mgr, robot)
+    ah = bearer(session_key(client, tech, robot, "app-instance-align")["key"])    # D03 / 1a: REAL moves come from the app that started the agent
     sync(client, ah)
     post = lambda **b: client.post(f"{T}/robot-commands", headers=tech[0], json=b)   # noqa: E731
     assert post(kind="ALIGN_START", params={"mode": "SIM"}).status_code == 422                       # needs a job

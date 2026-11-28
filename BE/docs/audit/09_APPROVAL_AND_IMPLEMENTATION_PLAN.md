@@ -163,14 +163,14 @@ Chủ dự án trả lời qua hộp chọn ngày 2026-11-27.
 | Gói sửa | **G1–G7** | G8 chưa duyệt |
 | D01 | **A** — cờ cho phép thanh toán thử, mặc định tắt | Sửa BE + ẩn cổng thử ở web |
 | D02 | **A** — tự áp dụng có chọn lọc + hoàn lại đề xuất | Sửa BE + FE |
-| D03 | **Để sau** | RB-04 giữ nguyên: không đổi `host` trong `agent.example.json`, không đổi `real-enable` (file mẫu chỉ được thêm khoá `station_limits` của gói G2) |
+| D03 | **1a** (2026-11-28): bật và cho robot thật chạy chỉ từ chính máy trạm | Đã làm, xem mục 9 |
 | D04 | **A** — khách và Staff huỷ được ở `ACCEPTED` | Không đổi database |
 | D05 | **A** — chặn tới khi phân công lại, có tham số ép buộc kèm lý do | Thu hồi khoá agent khi khoá |
 | D06 | **A** — bắt buộc lần chạy `DONE`, Manager ghi đè có nhật ký | Làm sau TP-07 |
 | D07 | **A** (gộp vào G7) | Chỉ đổi cách gọi trong tài liệu |
 | D08 | **B** — làm đầy đủ | Cần migration đổi trigger trạng thái: viết và thử trên DB cục bộ; **chưa áp lên Supabase khi chưa được xác nhận riêng** |
-| D09 | Trả lời tự do, xem dưới | Còn một điểm cần hỏi lại |
-| D10 | **B** — DesktopApp Flutter là kênh chính | Ngược với quyết định 2026-11-26; phải kiểm app chạy trọn luồng với BE hiện tại (máy audit không có Flutter) |
+| D09 | Một lần viết lại miễn phí; bản viết lại vẫn lỗi thì không viết lại nữa (trả lời bổ sung 2026-11-28) | Code đã đúng, không đổi |
+| D10 | Làm việc tại máy trạm, trong một app desktop Flutter chạy trên chính máy đó (làm rõ 2026-11-28) | Không còn ngược với quyết định 2026-11-26; app còn thiếu vài nút, xem mục 8 |
 | D11 | **A** — robot thật + video dự phòng | Chỉ sau khi xong G1 + G2, có người vận hành |
 | D12 | **B** — giữ luật test trên Supabase, chỉ vá lỗ OT-2 (AI-10) | AR-01 không sửa. Trong đợt sửa này tôi chỉ chạy test trên Postgres cục bộ và ghi rõ như vậy; lượt chạy trên Supabase cần chủ dự án cho phép riêng |
 
@@ -282,7 +282,7 @@ Tài khoản:
 | PP | PP-01 | PP-02 (2026-11-28: ca `FAILED` rồi `SUCCESS`; ca payOS trả vào link đã thành công chưa sửa) | PP-03, PP-04, PP-05, PP-06 |
 | TP | TP-01, TP-02, TP-03, TP-04 (2026-11-28: REAL viết thật đòi server validation), TP-05, TP-07 (2026-11-28: đóng lần chạy mồ côi), TP-09, TP-11, TP-12, TP-13 | TP-06 (khoá agent và chặn khoá tài khoản xong; Manager chuyển giao job đang chạy chưa có, mới có `finish-override`) | TP-08 (phần còn lại: `BUSY`, hai job `WRITING`, quét agent mất kết nối), TP-10 (phần gia tốc / jerk) |
 | AI | AI-01, AI-03, AI-04, AI-05, AI-10 | AI-02 (giới hạn đồng thời + hạn lượt; vẫn giữ kết nối khi chờ model), AI-06 (chưa có trần theo khách), AI-08 (đổi nhãn; chưa có tập ảnh giữ lại), AI-09 (tài liệu; chưa đo phiếu thật), AI-11 (chặn điểm ảnh; chưa đo thời gian trên Render), AI-12 | AI-07 |
-| RB | RB-02, RB-06 | RB-09 (2026-11-28: REAL bắt buộc gói ký; kiểm chữ ký vẫn không kèm mã đơn, hiệu chuẩn không ký), RB-03 (trần watchdog + giới hạn trạm; khối chuyển động vẫn không ký), RB-05 (mới kiểm trên mô phỏng), RB-07 (lỗi bất ngờ gửi STOP; dừng vẫn không nhấc bút) | RB-01, RB-04 (để sau), RB-08, RB-10, RB-11 |
+| RB | RB-02, RB-04 (2026-11-28, D03 = 1a: chỉ bật và chạy REAL từ máy trạm; bỏ chạy thử vẫn là lựa chọn có ghi nhật ký), RB-06 | RB-09 (2026-11-28: REAL bắt buộc gói ký; kiểm chữ ký vẫn không kèm mã đơn, hiệu chuẩn không ký), RB-03 (trần watchdog + giới hạn trạm; khối chuyển động vẫn không ký), RB-05 (mới kiểm trên mô phỏng), RB-07 (lỗi bất ngờ gửi STOP; dừng vẫn không nhấc bút) | RB-01, RB-08, RB-10, RB-11 |
 | AR | AR-02, AR-03 (khai biến), AR-05, AR-08 | AR-01 (theo D12: chỉ thôi xoá dòng cấu hình) | AR-04, AR-06, AR-07 |
 | SR | SR-01, SR-03 | | SR-02, SR-04, SR-05, SR-06, SR-07 (việc của chủ dự án), SR-08 |
 | DM | | DM-03 | DM-01, DM-02, DM-04, DM-05 |
@@ -345,3 +345,70 @@ Chỉ chạy trên Postgres cục bộ và robot mô phỏng: BE 1.176 passed, 5
 1. App desktop (kênh chính theo D10) chưa có: nút "giấy mới" để viết bản tiếp theo, nút đóng lần chạy mồ côi, câu chữ cho các mã `COPIES_MISSING`, `SERVER_VALIDATION_REQUIRED`, `PACKAGE_NOT_SIGNED`, `NO_ANSWER`, `RUN_STILL_ACTIVE`. Trang máy trạm (`robot_agent/vhrs_agent/static`) đã có hai nút đầu. Web Manager (`/staff/robots`, chi tiết job) đã có "Đóng lần chạy treo" và "Ghi nhận viết xong thay kỹ thuật viên" (2026-11-28).
 2. Code mới của `main` chưa được audit: `services/stock.py` (sổ kho) và phần app desktop. Riêng phần robot của `main` đã được đọc lại (mục trên).
 3. Mục 5–9 của "Còn lại khi làm tiếp" ở mục 6 vẫn nguyên, trừ: đã có commit cục bộ trên nhánh `audit-fixes` (chưa push).
+
+## 8. Sau khi lên `main` (2026-11-28)
+
+**Trạng thái git.** Toàn bộ các bản sửa ở mục 6 và 7 đã vào `main` qua PR #124 và #125 ngày 2026-11-28. Các câu "chưa commit", "chưa push", "nhánh cục bộ `audit-fixes`" ở mục 6 và 7 mô tả thời điểm viết, nay đã cũ. Merge vào `main` làm Render chạy `alembic upgrade head`, tức áp `0034` lên Supabase; **việc đó chưa được xác nhận từ phía audit** (không có quyền xem Render hay Supabase).
+
+**Trả lời bổ sung của chủ dự án.**
+
+- **D09:** bản viết lại miễn phí mà vẫn lỗi thì không viết lại nữa. Code đã đúng; CO-03 đóng lại ở mức "theo quyết định", BR-13 hiểu theo code.
+- **D10:** kỹ thuật viên làm việc tại máy trạm, trong một app desktop Flutter chạy trên chính máy đó. Trang web của agent là đường dự phòng.
+- **D03:** chủ dự án chọn **1a** sau khi được giải thích lại; xem mục 9.
+- Xoay mật khẩu và secret đã lộ (SR-07): chủ dự án tự làm.
+
+**Màn web cho các lối ra của đơn (đã làm, chưa lên `main` tại thời điểm viết mục này).**
+
+| Việc | Ai | Ở đâu trên web | API |
+|---|---|---|---|
+| Huỷ đơn `ACCEPTED` kèm lý do (D04) | Staff phụ trách | Trang đơn, khối "Huỷ đơn đã tiếp nhận" | `POST /workshop/orders/{id}/cancel` |
+| Chuyển lần giao thất bại sang nhận tại xưởng (D08) | Staff phụ trách | Trang đơn, khối giao hàng, khi vận đơn mới nhất `FAILED` / `RETURNED` | `POST /workshop/orders/{id}/shipment/to-pickup` |
+| Đóng đơn không hoàn tất được, kèm số tiền hoàn (D08) | Manager | Trang đơn, khối "Đóng đơn không hoàn tất được" | `GET /manager/orders/{id}/close-preview` (mới), `POST /manager/orders/{id}/close` |
+| Khoá / đổi vai trò tài khoản còn giữ việc (D05) | Admin | Trang tài khoản: hiện danh sách việc đang giữ, nút "Vẫn áp dụng" cần lý do | `PATCH /admin/accounts/{id}` với `force` |
+
+Kiểm thử: BE trên Postgres cục bộ; FE `tsc -b`, `i18n:check`, `build`; bốn luồng chạy trong Chrome headless với dữ liệu giả (`scripts/check-fulfillment-browser.mjs`, `scripts/check-admin-browser.mjs`). Chưa chạy trên Supabase.
+
+**Còn lại.**
+
+1. App desktop Flutter (kênh chính theo D10) chưa có: nút "giấy mới" cho đơn nhiều bản, nút đóng lần chạy treo, câu chữ cho `COPIES_MISSING`, `SERVER_VALIDATION_REQUIRED`, `PACKAGE_NOT_SIGNED`, `NO_ANSWER`, `RUN_STILL_ACTIVE`. Cần máy có Flutter.
+2. Xác nhận Render đã deploy và `0034` đã áp; đặt `ALLOW_TEST_PAYMENTS` cho bản demo.
+3. Robot thật với các khoá mới (`station_limits`, 4 điểm dò, hiệu chuẩn có `frame_transform`): chưa chạy lần nào. Ghi chú cho máy trạm: `robot_agent/WORKSTATION_TROUBLESHOOTING.md`.
+4. Chạy toàn bộ test trên Supabase (luật dự án) khi chủ dự án cho phép.
+5. `services/stock.py` (sổ kho, 2026-11-27) chưa được audit.
+6. `scripts/check-manager-browser.mjs`: bước cuối (cổng vai trò Staff) hỏng từ trước.
+7. Các vấn đề còn mở theo bảng ở mục 6.
+
+## 9. D03 = 1a và lượt rà logic cuối (2026-11-28)
+
+### D03 = 1a: robot thật chỉ được bật và cho chạy từ máy trạm của nó
+
+**Vì sao không chặn ở agent là đủ.** App desktop Flutter bật REAL qua agent cục bộ (đúng tại máy trạm), nhưng lệnh RUN / DRY_RUN / ALIGN_START lại đi qua máy chủ rồi mới về agent. Agent không phân biệt được lệnh đó xuất phát từ app trên máy trạm hay từ cùng tài khoản đăng nhập ở máy khác. Vì vậy điểm chặn chính nằm ở máy chủ.
+
+| Lớp | Thay đổi |
+|---|---|
+| Máy chủ | Khoá phiên của agent ghi lại phiên đăng nhập đã xin nó (`robot_agents.auth_session_id`, **migration 0035**, chỉ thêm một cột cho phép rỗng). `RUN`, `DRY_RUN`, `ALIGN_START` ở chế độ REAL, và `RESUME`, `PAPER_CHANGED` khi lần chạy đang mở là REAL, chỉ được nhận từ đúng phiên đó: `403 REAL_ONLY_AT_WORKSTATION`. App khởi động agent như tiến trình con trên `127.0.0.1`, nên "cùng phiên với agent đang kết nối" nghĩa là app trên máy trạm. `PAUSE`, `STOP`, SIM, MOCK không bị giới hạn |
+| Agent | File mẫu đổi `host` thành `127.0.0.1`. Kể cả khi ai đó mở agent ra LAN: bật REAL, chạy thử / viết / căn điểm ở REAL, tiếp tục và "đã thay giấy" của lần chạy REAL chỉ nhận từ chính máy (loopback, và không nhận request đi qua reverse proxy); mã AUTHORIZE không trả cho máy khác. Thêm route cục bộ `POST /api/jobs/{id}/align-start` |
+| Trang máy trạm | "Về điểm chờ" gọi route cục bộ thay vì đi qua máy chủ |
+| App Flutter | Không phải đổi |
+
+**Hệ quả khi triển khai.** Khoá phiên cấp trước migration 0035 chưa gắn phiên đăng nhập. Sau khi máy chủ được deploy, **khởi động lại app desktop (và agent) một lần**; nếu không, lệnh REAL bị từ chối `REAL_ONLY_AT_WORKSTATION` cho tới khi app tự gia hạn khoá (tối đa khoảng 3 giờ). Agent chạy tay bằng khoá của Manager không còn nhận lệnh REAL qua máy chủ: dùng trang của agent mở tại máy trạm.
+
+**Giới hạn còn lại (không sửa được bằng phần mềm của dự án).** Bộ điều khiển FR3 nhận kết nối theo địa chỉ IP. Một máy khác trong cùng mạng với robot, tự chạy phần mềm điều khiển riêng, không đi qua agent này. Robot nên nối dây riêng với máy trạm, không cắm chung mạng LAN.
+
+### Lượt rà logic cuối: đã sửa
+
+| Phát hiện | Sửa |
+|---|---|
+| Sau khi máy chủ khởi động lại, bộ nhớ live trống nên mọi lần chạy đang mở đều trông như "mồ côi"; Manager có thể đóng nhầm lần chạy đang chạy thật | Khi bộ nhớ live không thấy agent thì nhịp tim cuối trong DB quyết định: im lặng quá 15 giây mới coi là mồ côi |
+| Trang của agent cho Manager bấm "Tiếp tục", ngược với quy tắc đã duyệt ở máy chủ (TP-03) | "Tiếp tục" và "đã thay giấy" chỉ dành cho kỹ thuật viên |
+| Agent đặt sau reverse proxy cùng máy thì mọi người gọi đều trông như ở máy trạm | Request có header chuyển tiếp không bao giờ được coi là tại máy trạm |
+| Agent không có đường nối máy chủ thì kết quả lần chạy đang chờ không bao giờ được gửi lại | Gửi lại khi nạp job bằng token của người dùng |
+| Script kiểm trang máy trạm (`check_workspace_browser.mjs`) hỏng từ khi thêm quy tắc số bản | Sửa fixture; script đạt |
+
+### Lượt rà logic cuối: còn mở, cần chủ dự án quyết
+
+| Mã | Lỗ hổng | Mức | Đề xuất |
+|---|---|---|---|
+| L1 | Trên robot thật, một lần chạy ở chế độ SIM hoặc MOCK kết thúc `DONE` vẫn được tính là "một bản đã viết" | Trung bình | **Đã sửa 2026-11-28 theo quyết định của chủ dự án:** robot không gắn cờ `is_simulated` chỉ tính lần chạy `REAL`; robot mô phỏng giữ như cũ; Manager vẫn ghi nhận thay được kèm lý do. Hệ quả: buổi demo nếu phải lùi về mô phỏng trên robot thật thì "viết xong" cần Manager ghi nhận thay, hoặc dùng một robot gắn cờ mô phỏng |
+| L2 | Lần chạy được báo bằng token của kỹ thuật viên. Ai có tài khoản kỹ thuật viên có thể tự mở và đóng một lần chạy `DONE` bằng API, không cần robot. Mọi thao tác có nhật ký, nhưng không bị chặn | Trung bình | Chỉ nhận mở / đóng lần chạy từ khoá của agent. Cần sửa cả chế độ agent chạy tay (đang dùng token người dùng), nên chưa làm |
+| L3 | Chế độ của lần chạy (REAL / SIM) do agent tự báo; máy chủ tin giá trị đó khi áp các cổng REAL | Thấp | Là lớp bảo vệ thứ hai; lớp chính nằm ở agent |

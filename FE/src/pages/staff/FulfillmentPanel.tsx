@@ -7,7 +7,7 @@ import { errText, orderErrorKey } from '../../services/orders'
 import { type WorkOrder, orderPayments } from '../../services/workshop'
 import {
   ACTIVE_SHIPMENTS, MOCK_MOVES, addressLine, cancelShipment, confirmPickup, createShipment,
-  mockShipmentEvent, webLink, workshopShipments, type ShipmentStatus,
+  mockShipmentEvent, switchToPickup, webLink, workshopShipments, type ShipmentStatus,
 } from '../../services/fulfillment'
 import { useUser } from '../../store/store'
 import { fmt } from '../../utils/format'
@@ -36,6 +36,7 @@ export default function FulfillmentPanel({ order, onChanged }: { order: WorkOrde
   const [event, setEvent] = useState<ShipmentStatus>('PICKED_UP')
   const [eventReason, setEventReason] = useState('')
   const [demoConfirmed, setDemoConfirmed] = useState(false)
+  const [pickupWhy, setPickupWhy] = useState('')
   const rows = shipments.data ?? []
   const latest = rows[0]
   const paid = ['READY_TO_DELIVER', 'DELIVERING', 'COMPLETED'].includes(order.status)
@@ -52,7 +53,7 @@ export default function FulfillmentPanel({ order, onChanged }: { order: WorkOrde
     setBusy(true); setError(''); setNotice('')
     try {
       await action()
-      setNotice(message); setPacked(false); setHanded(false); setPhone(''); setCode(''); setCancelId(null); setReason(''); setDemoConfirmed(false)
+      setNotice(message); setPacked(false); setHanded(false); setPhone(''); setCode(''); setCancelId(null); setReason(''); setDemoConfirmed(false); setPickupWhy('')
     } catch (e) { setError(orderErrorKey(e)) }
     finally { await refresh(); setBusy(false) }
   }
@@ -114,6 +115,12 @@ export default function FulfillmentPanel({ order, onChanged }: { order: WorkOrde
       {shipments.loading && !shipments.data && <p role="status">{t('co.loading')}</p>}
       {!shipments.loading && !shipments.error && !rows.length && <p className="sd-sub">{t('sp.noShipment')}</p>}
       {latest && ['FAILED', 'RETURNED'].includes(latest.status) && <p className="wk-warn" role="status">{t('sp.problem')}</p>}
+      {canWrite && order.status === 'DELIVERING' && latest && ['FAILED', 'RETURNED'].includes(latest.status) && <fieldset className="sp-form" disabled={busy}>
+        <legend>{t('sp.toPickup.title')}</legend>
+        <p className="sd-sub">{t('sp.toPickup.help')}</p>
+        <label className="vh-label">{t('sp.toPickup.reason')}<textarea className="vh-textarea" rows={2} maxLength={1000} value={pickupWhy} onChange={(e) => setPickupWhy(e.target.value)} /></label>
+        <button type="button" className="vh-btn vh-btn--primary vh-btn--md" disabled={pickupWhy.trim().length < 5} onClick={() => void run(() => switchToPickup(order.id, pickupWhy), t('sp.toPickup.done'))}>{t('sp.toPickup.confirm')}</button>
+      </fieldset>}
       {canCreate && <fieldset className="sp-form" disabled={busy}>
         <legend>{t(latest ? 'sp.recreate' : 'sp.create')}</legend>
         <label className="vh-label">{t('sp.note')}<textarea className="vh-textarea" maxLength={300} rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></label>

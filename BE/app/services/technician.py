@@ -17,7 +17,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -517,10 +517,10 @@ class TechnicianJobService:
                override_reason: str | None = None) -> ProductionJob:
         """UC-36 / UC-39: the job is written.
 
-        D06 (audit 2026-11-27): that needs a robot run of this job that ended DONE (a simulated robot's run counts; the
-        compliance report still says whether it was a REAL one), and one such run per copy of the order (A02: a run writes
-        one copy). Before, "start" then "finish" was enough. A Manager may record it without that evidence (`override_by`,
-        with a reason): for a station whose agent could not report.
+        D06 (audit 2026-11-27): that needs a robot run of this job that ended DONE, one per copy of the order (A02: a run
+        writes one copy). On a real robot only a REAL run counts (L1, 2026-11-28); on a robot marked simulated every finished
+        run does (`written_runs`). Before, "start" then "finish" was enough. A Manager may record it without that evidence
+        (`override_by`, with a reason): for a station whose agent could not report.
 
         Stock (0033): the paper the job took and did not use goes back to the stock (RETURN); more than it took is
         recorded as an extra ISSUE that never blocks the finish (stock floors at 0, the shortfall is kept). A job prepared
@@ -533,7 +533,7 @@ class TechnicianJobService:
                                        .with_for_update().limit(1))
         if open_run is not None:
             from app.services.robot_link import close_orphan, run_orphaned     # late import: robot_link pulls in the live hub
-            orphan = run_orphaned(open_run)
+            orphan = run_orphaned(self.session, open_run)
             if orphan and override_by is not None:
                 # A06: the agent is gone or idle and never closed this run. The Manager's override, with its reason, closes it.
                 close_orphan(self.session, open_run, by=override_by.id, reason=override_reason or "", ip=self.ip)
@@ -545,16 +545,21 @@ class TechnicianJobService:
                                {"open_run_id": open_run.run_id, "orphan": orphan})
         done_runs = self._written_runs(job.id)
         written_run = done_runs[-1] if done_runs else None
-        if not done_runs and override_by is None:
-            raise AppError(409, "RUN_EVIDENCE_REQUIRED",
-                           "Chưa có lần chạy robot nào của job này kết thúc thành công, nên chưa thể ghi nhận viết xong. "
-                           "Nếu robot đã viết xong mà máy trạm không báo về được, nhờ Quản lý ghi nhận thay kèm lý do.")
         if len(done_runs) < order.quantity and override_by is None:
+            ignored = simulated_runs_not_counted(self.session, job.id)
+            sim_note = (f" Có {ignored} lần chạy mô phỏng (SIM / MOCK) đã xong nhưng không được tính: trên robot thật chỉ lần "
+                        "chạy REAL mới là một bản đã viết.") if ignored else ""
+            details = {"written": len(done_runs), "quantity": order.quantity, "simulated_runs_not_counted": ignored}
+            if not done_runs:
+                raise AppError(409, "RUN_EVIDENCE_REQUIRED",
+                               "Chưa có lần chạy robot nào của job này kết thúc thành công, nên chưa thể ghi nhận viết xong."
+                               + sim_note + " Nếu robot đã viết xong mà máy trạm không báo về được, nhờ Quản lý ghi nhận thay kèm "
+                               "lý do.", details)
             # A02 (cross-check 2026-11-28): one run writes one copy; the agent never repeats a job by itself
             raise AppError(409, "COPIES_MISSING",
-                           f"Đơn cần {order.quantity} bản, robot mới viết xong {len(done_runs)} bản. Đặt tờ giấy mới, xác nhận "
-                           "giấy mới ở máy trạm rồi cho robot viết bản tiếp theo. Nếu đã đủ bản mà máy trạm không báo về được, "
-                           "nhờ Quản lý ghi nhận thay kèm lý do.", {"written": len(done_runs), "quantity": order.quantity})
+                           f"Đơn cần {order.quantity} bản, robot mới viết xong {len(done_runs)} bản." + sim_note + " Đặt tờ giấy "
+                           "mới, xác nhận giấy mới ở máy trạm rồi cho robot viết bản tiếp theo. Nếu đã đủ bản mà máy trạm không "
+                           "báo về được, nhờ Quản lý ghi nhận thay kèm lý do.", details)
         pages, assumed = self._pages(job)
         written = jr.stock_use(order.quantity, pages).paper
         stock: dict[str, Any] = {"pages": pages, "pages_assumed": assumed}
@@ -686,16 +691,29 @@ def open_run_info(session: Session, job_id: int) -> dict[str, Any] | None:
         return None
     from app.services.robot_link import run_orphaned                       # late import: robot_link pulls in the live hub
     return {"run_id": run.run_id, "mode": run.mode, "dry_run": run.dry_run, "started_at": run.started_at,
-            "orphan": run_orphaned(run)}
+            "orphan": run_orphaned(session, run)}
 
 
 def written_runs(session: Session, job_id: int) -> list[str]:
-    """The robot runs of this job that wrote a whole copy (not a rehearsal, ended DONE), oldest first."""
-    return list(session.scalars(select(RobotRun.run_id).where(
-        RobotRun.job_id == job_id, RobotRun.dry_run.is_(False), RobotRun.result == "DONE").order_by(RobotRun.id)))
+    """The robot runs of this job that wrote a whole copy, oldest first: not a rehearsal, ended DONE, and REAL.
+
+    L1 (owner decision 2026-11-28): on a real robot a SIM or MOCK run puts nothing on the paper, so it is not a written copy.
+    Before, any DONE run counted and "written" could be recorded although the real arm had never touched the sheet. A robot
+    the Manager marked as simulated (`robots.is_simulated`) has no real arm: there every finished run counts, as before."""
+    return list(session.scalars(select(RobotRun.run_id).join(Robot, Robot.id == RobotRun.robot_id).where(
+        RobotRun.job_id == job_id, RobotRun.dry_run.is_(False), RobotRun.result == "DONE",
+        or_(RobotRun.mode == "REAL", Robot.is_simulated.is_(True))).order_by(RobotRun.id)))
 
 
-def finish_by_manager(session: Session, manager: Account, job_id: int, reason: str, ip: str | None = None) -> ProductionJob:
+def simulated_runs_not_counted(session: Session, job_id: int) -> int:
+    """Finished SIM / MOCK runs of this job on a real robot: they ended DONE but wrote nothing (shown with the refusal)."""
+    return int(session.scalar(select(func.count()).select_from(RobotRun).join(Robot, Robot.id == RobotRun.robot_id).where(
+        RobotRun.job_id == job_id, RobotRun.dry_run.is_(False), RobotRun.result == "DONE",
+        RobotRun.mode != "REAL", Robot.is_simulated.is_(False))) or 0)
+
+
+def finish_by_manager(session: Session, manager: Account, job_id: int, reason: str, ip: str | None = None,
+                      storage: ObjectStorage | None = None) -> ProductionJob:
     """D06: a Manager records "written" for a job whose robot run was not reported. Same steps as the technician's finish
     (stock, state, event), without the run evidence, with a reason, audited under the Manager's name."""
     reason = (reason or "").strip()
@@ -705,4 +723,5 @@ def finish_by_manager(session: Session, manager: Account, job_id: int, reason: s
     tech = session.get(Account, job.technician_id) if job is not None else None
     if job is None or tech is None:
         raise AppError(404, "JOB_NOT_FOUND", "Không tìm thấy job.")
-    return TechnicianJobService(session, tech, None, ip).finish(job_id, override_by=manager, override_reason=reason)
+    # with the storage the sheets per copy are read from the package, as in the technician's own finish (without it: assumed 1)
+    return TechnicianJobService(session, tech, storage, ip).finish(job_id, override_by=manager, override_reason=reason)

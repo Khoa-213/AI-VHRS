@@ -10,6 +10,7 @@ import {
   INTERNAL_ROLES, ROLES, STATUSES, allAccounts, createAccount, updateAccount, type AccountStatus, type AdminAccount,
 } from '../../services/admin'
 import { PASSWORD_RULE, PHONE_RULE, cleanPhone } from '../../services/auth'
+import { ApiError } from '../../services/api'
 import { errDetails, errText, orderErrorKey } from '../../services/orders'
 import { useUser } from '../../store/store'
 
@@ -136,9 +137,11 @@ function EditForm({ a, self, onDone }: { a: AdminAccount; self: boolean; onDone:
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // What the account still holds, when the backend refused the change for that (409 ACCOUNT_HAS_OPEN_WORK): ids by kind.
+  const [held, setHeld] = useState<OpenWork | null>(null)
   const changed = status !== a.status || role !== a.role
 
-  const save = async () => {
+  const save = async (force = false) => {
     if (busy || !changed) return
     setBusy(true)
     setErr('')
@@ -147,10 +150,12 @@ function EditForm({ a, self, onDone }: { a: AdminAccount; self: boolean; onDone:
         ...(status !== a.status ? { status } : {}),
         ...(role !== a.role ? { role } : {}),
         ...(reason.trim() ? { reason: reason.trim() } : {}),
+        ...(force ? { force: true } : {}),
       })
       onDone()
     } catch (e) {
-      setErr(orderErrorKey(e))
+      if (e instanceof ApiError && e.code === 'ACCOUNT_HAS_OPEN_WORK') setHeld(openWork(e.details))
+      else setErr(orderErrorKey(e))
     } finally {
       setBusy(false)
     }
@@ -179,11 +184,34 @@ function EditForm({ a, self, onDone }: { a: AdminAccount; self: boolean; onDone:
       {status !== a.status && <p className="adm-consequence">{t(`adm.acc.hint.${status}`)}</p>}
       {self && <p className="adm-consequence">{t('ad.acc.selfWarn')}</p>}
       {err && <p className="adm-error" role="alert">{errText(t, err)}</p>}
+      {held && changed && (
+        <div className="adm-consequence" role="alert">
+          <p><b>{t('adm.acc.held.title')}</b></p>
+          {held.orders.length > 0 && <p>{t('adm.acc.held.orders', { n: held.orders.length, list: held.orders.map((x) => `#${x}`).join(', ') })}</p>}
+          {held.jobs.length > 0 && <p>{t('adm.acc.held.jobs', { n: held.jobs.length, list: held.jobs.map((x) => `#${x}`).join(', ') })}</p>}
+          {held.robots.length > 0 && <p>{t('adm.acc.held.robots', { n: held.robots.length, list: held.robots.map((x) => `#${x}`).join(', ') })}</p>}
+          <p>{t('adm.acc.held.help')}</p>
+        </div>
+      )}
       <div className="adm-actions">
         <button type="button" className="adm-btn adm-btn--solid" disabled={busy || !changed || self} onClick={() => void save()}>{t('ad.acc.save')}</button>
+        {held && changed && (
+          <button type="button" className="adm-btn adm-btn--line" disabled={busy || self || !reason.trim()} onClick={() => { if (window.confirm(t('adm.acc.held.ask', { name: a.name }))) void save(true) }}>
+            {t('adm.acc.held.force')}
+          </button>
+        )}
       </div>
     </div>
   )
+}
+
+interface OpenWork { orders: number[]; jobs: number[]; robots: number[] }
+
+/** `details` of 409 ACCOUNT_HAS_OPEN_WORK: only the kinds the account holds are present. */
+function openWork(details: unknown): OpenWork {
+  const d = (details && typeof details === 'object' ? details : {}) as Record<string, unknown>
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : [])
+  return { orders: ids(d.orders), jobs: ids(d.jobs), robots: ids(d.robots) }
 }
 
 function CreateForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {

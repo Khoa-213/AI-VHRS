@@ -331,6 +331,31 @@ export async function managerJob(jobId: number): Promise<ManagerJob> {
 export const finishJobOverride = (jobId: number, reason: string): Promise<unknown> =>
   api(`/manager/jobs/${jobId}/finish-override`, { method: 'POST', body: { reason } })
 
+// ---------- closing an order stuck after production (manager.py) ----------
+
+export interface ClosePreview {
+  orderStatus: string
+  /** A Manager may close the order now; otherwise `errorCode` (ORDER_CLOSE_UNSUPPORTED, SHIPMENT_IN_TRANSIT) and the backend's sentence. */
+  allowed: boolean
+  errorCode: string | null
+  message: string | null
+  /** What the customer paid and has not been refunded or promised back: the most that may be given back. */
+  refundable: number
+}
+
+export async function managerClosePreview(orderId: number): Promise<ClosePreview> {
+  const r = await api<{ order_status: string; allowed: boolean; error_code: string | null; message: string | null; refundable: string | number }>(
+    `/manager/orders/${orderId}/close-preview`)
+  return { orderStatus: r.order_status, allowed: r.allowed, errorCode: r.error_code, message: r.message, refundable: Number(r.refundable) }
+}
+
+/**
+ * A Manager ends an order that will not complete (`POST /manager/orders/{id}/close`). `refundAmount` (VND, 0 to the preview's
+ * `refundable`) only opens a refund request the Staff pay out by hand; nothing is transferred here.
+ */
+export const closeOrderByManager = (orderId: number, reason: string, refundAmount: number): Promise<unknown> =>
+  api(`/manager/orders/${orderId}/close`, { method: 'POST', body: { reason, refund_amount: refundAmount } })
+
 /**
  * Closes a run the workstation left open (`POST /manager/runs/{run_id}/close-orphan`, result UNKNOWN, reason of 10 characters or
  * more). Refused with `409 RUN_STILL_ACTIVE` while the workstation reports that it is still running it.

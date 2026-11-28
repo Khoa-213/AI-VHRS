@@ -68,6 +68,11 @@ def test_a_manager_closes_an_order_whose_balance_is_never_paid_and_gives_back_wh
     _put(client, cust, oid, _pickup())
     opened = _final(client, cust, oid).json()                               # a payment link is open when the order is closed
     url = f"{M}/orders/{oid}/close"
+    # what the Manager's screen reads first: it may be closed, and this much could be given back
+    assert client.get(f"{url}-preview", headers=staff[0]).status_code == 403
+    pre = client.get(f"{url}-preview", headers=mgr).json()
+    assert pre["allowed"] is True and pre["error_code"] is None and Decimal(pre["refundable"]) == deposit
+    assert pre["order_status"] == "AWAITING_FINAL_PAYMENT"
     assert client.post(url, headers=staff[0], json={"reason": "Staff muốn đóng đơn này"}).status_code == 403
     assert client.post(url, headers=mgr, json={"reason": "ngắn"}).status_code == 422
     too_much = client.post(url, headers=mgr, json={"reason": "Khách không trả phần còn lại", "refund_amount": int(deposit) + 1})
@@ -91,6 +96,9 @@ def test_a_manager_closes_an_order_whose_balance_is_never_paid_and_gives_back_wh
     assert _sql("select count(*) from audit_logs where action='ORDER_CLOSE' and entity_id=:o", o=oid) == 1
     again = client.post(url, headers=mgr, json={"reason": "Bấm lần nữa cho chắc chắn"})
     assert again.status_code == 409 and _err(again) == "ORDER_CLOSE_UNSUPPORTED"
+    after = client.get(f"{url}-preview", headers=mgr).json()                  # closed: nothing more to do, the rest is still owed back
+    assert after["allowed"] is False and after["error_code"] == "ORDER_CLOSE_UNSUPPORTED"
+    assert Decimal(after["refundable"]) == deposit - half
 
 
 def test_closing_is_only_for_orders_stuck_after_production_and_never_while_a_parcel_travels(
@@ -106,6 +114,9 @@ def test_closing_is_only_for_orders_stuck_after_production_and_never_while_a_par
     _event(client, staff, ship["id"], "PICKED_UP")
     moving = client.post(f"{M}/orders/{oid}/close", headers=mgr, json={"reason": "Muốn đóng khi hàng đang đi"})
     assert moving.status_code == 409 and _err(moving) == "SHIPMENT_IN_TRANSIT"
+    pre = client.get(f"{M}/orders/{oid}/close-preview", headers=mgr).json()
+    assert pre["allowed"] is False and pre["error_code"] == "SHIPMENT_IN_TRANSIT" and pre["message"]
+    assert client.get(f"{M}/orders/999999999/close-preview", headers=mgr).status_code == 404
     _event(client, staff, ship["id"], "RETURNED", reason="Sai địa chỉ")
     ok = client.post(f"{M}/orders/{oid}/close", headers=mgr, json={"reason": "Hàng hoàn, khách không liên lạc được", "refund_amount": 0})
     assert ok.status_code == 200 and ok.json()["refund_id"] is None and _ost(oid) == "CANCELLED"

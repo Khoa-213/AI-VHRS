@@ -515,6 +515,16 @@ class ToPickupIn(BaseModel):
     reason: str = Field(min_length=5, max_length=1000, description="What happened with the delivery (the carrier's reason, what was agreed).")
 
 
+class ClosePreviewOut(BaseModel):
+    order_id: int
+    order_status: str
+    allowed: bool = Field(description="A Manager may close the order now.")
+    error_code: str | None = Field(description="Why not: ORDER_CLOSE_UNSUPPORTED / SHIPMENT_IN_TRANSIT; null when allowed.")
+    message: str | None
+    refundable: Decimal = Field(description="What the customer paid and has not been refunded or promised back: the most "
+                                            "`refund_amount` may be.")
+
+
 class CloseOrderOut(BaseModel):
     order_id: int
     order_status: str

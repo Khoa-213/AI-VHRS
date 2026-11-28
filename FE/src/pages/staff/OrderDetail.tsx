@@ -18,6 +18,7 @@ import { fmt } from '../../utils/format'
 import ChangeRequests from './ChangeRequests'
 import { isManagerRole } from './RequireStaff'
 import FulfillmentPanel, { FULFILLMENT_STATES } from './FulfillmentPanel'
+import OrderExits from './OrderExits'
 import PaidOrderDesk, { PAID_STATES } from './PaidOrderDesk'
 import ProductPhotosPanel from './ProductPhotosPanel'
 import QuotationPanel from './QuotationPanel'
@@ -135,6 +136,8 @@ export default function OrderDetail({ id, onChanged, returnTo = '/staff/review' 
         </label>
         {staff.error != null && <p className="lg-error" role="alert">{errText(t, orderErrorKey(staff.error))}</p>}
       </section>}
+
+      <OrderExits order={order} onChanged={async () => { await q.reload(); onChanged() }} />
 
       {PAID_STATES.includes(order.status) && <PaidOrderDesk order={order} onChanged={async () => { await q.reload(); onChanged() }} />}
 
