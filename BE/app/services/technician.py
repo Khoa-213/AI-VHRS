@@ -40,7 +40,7 @@ from app.repositories.workshop import SketchRepository
 from app.services import audit, notifications
 from app.services.motion import plan as motion_plan
 from app.services.production_snapshot import SnapshotService, material_drift, materials_of
-from app.services.stock import UNIT, Ledger, list_movements
+from app.services.stock import ENDED_UNFINISHED, UNIT, Ledger, list_movements, paper_held, settle_job, stock_settled
 from app.services.motion import validate as motion_validate
 from app.services.stroke_ai import physical_mark, trajectory as tj
 
@@ -624,8 +624,19 @@ class TechnicianJobService:
                           "issued": net["INK"].get(ink.id, 0), "stock": ink.stock_qty})
         issued = paper is None or net["PAPER"].get(paper.id, 0) >= need
         rows, _ = list_movements(self.session, job_id=job.id, page_size=200)
+        held = sum(paper_held(self.session, job.id).values())
+        settled = stock_settled(self.session, job.id)
         return {"job_id": job.id, "pages": pages, "pages_assumed": assumed, "issued": issued,
-                "can_issue": job.status in jr.OPEN_STATUSES, "lines": lines, "movements": rows}
+                "can_issue": job.status in jr.OPEN_STATUSES, "lines": lines, "movements": rows,
+                # K1: a job that ended without "written" still holds its sheets until they are settled (once)
+                "paper_held": held, "settled": settled,
+                "can_settle": job.status in ENDED_UNFINISHED and held > 0 and not settled}
+
+    def settle_stock(self, job_id: int, waste: int) -> dict[str, Any]:
+        """K1: my job failed or was cancelled after I had taken its paper. I count the spoiled sheets; the rest goes back."""
+        job = self._job(job_id, lock=True)
+        settle_job(self.session, job, actor_id=self.tech.id, waste=waste, ip=self.ip)
+        return self.stock_status(job.id, job=job)
 
     def issue(self, job_id: int, *, paper: int, new_pen: bool, seen_issued: int) -> dict[str, Any]:
         """Take materials for the job from the shelf: sheets of the order's paper, and a new pen with its ink only when

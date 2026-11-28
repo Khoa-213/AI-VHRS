@@ -1398,6 +1398,28 @@ Mọi thay đổi dưới đây đã có test trên Postgres cục bộ; **chưa
 - Gặp mã này ở app trên chính máy trạm: đăng xuất, đăng nhập lại và khởi động lại agent để xin khoá mới.
 - Agent (API cục bộ, cổng 8765): `403 REAL_ONLY_AT_WORKSTATION` khi `real-enable`, `dry-run` / `run` / `align-start` ở `mode: real`, hoặc `resume` / `paper-changed` của lần chạy REAL được gọi từ máy khác. `POST /api/jobs/{id}/align-start {mode, authorization, corner?}` là route cục bộ mới. `authorization_token` chỉ có trong trả lời cho người gọi tại máy trạm. `POST /api/resume` và `/api/paper-changed` chỉ dành cho kỹ thuật viên.
 
+## 7z-4. Lần chạy robot chỉ do agent báo (L2, 2026-11-28, không đổi DB)
+
+Đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Web `FE/` và app desktop không gọi hai endpoint này nên không phải đổi.
+
+- `POST /technician/jobs/{id}/runs` và `PATCH /technician/runs/{run_id}` chỉ nhận **khoá của Robot Agent** (`Authorization: Bearer vhrs_ak_...`) thuộc đúng robot của job / lần chạy. Token đăng nhập của người (kể cả kỹ thuật viên của job) trả `403 RUN_REPORT_AGENT_ONLY`; khoá của robot khác trả `403 RUN_REPORT_WRONG_ROBOT`.
+- Agent luôn báo được kết quả lần chạy của robot mình, kể cả khi job đã rời trạng thái hoạt động (ví dụ Manager đã ghi nhận viết xong thay): trả `200`, hoặc `409 RUN_ALREADY_CLOSED`.
+- Con người đóng lần chạy bằng `close-orphan` (mục 7z-2) và Manager ghi nhận viết xong bằng `finish-override`; hai đường này không đổi.
+- Hệ quả cho agent: phải có khoá (app desktop cấp khoá phiên, hoặc `VHRS_AGENT_KEY` do Manager cấp). Agent không có khoá không báo được lần chạy: mô phỏng vẫn chạy nhưng không có bản ghi, robot thật không khởi động.
+
+## 7z-5. Giấy của job kết thúc mà chưa viết xong; mã của thông báo (2026-11-28, không đổi DB)
+
+Đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Web `FE/`: FE đã làm (chi tiết job ở `/staff/robots`, và đích của thông báo).
+
+**Giấy của job hỏng hoặc bị huỷ**
+- Job bị huỷ khi còn `SCHEDULED` (`POST /manager/jobs/{id}/unschedule`, `/reschedule`, huỷ đơn): giấy đã xuất tự trả về kho, không cần gọi gì. Job mới sau khi đổi lịch phải xuất giấy lại.
+- `GET /technician/jobs/{id}/stock`: thêm `paper_held` (số tờ job còn giữ), `settled`, `can_settle` (job `FAILED` / `CANCELLED`, còn giữ giấy, chưa quyết toán).
+- `POST /technician/jobs/{id}/stock/settle {waste}` → `JobStockOut`; `POST /manager/jobs/{id}/stock/settle {waste}` → `{job_id, held, waste, returned}`. `waste` là số tờ hỏng (0 tới số đang giữ); phần còn lại trả về kho. Mỗi job một lần. Lỗi: `409 STOCK_SETTLE_NOT_ALLOWED` (job còn đang làm hoặc đã viết xong), `409 STOCK_ALREADY_SETTLED`, `409 NOTHING_TO_SETTLE`, `422 WASTE_OUT_OF_RANGE {held}`.
+- `GET /manager/jobs/{id}`: thêm `paper_held`, `can_settle_stock`.
+
+**Thông báo**
+- `msg_code` mới: `REFUND_DUE` (xưởng cần hoàn tiền), `PAY_LATE` (đơn chờ thanh toán cuối quá hạn, gửi Manager), `PICK_LATE` (đơn chờ nhận quá hạn, gửi Manager). Với tài khoản xưởng, chỉ `REFUND_DUE` mở trang Hoàn tiền; các thông báo khác mở trang đơn. Thông báo cũ có `msg_code = null` mở trang đơn.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |

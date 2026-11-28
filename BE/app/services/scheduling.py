@@ -32,6 +32,7 @@ from app.repositories.workshop import SketchRepository
 from app.services import audit, notifications
 from app.services.eta import EtaService
 from app.services.production_snapshot import SnapshotService
+from app.services.stock import return_unprepared
 
 SCHEDULABLE = (ProductionStatus.PENDING_SCHEDULE, ProductionStatus.FAILED, ProductionStatus.REWRITE_REQUIRED)
 DEFAULT_LEAD_MIN = 60            # earliest start = now + lead (time to prepare paper/pen)
@@ -307,6 +308,7 @@ class SchedulingService:
         set_actor(self.session, self.manager.id, reason)
         order.production_status = ProductionStatus.PENDING_SCHEDULE
         self.session.flush()
+        return_unprepared(self.session, job, actor_id=self.manager.id, reason=f"huỷ lịch: {reason}", ip=self.ip)   # K1
         audit.record(self.session, actor_id=self.manager.id, action="JOB_UNSCHEDULE", entity_type="production_job",
                      entity_id=job.id, new={"order_id": order.id}, reason=reason, ip=self.ip)
         return job
@@ -323,6 +325,7 @@ class SchedulingService:
         set_actor(self.session, self.manager.id, reason)
         order.production_status = ProductionStatus.PENDING_SCHEDULE
         self.session.flush()
+        return_unprepared(self.session, old, actor_id=self.manager.id, reason=f"đổi lịch: {reason}", ip=self.ip)   # K1
         new = self.schedule(order.id, technician_id=technician_id, robot_id=robot_id, slot_start=slot_start,
                             note=reason, _replacing=old)
         audit.record(self.session, actor_id=self.manager.id, action="JOB_RESCHEDULE", entity_type="production_job",

@@ -2,6 +2,8 @@
 
 A01  a run ends DONE only with every stroke of its plan
 A02  "written" needs one finished robot run per copy of the order (the agent writes one copy per run)
+L2   a robot run is opened and closed by the robot's own agent key, never by a person's login; the agent can still report
+     how its run ended after the job left its live states
 L1   on a real robot only a REAL run is a written copy; a SIM or MOCK run that ended DONE is not (a robot marked simulated
      keeps counting every finished run)
 A05  a command the agent pulled but never answered: a halt is handed out again, anything else is never repeated, and after
@@ -20,7 +22,7 @@ Real database and triggers. The agent is simulated by the test; no robot is invo
 from app.services.robot_link import hub
 from tests.test_api_orders import API, _sql
 from tests.test_api_payments import _approved, _code, _deposit, _hook, _signed
-from tests.conftest import login, make_account
+from tests.conftest import agent_h, login, make_account
 from tests.test_api_robot_link import A, bearer, fresh_hub, key_for, session_key, sync  # noqa: F401
 from tests.test_api_robot_ops import open_run
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
@@ -32,7 +34,7 @@ WHY = "Robot đã dừng, máy trạm mất mạng lúc viết xong"
 
 
 def _close(client, tech, run, result, done, total=10):
-    return client.patch(f"{T}/runs/{run}", headers=tech[0], json={"result": result, "completed_strokes": done, "total_strokes": total})
+    return client.patch(f"{T}/runs/{run}", headers=agent_h(run=run), json={"result": result, "completed_strokes": done, "total_strokes": total})
 
 
 def _cmd(client, who, jid, kind, key=None, **params):
@@ -439,3 +441,49 @@ def test_a_manager_may_still_record_written_when_only_simulated_runs_were_report
     assert r.status_code == 200 and _status(jid) == "WRITTEN", r.text
     over = _sql("select new_value from audit_logs where action='JOB_FINISH_OVERRIDE' and entity_id=:j order by id desc limit 1", j=jid)
     assert over["copies_written"] == 0 and over["had_done_run"] is False
+
+
+# ---------------------------------------------------------------------------------------------- L2
+def test_a_run_is_reported_by_the_robots_agent_and_never_by_a_persons_login(client, cust, staff, mgr, wcat, robot, tech, fresh_hub):
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    body = {"run_id": "run-by-hand-01", "mode": "SIM", "dry_run": False, "total_strokes": 10}
+    for who in (tech[0], mgr):                                                        # the technician's own login, a Manager's
+        r = client.post(f"{T}/jobs/{jid}/runs", headers=who, json=body)
+        assert r.status_code == 403, r.text
+    by_hand = client.post(f"{T}/jobs/{jid}/runs", headers=tech[0], json=body)
+    assert _err(by_hand) == "RUN_REPORT_AGENT_ONLY" and _sql("select count(*) from robot_runs where job_id=:j", j=jid) == 0
+
+    r, run = open_run(client, tech, jid)                                              # the agent of this robot
+    assert r.status_code == 201
+    done = {"result": "DONE", "completed_strokes": 10, "total_strokes": 10}
+    assert _err(client.patch(f"{T}/runs/{run}", headers=tech[0], json=done)) == "RUN_REPORT_AGENT_ONLY"
+    assert _sql("select ended_at is null from robot_runs where run_id=:r", r=run)         # still open: nothing was faked
+
+    # the agent of ANOTHER robot (the same technician holds a job there too) cannot report this run
+    from tests.test_api_scheduling import _at, _robot, _sched
+    from tests.test_api_payments import _paid
+    other_robot = _robot()
+    oid2, _, _ = _paid(client, cust, staff[0], wcat)
+    jid2 = _sched(client, mgr, oid2, other_robot, tech[1], _at(2, 9)).json()["id"]
+    wrong = client.patch(f"{T}/runs/{run}", headers=agent_h(jid2), json=done)
+    assert wrong.status_code == 403 and _err(wrong) == "RUN_REPORT_WRONG_ROBOT", wrong.text
+
+    assert client.patch(f"{T}/runs/{run}", headers=agent_h(run=run), json=done).status_code == 200
+    _sql("update robots set is_simulated = true where id=:r returning 1", r=robot)
+    assert _post(client, tech, jid, "finish").status_code == 200                       # the technician still records "written" themselves
+
+
+def test_the_agent_reports_how_its_run_ended_even_after_the_job_is_over(client, cust, staff, mgr, wcat, robot, tech, fresh_hub):
+    """The job was recorded as written by a Manager while the agent was cut off. Its late report must reach the run, not be
+    turned away as "no active job" (the agent would keep sending it for ever)."""
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    r, run = open_run(client, tech, jid)
+    assert r.status_code == 201
+    _quiet(robot)
+    assert client.post(f"{M}/jobs/{jid}/finish-override", headers=mgr, json={"reason": WHY}).status_code == 200
+    assert _status(jid) == "WRITTEN" and _sql("select result from robot_runs where run_id=:r", r=run) == "UNKNOWN"
+
+    late = _close(client, tech, run, "DONE", 10)
+    assert late.status_code == 200 and late.json()["result"] == "DONE", late.text       # the placeholder is replaced by what happened
+    again = _close(client, tech, run, "FAULT", 2)
+    assert again.status_code == 409 and _err(again) == "RUN_ALREADY_CLOSED"              # a clear answer the agent can drop

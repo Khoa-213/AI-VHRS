@@ -8,7 +8,7 @@ import type { Job } from '../../services/async'
 import {
   ackManagerAlert, alertCatalog, closeOrphanRun, finishJobOverride, jobCompliance, managerAlerts, managerIncidents, managerJob,
   managerJobEvents, managerJobQuality, managerRobotStatus, managerRuns, patchAlertCatalog, resolveIncident, resolveManagerAlert,
-  robotHealth, type AlertCatalogEntry, type ManagerAlert, type ManagerJob,
+  robotHealth, settleJobStock, type AlertCatalogEntry, type ManagerAlert, type ManagerJob,
 } from '../../services/managerOps'
 import { errText, orderErrorKey } from '../../services/orders'
 import { Chip, LevelChip, Panel, Period, StateChip, type Tone } from './managerKit'
@@ -107,6 +107,15 @@ export default function Robots() {
     const reason = (notes[key] ?? '').trim()
     if (reason.length < REASON_MIN || !window.confirm(t('mgr.job.overrideConfirm', { id: x.id, n: x.copiesWritten, total: x.quantity }))) return
     void act(key, () => finishJobOverride(x.id, reason), reloadJob, t('mgr.job.overrideDone'))
+  }
+
+  const settlePaper = (x: ManagerJob) => {
+    const key = `s${x.id}`
+    const raw = (notes[key] ?? '').trim()
+    const waste = raw === '' ? 0 : Number(raw)
+    if (!Number.isInteger(waste) || waste > x.paperHeld) return
+    if (!window.confirm(t('mgr.job.settleAsk', { id: x.id, back: x.paperHeld - waste, waste }))) return
+    void act(key, () => settleJobStock(x.id, waste), reloadJob, t('mgr.job.settleDone', { n: x.paperHeld - waste }))
   }
 
   const toggleCatalog = (c: AlertCatalogEntry, patch: Patch) =>
@@ -361,6 +370,7 @@ export default function Robots() {
                 <div><dt>{t('mgr.rb.progress')}</dt><dd>{j.progressPct === null ? '–' : `${Math.round(j.progressPct)}%`}</dd></div>
                 <div><dt>{t('mgr.job.simulation')}</dt><dd>{j.simulationPassed === null ? '–' : t(j.simulationPassed ? 'mgr.cp.PASS' : 'mgr.cp.FAIL')}</dd></div>
                 <div><dt>{t('mgr.job.copies')}</dt><dd>{t('mgr.job.copiesValue', { n: j.copiesWritten, total: j.quantity })}</dd></div>
+                {j.paperHeld > 0 && <div><dt>{t('mgr.job.paperHeld')}</dt><dd>{t('mgr.job.paperHeldValue', { n: j.paperHeld })}</dd></div>}
               </dl>
             )}
 
@@ -382,6 +392,28 @@ export default function Robots() {
                       </button>
                     </div>
                   )}
+                </>
+              )
+            })()}
+
+            {j?.canSettleStock && (() => {
+              const key = `s${j.id}`
+              const raw = notes[key] ?? ''
+              const waste = raw.trim() === '' ? 0 : Number(raw)
+              const ok = Number.isInteger(waste) && j.paperHeld - waste >= 0
+              return (
+                <>
+                  <h3 className="mgr-h3">{t('mgr.job.settle')}</h3>
+                  <p className="mgr-callout">{t('mgr.job.settleHint', { n: j.paperHeld })}</p>
+                  <div className="mgr-actions">
+                    <label className="vh-label">
+                      {t('mgr.job.settleWaste', { max: j.paperHeld })}
+                      <input className="vh-input" inputMode="numeric" value={raw} placeholder="0" aria-invalid={!ok} onChange={(e) => setNotes({ ...notes, [key]: e.target.value.replace(/[^\d]/g, '') })} />
+                    </label>
+                    <button type="button" className="btn acc sm" disabled={!!busy || !ok} onClick={() => settlePaper(j)}>
+                      <CheckCircle size={16} aria-hidden />{t(busy === key ? 'mgr.working' : 'mgr.job.settleDo')}
+                    </button>
+                  </div>
                 </>
               )
             })()}

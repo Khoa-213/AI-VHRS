@@ -410,5 +410,44 @@ Kiểm thử: BE trên Postgres cục bộ; FE `tsc -b`, `i18n:check`, `build`; 
 | Mã | Lỗ hổng | Mức | Đề xuất |
 |---|---|---|---|
 | L1 | Trên robot thật, một lần chạy ở chế độ SIM hoặc MOCK kết thúc `DONE` vẫn được tính là "một bản đã viết" | Trung bình | **Đã sửa 2026-11-28 theo quyết định của chủ dự án:** robot không gắn cờ `is_simulated` chỉ tính lần chạy `REAL`; robot mô phỏng giữ như cũ; Manager vẫn ghi nhận thay được kèm lý do. Hệ quả: buổi demo nếu phải lùi về mô phỏng trên robot thật thì "viết xong" cần Manager ghi nhận thay, hoặc dùng một robot gắn cờ mô phỏng |
-| L2 | Lần chạy được báo bằng token của kỹ thuật viên. Ai có tài khoản kỹ thuật viên có thể tự mở và đóng một lần chạy `DONE` bằng API, không cần robot. Mọi thao tác có nhật ký, nhưng không bị chặn | Trung bình | Chỉ nhận mở / đóng lần chạy từ khoá của agent. Cần sửa cả chế độ agent chạy tay (đang dùng token người dùng), nên chưa làm |
+| L2 | Lần chạy được báo bằng token của kỹ thuật viên: ai có tài khoản kỹ thuật viên tự mở và đóng được một lần chạy `DONE` bằng API | Trung bình | **Đã sửa 2026-11-28:** mở và đóng lần chạy chỉ nhận khoá của agent thuộc đúng robot đó (`403 RUN_REPORT_AGENT_ONLY`, `RUN_REPORT_WRONG_ROBOT`); agent dùng khoá của mình để báo lần chạy dù ai bấm nút. **Còn lại:** kỹ thuật viên vẫn tự xin được khoá phiên rồi dựng một agent giả để báo; việc xin khoá có nhật ký (`ROBOT_AGENT_SESSION_KEY`) nhưng không bị chặn. Chặn hẳn cần một bí mật mà kỹ thuật viên không đọc được ở máy trạm |
 | L3 | Chế độ của lần chạy (REAL / SIM) do agent tự báo; máy chủ tin giá trị đó khi áp các cổng REAL | Thấp | Là lớp bảo vệ thứ hai; lớp chính nằm ở agent |
+
+## 10. Audit phần sổ kho (`services/stock.py`, migration 0033 của nhóm, 2026-11-28)
+
+Phạm vi: `services/stock.py`, phần kho trong `services/technician.py` (`stock_status`, `issue`, `prepare`, `finish`), `manager_catalog.adjust_stock`, migration `0033_stock_movements`. Đọc toàn bộ; mục K1 được kiểm chứng bằng test tạm trên Postgres cục bộ. Chưa sửa gì ở phần này.
+
+**Làm tốt.**
+
+- Một đường ghi duy nhất: mọi thay đổi `stock_qty` đi qua `Ledger.move`, có khoá dòng vật tư và ghi một dòng sổ chỉ-thêm kèm tồn sau thay đổi. Không còn chỗ nào ghi thẳng `stock_qty` (kể cả tồn đầu khi tạo vật tư).
+- Database tự giữ luật: dấu của số lượng theo loại phiếu, phiếu xuất / trả phải gắn job, phiếu nhập phải gắn phiếu, tồn không âm.
+- Thứ tự khoá thống nhất (job, đơn, rồi vật tư theo loại và id) ở cả nhập, xuất và viết xong, nên hai thao tác đồng thời không khoá chéo.
+- Nhập kho gửi hai lần không cộng hai lần (`client_ref`; web có gửi). Xuất kho gửi hai lần bị chặn bằng `seen_issued`.
+- "Viết xong" không bao giờ bị chặn vì tồn kho lệch: tồn dừng ở 0 và phần thiếu được ghi lại.
+
+**Vấn đề.**
+
+| Mã | Vấn đề | Hậu quả | Đề xuất | Ưu tiên | Công |
+|---|---|---|---|---|---|
+| K1 | Giấy đã xuất cho một job mà job không đi tới "viết xong" thì không trả lại được. Job thành `FAILED` (sự cố) hoặc `CANCELLED` (huỷ lịch, đổi lịch, huỷ đơn) vẫn "giữ" số giấy đó mãi; mọi thao tác kho trên job bị từ chối `JOB_NOT_ACTIVE`. Đã kiểm chứng: xuất 1 tờ, báo sự cố hoặc huỷ lịch, kệ vẫn 99 và job vẫn giữ 1 | Tồn kho trên hệ thống thấp hơn thực tế sau mỗi lần sự cố hoặc đổi lịch; job xếp lại phải xuất lần nữa. Chỉ sửa được bằng Manager kiểm kê tay, và sổ vẫn ghi job chết đang giữ giấy | Job chưa chuẩn bị (còn `SCHEDULED`) mà bị huỷ / đổi lịch / huỷ đơn: tự trả toàn bộ. Job đã bắt đầu rồi hỏng hoặc bị huỷ: cho kỹ thuật viên (hoặc Manager) "quyết toán giấy" kèm số tờ hỏng, trả phần còn lại | P1 | S–M |
+| K2 | Đơn không chọn loại giấy ("để xưởng đề xuất" mà chưa gán giấy) thì không có dòng sổ nào: chuẩn bị không đòi xuất giấy, viết xong không trừ | Giấy dùng cho các đơn này không được ghi | Bắt buộc đơn có loại giấy trước khi xếp lịch, hoặc cho kỹ thuật viên chọn giấy khi xuất | P2 | S |
+| K3 | "Giữ cho job" ở màn tổng quan tính 1 tờ mỗi bản, không theo số trang thật; số tờ cần ở bước chuẩn bị lùi về 1 trang mỗi bản khi không đọc được gói job | Cảnh báo thiếu giấy đến muộn với tài liệu nhiều trang | Lưu số trang vào job lúc xếp lịch và dùng số đó | P3 | S |
+| K4 | Bút và mực chỉ có đường xuất, không có đường trả khi xuất nhầm | Phải nhờ Manager kiểm kê | Chấp nhận, ghi vào hướng dẫn | P3 | 0 |
+
+K1 là mục duy nhất làm sai số liệu trong vận hành bình thường.
+
+**K1 đã sửa 2026-11-28 (chủ dự án duyệt).**
+
+- Job bị huỷ khi còn `SCHEDULED` (huỷ lịch, đổi lịch, huỷ đơn): chưa dùng gì, nên toàn bộ giấy đã xuất được trả về kho ngay trong cùng thao tác.
+- Job đã bắt đầu rồi hỏng (sự cố) hoặc bị huỷ giữa chừng: kỹ thuật viên của job (`POST /technician/jobs/{id}/stock/settle`) hoặc Manager (`POST /manager/jobs/{id}/stock/settle`, có nút trên web ở chi tiết job) ghi số tờ hỏng; phần còn lại trả về kho. Mỗi job một lần; dấu mốc là dòng nhật ký `STOCK_SETTLE`.
+- Không đổi database: sổ kho vẫn chỉ có bốn loại phiếu, việc quyết toán là một phiếu `RETURN` gắn job.
+- K2, K3, K4 chưa sửa.
+
+## 11. Thông báo "chờ thanh toán cuối quá lâu" mở nhầm trang Hoàn tiền (2026-11-28)
+
+Chủ dự án báo: Manager bấm thông báo "Đơn ... chờ thanh toán cuối quá lâu" thì tới trang Hoàn tiền, trang này trống.
+
+- **Nguyên nhân.** Web đưa mọi thông báo loại `PAYMENT` của xưởng về trang Hoàn tiền. Thông báo quá hạn (thêm ở D08) cũng là loại `PAYMENT`, nhưng việc cần làm nằm ở trang đơn: liên hệ khách hoặc "Đóng đơn không hoàn tất được".
+- **Sửa.** Máy chủ gắn mã cho ba thông báo: `REFUND_DUE` (cần hoàn tiền), `PAY_LATE` (thanh toán cuối quá hạn), `PICK_LATE` (chờ nhận quá hạn). Web chỉ mở trang Hoàn tiền với `REFUND_DUE`; mọi thông báo khác của xưởng mở trang đơn.
+- **Thông báo cũ** (lưu trước khi có mã) mở trang đơn; trang đơn vẫn hiện các khoản hoàn của đơn đó.
+

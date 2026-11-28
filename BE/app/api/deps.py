@@ -8,6 +8,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import security
@@ -26,9 +27,11 @@ SessionDep = Annotated[Session, Depends(get_session)]
 class Principal:
     account: Account
     session_id: uuid.UUID
+    agent_robot_id: int | None = None       # set when the request was made with a Robot Agent key: the robot that key belongs to
 
 
 _JOB_IN_PATH = re.compile(r"/technician/jobs/(\d+)")
+_RUN_IN_PATH = re.compile(r"/technician/runs/([^/]+)$")
 AGENT_SESSION = uuid.UUID(int=0)       # marks a request made by a Robot Agent acting for the technician of its live job
 
 
@@ -40,12 +43,29 @@ def _agent_principal(session: Session, token: str, request: Request) -> Principa
         raise AppError(401, "INVALID_AGENT_KEY", "Khoá agent chỉ dùng cho API kỹ thuật viên.")
     ident = agent_identity(session, token)
     m = _JOB_IN_PATH.search(path)
-    acc = technician_for_agent(session, ident.robot_id, int(m.group(1)) if m else None, ident.account_id)
+    acc = _technician_of_run(session, ident, _RUN_IN_PATH.search(path))
+    if acc is None:
+        acc = technician_for_agent(session, ident.robot_id, int(m.group(1)) if m else None, ident.account_id)
     # TP-06: the agent acts AS this technician, so it must stop working the moment the account does (locked, disabled).
     if (acc is None or acc.status != AccountStatus.ACTIVE
             or (acc.locked_until and acc.locked_until > datetime.now(timezone.utc))):
         raise AppError(401, "AGENT_ACCOUNT_INACTIVE", "Tài khoản kỹ thuật viên của job này đã bị khoá hoặc vô hiệu hoá.")
-    return Principal(account=acc, session_id=AGENT_SESSION)
+    return Principal(account=acc, session_id=AGENT_SESSION, agent_robot_id=ident.robot_id)
+
+
+def _technician_of_run(session: Session, ident, match) -> Account | None:
+    """Reporting how a run ended (`PATCH /technician/runs/{run_id}`): the agent of the robot the run ran on may always do
+    that, whatever became of the job since (finished by a Manager's override, failed, cancelled). Otherwise a result that
+    arrives late was refused at the door as "no active job" and the agent kept it for ever. A session key still acts only
+    for its own technician. None = not that route, or not this agent's run: the usual rule decides."""
+    if match is None:
+        return None
+    from app.models.ops import ProductionJob, RobotRun
+    row = session.execute(select(ProductionJob.technician_id).join(RobotRun, RobotRun.job_id == ProductionJob.id).where(
+        RobotRun.run_id == match.group(1), RobotRun.robot_id == ident.robot_id)).first()
+    if row is None or (ident.account_id is not None and row[0] != ident.account_id):
+        return None
+    return session.get(Account, row[0])
 
 
 def current_principal(request: Request, session: SessionDep, token: Annotated[str | None, Depends(_oauth2)]) -> Principal:

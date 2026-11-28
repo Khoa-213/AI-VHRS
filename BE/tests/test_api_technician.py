@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.orders import optional_storage
 from app.main import app
-from tests.conftest import auth
+from tests.conftest import agent_h, auth
 from tests.test_api_orders import API, _sql, issue_paper
 from tests.test_api_payments import _paid
 from tests.test_api_scheduling import _at, _prod, _sched, mgr, robot, tech  # noqa: F401
@@ -80,9 +80,9 @@ def _robot_wrote(client, tech, jid, mode="SIM", copies=1):
         # writing, so their robot is one the Manager marked as simulated, where a finished simulated run counts.
         _sql("update robots set is_simulated = true where id = (select robot_id from production_jobs where id=:j) returning 1", j=jid)
     key = "run-" + uuid.uuid4().hex[:10]
-    r = client.post(f"{T}/jobs/{jid}/runs", headers=tech[0], json={"run_id": key, "mode": mode, "dry_run": False, "total_strokes": 10})
+    r = client.post(f"{T}/jobs/{jid}/runs", headers=agent_h(jid), json={"run_id": key, "mode": mode, "dry_run": False, "total_strokes": 10})
     assert r.status_code == 201, r.text
-    r = client.patch(f"{T}/runs/{key}", headers=tech[0], json={"result": "DONE", "completed_strokes": 10, "total_strokes": 10})
+    r = client.patch(f"{T}/runs/{key}", headers=agent_h(run=key), json={"result": "DONE", "completed_strokes": 10, "total_strokes": 10})
     assert r.status_code == 200, r.text
     return key
 

@@ -51,7 +51,8 @@ class CloseOutbox:
     stayed "busy" there and the job could not be recorded as written. Now the result waits in a small file next to the run
     logs and is sent again whenever the link works (AgentLink, after every successful sync), across restarts of the agent."""
 
-    GONE = ("RUN_NOT_FOUND", "RUN_ALREADY_CLOSED", "RESULT_INVALID")      # nothing a retry could change
+    # nothing a retry could change (AGENT_HAS_NO_ACTIVE_JOB on a close: the backend does not know this run of this robot)
+    GONE = ("RUN_NOT_FOUND", "RUN_ALREADY_CLOSED", "RESULT_INVALID", "RUN_REPORT_WRONG_ROBOT", "AGENT_HAS_NO_ACTIVE_JOB")
 
     def __init__(self, path: Path):
         self.path = path

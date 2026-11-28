@@ -42,6 +42,7 @@ WSD = {"box_min_mm": list(DEMO_WS.box_min_mm), "box_max_mm": list(DEMO_WS.box_ma
 class FakeBackend:
     def __init__(self):
         self.calls: list[tuple[str, str, dict | None]] = []
+        self.tokens: list[tuple[str, str]] = []                   # (path, bearer token) of every call
         self.calibration = {"probe_points": DEMO_PROBES, "frame_transform": {"schema": "vhrs-motion/1", "motion": MOTION, "workspace": WSD}}
         self.signed = True                                       # False: a job scheduled before the packages were signed
 
@@ -50,6 +51,7 @@ class FakeBackend:
         body = json.loads(req.content) if req.content else None
         tok = req.headers.get("authorization", "")[7:]
         self.calls.append((req.method, path, body))
+        self.tokens.append((path, tok))
         if path == "/auth/login":
             role = "CUSTOMER" if body["email"].startswith("cust") else "TECHNICAL_STAFF"
             return httpx.Response(200, json={"access_token": "tech-token", "refresh_token": "r1", "account": {"role": role, "full_name": "Ky Thuat"}})

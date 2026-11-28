@@ -192,10 +192,11 @@ def test_the_real_robot_is_switched_on_and_started_from_the_workstation_only(tmp
 
 
 def test_a_waiting_run_result_is_also_sent_when_a_job_is_loaded(tmp_path):
-    """An agent without a backend link has no sync to hang the retry on: loading a job with the person's token sends it."""
+    """Loading a job is one more moment to send a run result that is still waiting, with the agent's own key."""
     from test_server_api import auth, make
 
     svc, c, be = make(tmp_path)
+    svc.run_key = lambda: "other-token"                                                 # the agent's own key (the link sets it)
     svc.closes.add("run-old-1", {"result": "STOPPED", "completed_strokes": 3, "total_strokes": 10, "summary": None})
     assert c.post("/api/jobs/12/load", headers=auth()).status_code == 200
     assert svc.closes.pending() == []
@@ -226,3 +227,32 @@ def test_resuming_a_real_run_is_for_the_technician_at_the_workstation(tmp_path):
 
     svc.current = {"job_id": 12, "mode": "sim", "dry_run": False}                       # a simulated run may be resumed from afar
     assert far.post("/api/paper-changed", headers=auth()).status_code == 200
+
+
+# ---------------------------------------------------------------------------------------------- L2
+def test_runs_are_reported_with_the_agents_key_whoever_pressed_the_button(tmp_path):
+    """The backend takes the opening and closing of a run from the agent's key only. A person starts the run on the page with
+    their own login; the record of it still goes out under the agent's key."""
+    from test_server_api import auth, make, wait_idle
+
+    svc, c, be = make(tmp_path)
+    svc.run_key = lambda: "other-token"                                                 # stands for the agent key
+    c.post("/api/jobs/12/load", headers=auth())                                         # the person: tech-token
+    assert c.post("/api/jobs/12/run", headers=auth(), json={"mode": "sim"}).status_code == 202
+    assert wait_idle(c)["last"]["result"]["state"] == "DONE"
+    run_calls = [(path, tok) for path, tok in be.tokens if path.endswith("/runs") or path.startswith("/technician/runs/")]
+    assert len(run_calls) >= 2 and {tok for _, tok in run_calls} == {"other-token"}, run_calls
+    assert ("/technician/jobs/12/package", "tech-token") in be.tokens                   # everything else stays the person's
+
+
+def test_without_an_agent_key_the_persons_login_is_all_there_is(tmp_path):
+    """No backend link, no key: the run record is sent with what the agent has (the backend refuses it since L2, so the
+    simulator runs unrecorded and the REAL robot does not start)."""
+    from test_server_api import auth, make, wait_idle
+
+    svc, c, be = make(tmp_path)
+    assert svc.run_key is None
+    c.post("/api/jobs/12/load", headers=auth())
+    assert c.post("/api/jobs/12/run", headers=auth(), json={"mode": "sim"}).status_code == 202
+    wait_idle(c)
+    assert {tok for path, tok in be.tokens if path.endswith("/runs")} == {"tech-token"}
