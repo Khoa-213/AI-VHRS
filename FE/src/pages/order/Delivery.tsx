@@ -117,9 +117,10 @@ export default function Delivery({ id }: { id: string | null }) {
     ?? services.find((s) => savedService && isService(s, savedService.carrier, savedService.code))
     ?? cheapest
 
-  const days = useMemo(() => pickupDays(), [])
+  const hours = quote.data?.pickupHours ?? undefined // the workshop's opening hours, from the server
+  const days = useMemo(() => pickupDays(hours), [hours])
   const activeDay = days.includes(day) ? day : days[0] ?? ''
-  const slots = activeDay ? slotsOn(activeDay) : []
+  const slots = activeDay ? slotsOn(activeDay, hours) : []
   const chosenSlot = slots.find((s) => Date.parse(s.start) === slot) ?? null
   const pickupPhoneOk = PHONE.test(pickupPhone.trim())
 

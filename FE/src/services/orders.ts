@@ -1,4 +1,5 @@
 import { API_BASE, ApiError, api } from './api'
+import type { PickupHours } from '../utils/pickupSlots'
 
 /**
  * Customer side of the order API: catalog, estimate, draft editing, submit,
@@ -680,6 +681,8 @@ export interface DeliveryQuote {
   chosen: DeliveryMethod | null
   services: ShippingService[]
   chosenService: ShippingService | null
+  /** The workshop's opening hours, for the pick-up slots; null from an older backend or when the setting is broken. */
+  pickupHours: PickupHours | null
 }
 
 interface RawService {
@@ -691,6 +694,7 @@ interface RawQuote {
   paper_size: string; package_type: string; balance: string; is_fallback_fee: boolean
   options: Record<DeliveryMethod, { fee: string; total_due: string }>
   chosen: DeliveryMethod | null; services: RawService[]; chosen_service: RawService | null
+  pickup_hours?: { days: number[]; start: string; end: string; utc_offset_min: number } | null
 }
 
 const toService = (s: RawService): ShippingService => ({
@@ -705,6 +709,9 @@ const toQuote = (r: RawQuote): DeliveryQuote => ({
     PICKUP: { fee: num(r.options.PICKUP.fee) ?? 0, totalDue: num(r.options.PICKUP.total_due) ?? 0 },
   },
   chosen: r.chosen, services: r.services.map(toService), chosenService: r.chosen_service && toService(r.chosen_service),
+  pickupHours: r.pickup_hours
+    ? { days: r.pickup_hours.days, start: r.pickup_hours.start, end: r.pickup_hours.end, utcOffsetMin: r.pickup_hours.utc_offset_min }
+    : null,
 })
 
 /** Both ways of receiving, for the address saved on the order (none yet: the table price only). */
@@ -879,6 +886,8 @@ const ERROR_KEYS: Record<string, string> = {
   JOB_STATE_CONFLICT: 'err.jobState',
   RUN_OPEN: 'td.flow.error.RUN_OPEN',
   RUN_STILL_ACTIVE: 'err.runStillActive',
+  FAITHFUL_NEEDS_REGIONS: 'err.faithfulNeedsRegions',
+  PAPER_SIZE_MISMATCH: 'err.paperSizeMismatch',
   RUN_ALREADY_CLOSED: 'err.runAlreadyClosed',
   ORDER_NOT_DELIVERING: 'err.orderNotDelivering',
   SHIPMENT_NOT_FAILED: 'err.shipmentNotFailed',

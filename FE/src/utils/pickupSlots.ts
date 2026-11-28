@@ -1,12 +1,19 @@
 /**
- * Pick-up appointments the customer can choose. The backend checks a slot against `system_settings.working_hours` but has
- * no endpoint that reads that setting, so the hours below copy its seed (Monday to Saturday, 08:00 to 17:00, UTC+7).
- * Change them together with the setting. A slot outside the hours still fails on the server (`OUTSIDE_WORKING_HOURS`).
+ * Pick-up appointments the customer can choose. The opening hours come with the delivery quote (`pickup_hours`, the
+ * backend's `system_settings.working_hours`); `DEFAULT_HOURS` (the setting's seed: Monday to Saturday, 08:00 to 17:00,
+ * UTC+7) is used only until the quote is in or when the setting is broken. A slot outside the hours fails on the server
+ * (`OUTSIDE_WORKING_HOURS`).
  */
-const OPEN_DAYS = [1, 2, 3, 4, 5, 6] // getUTCDay of the workshop's date: 0 is Sunday
-const OPEN_HOUR = 8
-const CLOSE_HOUR = 17
-const SLOT_HOURS = 1
+export interface PickupHours {
+  /** ISO weekdays, Monday = 1. */
+  days: number[]
+  /** HH:MM on the workshop's clock. */
+  start: string
+  end: string
+  utcOffsetMin: number
+}
+export const DEFAULT_HOURS: PickupHours = { days: [1, 2, 3, 4, 5, 6], start: '08:00', end: '17:00', utcOffsetMin: 420 }
+const SLOT_MIN = 60
 const HORIZON_DAYS = 30
 const OFFSET = '+07:00'
 const OFFSET_MS = 7 * 3600_000
@@ -21,7 +28,10 @@ export interface Slot {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
-const at = (day: string, hour: number) => `${day}T${pad(hour)}:00:00${OFFSET}`
+const minuteOf = (hm: string) => { const [h, m] = hm.split(':').map(Number); return h * 60 + (m || 0) }
+const offsetText = (min: number) => `${min < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(min) / 60))}:${pad(Math.abs(min) % 60)}`
+const at = (day: string, minute: number, hours: PickupHours) =>
+  `${day}T${pad(Math.floor(minute / 60))}:${pad(minute % 60)}:00${offsetText(hours.utcOffsetMin)}`
 
 /** The workshop's calendar day (YYYY-MM-DD) of a moment. */
 export const dayOf = (iso: string | number) => new Date(new Date(iso).getTime() + OFFSET_MS).toISOString().slice(0, 10)
@@ -30,22 +40,24 @@ export const dayOf = (iso: string | number) => new Date(new Date(iso).getTime() 
 export const noonOf = (day: string) => new Date(`${day}T12:00:00${OFFSET}`)
 
 /** Slots of one day that are still ahead and within the booking horizon. */
-export function slotsOn(day: string, now = Date.now()): Slot[] {
+export function slotsOn(day: string, hours: PickupHours = DEFAULT_HOURS, now = Date.now()): Slot[] {
   const out: Slot[] = []
-  for (let h = OPEN_HOUR; h + SLOT_HOURS <= CLOSE_HOUR; h += SLOT_HOURS) {
-    const start = at(day, h)
+  const close = minuteOf(hours.end)
+  for (let m = minuteOf(hours.start); m + SLOT_MIN <= close; m += SLOT_MIN) {
+    const start = at(day, m, hours)
     const ms = Date.parse(start)
-    if (ms > now && ms <= now + HORIZON_DAYS * DAY_MS) out.push({ start, end: at(day, h + SLOT_HOURS) })
+    if (ms > now && ms <= now + HORIZON_DAYS * DAY_MS) out.push({ start, end: at(day, m + SLOT_MIN, hours) })
   }
   return out
 }
 
 /** Open days, from today, that still have a free slot. */
-export function pickupDays(now = Date.now()): string[] {
+export function pickupDays(hours: PickupHours = DEFAULT_HOURS, now = Date.now()): string[] {
   const out: string[] = []
   for (let i = 0; i <= HORIZON_DAYS; i++) {
     const day = dayOf(now + i * DAY_MS)
-    if (OPEN_DAYS.includes(noonOf(day).getUTCDay()) && slotsOn(day, now).length) out.push(day)
+    const weekday = noonOf(day).getUTCDay() || 7 // ISO: Sunday is 7
+    if (hours.days.includes(weekday) && slotsOn(day, hours, now).length) out.push(day)
   }
   return out
 }

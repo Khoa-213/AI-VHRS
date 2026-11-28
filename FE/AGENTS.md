@@ -94,7 +94,7 @@ backend gains a field, add it to the UI; do not keep fields the backend does not
   delivery with a carrier service priced live for the typed address (`POST /orders/{id}/delivery-quote`), or pick-up at
   the workshop at a booked slot, saved with `PUT /orders/{id}/delivery`. Provinces and wards come from the
   backend (`GET /locations/provinces`, `.../{code}/wards`, GHN two levels, no district; `services/locations.ts`), and the pick-up hours
-  copy the backend's `working_hours` seed (`utils/pickupSlots.ts`). Final payment and tracking have no pages yet.
+  come with the quote (`pickup_hours`, the backend's `working_hours`; `utils/pickupSlots.ts` keeps the seed only as a fallback). Final payment and tracking have no pages yet.
 - The workshop side lives in `src/pages/staff/` and `src/services/workshop.ts`: dashboard, `Workbench` (intake, sketch, quotation, chat),
   `Approvals`, `Schedule` and `Catalog` (Manager only, via `services/manage.ts`: templates, robots, price list, and `Materials.tsx`, where paper, pens, ink colors and paper-pen compatibility are one list-and-detail view because the customer only sees the chain paper → compatible active pen → that pen's active inks; a new paper is created with its pens, a new pen with its inks and papers, and anything a customer cannot order is flagged). Role gate is `RequireStaff` (Staff or Manager; Admin has no access to orders).
 - Errors from the API go through `orderErrorKey` / `errText` (`services/orders.ts`): known codes have translated text, any other code shows the backend's own message. Add a code to `ERROR_KEYS` and `err.*` when you want it translated.

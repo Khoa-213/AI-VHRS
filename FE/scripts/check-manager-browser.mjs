@@ -154,9 +154,9 @@ try {
         return void fulfill(requestId, Buffer.from('fixture'), 200, pdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', [{ name: 'Content-Disposition', value: `attachment; filename="bao-cao_fixture.${pdf ? 'pdf' : 'xlsx'}"` }])
       }
       if (path === '/manager/reports' && u.searchParams.get('from') > u.searchParams.get('to')) return void fulfill(requestId, { error: { code: 'INVALID_PERIOD', message: 'x', details: null } }, 422)
-      // The backend has no /workshop/queue-counts (the web falls back to reading the queue itself on 404). Answering 200 with
-      // another shape, as the catch-all below would, made the Staff home crash here although the real app does not.
-      if (path === '/workshop/queue-counts') return void fulfill(requestId, { error: { code: 'NOT_FOUND', message: 'Not Found', details: null } }, 404)
+      // /workshop/queue-counts as the backend answers it (2026-11-28). The catch-all below would answer 200 with another
+      // shape, which made the Staff home crash here although the real app does not.
+      if (path === '/workshop/queue-counts') return void fulfill(requestId, { pool: 0, mine: {} })
       await fulfill(requestId, answer(request.method, path, u.searchParams))
     } catch (e) { errors.push(e.message); await fulfill(requestId, { error: { code: 'TEST_ERROR', message: e.message } }, 500) }
   }
