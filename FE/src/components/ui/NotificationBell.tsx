@@ -25,7 +25,12 @@ const ICONS: Record<string, ReactNode> = {
 
 /**
  * Where a notification leads. A new chat message opens the chat thread of that order (so it works even when the order page
- * is already open); a phone reminder opens Account > Profile; a refund for the workshop opens the refunds desk; everything else opens the order page that fits the role.
+ * is already open); a phone reminder opens Account > Profile; a refund the workshop has to pay out (`REFUND_DUE`) opens the
+ * refunds desk; everything else opens the order page that fits the role.
+ *
+ * Before 2026-11-28 every workshop notification of type PAYMENT opened the refunds desk. "The balance of order X is overdue"
+ * is a PAYMENT notification too, so a Manager landed on an empty refunds list instead of the order, where the close action is.
+ * Rows stored before the backend sent the code have none and open the order, which also shows its refund rows.
  */
 function target(n: AppNotification, role?: string): { to?: string; chat?: number } | null {
   // Account reminders (add or verify the phone number) are for every role and open the profile.
@@ -33,7 +38,7 @@ function target(n: AppNotification, role?: string): { to?: string; chat?: number
   if (role === 'technician') return { to: '/tech' }
   if (role === 'admin' || n.orderId == null) return null
   if (n.type === 'NEW_MESSAGE') return { chat: n.orderId }
-  if (role === 'staff') return { to: n.type === 'PAYMENT' ? '/staff/refunds' : `/staff/review/${n.orderId}` }
+  if (role === 'staff') return { to: n.msgCode === 'REFUND_DUE' ? '/staff/refunds' : `/staff/review/${n.orderId}` }
   return { to: `/orders/${n.orderId}/review` }
 }
 

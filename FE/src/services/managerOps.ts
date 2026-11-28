@@ -305,6 +305,9 @@ export interface ManagerJob {
   copiesWritten: number
   /** The run the server still holds open for this job. `orphan`: the workstation is not running it, so a Manager may close it. */
   openRun: { runId: string; mode: string; dryRun: boolean; startedAt: string; orphan: boolean } | null
+  /** Sheets the job still holds, and whether they can be settled: the job failed or was cancelled half-way and nobody settled yet. */
+  paperHeld: number
+  canSettleStock: boolean
 }
 
 export async function managerJob(jobId: number): Promise<ManagerJob> {
@@ -313,12 +316,14 @@ export async function managerJob(jobId: number): Promise<ManagerJob> {
     slot_start: string; slot_end: string; estimated_duration_min: number; progress_pct: number | null; started_at: string | null
     finished_at: string | null; simulation_passed: boolean | null; quantity?: number; copies_written?: number
     open_run?: { run_id: string; mode: string; dry_run: boolean; started_at: string; orphan: boolean } | null
+    paper_held?: number; can_settle_stock?: boolean
   }>(`/manager/jobs/${jobId}`)
   return {
     id: j.id, orderId: j.order_id, orderCode: j.order_code, robotCode: j.robot_code, technicianName: j.technician_name, status: j.status,
     isRewrite: j.is_rewrite, slotStart: j.slot_start, slotEnd: j.slot_end, estimatedMin: j.estimated_duration_min, progressPct: j.progress_pct,
     startedAt: j.started_at, finishedAt: j.finished_at, simulationPassed: j.simulation_passed,
     quantity: j.quantity ?? 1, copiesWritten: j.copies_written ?? 0,
+    paperHeld: j.paper_held ?? 0, canSettleStock: !!j.can_settle_stock,
     openRun: j.open_run ? { runId: j.open_run.run_id, mode: j.open_run.mode, dryRun: j.open_run.dry_run, startedAt: j.open_run.started_at, orphan: j.open_run.orphan } : null,
   }
 }
@@ -355,6 +360,14 @@ export async function managerClosePreview(orderId: number): Promise<ClosePreview
  */
 export const closeOrderByManager = (orderId: number, reason: string, refundAmount: number): Promise<unknown> =>
   api(`/manager/orders/${orderId}/close`, { method: 'POST', body: { reason, refund_amount: refundAmount } })
+
+/**
+ * Settles the paper of a job that failed or was cancelled half-way (`POST /manager/jobs/{id}/stock/settle`): `waste` sheets
+ * were spoiled, the rest of what the job holds goes back to the shelf. Once per job. A job cancelled before it was prepared
+ * gives its paper back by itself.
+ */
+export const settleJobStock = (jobId: number, waste: number): Promise<{ held: number; waste: number; returned: number }> =>
+  api(`/manager/jobs/${jobId}/stock/settle`, { method: 'POST', body: { waste } })
 
 /**
  * Closes a run the workstation left open (`POST /manager/runs/{run_id}/close-orphan`, result UNKNOWN, reason of 10 characters or

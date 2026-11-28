@@ -77,6 +77,9 @@ function answer(method, path, search) {
   // Job 292: writing, 1 of 2 copies reported, and a run the workstation left open (nobody is executing it).
   if (path === '/manager/jobs/292') return { id: 292, order_id: 102, order_code: 'VHRS-T2', robot_id: 1, robot_code: 'FR3-01', technician_id: 5, technician_name: 'Kỹ thuật viên A', status: 'WRITING', is_rewrite: false, slot_start: now, slot_end: now, estimated_duration_min: 40, package_hash: null, progress_pct: 100, downloaded_at: now, started_at: now, finished_at: null, simulation_passed: true, quantity: 2, copies_written: 1, open_run: { run_id: 'r39', mode: 'REAL', dry_run: false, started_at: now, orphan: true } }
   if (path === '/manager/jobs/292/finish-override' || path === '/manager/runs/r39/close-orphan') return {}
+  // Job 293: failed after taking 4 sheets, not settled yet (stock audit K1).
+  if (path === '/manager/jobs/293') return { id: 293, order_id: 103, order_code: 'VHRS-T3', robot_id: 1, robot_code: 'FR3-01', technician_id: 5, technician_name: 'Kỹ thuật viên A', status: 'FAILED', is_rewrite: false, slot_start: now, slot_end: now, estimated_duration_min: 40, package_hash: null, progress_pct: 20, downloaded_at: now, started_at: now, finished_at: null, simulation_passed: true, quantity: 1, copies_written: 0, open_run: null, paper_held: settled ? 1 : 4, can_settle_stock: !settled }
+  if (path === '/manager/jobs/293/stock/settle') { settled = true; return { job_id: 293, held: 4, waste: 1, returned: 3 } }
   if (/^\/manager\/jobs\/\d+$/.test(path)) return { id: 291, order_id: 101, order_code: 'VHRS-T1', robot_id: 1, robot_code: 'FR3-01', technician_id: 5, technician_name: 'Kỹ thuật viên A', status: 'PAUSED', is_rewrite: false, slot_start: now, slot_end: now, estimated_duration_min: 40, package_hash: null, progress_pct: 35, downloaded_at: now, started_at: now, finished_at: null, simulation_passed: true }
   if (path === '/manager/incidents') return page([{ id: 3, job_id: 291, robot_id: 1, reported_by: 5, type: 'ROBOT', description: 'Cánh tay dừng giữa chừng.', robot_status_after: 'MAINTENANCE', resolved_by: null, resolved_at: null, resolution_note: null, created_at: now }])
   if (/^\/manager\/incidents\/\d+\/resolve$/.test(path)) return {}
@@ -89,7 +92,8 @@ function answer(method, path, search) {
   if (path === '/manager/schedule/config') return { working_hours: { days: [1, 2, 3, 4, 5], start: '08:00', end: '17:00', utc_offset_min: 420 }, eta_buffer_days: 2, lead_min: 30, slot_step_min: 15 }
   if (path === '/workshop/refunds') return { refunds: [], orphans: [] }
   if (/^\/manager\/(papers|pens|inks|compatibility|templates|styles|robots|technicians|pricing-config\/versions)$/.test(path)) return []
-  if (path.endsWith('/notifications')) return { items: [], unread_count: 0, next_before_id: null }
+  if (path.endsWith('/notifications')) return { items: bell, unread_count: bell.length, next_before_id: null }
+  if (/\/notifications\/\d+\/read$/.test(path)) return { ...bell.find((n) => path.includes(`/${n.id}/`)), is_read: true, read_at: now }
   if (path.endsWith('/unread-count')) return { unread: 0, unread_count: 0 }
   if (path.includes('conversations')) return { items: [] }
   if (path === '/manager/jobs') return page([])
@@ -109,6 +113,8 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r))
 const port = server.address().port
 let browser, ws
 const errors = []
+let settled = false          // job 293's paper
+let bell = []                // what the notification bell lists
 const calls = []
 
 try {
@@ -148,6 +154,9 @@ try {
         return void fulfill(requestId, Buffer.from('fixture'), 200, pdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', [{ name: 'Content-Disposition', value: `attachment; filename="bao-cao_fixture.${pdf ? 'pdf' : 'xlsx'}"` }])
       }
       if (path === '/manager/reports' && u.searchParams.get('from') > u.searchParams.get('to')) return void fulfill(requestId, { error: { code: 'INVALID_PERIOD', message: 'x', details: null } }, 422)
+      // The backend has no /workshop/queue-counts (the web falls back to reading the queue itself on 404). Answering 200 with
+      // another shape, as the catch-all below would, made the Staff home crash here although the real app does not.
+      if (path === '/workshop/queue-counts') return void fulfill(requestId, { error: { code: 'NOT_FOUND', message: 'Not Found', details: null } }, 404)
       await fulfill(requestId, answer(request.method, path, u.searchParams))
     } catch (e) { errors.push(e.message); await fulfill(requestId, { error: { code: 'TEST_ERROR', message: e.message } }, 500) }
   }
@@ -304,6 +313,37 @@ try {
   await go('/staff/robots?job=291', '.mgr-robot')
   await wait(`document.body.innerText.includes('Job #291') && document.body.innerText.includes('0 of 1')`, 'job 291 detail')
   assert.equal(await evaluate(`!!${jobBtn('Record as written')} || !!${jobBtn('Close the stuck run')}`), false, 'No Manager action on a paused job without an open run')
+
+  // A failed job that still holds paper: the Manager settles it once, with the spoiled sheets (stock audit K1).
+  await go('/staff/robots?job=293', '.mgr-robot')
+  await wait(`document.body.innerText.includes('Paper still with this job') && document.body.innerText.includes('Settle the paper of this job')`, 'held paper shown')
+  const settleBox = `${jobBtn('Settle paper')}.closest('.mgr-actions')`
+  await evaluate(`(()=>{const i=${settleBox}.querySelector('input');const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(i,'9');i.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+  assert.equal(await evaluate(`${jobBtn('Settle paper')}.disabled`), true, 'More spoiled sheets than the job holds is refused')
+  await evaluate(`(()=>{const i=${settleBox}.querySelector('input');const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(i,'1');i.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+  await evaluate(`window.confirm=()=>true`)
+  calls.length = 0
+  await evaluate(`${jobBtn('Settle paper')}.click()`)
+  await wait(`document.body.innerText.includes('Paper settled. 3 sheet(s) went back to the stock.')`, 'paper settled')
+  assert.ok(calls.includes('POST /manager/jobs/293/stock/settle'), 'Settle calls the Manager route')
+  await wait(`!${jobBtn('Settle paper')}`, 'no second settlement offered')
+
+  // The bell: an overdue balance opens the ORDER (where the Manager closes it); only a refund to pay out opens the refunds desk.
+  // Before, every workshop PAYMENT notification opened the refunds desk, which was empty for an overdue balance.
+  const note = (id, msg_code, title) => ({ id, order_id: 101, type: 'PAYMENT', msg_code, title, body: title, is_read: false, read_at: null, created_at: now })
+  bell = [note(1, 'PAY_LATE', 'Đơn VHRS-T1 chờ thanh toán cuối quá lâu'), note(2, 'REFUND_DUE', 'Cần hoàn tiền đơn VHRS-T1'), note(3, null, 'Thông báo thanh toán cũ')]
+  await go('/staff/robots', '.mgr-robot')
+  const went = []
+  for (const [title, expected] of [['chờ thanh toán cuối quá lâu', '/staff/review/101'], ['Cần hoàn tiền', '/staff/refunds'], ['Thông báo thanh toán cũ', '/staff/review/101']]) {
+    await evaluate(`window.__went=null;history.pushState=(s,t,url)=>{window.__went=String(url)}`)      // record the destination, stay on this page
+    if (!(await evaluate(`!!document.querySelector('.nbell-pop')`))) await evaluate(`document.querySelector('.nbell-btn').click()`)
+    await wait(`[...document.querySelectorAll('.nbell-pop li button')].some(b=>b.textContent.includes(${JSON.stringify(title)}))`, `bell lists: ${title}`)
+    await evaluate(`[...document.querySelectorAll('.nbell-pop li button')].find(b=>b.textContent.includes(${JSON.stringify(title)})).click()`)
+    await sleep(200)
+    went.push(await evaluate(`window.__went`))
+    assert.equal(went.at(-1), expected, `"${title}" opens ${expected}`)
+  }
+  bell = []
 
   // Reviews: hide needs a reason of five characters; filters reload.
   await go('/staff/reviews', '.mgr-alert')
