@@ -154,3 +154,75 @@ def test_the_real_pen_mount_descent_obeys_the_station_locks(tmp_path):
     svc.cfg.station_limits = None
     sim = svc.do_align(ctx, "sim", None, corner="TL")                                    # the simulator is not held back
     assert sim["on_paper"] is True
+
+
+# ---------------------------------------------------------------------------------------------- D03 / 1a
+def test_the_real_robot_is_switched_on_and_started_from_the_workstation_only(tmp_path):
+    """Owner decision 2026-11-28. Even when the agent is started for the LAN, another computer may watch, simulate and stop,
+    but it cannot switch REAL on, start the real arm, or even see the confirmation code."""
+    from fastapi.testclient import TestClient
+    from test_server_api import auth, enable, real_service, wait_idle
+    from vhrs_agent.server import create_server_app
+
+    svc, here, _ = real_service(tmp_path)
+    far = TestClient(create_server_app(svc), client=("192.168.1.50", 50000))            # another computer on the LAN
+
+    loaded_far = far.post("/api/jobs/12/load", headers=auth()).json()
+    assert "authorization_token" not in loaded_far and loaded_far["plan_digest"]       # everything but the code
+    assert "authorization_token" not in far.get("/api/jobs/12", headers=auth()).json()
+    token = here.post("/api/jobs/12/load", headers=auth()).json()["authorization_token"]
+    assert token.startswith("AUTHORIZE-12-")
+
+    def code(r):
+        return r.status_code, r.json()["error"]["code"]
+
+    assert code(far.post("/api/jobs/12/real-enable", headers=auth(), json={"minutes": 5})) == (403, "REAL_ONLY_AT_WORKSTATION")
+    enable(tmp_path)                                                                    # switched on at the workstation
+    body = {"mode": "real", "authorization": token}
+    for path in ("dry-run", "run", "align-start"):
+        assert code(far.post(f"/api/jobs/12/{path}", headers=auth(), json=body)) == (403, "REAL_ONLY_AT_WORKSTATION"), path
+    assert svc._busy is False
+
+    assert far.post("/api/jobs/12/run", headers=auth(), json={"mode": "sim"}).status_code == 202   # simulating from afar is fine
+    assert wait_idle(far)["last"]["result"]["state"] == "DONE"
+    aligned = here.post("/api/jobs/12/align-start", headers=auth(), json={"mode": "sim"})          # the local route the page uses
+    assert aligned.status_code == 200 and aligned.json()["mode"] == "sim", aligned.text
+    assert here.post("/api/jobs/12/dry-run", headers=auth(), json=body).status_code == 202         # and REAL at the workstation works
+    assert wait_idle(here)["last"]["result"]["state"] == "DRY_RUN_DONE"
+
+
+def test_a_waiting_run_result_is_also_sent_when_a_job_is_loaded(tmp_path):
+    """An agent without a backend link has no sync to hang the retry on: loading a job with the person's token sends it."""
+    from test_server_api import auth, make
+
+    svc, c, be = make(tmp_path)
+    svc.closes.add("run-old-1", {"result": "STOPPED", "completed_strokes": 3, "total_strokes": 10, "summary": None})
+    assert c.post("/api/jobs/12/load", headers=auth()).status_code == 200
+    assert svc.closes.pending() == []
+    assert ("PATCH", "/technician/runs/run-old-1", {"result": "STOPPED", "completed_strokes": 3, "total_strokes": 10}) in be.calls
+
+
+def test_resuming_a_real_run_is_for_the_technician_at_the_workstation(tmp_path):
+    """Resume and "paper changed" put the arm back in motion. For a REAL run they are taken from this computer only, never
+    through a reverse proxy, and never from a Manager (who may watch and halt, as on the backend)."""
+    from fastapi.testclient import TestClient
+    from test_server_api import auth, real_service
+    from vhrs_agent.server import create_server_app
+
+    svc, here, _ = real_service(tmp_path)
+    far = TestClient(create_server_app(svc), client=("192.168.1.50", 50000))
+    svc.current = {"job_id": 12, "mode": "real", "dry_run": False}                     # a REAL run is going on
+
+    for path in ("/api/resume", "/api/paper-changed"):
+        r = far.post(path, headers=auth())
+        assert r.status_code == 403 and r.json()["error"]["code"] == "REAL_ONLY_AT_WORKSTATION", path
+        proxied = here.post(path, headers={**auth(), "X-Forwarded-For": "192.168.1.50"})
+        assert proxied.status_code == 403 and proxied.json()["error"]["code"] == "REAL_ONLY_AT_WORKSTATION", path
+    assert here.post("/api/paper-changed", headers=auth()).status_code == 200            # at the workstation
+    assert here.post("/api/resume", headers=auth("mgr-token")).status_code == 403        # a Manager does not resume
+    for path in ("/api/pause", "/api/stop"):                                             # halting is never tied to a place
+        r = far.post(path, headers=auth("mgr-token"))
+        assert r.status_code != 403, (path, r.status_code)
+
+    svc.current = {"job_id": 12, "mode": "sim", "dry_run": False}                       # a simulated run may be resumed from afar
+    assert far.post("/api/paper-changed", headers=auth()).status_code == 200

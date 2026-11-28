@@ -51,13 +51,24 @@ from vhrs_agent.viewer import ViewerHub, create_app
 ROLE_VIEW = {"TECHNICAL_STAFF", "MANAGER"}
 ROLE_CONTROL = {"TECHNICAL_STAFF", "MANAGER"}
 ROLE_OPERATE = {"TECHNICAL_STAFF"}
-LEVEL_ROLES = {"view": ROLE_VIEW, "control": ROLE_CONTROL, "operate": ROLE_OPERATE}
+# "resume" (resume, paper changed) puts the arm back in motion: the technician only (a Manager may watch and halt, as on the
+# backend), and for a REAL run only from this computer (D03 / 1a).
+LEVEL_ROLES = {"view": ROLE_VIEW, "control": ROLE_CONTROL, "operate": ROLE_OPERATE, "resume": ROLE_OPERATE}
 REAL_ENABLE_MAX_MINUTES = 120
 # Refusals from a robot that DID answer (or from agent.json itself): wrong tool slot, work object, model, controller line, TCP,
 # missing settings. Shown as ROBOT_CONFIG_MISMATCH, not as a lost connection, so the operator fixes the setup instead of the cable.
 ROBOT_CONFIG_CODES = frozenset({"TOOL_MISMATCH", "WOBJ_MISMATCH", "WRONG_ROBOT", "CONTROLLER_UNSUPPORTED", "TCP_OFFSET_MISMATCH",
                                 "INVALID_CONFIG", "UNCONFIGURED", "SDK_MISSING"})
 REAL_ENABLE_FILE = "REAL_ENABLED.json"
+LOOPBACK = ("127.0.0.1", "::1", "localhost")       # callers on this computer (D03 / 1a)
+FORWARDED = ("x-forwarded-for", "forwarded", "x-real-ip")
+
+
+def at_workstation(conn: HTTPConnection) -> bool:
+    """The caller sits at this computer. A reverse proxy on this computer (TLS in front of the agent) makes every caller look
+    local, so a request that carries a forwarding header is never counted as local."""
+    host = conn.client.host if conn.client else ""
+    return host in LOOPBACK and not any(h in conn.headers for h in FORWARDED)
 
 
 class ApiError(Exception):
@@ -168,6 +179,12 @@ class DryRunIn(Body):
     speed: float | None = Field(default=None, gt=0, le=1000)
 
 
+class AlignIn(Body):
+    mode: str = Field(default="sim", pattern="^(mock|sim|real)$")
+    authorization: str | None = Field(default=None, max_length=200)
+    corner: str | None = Field(default=None, max_length=4, description="TL / TR / BL / BR: the pen-mount pose instead of the start point")
+
+
 # ---------------------------------------------------------------------------------------------- the service
 class AgentService:
     def __init__(self, cfg: ServerConfig, *, transport: httpx.BaseTransport | None = None,
@@ -238,6 +255,8 @@ class AgentService:
         who = self.identify(self.token_of(conn))
         if who["role"] not in LEVEL_ROLES.get(level, ROLE_OPERATE):
             raise ApiError(403, "FORBIDDEN", f"Vai trò {who['role']} không được phép ({level}).")
+        if level == "resume" and (self.current or {}).get("mode") == "real" and not at_workstation(conn):
+            raise ApiError(403, "REAL_ONLY_AT_WORKSTATION", "Robot thật chỉ được cho chạy tiếp từ chính máy trạm nối với robot.")
         conn.state.user = who
 
     def user(self, request: Request) -> dict[str, Any]:
@@ -648,6 +667,10 @@ class AgentService:
     # ---- jobs
     def load_job(self, job_id: int, token: str, who: dict[str, Any]) -> JobCtx:
         br = self.bridge(self.provider(token))
+        try:                                                # A06: an agent without a backend link has no other moment to do this
+            self.flush_closes(self.provider(token))
+        except Exception:                                   # noqa: BLE001 - reporting an old run must not stop this job from loading
+            pass
         try:
             job = br.fetch_job(job_id)
             detail = br.job_detail(job_id)
@@ -817,6 +840,17 @@ def create_server_app(service: AgentService) -> FastAPI:
                 # The robot this workstation drives (agent.json robot_id), so the desktop screen can mark "this machine" before a load.
                 "robot_id": service.cfg.robot_id}
 
+    # D03 / 1a (owner decision 2026-11-28): the real arm is switched on and put in motion from THIS computer only. The agent
+    # listens on 127.0.0.1 by default; these checks hold even when somebody starts it for the LAN (`host: 0.0.0.0`).
+    def require_workstation(request: Request) -> None:
+        if not at_workstation(request):
+            raise ApiError(403, "REAL_ONLY_AT_WORKSTATION", "Robot thật chỉ được bật và cho chạy từ chính máy trạm nối với robot. "
+                           "Hãy thao tác trên máy trạm (app desktop, hoặc trang này mở tại máy trạm).")
+
+    def for_caller(request: Request, summary: dict[str, Any]) -> dict[str, Any]:
+        """The confirmation code of a REAL run is shown at the workstation only."""
+        return summary if at_workstation(request) else {k: v for k, v in summary.items() if k != "authorization_token"}
+
     @app.get("/api/real")
     def real(request: Request) -> dict[str, Any]:
         service.guard("view", request)
@@ -825,6 +859,7 @@ def create_server_app(service: AgentService) -> FastAPI:
 
     @app.post("/api/jobs/{job_id}/real-enable")
     def real_enable(job_id: int, body: RealEnableIn, request: Request) -> dict[str, Any]:
+        require_workstation(request)
         who = service.user(request)
         service.ctx_for_real(job_id, who)                                     # the technician who loaded this job here
         if body.waive_dry_run and body.confirm_waive != "SKIP-DRY-RUN":
@@ -878,13 +913,14 @@ def create_server_app(service: AgentService) -> FastAPI:
     @app.post("/api/jobs/{job_id}/load")
     def load(job_id: int, request: Request) -> dict[str, Any]:
         who = service.user(request)
-        return service.load_job(job_id, service.token_of(request), who).summary
+        return for_caller(request, service.load_job(job_id, service.token_of(request), who).summary)
 
     @app.get("/api/jobs/{job_id}")
     def job_status(job_id: int, request: Request) -> dict[str, Any]:
         who = service.user(request)
         ctx = service.ctx(job_id, who)
-        return {**ctx.summary, "progress": service.progress(job_id), "busy": service._busy, "current": service.current, "last": service.last}
+        return {**for_caller(request, ctx.summary), "progress": service.progress(job_id), "busy": service._busy, "current": service.current,
+                "last": service.last}
 
     @app.post("/api/jobs/{job_id}/preflight")
     def preflight(job_id: int, body: ModeIn, request: Request) -> dict[str, Any]:
@@ -894,15 +930,29 @@ def create_server_app(service: AgentService) -> FastAPI:
 
     @app.post("/api/jobs/{job_id}/dry-run", status_code=202)
     def dry_run(job_id: int, body: DryRunIn, request: Request) -> dict[str, Any]:
+        if body.mode == "real":
+            require_workstation(request)
         who = service.user(request)
         return service.start(service.ctx(job_id, who), service.token_of(request), who["name"], mode=body.mode, dry_run=True, authorization=body.authorization,
                              resume_from=None, confirm_unknown=False, speed=body.speed)
 
     @app.post("/api/jobs/{job_id}/run", status_code=202)
     def run(job_id: int, body: RunIn, request: Request) -> dict[str, Any]:
+        if body.mode == "real":
+            require_workstation(request)
         who = service.user(request)
         return service.start(service.ctx(job_id, who), service.token_of(request), who["name"], mode=body.mode, dry_run=False, authorization=body.authorization,
                              resume_from=body.resume_from, confirm_unknown=body.confirm_unknown, speed=body.speed)
+
+    @app.post("/api/jobs/{job_id}/align-start")
+    def align_start(job_id: int, body: AlignIn, request: Request) -> dict[str, Any]:
+        """Bring the pen to the job's start point (or, with `corner`, down to that sheet corner for mounting the pen), from this
+        computer. The backend takes a REAL ALIGN_START only from the app that started the agent (D03 / 1a); an agent started by
+        hand moves the real arm through this local route instead."""
+        if body.mode == "real":
+            require_workstation(request)
+        who = service.user(request)
+        return service.do_align(service.ctx(job_id, who), body.mode, body.authorization, corner=body.corner)
 
     @app.get("/api/jobs/{job_id}/log")
     def log(job_id: int, request: Request, tail: int = 200) -> dict[str, Any]:

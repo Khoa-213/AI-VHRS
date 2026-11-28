@@ -402,6 +402,8 @@ class RobotAgent(Base):
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     instance_id: Mapped[str | None] = mapped_column(String(64))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # migration 0035 (D03 / 1a): the login session that asked for this SESSION key; REAL motion commands come from it only
+    auth_session_id: Mapped[Any | None] = mapped_column(UUID(as_uuid=True))
 
 
 class RobotCommand(Base):

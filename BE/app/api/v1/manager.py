@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import CloseOrderIn, CloseOrderOut
+from app.api.ops_schemas import CloseOrderIn, CloseOrderOut, ClosePreviewOut
 from app.api.schemas import ErrorOut, Page
 from app.api.staff_schemas import AssignIn, QuotationOut, ReasonIn, StaffBrief, WorkshopOrderRow
 from app.api.v1.orders import optional_storage
@@ -53,6 +53,14 @@ def reject(quotation_id: int, body: ReasonIn, session: SessionDep, manager: Mana
            storage: StorageDep) -> QuotationOut:
     return quotation_out(QuotationService(session, manager, storage, client_ip(request))
                          .reject_adjustment(quotation_id, body.reason))
+
+
+@router.get("/orders/{order_id}/close-preview", response_model=ClosePreviewOut,
+            summary="D08 Xem trước khi Quản lý đóng đơn: có đóng được không, và số tiền tối đa có thể hoàn (chỉ đọc)",
+            responses={404: {"model": ErrorOut, "description": "ORDER_NOT_FOUND"}})
+def close_order_preview(order_id: int, session: SessionDep, manager: ManagerDep) -> ClosePreviewOut:
+    from app.services import order_exits as ox
+    return ClosePreviewOut(**ox.close_preview(session, order_id))
 
 
 @router.post("/orders/{order_id}/close", response_model=CloseOrderOut,

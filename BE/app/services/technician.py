@@ -533,7 +533,7 @@ class TechnicianJobService:
                                        .with_for_update().limit(1))
         if open_run is not None:
             from app.services.robot_link import close_orphan, run_orphaned     # late import: robot_link pulls in the live hub
-            orphan = run_orphaned(open_run)
+            orphan = run_orphaned(self.session, open_run)
             if orphan and override_by is not None:
                 # A06: the agent is gone or idle and never closed this run. The Manager's override, with its reason, closes it.
                 close_orphan(self.session, open_run, by=override_by.id, reason=override_reason or "", ip=self.ip)
@@ -686,7 +686,7 @@ def open_run_info(session: Session, job_id: int) -> dict[str, Any] | None:
         return None
     from app.services.robot_link import run_orphaned                       # late import: robot_link pulls in the live hub
     return {"run_id": run.run_id, "mode": run.mode, "dry_run": run.dry_run, "started_at": run.started_at,
-            "orphan": run_orphaned(run)}
+            "orphan": run_orphaned(session, run)}
 
 
 def written_runs(session: Session, job_id: int) -> list[str]:
@@ -695,7 +695,8 @@ def written_runs(session: Session, job_id: int) -> list[str]:
         RobotRun.job_id == job_id, RobotRun.dry_run.is_(False), RobotRun.result == "DONE").order_by(RobotRun.id)))
 
 
-def finish_by_manager(session: Session, manager: Account, job_id: int, reason: str, ip: str | None = None) -> ProductionJob:
+def finish_by_manager(session: Session, manager: Account, job_id: int, reason: str, ip: str | None = None,
+                      storage: ObjectStorage | None = None) -> ProductionJob:
     """D06: a Manager records "written" for a job whose robot run was not reported. Same steps as the technician's finish
     (stock, state, event), without the run evidence, with a reason, audited under the Manager's name."""
     reason = (reason or "").strip()
@@ -705,4 +706,5 @@ def finish_by_manager(session: Session, manager: Account, job_id: int, reason: s
     tech = session.get(Account, job.technician_id) if job is not None else None
     if job is None or tech is None:
         raise AppError(404, "JOB_NOT_FOUND", "Không tìm thấy job.")
-    return TechnicianJobService(session, tech, None, ip).finish(job_id, override_by=manager, override_reason=reason)
+    # with the storage the sheets per copy are read from the package, as in the technician's own finish (without it: assumed 1)
+    return TechnicianJobService(session, tech, storage, ip).finish(job_id, override_by=manager, override_reason=reason)

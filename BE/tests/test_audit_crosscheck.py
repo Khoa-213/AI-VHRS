@@ -8,6 +8,8 @@ A03  a REAL writing run needs the server's own validation of the trajectory (not
      MOTION_VALIDATION_REQUIRED says; A08: and a signed production package
 A06  a run the agent could not close: the technician or a Manager closes it as UNKNOWN with a reason, the Manager's
      "written" override gets past it, and the agent's own late report replaces the UNKNOWN
+D03  (1a) the real arm is put in motion from its workstation only: a REAL RUN / DRY_RUN / ALIGN_START, and RESUME or
+     PAPER_CHANGED of a REAL run, are accepted only from the login session of the app that started the connected agent
 A07  money reported after a failed report: the order that still waits for exactly that payment is confirmed, anything
      else is flagged for the refund flow
 
@@ -16,7 +18,8 @@ Real database and triggers. The agent is simulated by the test; no robot is invo
 from app.services.robot_link import hub
 from tests.test_api_orders import API, _sql
 from tests.test_api_payments import _approved, _code, _deposit, _hook, _signed
-from tests.test_api_robot_link import A, fresh_hub, key_for, sync  # noqa: F401
+from tests.conftest import login, make_account
+from tests.test_api_robot_link import A, bearer, fresh_hub, key_for, session_key, sync  # noqa: F401
 from tests.test_api_robot_ops import open_run
 from tests.test_api_scheduling import mgr, robot, tech  # noqa: F401
 from tests.test_api_technician import CAL_MOTION, T, _err, _post, _robot_wrote, _running, _status
@@ -37,6 +40,11 @@ def _cmd(client, who, jid, kind, key=None, **params):
 
 def _age(command_id, seconds, column):
     _sql(f"update robot_commands set {column} = now() - make_interval(secs => :s) where id=:c returning 1", s=seconds, c=command_id)
+
+
+def _quiet(robot_id, seconds=300):
+    """The robot's workstation has not been heard from for this long (the hub does not see it either)."""
+    _sql("update robots set last_seen_at = now() - make_interval(secs => :s) where id=:r returning 1", s=seconds, r=robot_id)
 
 
 def _command(client, tech, command_id):
@@ -92,7 +100,12 @@ def test_the_technician_closes_a_run_the_agent_left_open_and_works_on(client, cu
     r, run = open_run(client, tech, jid)
     assert r.status_code == 201
     info = client.get(f"{T}/jobs/{jid}", headers=tech[0]).json()["open_run"]
-    assert info["run_id"] == run and info["orphan"] is True                         # no agent is connected: nobody is running it
+    assert info["run_id"] == run and info["orphan"] is False                        # heard from a moment ago (the run was just opened)
+    early = client.post(f"{T}/runs/{run}/close-orphan", headers=tech[0], json={"reason": WHY})
+    assert early.status_code == 409 and _err(early) == "RUN_STILL_ACTIVE"            # a server restart must not make every run look abandoned
+    _quiet(robot)
+    info = client.get(f"{T}/jobs/{jid}", headers=tech[0]).json()["open_run"]
+    assert info["orphan"] is True                                                   # silent for minutes and not connected: nobody is running it
     blocked = _post(client, tech, jid, "finish")
     assert _err(blocked) == "RUN_OPEN" and blocked.json()["error"]["details"] == {"open_run_id": run, "orphan": True}
     busy, _ = open_run(client, tech, jid)
@@ -133,6 +146,7 @@ def test_the_managers_override_gets_past_an_orphan_run(client, cust, staff, mgr,
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
     r, run = open_run(client, tech, jid)
     assert r.status_code == 201
+    _quiet(robot)
     r = client.post(f"{M}/jobs/{jid}/finish-override", headers=mgr, json={"reason": WHY})
     assert r.status_code == 200 and _status(jid) == "WRITTEN", r.text
     row = _sql("select result || ':' || (summary->>'reason') from robot_runs where run_id=:r", r=run)
@@ -147,6 +161,7 @@ def test_the_managers_job_detail_shows_copies_and_the_stuck_run(client, cust, st
     _robot_wrote(client, tech, jid)
     r, run = open_run(client, tech, jid)
     assert r.status_code == 201
+    _quiet(robot)
     d = client.get(f"{M}/jobs/{jid}", headers=mgr).json()
     assert d["copies_written"] == 1 and d["open_run"]["run_id"] == run and d["open_run"]["orphan"] is True
     assert client.post(f"{M}/runs/{run}/close-orphan", headers=mgr, json={"reason": WHY}).status_code == 200
@@ -157,6 +172,7 @@ def test_the_agents_late_report_replaces_the_unknown_a_person_recorded(client, c
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
     r, run = open_run(client, tech, jid)
     assert r.status_code == 201
+    _quiet(robot)
     assert client.post(f"{T}/runs/{run}/close-orphan", headers=tech[0], json={"reason": WHY}).status_code == 200
     assert _err(_post(client, tech, jid, "finish")) == "RUN_EVIDENCE_REQUIRED"       # UNKNOWN is not a written copy
 
@@ -315,3 +331,58 @@ def test_the_real_robot_does_not_write_a_job_without_a_signed_package(client, cu
     assert r.status_code == 409 and _err(r) == "PACKAGE_NOT_SIGNED", r.text
     rehearsal, _ = open_run(client, tech, jid, mode="SIM")
     assert rehearsal.status_code == 201
+
+
+# ---------------------------------------------------------------------------------------------- D03 / 1a
+def _two_logins(client):
+    """One technician signed in twice: at the workstation (the app that starts the agent) and on another computer."""
+    email = make_account("TECHNICAL_STAFF")
+    here = {"Authorization": f"Bearer {login(client, email)['access_token']}"}
+    away = {"Authorization": f"Bearer {login(client, email)['access_token']}"}
+    return (here, client.get(f"{API}/me", headers=here).json()["id"]), away
+
+
+def _real_cmd(client, headers, jid, kind="RUN", **extra):
+    return client.post(f"{T}/robot-commands", headers=headers,
+                       json={"kind": kind, "job_id": jid, "params": {"mode": "REAL", "authorization": f"AUTHORIZE-{jid}-abcd1234", **extra}})
+
+
+def test_the_real_robot_is_started_only_from_the_app_at_its_workstation(client, cust, staff, mgr, wcat, robot, fresh_hub):
+    tech, away = _two_logins(client)
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech, cal=CAL_MOTION)
+    key = session_key(client, tech, robot, "workstation-app-01")["key"]          # the app at the workstation starts the agent with it
+    assert _sql("select auth_session_id is not null from robot_agents where robot_id=:r and kind='SESSION' order by id desc limit 1", r=robot)
+    sync(client, bearer(key))
+
+    for kind in ("RUN", "DRY_RUN", "ALIGN_START"):
+        far = _real_cmd(client, away, jid, kind)                                  # same account, another computer
+        assert far.status_code == 403 and _err(far) == "REAL_ONLY_AT_WORKSTATION", (kind, far.text)
+    assert client.post(f"{T}/robot-commands", headers=away, json={"kind": "RUN", "job_id": jid, "params": {"mode": "SIM"}}).status_code == 201
+    for kind in ("PAUSE", "STOP"):                                                 # halting is never tied to a place
+        assert client.post(f"{T}/robot-commands", headers=away, json={"kind": kind, "job_id": jid, "params": {}}).status_code == 201, kind
+    assert _sql("select count(*) from robot_commands where job_id=:j and params->>'mode'='REAL'", j=jid) == 0
+
+    sync(client, bearer(key))
+    near = _real_cmd(client, tech[0], jid)                                         # the app that started the agent
+    assert near.status_code == 201, near.text
+    assert _real_cmd(client, tech[0], jid, "ALIGN_START", corner="TL").status_code == 201
+
+
+def test_resuming_a_real_run_also_needs_the_workstation_but_a_simulated_one_does_not(client, cust, staff, mgr, wcat, robot, fresh_hub):
+    tech, away = _two_logins(client)
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech, cal=CAL_MOTION)
+    key = session_key(client, tech, robot, "workstation-app-02")["key"]
+    sync(client, bearer(key), status={"mode": "SIM", "busy": True})
+    sim, sim_run = open_run(client, tech, jid)                                     # a simulated run is open
+    assert sim.status_code == 201
+    assert client.post(f"{T}/robot-commands", headers=away, json={"kind": "RESUME", "job_id": jid, "params": {}}).status_code == 201
+    assert _close(client, tech, sim_run, "STOPPED", 2).status_code == 200
+
+    real, _ = open_run(client, tech, jid, mode="REAL", authorized=True, plan_digest="a" * 64)
+    assert real.status_code == 201, real.text
+    sync(client, bearer(key), status={"mode": "REAL", "busy": True})
+    for kind in ("RESUME", "PAPER_CHANGED"):
+        far = client.post(f"{T}/robot-commands", headers=away, json={"kind": kind, "job_id": jid, "params": {}})
+        assert far.status_code == 403 and _err(far) == "REAL_ONLY_AT_WORKSTATION", (kind, far.text)
+    assert client.post(f"{T}/robot-commands", headers=tech[0], json={"kind": "RESUME", "job_id": jid, "params": {}}).status_code == 201
+    assert client.post(f"{T}/robot-commands", headers=away, json={"kind": "STOP", "job_id": jid, "params": {}}).status_code == 201

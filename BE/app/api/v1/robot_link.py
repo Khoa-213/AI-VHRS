@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
-from app.api.deps import SessionDep, client_ip, require_roles
+from app.api.deps import PrincipalDep, SessionDep, client_ip, require_roles
 from app.api.link_schemas import (AgentCommand, AgentInfoOut, AgentKeyOut, AgentResultIn, AgentSyncIn, AgentSyncOut, CommandIn,
                                   CommandOut, LiveOut, SceneOut, SessionKeyIn, SessionKeyOut)
 from app.api.schemas import ErrorOut
@@ -26,8 +26,9 @@ StorageDep = Annotated[ObjectStorage | None, Depends(optional_storage)]
 ERR = {409: {"model": ErrorOut, "description": "AGENT_OFFLINE / JOB_NOT_ACTIVE / IDEMPOTENCY_KEY_REUSED"}}
 
 
-def _tech(session: SessionDep, tech: TechDep, request: Request) -> RobotLinkService:
-    return RobotLinkService(session, tech, client_ip(request))
+def _tech(session: SessionDep, tech: TechDep, who: PrincipalDep, request: Request) -> RobotLinkService:
+    # the login session travels with the service: a session key remembers it, and REAL motion commands must match it (D03 / 1a)
+    return RobotLinkService(session, tech, client_ip(request), auth_session_id=who.session_id)
 
 
 def _mgr(session: SessionDep, manager: ManagerDep, request: Request) -> RobotLinkService:

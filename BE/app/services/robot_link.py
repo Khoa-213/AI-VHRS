@@ -44,6 +44,10 @@ MOTION_KINDS = ("RUN", "DRY_RUN", "RESUME", "ALIGN_START")   # everything that m
 # Safety (owner decision 2026-11-26): a technician who holds a live job on the robot may always halt it, even while another
 # technician's app holds the robot. Starting or resuming motion stays with the holder (ROBOT_IN_USE).
 HALT_KINDS = ("PAUSE", "STOP")
+# D03 / 1a (owner 2026-11-28): the real arm is put in motion from its own workstation only. These kinds, in REAL mode, are
+# accepted only from the login session of the app that started the agent there (RobotAgent.auth_session_id, migration 0035).
+REAL_START_KINDS = ("RUN", "DRY_RUN", "ALIGN_START")
+REAL_CONTINUE_KINDS = ("RESUME", "PAPER_CHANGED")        # no mode of their own: they continue the run that is open
 TTL_S = {"CONTROL": 20, "DEFAULT": 60}
 # A05 (cross-check 2026-11-28): a command the agent pulled but never answered. Before, it stayed DELIVERED for ever, so a STOP
 # whose hand-over was lost on the wire looked exactly like one that arrived.
@@ -212,10 +216,17 @@ def halt_job(session: Session, job: ProductionJob, *, by: int, reason: str, ip: 
     return cmd
 
 
-def run_orphaned(run: RobotRun) -> bool:
-    """A06: an open run that nobody is executing any more. The robot's agent is offline, or it is connected and reports that it
-    is not running anything (it finished or crashed, and its "run closed" message never reached us)."""
-    return not hub.online(run.robot_id) or not bool(hub.live(run.robot_id).status.get("busy"))
+def run_orphaned(session: Session, run: RobotRun) -> bool:
+    """A06: an open run that nobody is executing any more.
+
+    * The agent is connected: it says so itself (`busy` false = it finished or crashed and its "run closed" message was lost).
+    * The live hub does not see the agent. The hub is memory and is empty right after this server restarts, so that alone
+      proves nothing: the robot's last heartbeat in the database decides. Quiet for longer than the offline limit = nobody
+      is executing the run; heard from a moment ago = wait."""
+    if hub.online(run.robot_id):
+        return not bool(hub.live(run.robot_id).status.get("busy"))
+    seen = session.scalar(select(Robot.last_seen_at).where(Robot.id == run.robot_id))
+    return seen is None or (_now() - seen).total_seconds() > OFFLINE_AFTER_S
 
 
 def close_orphan(session: Session, run: RobotRun, *, by: int, reason: str, ip: str | None = None) -> RobotRun:
@@ -240,10 +251,11 @@ def halt_robot(session: Session, robot_id: int, *, by: int, reason: str, ip: str
 
 
 class RobotLinkService:
-    def __init__(self, session: Session, actor: Account | None, ip: str | None = None):
+    def __init__(self, session: Session, actor: Account | None, ip: str | None = None, auth_session_id: Any = None):
         self.session, self.actor, self.ip = session, actor, ip
         self.ops = RobotOpsService(session, actor, ip)
         self.is_manager = bool(actor and actor.role.code == RoleCode.MANAGER.value)
+        self.auth_session_id = auth_session_id            # the caller's login session (None for internal callers)
 
     # ------------------------------------------------------------------ agent credential (Manager)
     def issue_key(self, robot_id: int) -> tuple[str, RobotAgent]:
@@ -320,7 +332,8 @@ class RobotLinkService:
             k.expires_at = min(k.expires_at, now + SESSION_GRACE)
         key = AGENT_KEY_PREFIX + secrets.token_urlsafe(32)
         row = RobotAgent(robot_id=robot_id, key_hash=hash_key(key), key_prefix=key[:12], created_by=self.actor.id, kind="SESSION",
-                         account_id=self.actor.id, instance_id=instance_id, expires_at=now + SESSION_TTL)
+                         account_id=self.actor.id, instance_id=instance_id, expires_at=now + SESSION_TTL,
+                         auth_session_id=self.auth_session_id)
         self.session.add(row)
         self.session.flush()
         self.session.refresh(row)
@@ -415,6 +428,8 @@ class RobotLinkService:
         if (holder is not None and holder.account_id is not None and self.actor and not self.is_manager
                 and holder.account_id != self.actor.id and kind not in HALT_KINDS):
             raise AppError(409, "ROBOT_IN_USE", "Robot đang do kỹ thuật viên khác điều khiển.", {"robot_id": robot.id})
+        if self._moves_the_real_arm(robot, kind, mode):
+            self._require_workstation_session(robot)                # D03 / 1a
         ttl = TTL_S["CONTROL"] if kind in CONTROL_KINDS else TTL_S["DEFAULT"]
         cmd = RobotCommand(id=str(uuid.uuid4()), robot_id=robot.id, job_id=job_id, kind=kind, params=params, status="PENDING",
                            idempotency_key=idempotency_key, created_by=self.actor.id, expires_at=_now() + timedelta(seconds=ttl))
@@ -443,10 +458,31 @@ class RobotLinkService:
         self.ops._own_job(run.job_id)
         if run.ended_at is not None:
             raise AppError(409, "RUN_ALREADY_CLOSED", f"Lần chạy đã kết thúc với kết quả {run.result}.")
-        if not run_orphaned(run):
-            raise AppError(409, "RUN_STILL_ACTIVE", "Máy trạm đang báo robot còn chạy lần này. Dừng robot (hoặc chờ robot viết xong) "
-                           "rồi mới đóng lần chạy.", {"run_id": run.run_id})
+        if not run_orphaned(self.session, run):
+            raise AppError(409, "RUN_STILL_ACTIVE", "Máy trạm đang báo robot còn chạy lần này, hoặc vừa mới liên lạc với máy chủ. "
+                           "Dừng robot (hoặc chờ robot viết xong); nếu máy trạm đã tắt, thử lại sau ít giây.", {"run_id": run.run_id})
         return close_orphan(self.session, run, by=self.actor.id, reason=reason, ip=self.ip)
+
+    def _moves_the_real_arm(self, robot: Robot, kind: str, mode: str) -> bool:
+        if kind in REAL_START_KINDS:
+            return mode == "REAL"
+        if kind in REAL_CONTINUE_KINDS:
+            return self.session.scalar(select(RobotRun.mode).where(RobotRun.robot_id == robot.id, RobotRun.ended_at.is_(None))
+                                       .limit(1)) == "REAL"
+        return False
+
+    def _require_workstation_session(self, robot: Robot) -> None:
+        """D03 / 1a: the command must come from the login session of the app that started the agent which is connected now.
+        That app runs on the workstation (it starts the agent as its own child process, on 127.0.0.1), so this is the proof
+        that the person is at the robot. A Manager key, a key from before migration 0035, or the same account signed in on
+        another computer do not qualify. An agent started by hand takes REAL commands on its own page only (loopback)."""
+        key = self.session.get(RobotAgent, hub.live(robot.id).agent_id) if hub.live(robot.id).agent_id else None
+        bound = key.auth_session_id if key is not None and key.kind == "SESSION" and key.revoked_at is None else None
+        if bound is None or self.auth_session_id is None or bound != self.auth_session_id:
+            raise AppError(403, "REAL_ONLY_AT_WORKSTATION",
+                           "Lệnh làm robot thật chuyển động chỉ nhận từ app đang chạy trên máy trạm của robot đó (app đã khởi động "
+                           "Robot Agent). Hãy thao tác tại máy trạm. Nếu bạn đang ở máy trạm: đăng xuất, đăng nhập lại app rồi "
+                           "khởi động lại agent để nối lại.", {"robot_id": robot.id})
 
     def _live_job(self, robot_id: int) -> ProductionJob | None:
         """The job a bare RESUME would resume on this robot: the one whose run is still open, else the one writing / paused."""

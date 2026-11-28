@@ -638,7 +638,7 @@ const ACTIONS = {
       const end = Date.now() + 60000;
       while (Date.now() < end) { const a = await api('/api/agent'); if (!a.busy) break; await sleep(500); }
       await sleep(1000);
-      return robotCommand('ALIGN_START', { job_id: id }, { mode, ...authFor(id, mode) }, 180);
+      return api(`/api/jobs/${id}/align-start`, { method: 'POST', body: { mode, ...authFor(id, mode) } });
     }, { confirm: `DỪNG rồi đưa bút về điểm chờ (${(mode || '').toUpperCase()})?`, ok: 'Bút đã về điểm chờ.' });
   },
   log: () => act(async () => {

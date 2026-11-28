@@ -8,6 +8,8 @@ và phục vụ **trình theo dõi từ xa** để Technical Staff xem và dừn
 > Từ đợt audit 2026-11-27, REAL còn cần `station_limits` (`z_floor_mm`, `max_press_mm`) trong `agent.json` và ít nhất 4 điểm dò (`agent.example.json`, `calibration.example.json`); điểm dò quay ngược chiều bị từ chối (`PROBE_ORDER_MIRRORED`).
 >
 > Từ đợt đối chiếu 2026-11-28: (1) robot thật chỉ viết gói job **có chữ ký** (bất kể `require_signed_packages`) và chỉ khi máy chủ đã tự kiểm quỹ đạo đạt, nên `calibration.json` gửi lên phải có khối `frame_transform`; (2) kết quả lần chạy chưa gửi được về máy chủ nằm ở `runs/pending_closes.json` và tự gửi lại khi có mạng, **đừng xoá file này**; (3) mỗi lần chạy viết một bản: đơn nhiều bản thì đặt giấy mới, bấm "Đặt lại tiến độ" rồi chạy lại, máy chủ đếm đủ số bản mới cho "Viết xong"; (4) thao tác gắn bút ở góc giấy bằng robot thật cũng cần `station_limits` và 4 điểm dò.
+>
+> **D03 = 1a (chủ dự án, 2026-11-28): robot thật chỉ được bật và cho chạy từ chính máy trạm.** File mẫu để `host: 127.0.0.1`. Kể cả khi mở agent ra LAN (`host: 0.0.0.0`), bật REAL, chạy thử / viết / căn điểm ở REAL, "Tiếp tục" và "đã thay giấy" của lần chạy REAL chỉ nhận từ chính máy này (`403 REAL_ONLY_AT_WORKSTATION`), và mã AUTHORIZE không hiện cho máy khác. Qua máy chủ, lệnh REAL chỉ được nhận từ app desktop đã khởi động agent; agent chạy tay bằng khoá của Manager thì thao tác REAL trên trang của agent mở tại máy trạm. Manager xem và dừng robot qua web. "Tiếp tục" chỉ dành cho kỹ thuật viên.
 
 ## Môi trường mô phỏng 3D (PyBullet), không cần trình biên dịch C++
 
@@ -33,7 +35,7 @@ Từ đó app kỹ thuật viên điều khiển qua BE: `POST /technician/robot
 
 ```bash
 copy agent.example.json agent.json          # sửa backend_url, modes, ...
-.simenv\python.exe -m vhrs_agent.cli serve --config agent.json     # mặc định nghe 0.0.0.0:8765
+.simenv\python.exe -m vhrs_agent.cli serve --config agent.json     # nghe theo `host` trong agent.json (file mẫu: 127.0.0.1, chỉ máy này; đặt 0.0.0.0 để máy khác trong LAN mở trang xem / mô phỏng)
 .simenv\python.exe -m vhrs_agent.cli serve --config agent.json --host 127.0.0.1 --screen --stop-on-stdin-eof --parent-pid <pid app>   # cách app desktop chạy agent: mở màn máy trạm dù lan_server false; dòng STOP trên stdin, stdin đóng, hoặc tiến trình app kết thúc = dừng an toàn, trả robot, thoát
 ```
 Mở `http://<IP máy trạm>:8765/`: đăng nhập bằng **tài khoản hệ thống** (Technical Staff điều khiển; Manager xem và dừng), làm cả job theo 12 bước (tải gói, chọn robot, chuẩn bị, hiệu chuẩn, nạp, kiểm tra trước, mô phỏng, chạy thử, Bật REAL, viết, xong, ảnh và QC), xem robot 3D, cảnh báo, nút Tạm dừng/Tiếp tục/DỪNG. Mọi nút là một lệnh gọi API (xem `BE/docs/FE_API_GUIDE.md` mục 7g), nên FE hoặc công cụ khác dùng được y như vậy.

@@ -75,7 +75,7 @@ function answer(method, path, body) {
     agent.last = { job_id: 12, dry_run: true, mode: body.mode, result: { state: 'DRY_RUN_DONE' } }; return [202, { started: true }]
   }
   if (path === '/api/technician/jobs/12/start') { job.status = 'WRITING'; job.started_at = now; return [200, job] }
-  if (path === '/api/jobs/12/run') { assert.equal(body.mode, 'real'); assert.equal(body.authorization, 'AUTHORIZE-12-plan'); job.progress_pct = 100; return [202, { started: true }] }
+  if (path === '/api/jobs/12/run') { assert.equal(body.mode, 'real'); assert.equal(body.authorization, 'AUTHORIZE-12-plan'); job.progress_pct = 100; job.copies_written = 1; return [202, { started: true }] }
   if (path === '/api/technician/jobs/12/finish') { job.status = 'WRITTEN'; return [200, job] }
   if (path === '/api/technician/jobs/12/photos' && method === 'GET') return [200, photos]
   if (path === '/api/technician/jobs/12/photos/upload-url') return [200, { photo_key: 'k' + (photos.length + 1), upload_url: 'https://storage.test/up/' + (photos.length + 1), method: 'PUT', expires_in: 600 }]

@@ -1332,15 +1332,16 @@ Mọi thay đổi dưới đây đã có test trên Postgres cục bộ; **chưa
 
 **Huỷ đơn**
 - `POST /orders/{id}/cancel` (khách): nhận thêm đơn `ACCEPTED`.
-- `POST /workshop/orders/{id}/cancel` (Staff phụ trách): ngoài đơn `CONFIRMED` (hoàn 100%) nay nhận đơn `ACCEPTED`: lý do ≥ 5 ký tự (`422 REASON_REQUIRED`), báo giá đang soạn bị huỷ theo, khách nhận thông báo. FE chưa có nút cho trường hợp `ACCEPTED`.
+- `POST /workshop/orders/{id}/cancel` (Staff phụ trách): ngoài đơn `CONFIRMED` (hoàn 100%) nay nhận đơn `ACCEPTED`: lý do ≥ 5 ký tự (`422 REASON_REQUIRED`), báo giá đang soạn bị huỷ theo, khách nhận thông báo. FE đã làm (2026-11-28): trang đơn của Staff phụ trách có khối "Huỷ đơn đã tiếp nhận".
 
 **Đơn kẹt sau sản xuất (D08, migration 0034)**
-- `POST /workshop/orders/{id}/shipment/to-pickup {reason}` (Staff phụ trách): vận đơn mới nhất `FAILED` / `RETURNED` → đơn về `READY_TO_DELIVER` với `delivery_method = PICKUP`, không có khung giờ; bàn giao bằng `POST /workshop/orders/{id}/pickup/confirm` như cũ (đối chiếu số điện thoại người nhận của địa chỉ giao). Lỗi: `409 ORDER_NOT_DELIVERING`, `SHIPMENT_NOT_FAILED`, `PICKUP_CONTACT_MISSING`. FE chưa có nút.
-- `POST /manager/orders/{id}/close {reason (≥ 10 ký tự), refund_amount}` (Manager): đơn `AWAITING_FINAL_PAYMENT` / `READY_TO_DELIVER` / `DELIVERING` (vận đơn đã `FAILED`, `RETURNED` hoặc `CANCELLED`) → `CANCELLED`. Trả `{order_id, order_status, refundable_before, refund_id, refund_amount}`. `refund_amount > 0` mở một yêu cầu hoàn `PENDING` (hiện ở `GET /workshop/refunds`, `refund.rule = "MANAGER_CLOSE"`; FE đã có nhãn `rf.rule.MANAGER_CLOSE`). Lỗi: `409 ORDER_CLOSE_UNSUPPORTED`, `SHIPMENT_IN_TRANSIT`; `422 REFUND_AMOUNT_INVALID {refundable}`. FE chưa có màn.
+- `POST /workshop/orders/{id}/shipment/to-pickup {reason}` (Staff phụ trách): vận đơn mới nhất `FAILED` / `RETURNED` → đơn về `READY_TO_DELIVER` với `delivery_method = PICKUP`, không có khung giờ; bàn giao bằng `POST /workshop/orders/{id}/pickup/confirm` như cũ (đối chiếu số điện thoại người nhận của địa chỉ giao). Lỗi: `409 ORDER_NOT_DELIVERING`, `SHIPMENT_NOT_FAILED`, `PICKUP_CONTACT_MISSING`. FE đã làm (2026-11-28): khối giao hàng hiện "Chuyển sang nhận tại xưởng" khi vận đơn mới nhất `FAILED` / `RETURNED`.
+- `POST /manager/orders/{id}/close {reason (≥ 10 ký tự), refund_amount}` (Manager): đơn `AWAITING_FINAL_PAYMENT` / `READY_TO_DELIVER` / `DELIVERING` (vận đơn đã `FAILED`, `RETURNED` hoặc `CANCELLED`) → `CANCELLED`. Trả `{order_id, order_status, refundable_before, refund_id, refund_amount}`. `refund_amount > 0` mở một yêu cầu hoàn `PENDING` (hiện ở `GET /workshop/refunds`, `refund.rule = "MANAGER_CLOSE"`; FE đã có nhãn `rf.rule.MANAGER_CLOSE`). Lỗi: `409 ORDER_CLOSE_UNSUPPORTED`, `SHIPMENT_IN_TRANSIT`; `422 REFUND_AMOUNT_INVALID {refundable}`. FE đã làm (2026-11-28): trang đơn của Manager có khối "Đóng đơn không hoàn tất được".
+- `GET /manager/orders/{id}/close-preview` (mới 2026-11-28, chỉ đọc, Manager) → `{order_id, order_status, allowed, error_code, message, refundable}`: màn hình gọi trước khi hiện form. `allowed: false` kèm `error_code` (`ORDER_CLOSE_UNSUPPORTED`, `SHIPMENT_IN_TRANSIT`); `refundable` là số tiền tối đa của `refund_amount`.
 - Tác vụ nền mới `stuck_orders` (hiện trong `GET /admin/jobs/last`): nhắc khách thanh toán phần còn lại, báo Manager khi đơn chờ thanh toán cuối hoặc chờ khách đến nhận quá hạn. Ba tham số Admin mới: `final_payment_remind_days` (3), `final_payment_overdue_days` (7), `pickup_overdue_days` (7).
 
 **Tài khoản**
-- `PATCH /admin/accounts/{id}`: thêm `force` (mặc định `false`). Khoá / vô hiệu hoá / đổi vai trò tài khoản còn giữ việc trả `409 ACCOUNT_HAS_OPEN_WORK` với `details = {orders: [...], jobs: [...], robots: [...]}`; `force: true` cần `reason` (`422 REASON_REQUIRED`). FE Admin chưa xử lý mã lỗi này (hiện câu của BE).
+- `PATCH /admin/accounts/{id}`: thêm `force` (mặc định `false`). Khoá / vô hiệu hoá / đổi vai trò tài khoản còn giữ việc trả `409 ACCOUNT_HAS_OPEN_WORK` với `details = {orders: [...], jobs: [...], robots: [...]}`; `force: true` cần `reason` (`422 REASON_REQUIRED`). FE đã làm (2026-11-28): trang tài khoản hiện danh sách đơn / job / robot đang giữ và nút "Vẫn áp dụng" (bật khi đã ghi lý do, có bước xác nhận).
 - `POST /auth/google`: lần đầu vào một tài khoản tạo bằng mật khẩu thì mật khẩu cũ bị vô hiệu và các phiên khác bị đăng xuất (khách nhận email). Không đổi request / response.
 
 **Trợ lý AI trên đơn** (FE đã làm)
@@ -1387,6 +1388,15 @@ Mọi thay đổi dưới đây đã có test trên Postgres cục bộ; **chưa
 
 **Thanh toán**
 - Webhook báo `SUCCESS` cho giao dịch đã `FAILED`: nếu đơn còn chờ đúng khoản đó thì giao dịch thành `SUCCESS` và đơn đi tiếp như một lần thanh toán thường; ngược lại giao dịch giữ `FAILED`, có `needs_refund` và hiện trong `GET /workshop/refunds`. FE không phải đổi gì.
+
+## 7z-3. Robot thật chỉ được khởi động từ máy trạm (D03 = 1a, 2026-11-28, migration 0035)
+
+Đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Web `FE/` không bị ảnh hưởng (không gửi lệnh chuyển động). App desktop không phải đổi, nhưng cần khởi động lại một lần sau khi máy chủ được deploy.
+
+- `POST /technician/robots/{id}/agent-session`: khoá phiên giờ ghi lại phiên đăng nhập của request (không đổi request / response).
+- `POST /technician/robot-commands`: thêm `403 REAL_ONLY_AT_WORKSTATION` cho `RUN`, `DRY_RUN`, `ALIGN_START` với `params.mode = REAL`, và cho `RESUME`, `PAPER_CHANGED` khi lần chạy đang mở của robot là REAL, nếu request không đến từ **đúng phiên đăng nhập đã xin khoá phiên mà agent đang dùng**. Cùng tài khoản đăng nhập ở máy khác bị từ chối. Agent chạy bằng khoá của Manager, hoặc khoá cấp trước migration 0035, cũng bị từ chối. `PAUSE`, `STOP`, và mọi lệnh SIM / MOCK không đổi.
+- Gặp mã này ở app trên chính máy trạm: đăng xuất, đăng nhập lại và khởi động lại agent để xin khoá mới.
+- Agent (API cục bộ, cổng 8765): `403 REAL_ONLY_AT_WORKSTATION` khi `real-enable`, `dry-run` / `run` / `align-start` ở `mode: real`, hoặc `resume` / `paper-changed` của lần chạy REAL được gọi từ máy khác. `POST /api/jobs/{id}/align-start {mode, authorization, corner?}` là route cục bộ mới. `authorization_token` chỉ có trong trả lời cho người gọi tại máy trạm. `POST /api/resume` và `/api/paper-changed` chỉ dành cho kỹ thuật viên.
 
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
