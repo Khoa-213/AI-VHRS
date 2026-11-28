@@ -139,6 +139,20 @@ def test_the_managers_override_gets_past_an_orphan_run(client, cust, staff, mgr,
     assert row == "UNKNOWN:" + WHY
 
 
+def test_the_managers_job_detail_shows_copies_and_the_stuck_run(client, cust, staff, mgr, wcat, robot, tech, fresh_hub):
+    """What the Manager's web screen reads before offering "record as written" and "close the stuck run"."""
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech, qty=2)
+    d = client.get(f"{M}/jobs/{jid}", headers=mgr).json()
+    assert d["status"] == "WRITING" and d["quantity"] == 2 and d["copies_written"] == 0 and d["open_run"] is None
+    _robot_wrote(client, tech, jid)
+    r, run = open_run(client, tech, jid)
+    assert r.status_code == 201
+    d = client.get(f"{M}/jobs/{jid}", headers=mgr).json()
+    assert d["copies_written"] == 1 and d["open_run"]["run_id"] == run and d["open_run"]["orphan"] is True
+    assert client.post(f"{M}/runs/{run}/close-orphan", headers=mgr, json={"reason": WHY}).status_code == 200
+    assert client.get(f"{M}/jobs/{jid}", headers=mgr).json()["open_run"] is None
+
+
 def test_the_agents_late_report_replaces_the_unknown_a_person_recorded(client, cust, staff, mgr, wcat, robot, tech, fresh_hub):
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
     r, run = open_run(client, tech, jid)

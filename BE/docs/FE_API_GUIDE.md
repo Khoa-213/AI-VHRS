@@ -1365,12 +1365,13 @@ Mọi thay đổi dưới đây đã có test trên Postgres cục bộ; **chưa
 
 ## 7z-2. Thay đổi API sau đợt đối chiếu audit 2026-11-28 (không đổi DB; lý do ở `docs/audit/09_APPROVAL_AND_IMPLEMENTATION_PLAN.md` mục 7)
 
-Đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Trang máy trạm (`robot_agent/.../static`) đã dùng các trường và endpoint mới; web `FE/` và app desktop chưa.
+Đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Trang máy trạm (`robot_agent/.../static`) đã dùng các trường và endpoint mới. Web `FE/`: màn Manager "Robot và cảnh báo" (`/staff/robots`, phần chi tiết job) đã có hai nút "Đóng lần chạy treo" và "Ghi nhận viết xong" (FE đã làm, 2026-11-28). App desktop chưa.
 
 **Số bản của đơn**
 - `GET /technician/jobs/{id}`: thêm `copies_written` (số lần chạy robot của job kết thúc `DONE`, mỗi lần là một bản) và `open_run` (`null`, hoặc `{run_id, mode, dry_run, started_at, orphan}`: lần chạy máy chủ còn giữ mở; `orphan = true` nghĩa là không ai đang thực hiện nó).
 - `POST /technician/jobs/{id}/finish`: `409 COPIES_MISSING` với `details: {written, quantity}` khi `copies_written < quantity`. UI nên khoá nút "Viết xong" và hiện "đã viết k/N bản". `409 RUN_OPEN` giờ có `details: {open_run_id, orphan}`.
 - `PATCH /technician/runs/{run_id}` với `result: DONE` cần `completed_strokes == total_strokes`, không thì `422 RESULT_INVALID`. Lần chạy dừng giữa chừng dùng `STOPPED`, `FAULT` hoặc `UNKNOWN`.
+- `GET /manager/jobs/{id}`: thêm `quantity`, `copies_written` và `open_run` (cùng dạng với phía kỹ thuật viên). Web dùng ba trường này để hiện "k trên N bản", khối "lần chạy còn mở" và quyết định nút nào bật. Các endpoint danh sách job không đổi.
 - `POST /manager/jobs/{id}/finish-override`: bỏ qua cả điều kiện số bản; tự đóng lần chạy mồ côi (`UNKNOWN`). Vẫn `409 RUN_OPEN` khi máy trạm còn báo robot đang chạy.
 
 **Lần chạy mồ côi**

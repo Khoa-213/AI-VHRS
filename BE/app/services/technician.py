@@ -508,18 +508,10 @@ class TechnicianJobService:
         return 1, True
 
     def _open_run_info(self, job_id: int) -> dict[str, Any] | None:
-        """The run of this job the server still holds open, and whether anyone is executing it (A06)."""
-        run = self.session.scalar(select(RobotRun).where(RobotRun.job_id == job_id, RobotRun.ended_at.is_(None)).limit(1))
-        if run is None:
-            return None
-        from app.services.robot_link import run_orphaned                   # late import: robot_link pulls in the live hub
-        return {"run_id": run.run_id, "mode": run.mode, "dry_run": run.dry_run, "started_at": run.started_at,
-                "orphan": run_orphaned(run)}
+        return open_run_info(self.session, job_id)
 
     def _written_runs(self, job_id: int) -> list[str]:
-        """The robot runs of this job that wrote a whole copy (not a rehearsal, ended DONE), oldest first."""
-        return list(self.session.scalars(select(RobotRun.run_id).where(
-            RobotRun.job_id == job_id, RobotRun.dry_run.is_(False), RobotRun.result == "DONE").order_by(RobotRun.id)))
+        return written_runs(self.session, job_id)
 
     def finish(self, job_id: int, *, waste: int = 0, override_by: Account | None = None,
                override_reason: str | None = None) -> ProductionJob:
@@ -685,6 +677,22 @@ class TechnicianJobService:
         notifications.notify(self.session, account_id=job.scheduled_by, order_id=order.id, msg_code="INCIDENT_REPORTED",
                              code=order.code, robot_id=job.robot_id)
         return incident
+
+
+def open_run_info(session: Session, job_id: int) -> dict[str, Any] | None:
+    """The run of this job the server still holds open, and whether anyone is executing it (A06)."""
+    run = session.scalar(select(RobotRun).where(RobotRun.job_id == job_id, RobotRun.ended_at.is_(None)).limit(1))
+    if run is None:
+        return None
+    from app.services.robot_link import run_orphaned                       # late import: robot_link pulls in the live hub
+    return {"run_id": run.run_id, "mode": run.mode, "dry_run": run.dry_run, "started_at": run.started_at,
+            "orphan": run_orphaned(run)}
+
+
+def written_runs(session: Session, job_id: int) -> list[str]:
+    """The robot runs of this job that wrote a whole copy (not a rehearsal, ended DONE), oldest first."""
+    return list(session.scalars(select(RobotRun.run_id).where(
+        RobotRun.job_id == job_id, RobotRun.dry_run.is_(False), RobotRun.result == "DONE").order_by(RobotRun.id)))
 
 
 def finish_by_manager(session: Session, manager: Account, job_id: int, reason: str, ip: str | None = None) -> ProductionJob:

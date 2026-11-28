@@ -342,6 +342,6 @@ Chỉ chạy trên Postgres cục bộ và robot mô phỏng: BE 1.176 passed, 5
 
 ### Còn lại sau đợt đối chiếu
 
-1. App desktop (kênh chính theo D10) chưa có: nút "giấy mới" để viết bản tiếp theo, nút đóng lần chạy mồ côi, câu chữ cho các mã `COPIES_MISSING`, `SERVER_VALIDATION_REQUIRED`, `PACKAGE_NOT_SIGNED`, `NO_ANSWER`, `RUN_STILL_ACTIVE`. Trang máy trạm (`robot_agent/vhrs_agent/static`) đã có hai nút đầu.
+1. App desktop (kênh chính theo D10) chưa có: nút "giấy mới" để viết bản tiếp theo, nút đóng lần chạy mồ côi, câu chữ cho các mã `COPIES_MISSING`, `SERVER_VALIDATION_REQUIRED`, `PACKAGE_NOT_SIGNED`, `NO_ANSWER`, `RUN_STILL_ACTIVE`. Trang máy trạm (`robot_agent/vhrs_agent/static`) đã có hai nút đầu. Web Manager (`/staff/robots`, chi tiết job) đã có "Đóng lần chạy treo" và "Ghi nhận viết xong thay kỹ thuật viên" (2026-11-28).
 2. Code mới của `main` chưa được audit: `services/stock.py` (sổ kho) và phần app desktop. Riêng phần robot của `main` đã được đọc lại (mục trên).
 3. Mục 5–9 của "Còn lại khi làm tiếp" ở mục 6 vẫn nguyên, trừ: đã có commit cục bộ trên nhánh `audit-fixes` (chưa push).

@@ -8,7 +8,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import SessionDep, client_ip, require_roles
-from app.api.ops_schemas import (FinishOverrideIn, IncidentOut, JobEventOut, JobOut, ProductionQueueRow, RescheduleIn, ResolveIncidentIn,
+from app.api.ops_schemas import (FinishOverrideIn, IncidentOut, JobEventOut, JobOut, ManagerJobDetail, ProductionQueueRow,
+                                 RescheduleIn, ResolveIncidentIn,
                                  RobotAssignIn, RobotOut, ScheduleConfigOut, ScheduleIn, SuggestionOut, TechnicianOut,
                                  UnscheduleIn)
 from app.api.schemas import ErrorOut, Page
@@ -97,9 +98,15 @@ def jobs(svc: Svc, status_: Annotated[list[JobStatus] | None, Query(alias="statu
     return Page(items=_jobs_out(svc, rows), total=total, page=page, page_size=page_size)
 
 
-@router.get("/jobs/{job_id}", response_model=JobOut, summary="Chi tiết job")
-def job_detail(job_id: int, svc: Svc) -> JobOut:
-    return _jobs_out(svc, [svc.get(job_id)])[0]
+@router.get("/jobs/{job_id}", response_model=ManagerJobDetail,
+            summary="Chi tiết job, kèm số bản robot đã viết xong và lần chạy còn mở (để quyết định ghi nhận viết xong thay)")
+def job_detail(job_id: int, svc: Svc, session: SessionDep) -> ManagerJobDetail:
+    from app.models.order import Order
+    from app.services.technician import open_run_info, written_runs
+    job = svc.get(job_id)
+    order = session.get(Order, job.order_id)
+    return ManagerJobDetail(**_jobs_out(svc, [job])[0].model_dump(), quantity=order.quantity if order else 1,
+                            copies_written=len(written_runs(session, job.id)), open_run=open_run_info(session, job.id))
 
 
 @router.post("/jobs/{job_id}/finish-override", response_model=JobOut,

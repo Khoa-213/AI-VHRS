@@ -737,6 +737,14 @@ class OpenRunInfo(BaseModel):
     orphan: bool
 
 
+class ManagerJobDetail(JobOut):
+    """`GET /manager/jobs/{id}`: the job, plus what the Manager needs to decide on "written" (A02 / A06)."""
+    quantity: int = Field(default=1, description="Copies the order asks for.")
+    copies_written: int = Field(default=0, description="Robot runs of this job that ended DONE (one per copy).")
+    open_run: OpenRunInfo | None = Field(default=None, description="The run still open on the server; `orphan` = nobody is "
+                                         "executing it, so `POST /manager/runs/{run_id}/close-orphan` may close it.")
+
+
 class TechJobDetail(JobOut):
     order_type: str = ""
     quantity: int = 1
