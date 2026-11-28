@@ -1,4 +1,4 @@
-import { CheckCircle, Eye, ListChecks, WarningOctagon, XCircle } from '@phosphor-icons/react'
+import { CheckCircle, Eye, ListChecks, LockKeyOpen, WarningOctagon, XCircle } from '@phosphor-icons/react'
 import { useState } from 'react'
 import Shell from '../../components/ws/Shell'
 import { useAsync } from '../../hooks/useAsync'
@@ -6,9 +6,9 @@ import { useLocale, useT } from '../../i18n'
 import { Link } from '../../router/router'
 import type { Job } from '../../services/async'
 import {
-  ackManagerAlert, alertCatalog, jobCompliance, managerAlerts, managerIncidents, managerJob, managerJobEvents, managerJobQuality,
-  managerRobotStatus, managerRuns, patchAlertCatalog, resolveIncident, resolveManagerAlert, robotHealth,
-  type AlertCatalogEntry, type ManagerAlert,
+  ackManagerAlert, alertCatalog, closeOrphanRun, finishJobOverride, jobCompliance, managerAlerts, managerIncidents, managerJob,
+  managerJobEvents, managerJobQuality, managerRobotStatus, managerRuns, patchAlertCatalog, resolveIncident, resolveManagerAlert,
+  robotHealth, type AlertCatalogEntry, type ManagerAlert, type ManagerJob,
 } from '../../services/managerOps'
 import { errText, orderErrorKey } from '../../services/orders'
 import { Chip, LevelChip, Panel, Period, StateChip, type Tone } from './managerKit'
@@ -20,6 +20,7 @@ const RUN_TONE: Record<string, Tone> = { DONE: 'good', DRY_RUN_DONE: 'good', STO
 const STEP_TONE: Record<string, Tone> = { PASS: 'good', FAIL: 'bad', PENDING: 'mute', NOT_APPLICABLE: 'mute' }
 const VERDICT_TONE: Record<string, Tone> = { PASS: 'good', NEEDS_REVIEW: 'warn', FAIL: 'bad' }
 type Patch = Parameters<typeof patchAlertCatalog>[1]
+const REASON_MIN = 10          // the backend's minimum for a finish override and for closing a run by hand
 
 const stepIcon = (status: string) => {
   if (status === 'PASS') return <CheckCircle size={15} weight="fill" aria-hidden />
@@ -38,6 +39,10 @@ const jobFromUrl = () => {
  * alerts with acknowledge and close (Managers may close red ones), incidents, the agent's runs, and for a chosen job its detail,
  * process check, events and quality results; then the alert catalogue. Alert, step and quality sentences come from the backend in
  * Vietnamese and are shown as received. Scheduling stays on the Schedule screen.
+ *
+ * Two Manager actions live in the job detail, each with a reason of at least 10 characters and a confirmation: closing a run the
+ * workstation left open (it keeps the robot busy and blocks "writing done"), and recording "writing done" in the technician's
+ * place when the robot wrote every copy but the workstation could not report it.
  */
 export default function Robots() {
   const t = useT()
@@ -84,6 +89,24 @@ export default function Robots() {
     const note = (notes[`a${a.id}`] ?? '').trim()
     if (a.level >= 4 && !window.confirm(t('mgr.al.confirmRed', { code: a.robotCode }))) return
     void act(`a${a.id}`, () => resolveManagerAlert(a.id, note), async () => { await alerts.reload(); await status.reload() }, t('mgr.al.closed'))
+  }
+
+  const reloadJob = async () => { await Promise.all([job.reload(), compliance.reload(), events.reload(), runs.reload(), status.reload()]) }
+
+  const closeRun = (x: ManagerJob) => {
+    if (!x.openRun) return
+    const key = `r${x.openRun.runId}`
+    const reason = (notes[key] ?? '').trim()
+    if (reason.length < REASON_MIN || !window.confirm(t('mgr.job.closeRunConfirm', { id: x.openRun.runId }))) return
+    const runId = x.openRun.runId
+    void act(key, () => closeOrphanRun(runId, reason), reloadJob, t('mgr.job.closeRunDone'))
+  }
+
+  const recordWritten = (x: ManagerJob) => {
+    const key = `o${x.id}`
+    const reason = (notes[key] ?? '').trim()
+    if (reason.length < REASON_MIN || !window.confirm(t('mgr.job.overrideConfirm', { id: x.id, n: x.copiesWritten, total: x.quantity }))) return
+    void act(key, () => finishJobOverride(x.id, reason), reloadJob, t('mgr.job.overrideDone'))
   }
 
   const toggleCatalog = (c: AlertCatalogEntry, patch: Patch) =>
@@ -337,8 +360,53 @@ export default function Robots() {
                 <div><dt>{t('mgr.job.slot')}</dt><dd>{when(j.slotStart)} · {t('mgr.job.minutes', { n: j.estimatedMin })}</dd></div>
                 <div><dt>{t('mgr.rb.progress')}</dt><dd>{j.progressPct === null ? '–' : `${Math.round(j.progressPct)}%`}</dd></div>
                 <div><dt>{t('mgr.job.simulation')}</dt><dd>{j.simulationPassed === null ? '–' : t(j.simulationPassed ? 'mgr.cp.PASS' : 'mgr.cp.FAIL')}</dd></div>
+                <div><dt>{t('mgr.job.copies')}</dt><dd>{t('mgr.job.copiesValue', { n: j.copiesWritten, total: j.quantity })}</dd></div>
               </dl>
             )}
+
+            {j?.openRun && (() => {
+              const key = `r${j.openRun.runId}`
+              const reason = notes[key] ?? ''
+              return (
+                <>
+                  <h3 className="mgr-h3">{t('mgr.job.openRun')}</h3>
+                  <p className="mgr-callout">{t(j.openRun.orphan ? 'mgr.job.orphanHint' : 'mgr.job.runActiveHint', { id: j.openRun.runId, when: when(j.openRun.startedAt) })}</p>
+                  {j.openRun.orphan && (
+                    <div className="mgr-actions">
+                      <label className="vh-label">
+                        {t('mgr.job.reason')}
+                        <input className="vh-input" value={reason} maxLength={500} placeholder={t('mgr.job.reasonPh')} onChange={(e) => setNotes({ ...notes, [key]: e.target.value })} />
+                      </label>
+                      <button type="button" className="btn acc sm" disabled={!!busy || reason.trim().length < REASON_MIN} onClick={() => closeRun(j)}>
+                        <LockKeyOpen size={16} aria-hidden />{t(busy === key ? 'mgr.working' : 'mgr.job.closeRun')}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+
+            {j?.status === 'WRITING' && (() => {
+              const key = `o${j.id}`
+              const reason = notes[key] ?? ''
+              const running = !!j.openRun && !j.openRun.orphan
+              return (
+                <>
+                  <h3 className="mgr-h3">{t('mgr.job.override')}</h3>
+                  <p className="sub">{t('mgr.job.overrideHint', { n: j.copiesWritten, total: j.quantity })}</p>
+                  {running && <p className="mgr-callout">{t('mgr.job.overrideBlocked')}</p>}
+                  <div className="mgr-actions">
+                    <label className="vh-label">
+                      {t('mgr.job.reason')}
+                      <input className="vh-input" value={reason} maxLength={500} placeholder={t('mgr.job.reasonPh')} disabled={running} onChange={(e) => setNotes({ ...notes, [key]: e.target.value })} />
+                    </label>
+                    <button type="button" className="btn danger sm" disabled={!!busy || running || reason.trim().length < REASON_MIN} onClick={() => recordWritten(j)}>
+                      <CheckCircle size={16} aria-hidden />{t(busy === key ? 'mgr.working' : 'mgr.job.overrideDo')}
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
 
             <h3 className="mgr-h3">{t('mgr.cp.title')}</h3>
             {!!compliance.error && <p className="lg-error" role="alert">{errText(t, orderErrorKey(compliance.error))}</p>}

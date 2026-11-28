@@ -74,6 +74,9 @@ function answer(method, path, search) {
   if (/^\/manager\/jobs\/\d+\/compliance$/.test(path)) return { job_id: 291, order_code: 'VHRS-T1', robot_code: 'FR3-01', job_status: 'PAUSED', steps: [{ key: 'package', label_vi: 'Gói job khớp mã hash', status: 'PASS', at: now, detail: null }, { key: 'dry_run', label_vi: 'Chạy thử pen-up', status: 'FAIL', at: null, detail: 'Có lần viết thật mà chưa có chạy thử' }], exceptions: ['Có lần viết thật mà chưa có chạy thử'], followed_process: false }
   if (/^\/manager\/jobs\/\d+\/events$/.test(path)) return page([{ id: 1, job_id: 291, event_type: 'DOWNLOADED', actor_id: 5, incident_id: null, stroke_index: null, force_summary: null, payload: null, occurred_at: now }, { id: 2, job_id: 291, event_type: 'PAUSE', actor_id: 5, incident_id: null, stroke_index: 12, force_summary: null, payload: null, occurred_at: now }])
   if (/^\/manager\/jobs\/\d+\/quality$/.test(path)) return [{ id: 7, photo_id: 3, job_id: 291, page: 1, method: 'contour', verdict: 'NEEDS_REVIEW', metrics: {}, overlay_url: null, created_at: now, advisory: 'Ngưỡng mặc định chưa kiểm chứng.' }]
+  // Job 292: writing, 1 of 2 copies reported, and a run the workstation left open (nobody is executing it).
+  if (path === '/manager/jobs/292') return { id: 292, order_id: 102, order_code: 'VHRS-T2', robot_id: 1, robot_code: 'FR3-01', technician_id: 5, technician_name: 'Kỹ thuật viên A', status: 'WRITING', is_rewrite: false, slot_start: now, slot_end: now, estimated_duration_min: 40, package_hash: null, progress_pct: 100, downloaded_at: now, started_at: now, finished_at: null, simulation_passed: true, quantity: 2, copies_written: 1, open_run: { run_id: 'r39', mode: 'REAL', dry_run: false, started_at: now, orphan: true } }
+  if (path === '/manager/jobs/292/finish-override' || path === '/manager/runs/r39/close-orphan') return {}
   if (/^\/manager\/jobs\/\d+$/.test(path)) return { id: 291, order_id: 101, order_code: 'VHRS-T1', robot_id: 1, robot_code: 'FR3-01', technician_id: 5, technician_name: 'Kỹ thuật viên A', status: 'PAUSED', is_rewrite: false, slot_start: now, slot_end: now, estimated_duration_min: 40, package_hash: null, progress_pct: 35, downloaded_at: now, started_at: now, finished_at: null, simulation_passed: true }
   if (path === '/manager/incidents') return page([{ id: 3, job_id: 291, robot_id: 1, reported_by: 5, type: 'ROBOT', description: 'Cánh tay dừng giữa chừng.', robot_status_after: 'MAINTENANCE', resolved_by: null, resolved_at: null, resolution_note: null, created_at: now }])
   if (/^\/manager\/incidents\/\d+\/resolve$/.test(path)) return {}
@@ -272,6 +275,35 @@ try {
   // Opening a job from the dashboard (?job=) shows its detail directly.
   await go('/staff/robots?job=291', '.mgr-robot')
   await wait(`document.body.innerText.includes('Job #291')`, 'job opened from the URL')
+
+  // A writing job whose run the workstation left open: the Manager closes the stuck run and records "written" in the technician's
+  // place. Each needs a reason of at least 10 characters and a confirmation.
+  await go('/staff/robots?job=292', '.mgr-robot')
+  await wait(`document.body.innerText.includes('1 of 2') && document.body.innerText.includes('Run still open on the server')`, 'copies and the stuck run are shown')
+  const jobBtn = (label) => `[...document.querySelectorAll('.mgr-actions button')].find(b=>b.textContent.includes(${JSON.stringify(label)}))`
+  const reasonFor = (btn, text) => evaluate(`(()=>{const i=${btn}.closest('.mgr-actions').querySelector('input');const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(i,${JSON.stringify(text)});i.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+  for (const [label, short, call] of [['Close the stuck run', 'too short', 'POST /manager/runs/r39/close-orphan'], ['Record as written', 'no', 'POST /manager/jobs/292/finish-override']]) {
+    assert.equal(await evaluate(`${jobBtn(label)}.disabled`), true, `${label} needs a reason`)
+    await reasonFor(jobBtn(label), short)
+    assert.equal(await evaluate(`${jobBtn(label)}.disabled`), true, `${label} needs at least 10 characters`)
+    await reasonFor(jobBtn(label), 'Robot stopped, network dropped at the end')
+    await evaluate(`window.confirm=()=>false`)
+    calls.length = 0
+    await evaluate(`${jobBtn(label)}.click()`)
+    await sleep(300)
+    assert.ok(!calls.includes(call), `${label} does nothing when the confirmation is declined`)
+    await evaluate(`window.confirm=()=>true`)
+    await evaluate(`${jobBtn(label)}.click()`)
+    await sleep(500)
+    assert.ok(calls.includes(call), `${label} calls the Manager route`)
+    assert.ok(calls.includes('GET /manager/jobs/292'), `${label} reloads the job`)
+  }
+  await evaluate(`${jobBtn('Close the stuck run')}.closest('.panel, section, article, div').scrollIntoView({block:'center'})`)
+  await shot('robots-job-override')
+  // A job that is not writing and has no open run shows neither action.
+  await go('/staff/robots?job=291', '.mgr-robot')
+  await wait(`document.body.innerText.includes('Job #291') && document.body.innerText.includes('0 of 1')`, 'job 291 detail')
+  assert.equal(await evaluate(`!!${jobBtn('Record as written')} || !!${jobBtn('Close the stuck run')}`), false, 'No Manager action on a paused job without an open run')
 
   // Reviews: hide needs a reason of five characters; filters reload.
   await go('/staff/reviews', '.mgr-alert')
