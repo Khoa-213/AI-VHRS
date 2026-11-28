@@ -78,6 +78,9 @@ async def _jobs_loop(interval: int) -> None:
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
+    if len(_settings.jwt_secret.encode()) < 32:             # SR-04 (audit 2026-11-27): a warning, not a refusal to start
+        logging.getLogger("app").warning("JWT_SECRET is shorter than 32 bytes (HS256 wants at least 32): set a longer random "
+                                         "value; changing it signs every user out once")
     task = asyncio.create_task(_jobs_loop(max(_settings.background_jobs_interval_seconds, 60)))         if _settings.background_jobs_enabled else None
     yield
     if task is not None:

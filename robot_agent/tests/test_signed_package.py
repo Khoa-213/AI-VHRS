@@ -60,3 +60,25 @@ def test_legacy_packages_load_unless_the_station_requires_signatures():
 def test_keys_can_come_from_the_environment(monkeypatch):
     monkeypatch.setenv("VHRS_PRODUCTION_PUBLIC_KEYS", json.dumps(RING))
     assert _bridge(_snapshot()).fetch_job(9)["signed"]["order"] == {"id": 5}
+
+
+def test_a_package_signed_for_another_order_does_not_load():
+    """RB-09: the signed payload names its order; a valid signature of ANOTHER order's package is refused."""
+    def bridge(order_code):
+        def handler(request):
+            return httpx.Response(200, json={"trajectory_url": "https://storage.example/t.json", "package_hash": TRAJ, "pen": PEN,
+                                             "order_code": order_code, "snapshot": _snapshot_for("VHRS-AAA")})
+        return BackendBridge("https://be.example", "tok", transport=httpx.MockTransport(handler), downloader=lambda url: RAW,
+                             public_keys=RING)
+    assert bridge("VHRS-AAA").fetch_job(9)["signed"]["order"]["code"] == "VHRS-AAA"
+    with pytest.raises(BridgeError) as e:
+        bridge("VHRS-BBB").fetch_job(9)
+    assert e.value.code == "PRODUCTION_PACKAGE_INVALID" and "VHRS-AAA" in str(e.value)
+
+
+def _snapshot_for(code):
+    text = ps.canonical({"schema": ps.SCHEMA, "order": {"id": 5, "code": code}, "sketch": {"id": 6, "trajectory_sha256": TRAJ},
+                         "materials": {"pen": {"f_target_n": "0.60", "f_min_n": "0.30", "f_max_n": "1.00", "f_hard_n": "3",
+                                               "v_max_mm_s": "30"}}})
+    return {"snapshot_id": 1, "package_id": "x", "schema": ps.SCHEMA, "payload": text, "payload_sha256": ps.sha256_hex(text),
+            "signature": ps.sign(text, KEY), "key_id": "k1"}

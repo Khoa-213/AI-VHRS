@@ -34,11 +34,15 @@ class StaffOrderService:
 
     # ---- queue (UC-23, FR-12) ----
     def list(self, *, statuses: list[OrderStatus] | None, order_type: str | None, eta_before: date | None,
-             unassigned_only: bool, q: str | None, page: int, page_size: int) -> tuple[list[tuple[Order, str]], int]:
+             unassigned_only: bool, q: str | None, page: int, page_size: int, mine: bool = False,
+             order_ids: list[int] | None = None) -> tuple[list[tuple[Order, str]], int]:
         return self.orders.search_workshop(
             staff_id=None if self.access.is_manager else self.actor.id, statuses=statuses, order_type=order_type,
             eta_before=eta_before, unassigned_only=unassigned_only, q=q, offset=(page - 1) * page_size,
-            limit=page_size)
+            limit=page_size, mine_id=self.actor.id if mine else None, order_ids=order_ids)
+
+    def queue_counts(self) -> tuple[int, dict[str, int]]:
+        return self.orders.queue_counts(actor_id=self.actor.id)
 
     def detail(self, order_id: int) -> tuple[Order, str, list[OrderInput], dict[int, str]]:
         order = self.access.order(order_id)
@@ -74,6 +78,8 @@ class StaffOrderService:
         audit.record(self.session, actor_id=self.actor.id, action="ORDER_ASSIGN", entity_type="order",
                      entity_id=order.id, old={"assigned_staff_id": old}, new={"assigned_staff_id": staff.id},
                      ip=self.ip)
+        if old != staff.id:                                       # SD-09: the Staff who now owns the order was never told
+            notifications.notify(self.session, account_id=staff.id, order_id=order.id, msg_code="ORDER_ASSIGNED", code=order.code)
         return order
 
     def staff_directory(self) -> list[dict[str, Any]]:

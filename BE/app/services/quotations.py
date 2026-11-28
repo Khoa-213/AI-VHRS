@@ -25,6 +25,7 @@ from app.repositories.catalog import CatalogRepository
 from app.repositories.orders import OrderRepository
 from app.repositories.workshop import QuotationRepository, SketchRepository
 from app.services import audit, material_profiles, notifications, quotation_pdf, sketch_compare
+from app.services.stroke_ai import trajectory as tj
 from app.services.eta import EtaService
 from app.services.orders import DEFAULT_COMPLEXITY, PricingService
 from app.services.pricing import MaterialPrices, compute_price
@@ -397,6 +398,7 @@ class QuotationService:
             raise AppError(409, "SKETCH_CHANGED", "Phác thảo đã đổi sau khi lập báo giá; hãy hủy và lập báo giá mới.")
         if self.storage is None:
             raise AppError(503, "STORAGE_NOT_CONFIGURED", "Chưa cấu hình dịch vụ lưu trữ file.")
+        self._check_paper_size(q, sketch)
         policy = current_privacy_policy(self.catalog)
         now = _now()
         valid_days = _setting_int(self.catalog, "quotation_valid_days", DEFAULT_VALID_DAYS)
@@ -420,6 +422,25 @@ class QuotationService:
         notifications.notify(self.session, account_id=order.customer_id, order_id=order.id, msg_code="MSG10", code=order.code,
                              total=str(q.final_total))
         return q
+
+    def _check_paper_size(self, q: Quotation, sketch) -> None:
+        """SD-07 (audit 2026-11-27): a sketch is laid out for one paper size (the Staff may override it when generating, and a
+        hand upload names its own). Nothing compared it with the paper being sold, so an A4 trajectory could be quoted, paid
+        and sent to the robot for an order on A6 paper. Checked here, while the Staff can still regenerate the sketch."""
+        try:
+            raw = self.storage.read(sketch.trajectory_uri)
+            sizes = {p.paper_size for p in tj.parse(json.loads(raw))} if raw is not None else set()
+        except (AppError, ValueError):
+            sizes = set()
+        if not sizes:
+            return                                                     # unreadable: the job package check still stands
+        papers = [self.catalog.paper(o["paper"]["id"]) for o in q.price_snapshot.get("options", [])]
+        wrong = [{"paper": pp.name, "size": pp.size.value} for pp in papers if pp is not None and {pp.size.value} != sizes]
+        if wrong:
+            raise AppError(409, "PAPER_SIZE_MISMATCH",
+                           f"Phác thảo được dàn cho khổ {', '.join(sorted(sizes))} nhưng giấy trong báo giá có khổ khác. Sinh lại "
+                           "phác thảo đúng khổ giấy, hoặc chọn giấy đúng khổ rồi lập lại báo giá.",
+                           {"sketch": sorted(sizes), "papers": wrong})
 
     def _pdf(self, q: Quotation, order: Order) -> bytes:
         customer = AccountRepository(self.session).get(order.customer_id)

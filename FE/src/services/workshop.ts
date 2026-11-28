@@ -574,7 +574,8 @@ export const CHAT_IMAGES = ['image/jpeg', 'image/png']
 export const CHAT_MAX_MB = 5
 
 export async function listMessages(orderId: number): Promise<MessagePage> {
-  const r = await api<{ items: RawMessage[]; total: number; unread: number }>(`/orders/${orderId}/messages?page=1&page_size=100`)
+  // latest=true: the newest 100. Page 1 of the plain listing is the OLDEST 100, so message 101 never showed (audit SD-03).
+  const r = await api<{ items: RawMessage[]; total: number; unread: number }>(`/orders/${orderId}/messages?latest=true&page_size=100`)
   // The API answers newest first or oldest first depending on the page; a chat reads oldest to newest.
   return { items: r.items.map(toMessage).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id), total: r.total, unread: r.unread }
 }

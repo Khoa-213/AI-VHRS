@@ -1010,6 +1010,14 @@ def wait_for_process_exit(pid: int, poll_s: float = 1.0) -> None:
         return
     while True:
         try:
+            # RB-11: a process that has exited but was not collected by its parent yet (a zombie) still answers kill(pid, 0),
+            # so waiting for one of OUR OWN children never ended. Ask the kernel without collecting it (WNOWAIT).
+            if hasattr(os, "waitid"):
+                try:
+                    if os.waitid(os.P_PID, int(pid), os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None:
+                        return
+                except ChildProcessError:
+                    pass                                              # not our child: the signal probe below decides
             os.kill(int(pid), 0)
         except OSError:
             return

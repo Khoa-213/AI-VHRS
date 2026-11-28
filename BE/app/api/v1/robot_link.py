@@ -180,12 +180,12 @@ def _viewer_svc(session: SessionDep) -> RobotLinkService:
 
 @viewer_router.get("/viewer/{ticket}/live", response_model=LiveOut, summary="Trang 3D: khung hình sống của robot (vé thay cho đăng nhập)")
 def viewer_live(ticket: str, session: SessionDep, after: int = Query(0, ge=0)) -> LiveOut:
-    return LiveOut(**_viewer_svc(session).live(robot_view.robot_of_ticket(ticket), after))
+    return LiveOut(**_viewer_svc(session).live(robot_view.robot_of_ticket(ticket, session), after))
 
 
 @viewer_router.get("/viewer/{ticket}/scene", response_model=SceneOut, summary="Trang 3D: tờ giấy, khung toạ độ và nét của job đã nạp")
 def viewer_scene(ticket: str, session: SessionDep) -> SceneOut:
-    return SceneOut(**_viewer_svc(session).scene(robot_view.robot_of_ticket(ticket)))
+    return SceneOut(**_viewer_svc(session).scene(robot_view.robot_of_ticket(ticket, session)))
 
 
 _MODEL_HEADERS = {"Cache-Control": "public, max-age=86400"}

@@ -336,6 +336,14 @@ export async function managerJob(jobId: number): Promise<ManagerJob> {
 export const finishJobOverride = (jobId: number, reason: string): Promise<unknown> =>
   api(`/manager/jobs/${jobId}/finish-override`, { method: 'POST', body: { reason } })
 
+/**
+ * The Manager ends a job that was started and that its technician cannot carry on (`POST /manager/jobs/{id}/fail`, reason of 10
+ * characters or more). Only for a job that is PREPARING, WRITING or PAUSED. The backend tells the robot to stop if it is running,
+ * the job becomes FAILED for good, and the order goes back to the planning queue. The paper the job took is settled afterwards.
+ */
+export const failJobByManager = (jobId: number, reason: string): Promise<unknown> =>
+  api(`/manager/jobs/${jobId}/fail`, { method: 'POST', body: { reason } })
+
 // ---------- closing an order stuck after production (manager.py) ----------
 
 export interface ClosePreview {

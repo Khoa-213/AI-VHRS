@@ -181,3 +181,25 @@ def test_restoration_mode_is_only_for_ot1(client, cust):
     assert r.status_code == 422 and _err(r) == "RESTORATION_MODE_OT1_ONLY"
     r = client.patch(f"{API}/orders/{oid}", headers=cust, json={"restoration_mode": "MAGIC"})
     assert r.status_code == 422
+
+
+# ---- SD-02 (audit 2026-11-27): a hand-uploaded trajectory cannot stand for a faithful restoration ------------------------
+def test_a_faithful_order_is_not_finalized_on_a_hand_uploaded_trajectory(client, cust, staff, wcat, store):
+    sh, _ = staff
+    oid, v1 = _ot1(client, cust, staff, wcat, store)                       # FAITHFUL by default
+    same_strokes = _detail(client, sh, oid, 1)["trajectory"]              # even the very same strokes, uploaded by hand
+    r = client.post(f"{W}/orders/{oid}/sketches", headers=sh, json={"trajectory": same_strokes, "approach_note": "tải tay"})
+    assert r.status_code == 201, r.text
+    manual = r.json()["version"]
+    assert _detail(client, sh, oid, manual)["regions"] == []               # nothing says which strokes are the customer's ink
+    no = client.post(f"{W}/orders/{oid}/sketches/{manual}/finalize", headers=sh)
+    assert no.status_code == 409 and _err(no) == "FAITHFUL_NEEDS_REGIONS", no.text
+    assert client.post(f"{W}/orders/{oid}/sketches/1/finalize", headers=sh).status_code == 200   # the traced version is fine
+
+
+def test_an_assisted_order_may_use_a_hand_uploaded_trajectory(client, cust, staff, wcat, store):
+    sh, _ = staff
+    oid, v1 = _ot1(client, cust, staff, wcat, store, mode="ASSISTED")
+    r = client.post(f"{W}/orders/{oid}/sketches", headers=sh, json={"trajectory": _detail(client, sh, oid, 1)["trajectory"]})
+    assert r.status_code == 201, r.text
+    assert client.post(f"{W}/orders/{oid}/sketches/{r.json()['version']}/finalize", headers=sh).status_code == 200
