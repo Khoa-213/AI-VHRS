@@ -97,6 +97,7 @@ def test_a_bare_resume_obeys_the_paused_jobs_rules_and_a_manager_cannot_resume(c
 # ---------------------------------------------------------------------------------------------- TP-01 / TP-07
 def test_written_is_refused_while_a_run_is_still_open(client, cust, staff, mgr, wcat, robot, tech):
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    _sql("update robots set is_simulated = true where id=:r returning 1", r=robot)       # a simulated robot: its finished run is the copy (L1)
     r, run = open_run(client, tech, jid)
     assert r.status_code == 201
     no = _post(client, tech, jid, "finish")

@@ -75,6 +75,10 @@ def _robot_wrote(client, tech, jid, mode="SIM", copies=1):
     with fewer than the order's quantity."""
     if copies > 1:
         return [_robot_wrote(client, tech, jid, mode) for _ in range(copies)][-1]
+    if mode != "REAL":
+        # L1 (2026-11-28): on a real robot only a REAL run is a written copy. These tests are about what happens AFTER the
+        # writing, so their robot is one the Manager marked as simulated, where a finished simulated run counts.
+        _sql("update robots set is_simulated = true where id = (select robot_id from production_jobs where id=:j) returning 1", j=jid)
     key = "run-" + uuid.uuid4().hex[:10]
     r = client.post(f"{T}/jobs/{jid}/runs", headers=tech[0], json={"run_id": key, "mode": mode, "dry_run": False, "total_strokes": 10})
     assert r.status_code == 201, r.text

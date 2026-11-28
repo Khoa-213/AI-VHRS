@@ -409,6 +409,6 @@ Kiểm thử: BE trên Postgres cục bộ; FE `tsc -b`, `i18n:check`, `build`; 
 
 | Mã | Lỗ hổng | Mức | Đề xuất |
 |---|---|---|---|
-| L1 | Trên robot thật, một lần chạy ở chế độ SIM hoặc MOCK kết thúc `DONE` vẫn được tính là "một bản đã viết". Kỹ thuật viên có thể ghi nhận viết xong mà robot thật chưa chạm giấy. Báo cáo tuân thủ quy trình có đánh dấu, nhưng "viết xong" không chặn | Trung bình | Với robot không gắn cờ mô phỏng, chỉ tính lần chạy REAL; robot mô phỏng giữ như cũ. Cần quyết định vì ảnh hưởng buổi demo nếu phải lùi về mô phỏng |
+| L1 | Trên robot thật, một lần chạy ở chế độ SIM hoặc MOCK kết thúc `DONE` vẫn được tính là "một bản đã viết" | Trung bình | **Đã sửa 2026-11-28 theo quyết định của chủ dự án:** robot không gắn cờ `is_simulated` chỉ tính lần chạy `REAL`; robot mô phỏng giữ như cũ; Manager vẫn ghi nhận thay được kèm lý do. Hệ quả: buổi demo nếu phải lùi về mô phỏng trên robot thật thì "viết xong" cần Manager ghi nhận thay, hoặc dùng một robot gắn cờ mô phỏng |
 | L2 | Lần chạy được báo bằng token của kỹ thuật viên. Ai có tài khoản kỹ thuật viên có thể tự mở và đóng một lần chạy `DONE` bằng API, không cần robot. Mọi thao tác có nhật ký, nhưng không bị chặn | Trung bình | Chỉ nhận mở / đóng lần chạy từ khoá của agent. Cần sửa cả chế độ agent chạy tay (đang dùng token người dùng), nên chưa làm |
 | L3 | Chế độ của lần chạy (REAL / SIM) do agent tự báo; máy chủ tin giá trị đó khi áp các cổng REAL | Thấp | Là lớp bảo vệ thứ hai; lớp chính nằm ở agent |

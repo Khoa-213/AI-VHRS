@@ -492,9 +492,11 @@ function orphanNote(d) {
 function copiesLeft(d) { return Math.max(0, (d.quantity || 1) - (d.copies_written || 0)); }
 function copiesNote(d) {
   const n = d.quantity || 1, k = d.copies_written || 0;
-  if (n <= 1 && k <= 1) return '';
+  if (n <= 1 && k >= 1) return '';
   const next = k < n && k > 0 ? ' Để viết bản tiếp theo: đặt tờ giấy mới, mở "Đặt lại tiến độ" ở bước chạy robot và xác nhận giấy mới, rồi chạy lại.' : '';
-  return `<p class="${k >= n ? 'okt' : 'err'}">Robot đã viết xong ${k}/${n} bản.${next}</p>`;
+  // On a real robot only a REAL run that ended DONE is a written copy; a SIM or MOCK run puts nothing on the paper.
+  const real = k < n ? ' Trên robot thật chỉ lần chạy REAL kết thúc xong mới được tính; lần chạy SIM / MOCK không được tính.' : '';
+  return `<p class="${k >= n ? 'okt' : 'err'}">Robot đã viết xong ${k}/${n} bản.${real}${next}</p>`;
 }
 function updateMeter() { const m = $('meter'); if (m && S.detail) m.style.width = Math.max(0, Math.min(100, S.detail.progress_pct || 0)) + '%'; }
 

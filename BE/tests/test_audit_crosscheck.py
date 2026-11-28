@@ -2,6 +2,8 @@
 
 A01  a run ends DONE only with every stroke of its plan
 A02  "written" needs one finished robot run per copy of the order (the agent writes one copy per run)
+L1   on a real robot only a REAL run is a written copy; a SIM or MOCK run that ended DONE is not (a robot marked simulated
+     keeps counting every finished run)
 A05  a command the agent pulled but never answered: a halt is handed out again, anything else is never repeated, and after
      the wait the command says NO_ANSWER instead of staying DELIVERED for ever
 A03  a REAL writing run needs the server's own validation of the trajectory (not the workstation's word), whatever
@@ -72,7 +74,8 @@ def test_written_needs_one_finished_run_for_each_copy(client, cust, staff, mgr, 
 
     _robot_wrote(client, tech, jid)
     r = _post(client, tech, jid, "finish")
-    assert r.status_code == 409 and _err(r) == "COPIES_MISSING" and r.json()["error"]["details"] == {"written": 1, "quantity": 3}, r.text
+    assert r.status_code == 409 and _err(r) == "COPIES_MISSING", r.text
+    assert r.json()["error"]["details"] == {"written": 1, "quantity": 3, "simulated_runs_not_counted": 0}
     assert _status(jid) == "WRITING"
     _robot_wrote(client, tech, jid)
     assert client.get(f"{T}/jobs/{jid}", headers=tech[0]).json()["copies_written"] == 2
@@ -170,6 +173,7 @@ def test_the_managers_job_detail_shows_copies_and_the_stuck_run(client, cust, st
 
 def test_the_agents_late_report_replaces_the_unknown_a_person_recorded(client, cust, staff, mgr, wcat, robot, tech, fresh_hub):
     oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    _sql("update robots set is_simulated = true where id=:r returning 1", r=robot)       # a simulated robot: its finished run is the copy (L1)
     r, run = open_run(client, tech, jid)
     assert r.status_code == 201
     _quiet(robot)
@@ -386,3 +390,52 @@ def test_resuming_a_real_run_also_needs_the_workstation_but_a_simulated_one_does
         assert far.status_code == 403 and _err(far) == "REAL_ONLY_AT_WORKSTATION", (kind, far.text)
     assert client.post(f"{T}/robot-commands", headers=tech[0], json={"kind": "RESUME", "job_id": jid, "params": {}}).status_code == 201
     assert client.post(f"{T}/robot-commands", headers=away, json={"kind": "STOP", "job_id": jid, "params": {}}).status_code == 201
+
+
+# ---------------------------------------------------------------------------------------------- L1
+def _real_copy(client, tech, jid):
+    r, run = open_run(client, tech, jid, mode="REAL", authorized=True, plan_digest="a" * 64)
+    assert r.status_code == 201, r.text
+    assert _close(client, tech, run, "DONE", 10).status_code == 200
+    return run
+
+
+def test_a_simulated_run_on_a_real_robot_is_not_a_written_copy(client, cust, staff, mgr, wcat, robot, tech):
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech, qty=2, cal=CAL_MOTION)
+    assert _sql("select is_simulated from robots where id=:r", r=robot) is False       # a real arm
+    for mode in ("SIM", "MOCK"):
+        r, run = open_run(client, tech, jid, mode=mode)
+        assert r.status_code == 201 and _close(client, tech, run, "DONE", 10).status_code == 200
+    d = client.get(f"{T}/jobs/{jid}", headers=tech[0]).json()
+    assert d["copies_written"] == 0                                                   # nothing reached the paper
+    r = _post(client, tech, jid, "finish")
+    assert r.status_code == 409 and _err(r) == "RUN_EVIDENCE_REQUIRED", r.text
+    assert r.json()["error"]["details"] == {"written": 0, "quantity": 2, "simulated_runs_not_counted": 2}
+    assert "REAL" in r.json()["error"]["message"] and _status(jid) == "WRITING"
+
+    _real_copy(client, tech, jid)
+    r = _post(client, tech, jid, "finish")
+    assert _err(r) == "COPIES_MISSING" and r.json()["error"]["details"] == {"written": 1, "quantity": 2, "simulated_runs_not_counted": 2}
+    _real_copy(client, tech, jid)
+    assert client.get(f"{M}/jobs/{jid}", headers=mgr).json()["copies_written"] == 2
+    assert _post(client, tech, jid, "finish").status_code == 200 and _status(jid) == "WRITTEN"
+
+
+def test_a_robot_marked_simulated_counts_its_finished_runs(client, cust, staff, mgr, wcat, robot, tech):
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    _sql("update robots set is_simulated = true where id=:r returning 1", r=robot)       # the Manager's flag: no real arm here
+    r, run = open_run(client, tech, jid)
+    assert r.status_code == 201 and _close(client, tech, run, "DONE", 10).status_code == 200
+    assert client.get(f"{T}/jobs/{jid}", headers=tech[0]).json()["copies_written"] == 1
+    assert _post(client, tech, jid, "finish").status_code == 200
+
+
+def test_a_manager_may_still_record_written_when_only_simulated_runs_were_reported(client, cust, staff, mgr, wcat, robot, tech):
+    oid, jid = _running(client, cust, staff, mgr, wcat, robot, tech)
+    r, run = open_run(client, tech, jid)
+    assert r.status_code == 201 and _close(client, tech, run, "DONE", 10).status_code == 200
+    assert _err(_post(client, tech, jid, "finish")) == "RUN_EVIDENCE_REQUIRED"
+    r = client.post(f"{M}/jobs/{jid}/finish-override", headers=mgr, json={"reason": "Robot đã viết thật, máy trạm báo nhầm chế độ"})
+    assert r.status_code == 200 and _status(jid) == "WRITTEN", r.text
+    over = _sql("select new_value from audit_logs where action='JOB_FINISH_OVERRIDE' and entity_id=:j order by id desc limit 1", j=jid)
+    assert over["copies_written"] == 0 and over["had_done_run"] is False

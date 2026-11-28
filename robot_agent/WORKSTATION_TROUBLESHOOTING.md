@@ -125,7 +125,7 @@ Cột "Ai": **VH** = người vận hành tại máy, **QL** = Manager trên web
 
 | Mã | Nguyên nhân | Việc cần làm | Ai |
 |---|---|---|---|
-| `RUN_EVIDENCE_REQUIRED` | Chưa có lần chạy robot nào của job kết thúc `DONE` | Cho robot viết xong; nếu đã viết mà không báo về được thì QL "Ghi nhận viết xong thay" | VH, QL |
+| `RUN_EVIDENCE_REQUIRED` | Chưa có lần chạy nào được tính là một bản. Trên robot thật **chỉ lần chạy REAL kết thúc `DONE` mới được tính**; lần chạy SIM / MOCK không được tính (`details.simulated_runs_not_counted` cho biết có bao nhiêu lần như vậy) | Cho robot viết xong; nếu đã viết mà không báo về được thì QL "Ghi nhận viết xong thay" | VH, QL |
 | `COPIES_MISSING` | Đơn cần N bản, robot mới xong k bản (`details`) | Mục 4.1 | VH |
 | `RUN_OPEN` | Còn lần chạy mở. `details.orphan` cho biết có ai đang chạy nó không | `orphan: false`: chờ hoặc dừng robot. `orphan: true`: mục 4.2 | VH, QL |
 | `RESULT_INVALID` | Đóng lần chạy `DONE` mà số nét khác tổng số nét | Lần chạy dở phải là `STOPPED`, `FAULT` hoặc `UNKNOWN` | AI giải thích |
@@ -145,7 +145,7 @@ Cột "Ai": **VH** = người vận hành tại máy, **QL** = Manager trên web
 
 ### 4.1. Đơn nhiều bản
 
-Một lần chạy viết **một bản**. Agent không tự lặp. Máy chủ đếm số lần chạy `DONE` và chỉ cho "Viết xong" khi đủ số bản.
+Một lần chạy viết **một bản**. Agent không tự lặp. Máy chủ đếm số lần chạy `DONE` và chỉ cho "Viết xong" khi đủ số bản. Trên robot thật chỉ lần chạy REAL được đếm (chủ dự án chốt 2026-11-28); lần chạy SIM / MOCK chỉ được đếm trên robot Manager gắn cờ mô phỏng.
 
 1. Robot viết xong bản 1 (`DONE`). Màn máy trạm hiện "Robot đã viết xong 1/N bản".
 2. Đặt tờ giấy mới, kẹp đúng vị trí cũ.
