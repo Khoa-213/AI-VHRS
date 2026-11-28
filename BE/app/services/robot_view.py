@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import timedelta
+from typing import Any
 
 from app.core import security
 from app.core.errors import AppError
@@ -27,11 +28,21 @@ def issue_ticket(account_id: int, robot_id: int) -> tuple[str, int]:
     return token, int(TICKET_TTL.total_seconds())
 
 
-def robot_of_ticket(ticket: str) -> int:
+def robot_of_ticket(ticket: str, session: Any = None) -> int:
+    """The robot a ticket shows. SR-04 (audit 2026-11-27): the ticket is a 60-minute token in a URL and could not be taken
+    back, so somebody whose account was locked kept watching the robot. With a `session` the ticket only works while the
+    account it was issued to is still active."""
     try:
         payload = security.decode_token(ticket, TICKET_TYPE)
     except AppError as exc:
         raise AppError(401, "INVALID_VIEW_TICKET", "Liên kết xem robot không hợp lệ hoặc đã hết hạn: hãy mở lại từ ứng dụng.") from exc
+    if session is not None:
+        from datetime import datetime, timezone
+
+        from app.models.account import Account, AccountStatus
+        acc = session.get(Account, int(payload["sub"]))
+        if acc is None or acc.status != AccountStatus.ACTIVE or (acc.locked_until and acc.locked_until > datetime.now(timezone.utc)):
+            raise AppError(401, "INVALID_VIEW_TICKET", "Liên kết xem robot không còn hiệu lực: tài khoản đã bị khoá.")
     return int(payload["robot"])
 
 

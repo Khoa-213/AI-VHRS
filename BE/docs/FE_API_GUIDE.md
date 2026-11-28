@@ -1420,6 +1420,36 @@ Mọi thay đổi dưới đây đã có test trên Postgres cục bộ; **chưa
 **Thông báo**
 - `msg_code` mới: `REFUND_DUE` (xưởng cần hoàn tiền), `PAY_LATE` (đơn chờ thanh toán cuối quá hạn, gửi Manager), `PICK_LATE` (đơn chờ nhận quá hạn, gửi Manager). Với tài khoản xưởng, chỉ `REFUND_DUE` mở trang Hoàn tiền; các thông báo khác mở trang đơn. Thông báo cũ có `msg_code = null` mở trang đơn.
 
+## 7z-6. Dọn các mục audit còn mở (2026-11-28, không đổi DB)
+
+Đã có test trên Postgres cục bộ; **chưa chạy trên Supabase**. Phần web cần đổi đã làm trong `FE/` (chat lấy tin mới nhất, giờ nhận tại xưởng, hai mã lỗi mới có bản dịch).
+
+**Hàng đợi của Staff (SD-08)**
+- `GET /workshop/queue-counts` → `{pool, mine}`. `pool`: số đơn `SUBMITTED` chưa ai nhận. `mine`: số đơn đang giao cho người gọi, theo `order_status` (ví dụ `{"ACCEPTED": 2}`). Staff và Manager.
+- `GET /workshop/orders` thêm `mine=true` (chỉ đơn giao cho tôi), `order_ids=1&order_ids=2` (tối đa 200), và `q` nay tìm cả mã đơn lẫn tên khách (tối đa 100 ký tự). Phạm vi nhìn thấy không đổi: Staff không bao giờ thấy đơn của Staff khác.
+- Web đã có sẵn nhánh dùng các tham số này; khi endpoint trả 200 web tự dùng, không cần đổi code.
+
+**Chat (SD-03)**
+- `unread` và `POST /orders/{id}/messages/read` tính theo hai phía: khách đọc tin của xưởng, xưởng đọc tin của khách. Tin do Staff gửi không còn tính là "chưa đọc" với Manager.
+- Staff chưa nhận đơn gọi `/read` nhận `{"marked": 0}`.
+- Màn chat dùng `GET /orders/{id}/messages?latest=true&page_size=100` (web đã đổi).
+
+**Giờ nhận tại xưởng (CO-06)**
+- `GET` và `POST /orders/{id}/delivery-quote` thêm `pickup_hours: {days, start, end, utc_offset_min} | null`. `days` là thứ theo ISO (thứ Hai = 1). `null` khi cấu hình giờ làm việc hỏng.
+
+**Manager**
+- `POST /manager/jobs/{id}/fail {reason}` (lý do ít nhất 10 ký tự) → `201` sự cố. Chỉ với job đã bắt đầu (`PREPARING`, `WRITING`, `PAUSED`); job còn `SCHEDULED` trả `409` (dùng đổi lịch). Sau đó đơn về hàng chờ xếp lịch. **Web chưa có nút cho endpoint này.**
+- Thông báo mới: `ORDER_ASSIGNED` (Staff được giao đơn), `SNAPSHOT_FAILED` với `msg_code = SNAP_FAIL` (đã cọc nhưng chưa khoá được gói sản xuất, gửi Manager). Cả hai mở trang đơn.
+- `GET /manager/stock`: `kept_for_jobs` tính số bản nhân số trang.
+
+**Mã lỗi mới**
+- `409 FAITHFUL_NEEDS_REGIONS`: chốt phác thảo tải tay cho đơn OT-1 chế độ trung thành. Web có bản dịch.
+- `409 PAPER_SIZE_MISMATCH {sketch, papers}`: gửi báo giá khi khổ phác thảo khác khổ giấy. Web có bản dịch.
+- `409 ROBOT_HAS_ACTIVE_JOB {job_id}`: chuẩn bị job khi robot đang có job khác chạy (app của kỹ thuật viên).
+- `403 AGENT_ROUTE_NOT_ALLOWED`: dùng khoá agent cho việc của người (viết xong, sự cố, ảnh, kho).
+- `401 INVALID_VIEW_TICKET`: vé xem 3D của tài khoản đã bị khoá.
+- `429 RATE_LIMITED` trên `GET /catalog/templates/{id}/preview`: quá 600 lượt / phút / địa chỉ.
+
 ## 8. Mã lỗi hay gặp và cách xử lý trên UI
 
 | `code` | HTTP | Ý nghĩa | UI nên |

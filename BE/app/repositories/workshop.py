@@ -117,13 +117,20 @@ class MessageRepository:
         return set(self.s.scalars(select(Message.sender_id).distinct().join(Account, Account.id == Message.sender_id)
                                   .where(Message.order_id == order_id, Account.role.has(code="MANAGER"))))
 
-    def unread_count(self, order_id: int, reader_id: int) -> int:
-        return self.s.scalar(select(func.count()).where(Message.order_id == order_id, Message.sender_id != reader_id,
-                                                        Message.read_at.is_(None))) or 0
+    # SD-03 (audit 2026-11-27): `read_at` is one column for the whole chat, so it means "the other SIDE read it": the customer
+    # reads what the workshop sent, the workshop reads what the customer sent. It used to be "anybody but the sender", so a
+    # Manager opening a chat turned the Staff's own messages into "read by the customer".
+    @staticmethod
+    def _from_other_side(customer_id: int, reader_is_customer: bool) -> Any:
+        return Message.sender_id != customer_id if reader_is_customer else Message.sender_id == customer_id
 
-    def mark_read(self, order_id: int, reader_id: int, now: datetime) -> int:
-        res = self.s.execute(update(Message).where(Message.order_id == order_id, Message.sender_id != reader_id,
-                                                   Message.read_at.is_(None)).values(read_at=now))
+    def unread_count(self, order_id: int, customer_id: int, reader_is_customer: bool) -> int:
+        return self.s.scalar(select(func.count()).where(Message.order_id == order_id, Message.read_at.is_(None),
+                                                        self._from_other_side(customer_id, reader_is_customer))) or 0
+
+    def mark_read(self, order_id: int, customer_id: int, reader_is_customer: bool, now: datetime) -> int:
+        res = self.s.execute(update(Message).where(Message.order_id == order_id, Message.read_at.is_(None),
+                                                   self._from_other_side(customer_id, reader_is_customer)).values(read_at=now))
         return res.rowcount
 
     def recent_card(self, order_id: int, since: datetime) -> Message | None:
@@ -140,6 +147,11 @@ _SCOPE = {
     "MANAGER": "o.order_status <> 'DRAFT'",
     "STAFF": "o.order_status <> 'DRAFT' AND (o.assigned_staff_id = :me OR (o.assigned_staff_id IS NULL AND o.order_status = 'SUBMITTED'))",
 }
+
+
+def _other_side(role: str) -> str:
+    """SD-03: what counts as unread for this role (see MessageRepository._from_other_side)."""
+    return "m.sender_id <> o.customer_id" if role == "CUSTOMER" else "m.sender_id = o.customer_id"
 
 
 class ConversationRepository:
@@ -162,7 +174,7 @@ class ConversationRepository:
             JOIN LATERAL (SELECT m.body, m.kind, m.attachments, m.created_at, m.sender_id, m.id
                           FROM messages m WHERE m.order_id = o.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) l ON true
             LEFT JOIN LATERAL (SELECT count(*) AS unread FROM messages m
-                               WHERE m.order_id = o.id AND m.sender_id <> :me AND m.read_at IS NULL) u ON true
+                               WHERE m.order_id = o.id AND {_other_side(role)} AND m.read_at IS NULL) u ON true
             WHERE {scope}
             ORDER BY l.created_at DESC, l.id DESC, o.id DESC
             OFFSET :off LIMIT :lim"""), {"me": me, "off": offset, "lim": limit}).mappings().all()
@@ -171,5 +183,5 @@ class ConversationRepository:
     def unread_total(self, role: str, me: int) -> int:
         return int(self.s.execute(text(f"""
             SELECT count(*) FROM messages m JOIN orders o ON o.id = m.order_id
-            WHERE {_SCOPE[role]} AND m.sender_id <> :me AND m.read_at IS NULL"""), {"me": me}).scalar() or 0)
+            WHERE {_SCOPE[role]} AND {_other_side(role)} AND m.read_at IS NULL"""), {"me": me}).scalar() or 0)
 

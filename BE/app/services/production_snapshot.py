@@ -173,7 +173,21 @@ class SnapshotService:
             with self.session.begin_nested():
                 return self.issue(order, actor_id=None)
         except Exception as exc:                                   # noqa: BLE001 - the webhook must stay PROCESSED
-            log.warning("production snapshot not issued at deposit for order %s: %s", order.id, getattr(exc, "code", exc))
+            code = str(getattr(exc, "code", type(exc).__name__))
+            log.warning("production snapshot not issued at deposit for order %s: %s", order.id, code)
+            # SD-06 (audit 2026-11-27): the customer has paid and the order cannot be scheduled, yet nobody was told until a
+            # Manager tried to plan it. Say so now, to the Managers and in the audit log.
+            try:
+                from app.models.account import Account, AccountStatus, RoleCode
+                from app.services import notifications
+                audit.record(self.session, actor_id=None, action="PRODUCTION_SNAPSHOT_FAILED", entity_type="order",
+                             entity_id=order.id, new={"reason": code})
+                for manager_id in self.session.scalars(select(Account.id).where(
+                        Account.status == AccountStatus.ACTIVE, Account.role.has(code=RoleCode.MANAGER.value))):
+                    notifications.notify(self.session, account_id=manager_id, order_id=order.id, msg_code="SNAPSHOT_FAILED",
+                                         code=order.code, reason=code)
+            except Exception:                                      # noqa: BLE001 - telling must never break the payment
+                log.exception("could not report the failed snapshot of order %s", order.id)
             return None
 
     # ------------------------------------------------------------------ revoke

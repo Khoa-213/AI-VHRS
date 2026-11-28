@@ -160,7 +160,18 @@ class DeliveryService:
                    "PICKUP": {"fee": Decimal(0), "total_due": self._due(order, "PICKUP", Decimal(0)).total}}
         return {"paper_size": size, "package_type": package, "balance": balance,
                 "is_fallback_fee": bool((chosen or cheapest)["is_fallback_fee"]), "options": options,
-                "chosen": order.delivery_method, "services": services, "chosen_service": chosen}
+                "chosen": order.delivery_method, "services": services, "chosen_service": chosen,
+                "pickup_hours": self._pickup_hours()}
+
+    def _pickup_hours(self) -> dict[str, Any] | None:
+        """CO-06 (audit 2026-11-27): the web copied the opening hours by hand, so after an Admin changed them the customer was
+        offered slots the server refused. A broken setting does not break the quote: the slot check reports it."""
+        try:
+            cal = self._calendar()
+        except AppError:
+            return None
+        return {"days": sorted(cal.days), "start": cal.start.strftime("%H:%M"), "end": cal.end.strftime("%H:%M"),
+                "utc_offset_min": int(cal.tz.utcoffset(None).total_seconds() // 60)}
 
     # ------------------------------------------------------------------ FR-21 / FR-23: how to receive it
     def choose(self, order_id: int, method: DeliveryMethod, *, address: dict[str, Any] | None,

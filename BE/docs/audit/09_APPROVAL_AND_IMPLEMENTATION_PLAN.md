@@ -277,14 +277,14 @@ Tài khoản:
 
 | Nhóm | Đã sửa | Sửa một phần | Chưa sửa |
 |---|---|---|---|
-| CO | CO-01, CO-02 (BE) | | CO-03 (chờ D09), CO-04, CO-05, CO-06 |
-| SD | SD-01, SD-05 (web gửi `sketch_id`) | | SD-02, SD-03, SD-04, SD-06, SD-07, SD-08, SD-09 |
+| CO | CO-01, CO-02 (BE), CO-03 (D09 chốt 2026-11-28: không có lượt viết lại thứ hai; code đúng sẵn, đã sửa câu báo), CO-06 (2026-11-28) | | CO-04 (cần chủ dự án quyết định), CO-05 |
+| SD | SD-01, SD-05 (web gửi `sketch_id`), SD-02, SD-06, SD-07, SD-08 (cả bốn: 2026-11-28) | SD-03 (2026-11-28: "đã đọc" theo hai phía, Staff chưa nhận đơn không đánh dấu, web lấy tin mới nhất; Manager mở chat vẫn xoá số chưa đọc của Staff, cần bảng đã đọc theo người), SD-09 (2026-11-28: nhật ký `ORDER_CLAIM`, thông báo khi phân công; giới hạn tổng lệch và đếm vòng chỉnh chưa làm) | SD-04 |
 | PP | PP-01 | PP-02 (2026-11-28: ca `FAILED` rồi `SUCCESS`; ca payOS trả vào link đã thành công chưa sửa) | PP-03, PP-04, PP-05, PP-06 |
-| TP | TP-01, TP-02, TP-03, TP-04 (2026-11-28: REAL viết thật đòi server validation), TP-05, TP-07 (2026-11-28: đóng lần chạy mồ côi), TP-09, TP-11, TP-12, TP-13 | TP-06 (khoá agent và chặn khoá tài khoản xong; Manager chuyển giao job đang chạy chưa có, mới có `finish-override`) | TP-08 (phần còn lại: `BUSY`, hai job `WRITING`, quét agent mất kết nối), TP-10 (phần gia tốc / jerk) |
+| TP | TP-01, TP-02, TP-03, TP-04 (2026-11-28: REAL viết thật đòi server validation), TP-05, TP-07 (2026-11-28: đóng lần chạy mồ côi), TP-06 (2026-11-28: Manager đánh hỏng job đã bắt đầu để xếp lại), TP-09, TP-11, TP-12, TP-13 | TP-08 (2026-11-28: mỗi robot một job ở bước chuẩn bị, tác vụ nền quét agent mất kết nối; trạng thái `BUSY` vẫn không được gán) | TP-10 (phần gia tốc / jerk) |
 | AI | AI-01, AI-03, AI-04, AI-05, AI-10 | AI-02 (giới hạn đồng thời + hạn lượt; vẫn giữ kết nối khi chờ model), AI-06 (chưa có trần theo khách), AI-08 (đổi nhãn; chưa có tập ảnh giữ lại), AI-09 (tài liệu; chưa đo phiếu thật), AI-11 (chặn điểm ảnh; chưa đo thời gian trên Render), AI-12 | AI-07 |
-| RB | RB-02, RB-04 (2026-11-28, D03 = 1a: chỉ bật và chạy REAL từ máy trạm; bỏ chạy thử vẫn là lựa chọn có ghi nhật ký), RB-06 | RB-09 (2026-11-28: REAL bắt buộc gói ký; kiểm chữ ký vẫn không kèm mã đơn, hiệu chuẩn không ký), RB-03 (trần watchdog + giới hạn trạm; khối chuyển động vẫn không ký), RB-05 (mới kiểm trên mô phỏng), RB-07 (lỗi bất ngờ gửi STOP; dừng vẫn không nhấc bút) | RB-01, RB-08, RB-10, RB-11 |
+| RB | RB-11 (2026-11-28), RB-02, RB-04 (2026-11-28, D03 = 1a: chỉ bật và chạy REAL từ máy trạm; bỏ chạy thử vẫn là lựa chọn có ghi nhật ký), RB-06 | RB-09 (2026-11-28: REAL bắt buộc gói ký, gói ký phải đúng mã đơn của job; hiệu chuẩn vẫn không ký), RB-03 (trần watchdog + giới hạn trạm; khối chuyển động vẫn không ký), RB-05 (mới kiểm trên mô phỏng), RB-07 (lỗi bất ngờ gửi STOP; dừng vẫn không nhấc bút) | RB-01, RB-08, RB-10 |
 | AR | AR-02, AR-03 (khai biến), AR-05, AR-08 | AR-01 (theo D12: chỉ thôi xoá dòng cấu hình) | AR-04, AR-06, AR-07 |
-| SR | SR-01, SR-03 | | SR-02, SR-04, SR-05, SR-06, SR-07 (việc của chủ dự án), SR-08 |
+| SR | SR-01, SR-03 | SR-04 (2026-11-28: vé chết theo tài khoản, cảnh báo secret ngắn; hạn vé giữ 60 phút), SR-05 (2026-11-28: danh sách route cho khoá agent; khoá Manager vẫn không hết hạn), SR-08 (2026-11-28: giới hạn endpoint vẽ ảnh; Swagger và refresh token chưa đổi) | SR-02, SR-06, SR-07 (việc của chủ dự án) |
 | DM | | DM-03 | DM-01, DM-02, DM-04, DM-05 |
 
 Tính theo mức ưu tiên: 3 trong 6 mục P0 đã sửa ở phần mềm (TP-01, TP-02, RB-02) và PP-01 đã có cờ; hai mục P0 còn lại (RB-01, DM-01) cần robot thật.
@@ -430,7 +430,7 @@ Phạm vi: `services/stock.py`, phần kho trong `services/technician.py` (`stoc
 | Mã | Vấn đề | Hậu quả | Đề xuất | Ưu tiên | Công |
 |---|---|---|---|---|---|
 | K1 | Giấy đã xuất cho một job mà job không đi tới "viết xong" thì không trả lại được. Job thành `FAILED` (sự cố) hoặc `CANCELLED` (huỷ lịch, đổi lịch, huỷ đơn) vẫn "giữ" số giấy đó mãi; mọi thao tác kho trên job bị từ chối `JOB_NOT_ACTIVE`. Đã kiểm chứng: xuất 1 tờ, báo sự cố hoặc huỷ lịch, kệ vẫn 99 và job vẫn giữ 1 | Tồn kho trên hệ thống thấp hơn thực tế sau mỗi lần sự cố hoặc đổi lịch; job xếp lại phải xuất lần nữa. Chỉ sửa được bằng Manager kiểm kê tay, và sổ vẫn ghi job chết đang giữ giấy | Job chưa chuẩn bị (còn `SCHEDULED`) mà bị huỷ / đổi lịch / huỷ đơn: tự trả toàn bộ. Job đã bắt đầu rồi hỏng hoặc bị huỷ: cho kỹ thuật viên (hoặc Manager) "quyết toán giấy" kèm số tờ hỏng, trả phần còn lại | P1 | S–M |
-| K2 | Đơn không chọn loại giấy ("để xưởng đề xuất" mà chưa gán giấy) thì không có dòng sổ nào: chuẩn bị không đòi xuất giấy, viết xong không trừ | Giấy dùng cho các đơn này không được ghi | Bắt buộc đơn có loại giấy trước khi xếp lịch, hoặc cho kỹ thuật viên chọn giấy khi xuất | P2 | S |
+| K2 | ~~Đơn không chọn loại giấy thì không có dòng sổ nào~~ **Không phải lỗi (rà lại 2026-11-28).** Database đã chặn: ràng buộc `chk_orders_materials_after_submit` không cho một đơn đã gửi thiếu loại giấy, nên không đơn nào tới được bước sản xuất mà không có giấy. Tôi đã ghi nhận sai ở lượt audit; không thêm kiểm tra nào ở tầng ứng dụng | Không có | Không cần sửa | — | 0 |
 | K3 | "Giữ cho job" ở màn tổng quan tính 1 tờ mỗi bản, không theo số trang thật; số tờ cần ở bước chuẩn bị lùi về 1 trang mỗi bản khi không đọc được gói job | Cảnh báo thiếu giấy đến muộn với tài liệu nhiều trang | Lưu số trang vào job lúc xếp lịch và dùng số đó | P3 | S |
 | K4 | Bút và mực chỉ có đường xuất, không có đường trả khi xuất nhầm | Phải nhờ Manager kiểm kê | Chấp nhận, ghi vào hướng dẫn | P3 | 0 |
 
@@ -441,7 +441,7 @@ K1 là mục duy nhất làm sai số liệu trong vận hành bình thường.
 - Job bị huỷ khi còn `SCHEDULED` (huỷ lịch, đổi lịch, huỷ đơn): chưa dùng gì, nên toàn bộ giấy đã xuất được trả về kho ngay trong cùng thao tác.
 - Job đã bắt đầu rồi hỏng (sự cố) hoặc bị huỷ giữa chừng: kỹ thuật viên của job (`POST /technician/jobs/{id}/stock/settle`) hoặc Manager (`POST /manager/jobs/{id}/stock/settle`, có nút trên web ở chi tiết job) ghi số tờ hỏng; phần còn lại trả về kho. Mỗi job một lần; dấu mốc là dòng nhật ký `STOCK_SETTLE`.
 - Không đổi database: sổ kho vẫn chỉ có bốn loại phiếu, việc quyết toán là một phiếu `RETURN` gắn job.
-- K2, K3, K4 chưa sửa.
+- K2: không phải lỗi (xem bảng). K3: đã sửa 2026-11-28 (mục 12). K4: chấp nhận, đã ghi vào hướng dẫn máy trạm.
 
 ## 11. Thông báo "chờ thanh toán cuối quá lâu" mở nhầm trang Hoàn tiền (2026-11-28)
 
@@ -451,3 +451,53 @@ Chủ dự án báo: Manager bấm thông báo "Đơn ... chờ thanh toán cu�
 - **Sửa.** Máy chủ gắn mã cho ba thông báo: `REFUND_DUE` (cần hoàn tiền), `PAY_LATE` (thanh toán cuối quá hạn), `PICK_LATE` (chờ nhận quá hạn). Web chỉ mở trang Hoàn tiền với `REFUND_DUE`; mọi thông báo khác của xưởng mở trang đơn.
 - **Thông báo cũ** (lưu trước khi có mã) mở trang đơn; trang đơn vẫn hiện các khoản hoàn của đơn đó.
 
+## 12. Dọn các mục P2 / P3 còn mở (2026-11-28)
+
+Chủ dự án yêu cầu làm các mục kho mức thấp (K2–K4), câu báo hết lượt viết lại, và các mục P2 / P3 còn mở của audit. **Không đổi database.** Đã có test trên Postgres cục bộ; chưa chạy trên Supabase; chưa commit.
+
+**Đã làm.**
+
+| Mã | Sửa gì | Ở đâu |
+|---|---|---|
+| CO-03 / D09 | Câu báo `REWRITE_LIMIT_REACHED` nói đúng quyết định: không có lượt viết lại thứ hai, muốn đổi thì đặt đơn mới (trước đó nhắc tới "báo giá viết lại" không tồn tại) | `domain/photo_rules.py`; web `err.rewriteLimit` ba ngôn ngữ |
+| SD-02 | Staff sửa nét thì nhãn vùng `ORIGINAL` của các chữ bị sửa hạ xuống `RESTORED`. Đơn OT-1 chế độ trung thành không chốt được bản tải tay không có vùng (`409 FAITHFUL_NEEDS_REGIONS`) | `services/sketches.py` |
+| SD-03 | "Đã đọc" nghĩa là **phía bên kia** đã đọc: khách đánh dấu tin của xưởng, xưởng đánh dấu tin của khách. Trước đó Manager mở chat là tin của Staff thành "khách đã đọc". Staff chưa nhận đơn chỉ xem, không đánh dấu. Web lấy 100 tin **mới nhất** (trước đó là 100 tin cũ nhất, tin thứ 101 không hiện) | `repositories/workshop.py`, `services/messages.py`; `FE/src/services/workshop.ts` |
+| SD-06 | Đã cọc mà không khoá được gói sản xuất: ghi nhật ký `PRODUCTION_SNAPSHOT_FAILED` và báo mọi Manager (`msg_code = SNAP_FAIL`) | `services/production_snapshot.py`, `domain/notification_messages.py` |
+| SD-07 | Gửi báo giá bị từ chối khi phác thảo được dàn cho khổ giấy khác giấy trong báo giá (`409 PAPER_SIZE_MISMATCH`) | `services/quotations.py` |
+| SD-08 | `GET /workshop/queue-counts` (web đã gọi từ trước nhưng BE chưa có); `GET /workshop/orders` thêm `mine`, `order_ids`, và `q` tìm cả tên khách. Web tự chuyển sang lọc ở máy chủ, không tải toàn bộ đơn nữa | `api/v1/workshop.py`, `repositories/orders.py` |
+| SD-09 | Nhận đơn ghi nhật ký `ORDER_CLAIM`; Staff được báo khi Manager giao đơn (`ORDER_ASSIGNED`) | `services/workshop_access.py`, `services/staff_orders.py` |
+| CO-06 | Báo giá giao hàng trả kèm giờ làm việc của xưởng (`pickup_hours`); web dựng khung giờ nhận từ đó thay vì chép cứng | `services/delivery.py`; `FE/src/utils/pickupSlots.ts`, `Delivery.tsx` |
+| TP-06 | Manager đánh hỏng một job đã bắt đầu (`POST /manager/jobs/{id}/fail`, lý do ít nhất 10 ký tự) để xếp cho người khác | `services/technician.py` `fail_by_manager` |
+| TP-08 | Không chuẩn bị được job thứ hai khi robot đang có job chạy (`409 ROBOT_HAS_ACTIVE_JOB`). Tác vụ nền `robot_watch` quét máy trạm im lặng giữa lần chạy, không cần ai mở màn hình | `services/technician.py`, `services/background_jobs.py` |
+| RB-09 | Agent từ chối gói đã ký của đơn khác (`PRODUCTION_PACKAGE_INVALID`) | `robot_agent/vhrs_agent/bridge.py` |
+| RB-11 | Test agent không còn treo trên macOS / Linux: dò tiến trình bằng `os.waitid` không chặn. Bộ test agent chạy hết, không bỏ test nào | `robot_agent/vhrs_agent/server.py` |
+| SR-04 | Vé xem 3D hết hiệu lực khi tài khoản bị khoá. Cảnh báo lúc khởi động khi `JWT_SECRET` ngắn hơn 32 byte (không chặn khởi động) | `services/robot_view.py`, `main.py` |
+| SR-05 | Khoá agent chỉ mở chín đường agent thật sự gọi (đọc job, tải gói, hiệu chuẩn, mô phỏng, sự kiện, lần chạy, cảnh báo, heartbeat); mọi đường khác trả `403 AGENT_ROUTE_NOT_ALLOWED` | `api/deps.py` `_AGENT_ROUTES` |
+| SR-08 | Endpoint công khai vẽ ảnh mẫu chữ có giới hạn 600 lượt / phút / địa chỉ | `api/v1/catalog.py` |
+| K3 | "Giữ cho job" tính số bản nhân số trang của phác thảo (trước đó 1 tờ mỗi bản). Khi không đọc được gói job, số tờ cần cũng lấy theo số trang của phác thảo | `services/stock.py`, `services/technician.py` |
+| K4 | Chấp nhận: bút và mực xuất nhầm thì Manager kiểm kê; đã ghi vào `robot_agent/WORKSTATION_TROUBLESHOOTING.md` | tài liệu |
+
+**Giới hạn của các sửa trên.**
+
+- SD-03: Manager vẫn trả lời được khách, nên Manager mở chat vẫn làm số chưa đọc của Staff về 0. Tách hẳn cần bảng "đã đọc theo người" (đổi database).
+- SD-08: tìm theo tên khách không phân biệt hoa thường theo locale của database. Database thử cục bộ là `C` (không gập chữ có dấu); trên Supabase chưa kiểm.
+- SR-04: hạn vé giữ 60 phút. Rút ngắn sẽ làm màn 3D mất hình giữa một lần viết dài.
+- SR-05: người có khoá agent vẫn báo được lần chạy và sự kiện của robot đó (đó là việc của agent).
+- TP-08: trạng thái `BUSY` của robot vẫn không được gán ở đâu.
+
+**Cố ý chưa làm, kèm lý do.**
+
+| Mã | Lý do |
+|---|---|
+| CO-04 (khách chọn % cọc) | Code web ghi rõ khách không chọn mức cọc. Đây là quyết định nghiệp vụ, cần chủ dự án chọn |
+| CO-05 (showcase trên trang chủ) | Việc giao diện mức M, cần thiết kế |
+| SD-04 | Cần tái hiện với Storage lỗi trước khi sửa |
+| PP-03 (Manager xác nhận hoàn tiền) | Đổi quy trình hoàn tiền, cần quyết định |
+| PP-04, AI-06, AI-07, TP-10 | Cần số đo thật hoặc quyết định chính sách |
+| PP-05 | Đổi trạng thái báo giá khi huỷ đơn có thể ảnh hưởng cách tính hoàn tiền; chưa đủ chắc để sửa |
+| PP-06 | Đổi cách GHN gọi webhook phải làm cùng lúc với cấu hình phía GHN |
+| SR-02 (nhật ký không sửa được) | Cần trigger, tức đổi database |
+| SR-06, SR-07 | Quy trình sao lưu và xoay secret là việc của chủ dự án |
+| SR-08 (Swagger, refresh token) | Tắt Swagger ảnh hưởng nhóm web đang dùng `/docs`; xoay refresh token đổi hợp đồng đăng nhập |
+| AR-04, AR-06, AR-07 | Tái cấu trúc, không phải sửa lỗi |
+| RB-01, RB-08, RB-10, DM-* | Cần robot thật hoặc là việc tài liệu / demo |

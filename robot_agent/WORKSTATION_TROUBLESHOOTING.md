@@ -80,6 +80,9 @@ Cột "Ai": **VH** = người vận hành tại máy, **QL** = Manager trên web
 | `REAL_ONLY_AT_WORKSTATION` (từ máy chủ) | Lệnh REAL không đến từ đúng phiên đăng nhập của app đã khởi động agent (chủ dự án chốt 2026-11-28: robot thật chỉ được khởi động từ máy trạm). Hay gặp nhất **ngay sau khi máy chủ được cập nhật**: khoá cũ của agent chưa gắn phiên | Tại máy trạm: đăng xuất, đăng nhập lại app desktop và khởi động lại agent. Nếu đang ngồi ở máy khác: tới máy trạm | VH |
 | `REAL_ONLY_AT_WORKSTATION` (từ agent) | Bật REAL, chạy REAL, "Tiếp tục" hoặc "đã thay giấy" của lần chạy REAL được gọi từ máy khác, hoặc qua reverse proxy | Thao tác trên chính máy trạm | VH |
 | `BACKEND_UNREACHABLE` kèm `RUN_REPORT_AGENT_ONLY` | Agent không có khoá của agent, nên máy chủ không nhận bản ghi lần chạy (từ 2026-11-28 lần chạy chỉ do agent báo bằng khoá của nó) | Chạy agent từ app desktop (app cấp khoá phiên), hoặc đặt `VHRS_AGENT_KEY` do Manager cấp rồi khởi động lại agent | VH, QL |
+| `ROBOT_HAS_ACTIVE_JOB` (khi bấm chuẩn bị) | Robot này đang có một job khác ở trạng thái chuẩn bị, đang viết hoặc tạm dừng (mã job nằm trong `details.job_id`) | Hoàn tất hoặc báo sự cố job kia trước; nếu job kia của người đã vắng thì nhờ Manager đánh hỏng nó (`POST /manager/jobs/{id}/fail`) | VH, QL |
+| `PRODUCTION_PACKAGE_INVALID` kèm "Gói đã ký thuộc đơn ..." | Gói sản xuất đã ký là của một đơn khác với đơn của job này | Không chạy. Báo Manager kèm mã job và hai mã đơn trong thông báo; không sửa file gói | QL |
+| `AGENT_ROUTE_NOT_ALLOWED` | Một thao tác của người (viết xong, sự cố, ảnh, kho) được gọi bằng khoá của agent | Đăng nhập bằng tài khoản kỹ thuật viên rồi làm lại; agent không tự làm các việc này | VH |
 | `MODE_DISABLED` | `agent.json` không có `"real"` trong `modes` | Thêm `"real"` chỉ trên máy nối robot, khởi động lại agent | VH |
 | `REAL_NOT_ENABLED_ON_SITE` | Chưa bật REAL cho đúng job này, hoặc đã hết hạn | Bấm "Bật REAL" cho job trên màn máy trạm / app desktop | VH |
 | `AUTHORIZATION_REQUIRED` | Thiếu hoặc sai mã `AUTHORIZE-<job>-<kế hoạch>`. Mã đổi khi gói job hoặc hiệu chuẩn đổi | Nạp lại job để lấy mã mới | VH |
@@ -166,6 +169,10 @@ Kênh làm việc chính của kỹ thuật viên là app desktop Flutter chạy
 ### 4.4. Job hỏng hoặc bị huỷ mà còn giữ giấy đã xuất
 
 Giấy đã xuất cho job chỉ tự trả về kho ở bước "Viết xong", hoặc khi job bị huỷ lúc chưa chuẩn bị. Job đã bắt đầu rồi báo sự cố (hoặc bị huỷ giữa chừng) vẫn giữ số giấy đó cho tới khi có người quyết toán: đếm số tờ đã hỏng, phần còn lại trả về kho. Kỹ thuật viên gọi `POST /api/technician/jobs/{id}/stock/settle {"waste": <số tờ hỏng>}` (qua proxy của agent); Manager có nút "Quyết toán giấy" trên web ở chi tiết job. Mỗi job chỉ quyết toán một lần.
+
+### 4.5. Xuất nhầm bút hoặc mực
+
+Sổ kho chỉ có đường trả lại cho giấy. Bút và mực đã xuất nhầm cho một job thì không tự trả được: báo Manager để kiểm kê lại số tồn (phiếu điều chỉnh có lý do). Đây là giới hạn đã chấp nhận, không phải lỗi.
 
 ### 4.3. Thao tác gắn bút ở góc giấy (hạ đầu bút xuống mặt giấy)
 

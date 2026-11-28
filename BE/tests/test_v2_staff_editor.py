@@ -155,7 +155,9 @@ def test_ot1_regions_follow_a_staff_edit(client, cust, staff, wcat, store):
     src = {x["region_no"]: (x["source"], x["label"]) for x in v2["regions"]}
     before = {x["region_no"]: (x["source"], x["label"]) for x in v1["regions"]}
     edited = word.get("region_no")
-    assert src[edited] == ("STAFF", before[edited][1])
+    # SD-02: a word the Staff changed is no longer "original ink": ORIGINAL becomes RESTORED, so the customer is told
+    assert src[edited] == ("STAFF", "RESTORED" if before[edited][1] == "ORIGINAL" else before[edited][1])
+    assert before[edited][1] != "ORIGINAL" or src[edited][1] == "RESTORED"
     assert all(src[k] == before[k] for k in src if k != edited)
 
 

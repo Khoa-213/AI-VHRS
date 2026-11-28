@@ -119,6 +119,12 @@ class BackendBridge:
         except ps.SignatureError as exc:
             raise BridgeError(409, "PRODUCTION_PACKAGE_INVALID", f"Gói sản xuất không qua kiểm tra chữ ký ({exc.code}): {exc}. "
                               "Không chạy; báo Quản lý.") from None
+        # RB-09 (audit 2026-11-27): the signature proved "some order was approved and paid with this trajectory", not that it
+        # is the order of this job. The package names its order; the signed payload must name the same one.
+        signed_code, served_code = (payload.get("order") or {}).get("code"), pkg.get("order_code")
+        if signed_code and served_code and signed_code != served_code:
+            raise BridgeError(409, "PRODUCTION_PACKAGE_INVALID", f"Gói đã ký thuộc đơn {signed_code}, không phải đơn {served_code} "
+                              "của job này; không chạy. Báo Quản lý.")
         pen = payload.get("materials", {}).get("pen")
         if pen and pkg.get("pen"):
             for key in ("f_target_n", "f_min_n", "f_max_n", "f_hard_n", "v_max_mm_s"):

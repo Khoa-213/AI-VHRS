@@ -10,6 +10,7 @@ from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from pydantic import BaseModel
 
 from app.api.deps import SessionDep, client_ip, require_roles
 from app.api.order_schemas import InputOut
@@ -108,11 +109,27 @@ def quotation_out(q: Quotation) -> QuotationOut:
             summary="UC-23 Hàng đợi đơn (Staff: được giao + pool chưa ai nhận; Manager: toàn xưởng)")
 def list_orders(svc: Orders, status_filter: Annotated[list[OrderStatus] | None, Query(alias="status")] = None,
                 order_type: str | None = None, eta_before: date | None = None, unassigned: bool = False,
-                q: Annotated[str | None, Query(max_length=40, description="Mã đơn")] = None,
+                q: Annotated[str | None, Query(max_length=100, description="Mã đơn hoặc tên khách")] = None,
+                mine: Annotated[bool, Query(description="Chỉ đơn đang giao cho chính tôi")] = False,
+                order_ids: Annotated[list[int] | None, Query(max_length=200, description="Chỉ các đơn này")] = None,
                 page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)) -> Page[WorkshopOrderRow]:
     rows, total = svc.list(statuses=status_filter, order_type=order_type, eta_before=eta_before,
-                           unassigned_only=unassigned, q=q, page=page, page_size=page_size)
+                           unassigned_only=unassigned, q=q, page=page, page_size=page_size, mine=mine, order_ids=order_ids)
     return Page(items=[_row(o, n) for o, n in rows], total=total, page=page, page_size=page_size)
+
+
+class QueueCountsOut(BaseModel):
+    pool: int
+    mine: dict[str, int]
+
+
+@router.get("/queue-counts", response_model=QueueCountsOut,
+            summary="UC-23 Số đơn trong pool và số đơn của tôi theo trạng thái",
+            description="SD-08: web đã gọi endpoint này từ trước; khi chưa có, mỗi lần mở hàng đợi web tải toàn bộ đơn rồi tự "
+                        "đếm. `pool`: đơn `SUBMITTED` chưa ai nhận. `mine`: đơn đang giao cho người gọi, theo `order_status`.")
+def queue_counts(svc: Orders) -> QueueCountsOut:
+    pool, mine = svc.queue_counts()
+    return QueueCountsOut(pool=pool, mine=mine)
 
 
 @router.get("/orders/{order_id}", response_model=WorkshopOrderDetail,

@@ -139,6 +139,12 @@ CATALOG: dict[str, _T] = {
                         lambda p: f"Job của đơn {p['code']} dừng vì {_EVENT.get(str(p.get('event')), str(p.get('event')))}."),
     "REVIEW_POSTED": ("SYSTEM", None, False, False, lambda p: f"Khách đánh giá đơn {p['code']}",
                       lambda p: f"Khách đã đánh giá đơn {p['code']}: {p.get('rating')}/5 sao."),
+    "ORDER_ASSIGNED": ("ORDER_STATUS_CHANGED", None, False, False, lambda p: f"Bạn được giao đơn {p['code']}",
+                       lambda p: f"Quản lý đã giao đơn {p['code']} cho bạn phụ trách."),
+    "SNAPSHOT_FAILED": ("SYSTEM", "SNAP_FAIL", False, False, lambda p: f"Đơn {p['code']} đã cọc nhưng chưa khoá được gói sản xuất",
+                        lambda p: f"Khách đã đặt cọc đơn {p['code']} nhưng hệ thống không khoá được gói sản xuất "
+                                  f"({p.get('reason')}). Đơn chưa xếp lịch được cho tới khi xử lý: kiểm tra phác thảo chốt, "
+                                  f"dòng xác thực và khoá ký, rồi xếp lịch lại."),
     "INCIDENT_REPORTED": ("SYSTEM", None, False, False, lambda p: f"Sự cố: đơn {p['code']}",
                           lambda p: f"Kỹ thuật viên báo sự cố khi viết đơn {p['code']}."),
     # Account reminders (services/phone_reminders.py, owner request 2026-11-26); not tied to an order.

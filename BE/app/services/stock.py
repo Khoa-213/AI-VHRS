@@ -23,6 +23,7 @@ from app.models.account import Account, AuditLog
 from app.models.catalog import InkColor, PaperType, PenType
 from app.models.ops import JobStatus, ProductionJob
 from app.models.order import Order
+from app.models.sketch import Sketch
 from app.models.stock import StockMovement, StockReceipt
 from app.services import audit
 
@@ -160,11 +161,14 @@ class StockService:
     # ------------------------------------------------------------------ overview
     def overview(self) -> list[dict[str, Any]]:
         kept: dict[int, int] = {}
-        # Paper kept for scheduled jobs that have not taken it yet: at least one sheet per copy (the exact sheets per copy
-        # are only known from each job's trajectory, read when the technician issues).
+        # Paper kept for scheduled jobs that have not taken it yet: copies x sheets per copy. K3 (stock audit 2026-11-28): it
+        # used to count one sheet per copy, so a document of several pages warned too late. The sheets per copy are the pages
+        # of the job's sketch (one customer picture per page); a sketch from before those pictures counts as one page.
         rows = self.s.execute(
-            select(Order.paper_type_id, Order.quantity, ProductionJob.id)
+            select(Order.paper_type_id, Order.quantity * func.greatest(func.coalesce(func.cardinality(Sketch.image_urls), 0), 1),
+                   ProductionJob.id)
             .join(ProductionJob, ProductionJob.order_id == Order.id)
+            .join(Sketch, Sketch.id == ProductionJob.sketch_id)
             .where(ProductionJob.status.in_(_WAITING), Order.paper_type_id.is_not(None))).all()
         issued_jobs = set(self.s.scalars(select(StockMovement.job_id).where(
             StockMovement.kind == "ISSUE", StockMovement.item_kind == "PAPER",

@@ -118,8 +118,11 @@ def is_overdue(awaiting_since: datetime | None, now: datetime, auto_accept_days:
 def check_rewrite_allowed(free_rewrite_used: bool) -> None:
     """Only ONE free rewrite per order (project owner, 2026-10-18); asking again is refused with a clear message."""
     if free_rewrite_used:
+        # Owner decision 2026-11-28 (D09): the rewritten product is final, there is no second rewrite, paid or free. A change
+        # of content or materials is a new order with its own quotation.
         raise PhotoRuleError("REWRITE_LIMIT_REACHED",
-                             "Đơn đã dùng lượt viết lại miễn phí. Vui lòng liên hệ xưởng để được báo giá viết lại.")
+                             "Đơn đã dùng lượt viết lại miễn phí nên không viết lại thêm được. Nếu muốn đổi nội dung hoặc vật "
+                             "tư, vui lòng đặt một đơn mới.")
 
 
 def check_rewrite_reason(code: str, note: str | None) -> None:

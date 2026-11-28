@@ -115,6 +115,19 @@ def job_detail(job_id: int, svc: Svc, session: SessionDep) -> ManagerJobDetail:
                             can_settle_stock=job.status in ENDED_UNFINISHED and held > 0 and not stock_settled(session, job.id))
 
 
+@router.post("/jobs/{job_id}/fail", response_model=IncidentOut, status_code=status.HTTP_201_CREATED,
+             summary="TP-06 Quản lý tiếp quản một job đã bắt đầu khi kỹ thuật viên không xử lý được: job thành FAILED, đơn về hàng đợi xếp lịch",
+             description=("Job đang `PREPARING`, `WRITING` hoặc `PAUSED`. Robot được gửi lệnh dừng nếu đang chạy; job thành `FAILED`; "
+                          "đơn quay lại hàng đợi để xếp cho người khác. Giấy job đã lấy được quyết toán sau bằng "
+                          "`POST /manager/jobs/{id}/stock/settle`. Ghi sự cố và nhật ký dưới tên Quản lý."),
+             responses={404: {"model": ErrorOut, "description": "JOB_NOT_FOUND"},
+                        409: {"model": ErrorOut, "description": "JOB_STATE_CONFLICT / JOB_NOT_ACTIVE / ORDER_NOT_ACTIVE"},
+                        422: {"model": ErrorOut, "description": "REASON_REQUIRED"}})
+def fail_job(job_id: int, body: FinishOverrideIn, session: SessionDep, manager: ManagerDep, request: Request) -> IncidentOut:
+    from app.services.technician import fail_by_manager
+    return IncidentOut.model_validate(fail_by_manager(session, manager, job_id, body.reason, client_ip(request)))
+
+
 @router.post("/jobs/{job_id}/stock/settle", response_model=StockSettleOut,
              summary="Quản lý quyết toán giấy của job đã hỏng hoặc đã huỷ: ghi số tờ hỏng, phần còn lại trả về kho (một lần)",
              responses={404: {"model": ErrorOut, "description": "JOB_NOT_FOUND"},

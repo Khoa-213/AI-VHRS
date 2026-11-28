@@ -66,7 +66,8 @@ class OrderRepository:
 
     def search_workshop(self, *, staff_id: int | None, statuses: list[OrderStatus] | None, order_type: str | None,
                         eta_before: date | None, unassigned_only: bool, q: str | None, offset: int,
-                        limit: int) -> tuple[list[tuple[Order, str]], int]:
+                        limit: int, mine_id: int | None = None,
+                        order_ids: list[int] | None = None) -> tuple[list[tuple[Order, str]], int]:
         """Orders visible to the workshop: never DRAFT (private to the customer).
         Staff (staff_id given): assigned to them, or still unassigned and SUBMITTED (the pool, FR-12)."""
         stmt = select(Order, Account.full_name).join(Account, Account.id == Order.customer_id) \
@@ -82,11 +83,24 @@ class OrderRepository:
             stmt = stmt.where(Order.eta <= eta_before)
         if unassigned_only:
             stmt = stmt.where(Order.assigned_staff_id.is_(None))
-        if q:
-            stmt = stmt.where(Order.code.ilike(f"%{q}%"))
+        if q:                                                     # SD-08: the order code or the customer's name
+            stmt = stmt.where(or_(Order.code.ilike(f"%{q}%"), Account.full_name.ilike(f"%{q}%")))
+        if mine_id is not None:
+            stmt = stmt.where(Order.assigned_staff_id == mine_id)
+        if order_ids:
+            stmt = stmt.where(Order.id.in_(order_ids))
         total = self.s.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         rows = self.s.execute(stmt.order_by(Order.submitted_at.asc().nulls_last(), Order.id).offset(offset).limit(limit))
         return [(o, name) for o, name in rows], total
+
+    def queue_counts(self, *, actor_id: int) -> tuple[int, dict[str, int]]:
+        """SD-08: (orders in the pool, the actor's own orders by status), counted by the database. The pool is the same for a
+        Staff and a Manager: submitted and not claimed by anybody."""
+        pool = self.s.scalar(select(func.count()).select_from(Order).where(
+            Order.assigned_staff_id.is_(None), Order.order_status == OrderStatus.SUBMITTED)) or 0
+        rows = self.s.execute(select(Order.order_status, func.count()).where(
+            Order.assigned_staff_id == actor_id, Order.order_status != OrderStatus.DRAFT).group_by(Order.order_status))
+        return int(pool), {st.value: int(n) for st, n in rows}
 
     def claim(self, order_id: int, staff_id: int) -> bool:
         """Atomic self-assignment: only one Staff wins when two click at once."""

@@ -29,6 +29,13 @@ class ServiceOptionOut(BaseModel):
     mode: str = Field(description="MOCK | SANDBOX | LIVE | FALLBACK")
 
 
+class PickupHoursOut(BaseModel):
+    days: list[int] = Field(description="Thứ trong tuần theo ISO, thứ Hai = 1.")
+    start: str = Field(description="HH:MM, giờ của xưởng.")
+    end: str
+    utc_offset_min: int
+
+
 class DeliveryQuoteOut(BaseModel):
     paper_size: str
     package_type: Literal["FLAT_BOX_A5", "FLAT_BOX_A4", "TUBE"]
@@ -38,6 +45,9 @@ class DeliveryQuoteOut(BaseModel):
     chosen: DeliveryMethod | None = None
     services: list[ServiceOptionOut] = Field(default_factory=list, description="Các dịch vụ vận chuyển khách có thể chọn khi DELIVERY.")
     chosen_service: ServiceOptionOut | None = Field(default=None, description="Dịch vụ khách đã chọn (nếu đã chọn).")
+    pickup_hours: PickupHoursOut | None = Field(default=None, description=(
+        "CO-06: giờ làm việc của xưởng (`system_settings.working_hours`) để dựng các khung giờ nhận tại xưởng; `null` khi cấu "
+        "hình không hợp lệ. Khung giờ ngoài khoảng này bị từ chối `OUTSIDE_WORKING_HOURS`."))
 
 
 class DeliveryIn(BaseModel):

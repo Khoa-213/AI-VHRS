@@ -301,9 +301,24 @@ def stuck_orders(session: Session, *, order_ids: list[int] | None = None, **_: A
         "pickup": _int_setting(session, "pickup_overdue_days", ox.DEFAULT_OVERDUE_DAYS)})
 
 
+def robot_watch(session: Session, *, order_ids: list[int] | None = None, **_: Any) -> dict[str, Any]:
+    """TP-08 (audit 2026-11-27): a workstation that goes silent while its robot has a run open was only noticed when somebody
+    opened a robot screen (the check ran inside those requests). Here it runs on the clock: the orange alerts AGENT_OFFLINE
+    and RUN_OUTCOME_UNKNOWN are raised, and e-mailed where the catalogue says so, also when nobody is looking."""
+    if order_ids is not None:                               # a scoped run (tests of other jobs) does not sweep every robot
+        return {"skipped": True}
+    from app.services.robot_ops import RobotOpsService, dispatch_mail
+    svc = RobotOpsService(session, None)
+    raised = svc.sweep_stale()
+    session.commit()
+    if svc.pending_mail:
+        dispatch_mail(list(svc.pending_mail))
+    return {"alerts_raised": raised}
+
+
 JOBS: dict[str, Callable[..., dict[str, Any]]] = {
     "quotation_expiry": quotation_expiry, "deposit_deadline": deposit_deadline, "acceptance": acceptance,
-    "stuck_orders": stuck_orders,
+    "stuck_orders": stuck_orders, "robot_watch": robot_watch,
     "email_retry": email_retry, "photo_purge": photo_purge, "ai_chat_purge": ai_chat_purge,
 }
 

@@ -156,19 +156,28 @@ class MessageService:
     def list(self, order_id: int, page: int, page_size: int) -> tuple[list[Message], int, int, Order]:
         order = self._order(order_id, write=False)
         rows, total = self.repo.list(order.id, offset=(page - 1) * page_size, limit=page_size)
-        return rows, total, self.repo.unread_count(order.id, self.actor.id), order
+        return rows, total, self._unread(order), order
 
     def latest(self, order_id: int, before_id: int | None, limit: int) -> tuple[list[Message], int, int, Order, int | None]:
         """Newest first by page (for a chat that opens at the bottom and loads older messages on scroll up); the rows of a page
         are still old → new. Returns (rows, total, unread, order, next_before_id)."""
         order = self._order(order_id, write=False)
         rows, more = self.repo.before(order.id, before_id, limit)
-        return (rows, self.repo.count(order.id), self.repo.unread_count(order.id, self.actor.id), order,
+        return (rows, self.repo.count(order.id), self._unread(order), order,
                 rows[0].id if more and rows else None)
 
+    def _unread(self, order: Order) -> int:
+        return self.repo.unread_count(order.id, order.customer_id, self.role == RoleCode.CUSTOMER.value)
+
     def mark_read(self, order_id: int) -> int:
+        """SD-03 (audit 2026-11-27): the customer marks the workshop's messages, the workshop marks the customer's. On the
+        workshop side only somebody who may answer does it (the Staff in charge, or a Manager): a Staff looking at an
+        order nobody claimed yet no longer makes the customer's messages "read" for whoever claims it."""
         order = self._order(order_id, write=False)
-        return self.repo.mark_read(order.id, self.actor.id, datetime.now(timezone.utc))
+        is_customer = self.role == RoleCode.CUSTOMER.value
+        if not is_customer and not (self.role == RoleCode.MANAGER.value or order.assigned_staff_id == self.actor.id):
+            return 0
+        return self.repo.mark_read(order.id, order.customer_id, is_customer, datetime.now(timezone.utc))
 
     def attachment_urls(self, row: Message) -> list[dict[str, str]]:
         if self.storage is None:

@@ -108,6 +108,9 @@ def _active_template(session, template_id: int):
 
 @router.get("/templates/{template_id}/preview", response_class=Response,
             responses={200: {"content": {"image/png": {}}}},
+            # SR-08 (audit 2026-11-27): a public endpoint that renders an image had no limit at all (the POST below had one).
+            # Generous on purpose: a catalogue page shows one image per template and a workshop shares one address.
+            dependencies=[Depends(rate_limit("template_preview_get", 600, 60))],
             summary="FR-04 Xem thử mẫu chữ với nội dung tự gõ (ảnh PNG, không cần đăng nhập)")
 def template_preview(template_id: int, session: SessionDep,
                      text: Annotated[str, Query(min_length=1, max_length=200)] = "Nét Việt",

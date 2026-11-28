@@ -335,6 +335,14 @@ class TechnicianJobService:
         if job.downloaded_at is None:
             raise AppError(409, "JOB_NOT_DOWNLOADED", "Hãy tải gói job và kiểm tra hash trước khi chuẩn bị (UC-32).")
         self._robot_runnable(job)
+        # TP-08 (audit 2026-11-27): nothing stopped two jobs from being prepared and written on the same robot at once. The
+        # robot row is locked by _robot_runnable, so two "prepare" calls for one robot are decided one after the other.
+        busy = self.session.scalar(select(ProductionJob.id).where(
+            ProductionJob.robot_id == job.robot_id, ProductionJob.id != job.id,
+            ProductionJob.status.in_((JobStatus.PREPARING, JobStatus.WRITING, JobStatus.PAUSED))).limit(1))
+        if busy is not None:
+            raise AppError(409, "ROBOT_HAS_ACTIVE_JOB", f"Robot đang làm job #{busy}. Hoàn tất hoặc báo sự cố job đó trước khi "
+                           "chuẩn bị job này.", {"job_id": busy})
         st = self.stock_status(job.id, job=job, order=order)
         if not st["issued"]:
             paper = next(ln for ln in st["lines"] if ln["item_kind"] == "PAPER")
@@ -498,14 +506,16 @@ class TechnicianJobService:
 
     # ------------------------------------------------------------------ UC-39: writing finished, stock deducted
     def _pages(self, job: ProductionJob) -> tuple[int, bool]:
-        """Sheets per copy from the stored trajectory. Falls back to 1 (flagged) when storage cannot answer."""
+        """Sheets per copy from the stored trajectory. When storage cannot answer: the pages of the sketch (one customer
+        picture per page), flagged as assumed (K3, stock audit 2026-11-28: it used to fall back to 1 whatever the document)."""
         try:
             raw = self._storage().read(job.package_uri or self.sketches.get_by_id(job.sketch_id).trajectory_uri)
             if raw is not None:
                 return len(tj.parse(json.loads(raw))), False
         except (AppError, ValueError, AttributeError):
             pass
-        return 1, True
+        sketch = self.sketches.get_by_id(job.sketch_id)
+        return max(len(sketch.image_urls or []) if sketch is not None else 1, 1), True
 
     def _open_run_info(self, job_id: int) -> dict[str, Any] | None:
         return open_run_info(self.session, job_id)
@@ -693,6 +703,27 @@ class TechnicianJobService:
         notifications.notify(self.session, account_id=job.scheduled_by, order_id=order.id, msg_code="INCIDENT_REPORTED",
                              code=order.code, robot_id=job.robot_id)
         return incident
+
+
+def fail_by_manager(session: Session, manager: Account, job_id: int, reason: str, ip: str | None = None) -> Incident:
+    """TP-06 (audit 2026-11-27): a job that was started stayed with its technician whatever happened: only that technician
+    could report the incident that sends it back to planning, so a job was stuck when they were away. A Manager ends it
+    here with a reason. The same steps as an incident (the robot is told to stop, the job fails, the order goes back to the
+    planning queue to be scheduled for somebody else), recorded under the Manager's name."""
+    reason = (reason or "").strip()
+    if len(reason) < 10:
+        raise AppError(422, "REASON_REQUIRED", "Tiếp quản job cần lý do (ít nhất 10 ký tự).")
+    job = session.get(ProductionJob, job_id)
+    tech = session.get(Account, job.technician_id) if job is not None else None
+    if job is None or tech is None:
+        raise AppError(404, "JOB_NOT_FOUND", "Không tìm thấy job.")
+    incident = TechnicianJobService(session, tech, None, ip).report_incident(
+        job_id, kind=IncidentType.OTHER, description=f"Quản lý tiếp quản: {reason}"[:1000], robot_status_after=None)
+    incident.reported_by = manager.id
+    session.flush()
+    audit.record(session, actor_id=manager.id, action="JOB_FAIL_BY_MANAGER", entity_type="production_job", entity_id=job_id,
+                 new={"incident_id": incident.id, "technician_id": tech.id}, reason=reason, ip=ip)
+    return incident
 
 
 def open_run_info(session: Session, job_id: int) -> dict[str, Any] | None:

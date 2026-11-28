@@ -38,6 +38,10 @@ class WorkshopAccess:
                 if not self.orders.claim(order.id, self.actor.id):
                     raise AppError(409, "ALREADY_ASSIGNED", "Đơn đã được nhân viên khác nhận.")
                 self.session.refresh(order)
+                # SD-09 (audit 2026-11-27): who took an order was not recorded anywhere (only a Manager's assignment was)
+                from app.services import audit
+                audit.record(self.session, actor_id=self.actor.id, action="ORDER_CLAIM", entity_type="order", entity_id=order.id,
+                             new={"assigned_staff_id": self.actor.id})
                 return order
             raise AppError(409, "ORDER_NOT_CLAIMED", "Hãy nhận đơn trước khi thao tác.")
         raise not_found()

@@ -32,6 +32,17 @@ class Principal:
 
 _JOB_IN_PATH = re.compile(r"/technician/jobs/(\d+)")
 _RUN_IN_PATH = re.compile(r"/technician/runs/([^/]+)$")
+# SR-05 (audit 2026-11-27): an agent key opened almost every /technician route, so a leaked key could end a job, report an
+# incident or submit photos in the technician's name. These are the calls the Robot Agent really makes
+# (robot_agent/vhrs_agent/bridge.py); the key opens nothing else.
+_AGENT_ROUTES = (
+    ("GET", re.compile(r"/technician/jobs/\d+$")),
+    ("GET", re.compile(r"/technician/jobs/\d+/package$")),
+    ("POST", re.compile(r"/technician/jobs/\d+/(calibration|simulation|events|runs)$")),
+    ("PATCH", re.compile(r"/technician/runs/[^/]+$")),
+    ("POST", re.compile(r"/technician/alerts$")),
+    ("PUT", re.compile(r"/technician/robots/\d+/heartbeat$")),
+)
 AGENT_SESSION = uuid.UUID(int=0)       # marks a request made by a Robot Agent acting for the technician of its live job
 
 
@@ -41,6 +52,9 @@ def _agent_principal(session: Session, token: str, request: Request) -> Principa
     path = request.url.path
     if "/technician/" not in path or "/robot-commands" in path or "/agent-session" in path:
         raise AppError(401, "INVALID_AGENT_KEY", "Khoá agent chỉ dùng cho API kỹ thuật viên.")
+    if not any(request.method == method and rx.search(path) for method, rx in _AGENT_ROUTES):
+        raise AppError(403, "AGENT_ROUTE_NOT_ALLOWED", "Khoá agent không dùng được cho thao tác này: việc này do kỹ thuật viên làm "
+                       "bằng tài khoản của mình.")
     ident = agent_identity(session, token)
     m = _JOB_IN_PATH.search(path)
     acc = _technician_of_run(session, ident, _RUN_IN_PATH.search(path))

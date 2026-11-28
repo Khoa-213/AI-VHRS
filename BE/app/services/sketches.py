@@ -297,6 +297,13 @@ class SketchService:
                 old = old_regions.get((page_no, w.get("region_no") or n))
                 if old is not None and (old.metrics or {}).get("htr"):
                     carried[w["id"]] = old.metrics["htr"]
+        # SD-02 (audit 2026-11-27): a word the Staff changed is no longer "traced from ink clearly visible in the image". It
+        # kept the label ORIGINAL, so the customer was told nothing. It becomes RESTORED ("redrawn by Staff from the image",
+        # stroke_ai/regions.py), which the customer's quotation lists as an uncertain part.
+        for p_ in new["pages"]:
+            for w in p_["words"]:
+                if w.get("label") == "ORIGINAL" and touched & set(w["stroke_ids"]):
+                    w["label"] = "RESTORED"
         regions = _regions_from_doc(new, source_of, hints=carried) if old_regions else None
         pages = geo.to_pages(new)
         metrics = tj.compute_metrics(pages, self._pen(order)[0])
@@ -410,11 +417,19 @@ class SketchService:
     def finalize(self, order_id: int, version: int) -> Sketch:
         order = self._editable_order(order_id)
         row = self._get(order, version)
-        inferred = [r.region_no for r in self.regions_of(row) if r.label == "INFERRED"]
+        regions = self.regions_of(row)
+        inferred = [r.region_no for r in regions if r.label == "INFERRED"]
         if inferred and not _assisted(order):                       # U4: FAITHFUL never ships a guessed part
             raise AppError(409, "INFERRED_NOT_ALLOWED",
                            "Khách chọn phục dựng trung thành: phác thảo không được có vùng suy đoán.",
                            {"regions": inferred})
+        if order.order_type == OrderType.OT1_COPY_RESTORE and not _assisted(order) and not regions:
+            # SD-02: a hand-uploaded trajectory has no regions at all, so the check above passed whatever it contained and the
+            # customer was shown no uncertain part. Without regions nothing says which strokes come from the customer's ink.
+            raise AppError(409, "FAITHFUL_NEEDS_REGIONS",
+                           "Khách chọn phục dựng trung thành, nhưng phác thảo này không có thông tin vùng (bản tải tay) nên không "
+                           "chứng minh được nét nào lấy từ ảnh của khách. Hãy dùng bản AI sinh rồi chỉnh trên đó, hoặc hỏi khách "
+                           "chuyển sang chế độ hỗ trợ.")
         if not row.is_final:
             self.sketches.clear_final(order.id)             # unique index allows only one final per order
             row.is_final = True
